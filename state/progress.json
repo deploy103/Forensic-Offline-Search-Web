@@ -5,7 +5,7 @@
   "in_progress": [],
   "last_completed_id": "FOR-0214",
   "current_phase": "skeleton-done",
-  "last_commit": null,
+  "last_commit": "7051f4c",
   "last_updated_kst": "2026-09-10 02:41 KST",
   "blockers": [
     "gh CLI 미설치 — private GitHub repo 생성/push 불가. git init/commit 은 로컬에서 진행 중."
