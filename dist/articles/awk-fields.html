@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>awk로 로그 필드 추출·집계: $1 NF NR과 연관배열 카운트 · FOR-0115 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%A1%9C%EA%B7%B8%2FRegex">로그/Regex</a> / FOR-0115
+      </div>
+      <header class="article-head">
+        <h1>awk로 로그 필드 추출·집계: $1 NF NR과 연관배열 카운트</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">로그/Regex</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">linux</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>awk는 로그를 공백(또는 -F로 지정한 구분자)으로 잘라 $1·$7·$9 같은 필드 번호로 접근하게 해 주며, {c[$1]++} END {for (k in c) print c[k], k} 한 줄로 빈도 집계가 끝난다 — 필드 번호가 확실한 상황에서는 정규식보다 오탐이 0이라는 것이 결정적 이유다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>awk, gawk, grep, sort, uniq</td></tr>
+<tr><th>artifact</th><td><code>access.log</code> · <code>auth.log</code> · <code>syslog</code> · <code>CSV log</code> · <code>IIS W3C log</code></td></tr>
+<tr><th>파일 경로</th><td><code>/var/log/auth.log</code> · <code>/var/log/apache2/access.log</code> · <code>/var/log/nginx/access.log</code></td></tr>
+<tr><th>로그 필드</th><td><code>$1</code> · <code>$4</code> · <code>$7</code> · <code>$9</code> · <code>$10</code> · <code>NF</code> · <code>NR</code> · <code>FNR</code> · <code>FS</code> · <code>OFS</code></td></tr>
+<tr><th>파일 형식</th><td><code>log</code> · <code>txt</code> · <code>csv</code> · <code>tsv</code></td></tr>
+<tr><th>검색 별칭</th><td>awk 사용법 · awk 필드 · awk 집계 · awk 카운트 · awk 구분자 · awk 합계 · 특정 열만 출력</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>awk</code>는 로그를 공백(또는 <code>-F</code>로 지정한 구분자)으로 잘라 <code>$1</code>·<code>$7</code>·<code>$9</code> 같은 <strong>필드 번호로 접근</strong>하게 해 주며, <code>{c[$1]++} END {for (k in c) print c[k], k}</code> 한 줄로 빈도 집계가 끝난다 — 필드 번호가 확실한 상황에서는 정규식보다 <strong>오탐이 0</strong>이라는 것이 결정적 이유다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;IP별 요청 수&quot;, &quot;상태 코드별 개수&quot;, &quot;전송 바이트 합계&quot; 같은 집계형 문제</li><li>정규식으로 뽑았더니 본문 안의 값까지 섞여 개수가 틀리는 상황</li><li><code>$9 == 200</code>처럼 <strong>완전 일치</strong> 조건이 필요한 상황</li><li>두 로그를 키로 이어 붙여야 하는 상황</li><li>CSV·TSV·<code>/etc/passwd</code>처럼 구분자가 정해진 파일에서 특정 열만 필요한 상황</li></ul>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>문제 지문에 &quot;가장 많이&quot;, &quot;몇 번&quot;, &quot;합계&quot;, &quot;평균&quot; → 집계다. <code>awk</code>가 정답이다</li><li>로그 형식이 확정됐다 → 필드 번호를 쓸 수 있다</li><li><code>grep -c</code> 결과와 눈으로 센 값이 다르다 → 정규식이 넓게 잡힌 것이다</li><li>구분자가 <code>:</code>·<code>,</code>·탭이다 → <code>-F</code>로 지정한다</li></ol>
+<p>먼저 필드 번호를 확정한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 첫 줄의 필드를 번호와 함께 나열한다 — 이 한 줄이 이후 모든 작업의 기준이다
+head -1 access.log | awk &#39;{for (i=1; i&lt;=NF; i++) printf &quot;%d=[%s]\n&quot;, i, $i}&#39;</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1=[203.0.113.77]
+2=[-]
+3=[-]
+4=[[14/Mar/2026:07:11:02]
+5=[+0900]]
+6=[&quot;GET]
+7=[/admin/]
+8=[HTTP/1.1&quot;]
+9=[403]
+10=[199]
+11=[&quot;-&quot;]
+12=[&quot;Mozilla/5.0]
+13=[(Windows]</code></pre></div>
+<p><strong><code>$4</code>와 <code>$5</code>가 시각 하나로 쪼개지고 User-Agent가 여러 필드로 흩어진다는 사실</strong>을 여기서 눈으로 확인해 두면 이후 실수가 없다.</p>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">awk &#39;{c[$1]++} END {for (k in c) print c[k], k}&#39; access.log | sort -nr | head -10</code></pre></div>
+<p>출력 예시:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1842 203.0.113.77
+311 192.168.10.24
+96 198.51.100.5
+41 10.0.0.50</code></pre></div>
+<p>동등한 관용구가 하나 더 있다. 짧아서 더 많이 쓰인다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">awk &#39;{print $1}&#39; access.log | sort | uniq -c | sort -nr | head -10</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th></th><th><code>awk</code> 배열 방식</th><th><code>sort | uniq -c</code> 방식</th></tr></thead><tbody><tr><td>메모리</td><td>고유 키 수만큼 (IP 수만큼)</td><td><code>sort</code>가 전체를 다룬다</td></tr><tr><td>속도</td><td>파일 1회 통과. 빠르다</td><td>정렬 비용이 있다</td></tr><tr><td>대용량</td><td>고유 키가 적으면 압도적으로 유리</td><td>고유 키가 매우 많으면 유리</td></tr><tr><td>가독성</td><td>조건·복합 키를 붙이기 쉽다</td><td>짧다</td></tr></tbody></table></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-내장-변수-7개">1단계 — 내장 변수 7개</h3>
+<div class="table-wrap"><table><thead><tr><th>변수</th><th>의미</th><th>기본값</th></tr></thead><tbody><tr><td><code>$0</code></td><td>레코드(줄) 전체</td><td>—</td></tr><tr><td><code>$1</code>, <code>$2</code>, ...</td><td>n번째 필드</td><td>—</td></tr><tr><td><code>$NF</code></td><td><strong>마지막</strong> 필드</td><td>—</td></tr><tr><td><code>$(NF-1)</code></td><td>마지막에서 두 번째</td><td>—</td></tr><tr><td><code>NF</code></td><td>이 줄의 필드 개수</td><td>—</td></tr><tr><td><code>NR</code></td><td>지금까지 읽은 레코드 번호 (전체 누적)</td><td>—</td></tr><tr><td><code>FNR</code></td><td><strong>현재 파일 안에서의</strong> 레코드 번호</td><td>—</td></tr><tr><td><code>FS</code></td><td>입력 필드 구분자</td><td>공백류</td></tr><tr><td><code>OFS</code></td><td>출력 필드 구분자</td><td>스페이스 1개</td></tr><tr><td><code>RS</code></td><td>입력 레코드 구분자</td><td>개행</td></tr><tr><td><code>ORS</code></td><td>출력 레코드 구분자</td><td>개행</td></tr><tr><td><code>FILENAME</code></td><td>현재 파일 이름</td><td>—</td></tr></tbody></table></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">awk &#39;{print NR, NF, $1, $NF}&#39; access.log | head -3</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1 13 203.0.113.77 &quot;Mozilla/5.0
+2 13 192.168.10.24 &quot;curl/8.4.0&quot;
+3 9 198.51.100.5 87</code></pre></div>
+<p>3번 줄의 <code>NF</code>가 9다. <strong>필드 개수가 줄마다 다르면 형식이 섞여 있다는 신호다.</strong> 이것을 먼저 잡아야 한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 필드 개수 분포 — 하나로 모이지 않으면 형식이 섞여 있다
+awk &#39;{print NF}&#39; access.log | sort -n | uniq -c</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">  41866 13
+     14 9
+      2 1</code></pre></div>
+<p>13이 정상(combined), 9는 User-Agent가 짧은 줄, 1은 빈 줄이나 깨진 줄이다. 2건은 직접 확인한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">awk &#39;NF==1 {print NR&quot;: [&quot;$0&quot;]&quot;}&#39; access.log</code></pre></div>
+<p><code>NR</code>과 <code>FNR</code>의 차이는 여러 파일을 함께 처리할 때 드러난다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">$ awk &#39;{print FILENAME, FNR, NR}&#39; a.log b.log | sed -n &#39;1p;3p;4p&#39;
+a.log 1 1
+a.log 3 3
+b.log 1 4</code></pre></div>
+<p><code>FNR==1</code>은 &quot;각 파일의 첫 줄&quot;이므로 CSV 헤더 건너뛰기에 쓴다.</p>
+<h3 id="2단계-구분자-지정--f">2단계 — 구분자 지정 (<code>-F</code>)</h3>
+<div class="table-wrap"><table><thead><tr><th>목적</th><th>옵션</th></tr></thead><tbody><tr><td>공백 (기본)</td><td>생략</td></tr><tr><td>콜론</td><td><code>-F:</code></td></tr><tr><td>쉼표</td><td><code>-F,</code></td></tr><tr><td>탭</td><td><code>-F&#39;\t&#39;</code></td></tr><tr><td>파이프</td><td><code>-F&#39;|&#39;</code> (정규식이므로 이스케이프)</td></tr><tr><td>여러 문자 중 하나</td><td><code>-F&#39;[:,]&#39;</code></td></tr><tr><td>대괄호</td><td><code>-F&#39;[][]&#39;</code></td></tr><tr><td>두 글자 이상</td><td><code>-F&#39; - &#39;</code> (정규식으로 해석된다)</td></tr><tr><td><code>FS</code>를 코드에서</td><td><code>awk &#39;BEGIN {FS=&quot;:&quot;} {print $1}&#39;</code></td></tr></tbody></table></div>
+<p>기본 <code>FS</code>(공백)에는 특별한 규칙이 있다. <strong>연속된 공백·탭을 하나로 취급하고 줄 앞뒤 공백을 무시한다.</strong> 이것이 <code>cut</code>과의 결정적 차이다 (<a href="./cut-fields.html">FOR-0116</a>).</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">$ printf &#39;  a   b\tc  \n&#39; | awk &#39;{print NF&quot;|&quot;$1&quot;|&quot;$2&quot;|&quot;$3&quot;|&quot;}&#39;
+3|a|b|c|</code></pre></div>
+<p>반면 <code>FS</code>를 <strong>한 글자로 명시하면</strong> 연속 구분자가 각각 세어지며 빈 필드가 생긴다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">$ printf &#39;a,,b\n&#39; | awk -F, &#39;{print NF&quot;|&quot;$1&quot;|&quot;$2&quot;|&quot;$3&quot;|&quot;}&#39;
+3|a||b|</code></pre></div>
+<p>이 차이가 CSV의 빈 필드를 살려 주므로 오히려 유용하다.</p>
+<p>Apache 로그에서 대괄호와 따옴표를 구분자로 쓰는 실전 예다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 시각만 (대괄호 사이)
+awk -F&#39;[][]&#39; &#39;{print $2}&#39; access.log | head -2
+
+# User-Agent 만 (따옴표 기준 6번째 조각)
+awk -F&#39;&quot;&#39; &#39;{print $6}&#39; access.log | head -2
+
+# 요청 줄 전체 (따옴표 기준 2번째 조각)
+awk -F&#39;&quot;&#39; &#39;{print $2}&#39; access.log | head -2</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">14/Mar/2026:07:11:02 +0900
+14/Mar/2026:07:11:09 +0900
+Mozilla/5.0 (Windows NT 10.0; Win64; x64)
+curl/8.4.0
+GET /admin/ HTTP/1.1
+POST /upload.php HTTP/1.1</code></pre></div>
+<p><code>-F&#39;&quot;&#39;</code>로 잘랐을 때의 조각 번호다.</p>
+<div class="table-wrap"><table><thead><tr><th>조각</th><th>내용</th></tr></thead><tbody><tr><td><code>$1</code></td><td>IP부터 <code>[시각]</code>까지 (앞부분 전체)</td></tr><tr><td><code>$2</code></td><td>요청 줄 (<code>GET /admin/ HTTP/1.1</code>)</td></tr><tr><td><code>$3</code></td><td><code> 403 199 </code> (상태 코드와 크기)</td></tr><tr><td><code>$4</code></td><td>Referer</td></tr><tr><td><code>$5</code></td><td><code> </code> (공백 1개)</td></tr><tr><td><code>$6</code></td><td>User-Agent</td></tr></tbody></table></div>
+<h3 id="3단계-패턴-액션-구조">3단계 — 패턴 { 액션 } 구조</h3>
+<p><code>awk</code> 프로그램은 <code>패턴 { 액션 }</code> 쌍의 나열이다. 둘 중 하나를 생략할 수 있다.</p>
+<div class="table-wrap"><table><thead><tr><th>형태</th><th>의미</th></tr></thead><tbody><tr><td><code>{ 액션 }</code></td><td>모든 줄에 실행</td></tr><tr><td><code>패턴</code></td><td>조건이 참인 줄을 그대로 출력 (<code>{print $0}</code> 생략)</td></tr><tr><td><code>패턴 { 액션 }</code></td><td>조건이 참인 줄에만 실행</td></tr><tr><td><code>BEGIN { 액션 }</code></td><td>입력을 읽기 <strong>전에</strong> 1회</td></tr><tr><td><code>END { 액션 }</code></td><td>입력을 다 읽은 <strong>후에</strong> 1회</td></tr><tr><td><code>패턴1, 패턴2 { 액션 }</code></td><td>범위. 패턴1 줄부터 패턴2 줄까지</td></tr></tbody></table></div>
+<p>조건에 쓸 수 있는 것들이다.</p>
+<div class="table-wrap"><table><thead><tr><th>조건</th><th>예</th><th>의미</th></tr></thead><tbody><tr><td>비교</td><td><code>$9 == 404</code></td><td>숫자로 보이면 수치 비교</td></tr><tr><td>문자열 비교</td><td><code>$1 == &quot;203.0.113.77&quot;</code></td><td><strong>완전 일치</strong></td></tr><tr><td>부등호</td><td><code>$10 &gt; 100000</code></td><td>응답 크기 100KB 초과</td></tr><tr><td>정규식 (줄 전체)</td><td><code>/POST/</code></td><td><code>$0</code>에 매칭</td></tr><tr><td>정규식 (필드)</td><td><code>$7 ~ /\.php$/</code></td><td><code>$7</code>이 <code>.php</code>로 끝난다</td></tr><tr><td>부정 정규식</td><td><code>$7 !~ /\.(css|js|png)$/</code></td><td>정적 리소스 제외</td></tr><tr><td>논리 결합</td><td><code>$1==&quot;1.2.3.4&quot; &amp;&amp; $9==200</code></td><td>AND</td></tr><tr><td>논리 결합</td><td><code>$9==403 || $9==404</code></td><td>OR</td></tr><tr><td>필드 개수</td><td><code>NF != 13</code></td><td>형식이 다른 줄</td></tr><tr><td>줄 번호</td><td><code>NR &gt;= 8840 &amp;&amp; NR &lt;= 8850</code></td><td>구간</td></tr><tr><td>존재 여부</td><td><code>$7</code></td><td><code>$7</code>이 빈 문자열/0이 아니면 참</td></tr></tbody></table></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 404 를 낸 URI 목록
+awk &#39;$9==404 {print $7}&#39; access.log | sort | uniq -c | sort -nr | head
+
+# 특정 IP 의 성공한 POST 만
+awk &#39;$1==&quot;203.0.113.77&quot; &amp;&amp; $6==&quot;\&quot;POST&quot; &amp;&amp; $9==200&#39; access.log
+
+# 정적 리소스를 뺀 URI 상위
+awk &#39;$7 !~ /\.(css|js|png|jpg|gif|ico|woff2?|svg)$/ {print $7}&#39; access.log |
+  sort | uniq -c | sort -nr | head
+
+# 응답이 100KB 를 넘은 요청 (유출 후보)
+awk &#39;$10+0 &gt; 100000 {print $1, $7, $10}&#39; access.log
+
+# 줄 번호 범위 (grep -n 으로 찾은 구간을 통째로)
+awk &#39;NR&gt;=8840 &amp;&amp; NR&lt;=8850&#39; access.log
+
+# 문자열 범위 (시작 패턴 ~ 종료 패턴)
+awk &#39;/07:19:00/,/07:21:00/&#39; access.log</code></pre></div>
+<p><code>$6==&quot;\&quot;POST&quot;</code>의 따옴표가 눈에 걸린다. Apache combined에서 <code>$6</code>은 <code>&quot;GET</code>처럼 <strong>여는 따옴표를 포함</strong>하기 때문이다. 깔끔하게 하려면 <code>-F&#39;&quot;&#39;</code>로 요청 줄을 잘라 다시 쪼갠다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">awk -F&#39;&quot;&#39; &#39;{split($2, r, &quot; &quot;); print r[1], r[2]}&#39; access.log | head -2</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">GET /admin/
+POST /upload.php</code></pre></div>
+<p><code>$10+0 &gt; 100000</code>의 <code>+0</code>은 <strong>강제 수치 변환</strong>이다. Apache는 응답 크기가 없을 때 <code>-</code>를 쓰므로, <code>-</code>는 <code>+0</code>으로 <code>0</code>이 되어 안전하게 비교된다. 이 습관이 오류를 막는다.</p>
+<h3 id="4단계-연관배열로-집계">4단계 — 연관배열로 집계</h3>
+<p><code>awk</code>의 배열은 <strong>키가 문자열인 해시</strong>다. 선언이 필요 없고, 없는 키를 읽으면 빈 문자열/0이다. 그래서 <code>c[$1]++</code>이 그대로 카운터가 된다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) 단일 키 빈도
+awk &#39;{c[$1]++} END {for (k in c) print c[k], k}&#39; access.log | sort -nr | head
+
+# 2) 복합 키 — IP + 상태 코드
+awk &#39;{c[$1&quot; &quot;$9]++} END {for (k in c) print c[k], k}&#39; access.log | sort -nr | head
+
+# 3) 합계
+awk &#39;{s += $10+0} END {printf &quot;총 %d 바이트 (%.2f MB)\n&quot;, s, s/1048576}&#39; access.log
+
+# 4) 키별 합계 — IP 별 전송량
+awk &#39;{s[$1] += $10+0} END {for (k in s) printf &quot;%12d  %s\n&quot;, s[k], k}&#39; access.log |
+  sort -nr | head
+
+# 5) 최초/최종 시각 — IP 별
+awk -F&#39;[][]&#39; &#39;{split($1,a,&quot; &quot;); ip=a[1]; if (!(ip in first)) first[ip]=$2; last[ip]=$2}
+              END {for (k in first) print k, first[k], &quot;~&quot;, last[k]}&#39; access.log
+
+# 6) 고유 개수 (distinct count) — IP 별 접근한 URI 종류 수
+awk &#39;{seen[$1&quot; &quot;$7]=1} END {for (k in seen) {split(k,a,&quot; &quot;); n[a[1]]++}
+      for (ip in n) print n[ip], ip}&#39; access.log | sort -nr | head
+
+# 7) 평균
+awk &#39;$9==200 {s+=$10+0; n++} END {if (n) printf &quot;평균 %.1f 바이트 (n=%d)\n&quot;, s/n, n}&#39; access.log
+
+# 8) 최대값과 그 줄
+awk &#39;$10+0 &gt; max {max=$10+0; line=$0} END {print max; print line}&#39; access.log</code></pre></div>
+<p><code>for (k in arr)</code>의 <strong>순회 순서는 정해져 있지 않다.</strong> 정렬된 출력이 필요하면 반드시 <code>sort</code>에 넘긴다. <code>gawk</code>에는 <code>PROCINFO[&quot;sorted_in&quot;]</code>으로 순서를 지정하는 확장이 있지만, 이식성을 위해 <code>sort</code>를 쓰는 편이 안전하다.</p>
+<p><code>in</code> 연산자로 키 존재를 확인할 때는 <code>if (k in arr)</code>를 쓴다. <code>if (arr[k])</code>로 쓰면 <strong>없는 키를 만들어 ���린다.</strong></p>
+<h3 id="5단계-printf-서식">5단계 — printf 서식</h3>
+<p><code>print</code>는 필드를 <code>OFS</code>로 이어 붙이고 <code>ORS</code>로 끝낸다. 정렬된 표가 필요하면 <code>printf</code>를 쓴다. <code>printf</code>는 <strong>개행을 자동으로 붙이지 않으므로 <code>\n</code>을 직접 넣는다.</strong></p>
+<div class="table-wrap"><table><thead><tr><th>서식</th><th>의미</th><th>예</th><th>출력</th></tr></thead><tbody><tr><td><code>%s</code></td><td>문자열</td><td><code>printf &quot;%s\n&quot;, $1</code></td><td><code>203.0.113.77</code></td></tr><tr><td><code>%10s</code></td><td>오른쪽 정렬 폭 10</td><td><code>printf &quot;%10s\n&quot;, $9</code></td><td><code>       403</code></td></tr><tr><td><code>%-15s</code></td><td>왼쪽 정렬 폭 15</td><td><code>printf &quot;%-15s|\n&quot;, $1</code></td><td><code>203.0.113.77   |</code></td></tr><tr><td><code>%d</code></td><td>정수</td><td><code>printf &quot;%d\n&quot;, $10</code></td><td><code>199</code></td></tr><tr><td><code>%6d</code></td><td>폭 6 정수</td><td><code>printf &quot;%6d\n&quot;, c[k]</code></td><td><code>  1842</code></td></tr><tr><td><code>%.2f</code></td><td>소수 2자리</td><td><code>printf &quot;%.2f\n&quot;, s/1048576</code></td><td><code>12.47</code></td></tr><tr><td><code>%%</code></td><td>리터럴 <code>%</code></td><td><code>printf &quot;%d%%\n&quot;, p</code></td><td><code>47%</code></td></tr><tr><td><code>%x</code></td><td>16진수</td><td><code>printf &quot;%x\n&quot;, 255</code></td><td><code>ff</code></td></tr><tr><td><code>%c</code></td><td>문자</td><td><code>printf &quot;%c\n&quot;, 65</code></td><td><code>A</code></td></tr></tbody></table></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">awk &#39;{c[$1]++; t+=1}
+     END {printf &quot;%-16s %8s %7s\n&quot;, &quot;IP&quot;, &quot;요청수&quot;, &quot;비율&quot;
+          for (k in c) printf &quot;%-16s %8d %6.2f%%\n&quot;, k, c[k], 100*c[k]/t}&#39; access.log |
+  sort -k2 -nr | head -5</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">203.0.113.77          1842  43.97%
+192.168.10.24          311   7.42%
+198.51.100.5            96   2.29%
+10.0.0.50               41   0.98%
+IP                  요청수    비율</code></pre></div>
+<p>헤더가 <code>sort</code> 때문에 아래로 밀렸다. 헤더를 살리려면 <code>END</code> 안에서 정렬하지 말고 파이프를 나눈다.</p>
+<h3 id="6단계-자주-쓰는-내장-함수">6단계 — 자주 쓰는 내장 함수</h3>
+<div class="table-wrap"><table><thead><tr><th>함수</th><th>하는 일</th><th>예</th></tr></thead><tbody><tr><td><code>length(s)</code></td><td>길이</td><td><code>length($7) &gt; 200</code> — 비정상적으로 긴 URI</td></tr><tr><td><code>substr(s, i, n)</code></td><td>부분 문자열 (<strong>1부터</strong>)</td><td><code>substr($4, 2, 11)</code> — <code>[14/Mar/2026</code></td></tr><tr><td><code>index(s, t)</code></td><td><code>t</code>의 위치 (없으면 0)</td><td><code>index($7, &quot;..&quot;) &gt; 0</code></td></tr><tr><td><code>split(s, arr, sep)</code></td><td>쪼개서 배열에. 반환값은 개수</td><td><code>n=split($4, d, &quot;:&quot;)</code></td></tr><tr><td><code>sub(re, rep)</code></td><td>첫 매칭 1건 치환</td><td><code>sub(/^\[/, &quot;&quot;, $4)</code></td></tr><tr><td><code>gsub(re, rep)</code></td><td>전체 치환. 반환값은 횟수</td><td><code>gsub(/&quot;/, &quot;&quot;, $0)</code></td></tr><tr><td><code>match(s, re)</code></td><td>매칭 위치. <code>RSTART</code>/<code>RLENGTH</code> 설정</td><td><code>if (match($7, /cmd=[^&amp; ]+/))</code></td></tr><tr><td><code>toupper</code> / <code>tolower</code></td><td>대소문자</td><td><code>tolower($7)</code></td></tr><tr><td><code>sprintf(f, ...)</code></td><td>서식 문자열 반환</td><td>`key = sprintf(&quot;%s</td><td>%s&quot;, $1, $9)`</td></tr><tr><td><code>systime()</code> (gawk)</td><td>현재 epoch</td><td>보고용 타임스탬프</td></tr><tr><td><code>strftime(f, t)</code> (gawk)</td><td>epoch → 문자열</td><td><code>strftime(&quot;%F %T&quot;, $1)</code></td></tr><tr><td><code>mktime(&quot;Y M D H M S&quot;)</code> (gawk)</td><td>문자열 → epoch</td><td>시간 계산</td></tr></tbody></table></div>
+<p><code>substr</code>은 <strong>1부터 센다.</strong> 0부터 세는 언어와 다르다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 시각에서 시:분만 (분 단위 요청량 그래프)
+awk -F&#39;[][]&#39; &#39;{print substr($2, 13, 5)}&#39; access.log | sort | uniq -c</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">     12 07:11
+    488 07:19
+   1044 07:20
+    298 07:21</code></pre></div>
+<p><code>match</code>와 <code>RSTART</code>/<code>RLENGTH</code>로 정규식 추출도 가능하다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">awk &#39;{if (match($0, /cmd=[^&amp; &quot;]+/)) print substr($0, RSTART+4, RLENGTH-4)}&#39; access.log |
+  sort | uniq -c | sort -nr</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">     41 id
+     33 whoami
+     12 cat+/etc/passwd</code></pre></div>
+<p>epoch 변환은 <code>gawk</code> 전용이다. 시간대를 명시해야 한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># UTC 기준 epoch -&gt; KST 문자열 (gawk)
+TZ=Asia/Seoul gawk &#39;BEGIN {print strftime(&quot;%F %T %Z&quot;, 1773450662)}&#39;</code></pre></div>
+<p><code>mawk</code>·<code>busybox awk</code>에는 <code>strftime</code>이 없으므로, 이식성이 필요하면 <code>date -d @초</code>로 넘긴다.</p>
+<h3 id="7단계-두-로그를-키로-잇기">7단계 — 두 로그를 키로 잇기</h3>
+<p><code>NR==FNR</code> 관용구가 표준이다. 첫 파일을 읽는 동안에만 <code>NR</code>과 <code>FNR</code>이 같다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 공격 IP 목록(ioc.txt)에 있는 IP 의 요청만 뽑는다
+awk &#39;NR==FNR {ioc[$1]=1; next} $1 in ioc&#39; ioc.txt access.log
+
+# 웹 로그의 IP 를 인증 로그에서도 봤는지
+awk &#39;NR==FNR {web[$1]=1; next}
+     /Failed password/ {for (i=1;i&lt;=NF;i++) if ($i==&quot;from&quot; &amp;&amp; ($(i+1) in web)) print $(i+1)}&#39; \
+    &lt;(awk &#39;{print $1}&#39; access.log | sort -u) auth.log | sort | uniq -c</code></pre></div>
+<p><code>next</code>는 나머지 규칙을 건너뛰고 다음 레코드로 간다. 이것을 빼면 첫 파일의 줄이 두 번째 블록에도 들어가 결과가 오염된다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p>Apache/nginx <strong>combined</strong> 로그의 <code>awk</code> 필드 번호와, 각 필드로 무엇을 판정하는지다.</p>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>이름</th><th>판정</th></tr></thead><tbody><tr><td><code>$1</code></td><td>클라이언트 IP</td><td>공격 출처. 프록시 뒤라면 <code>X-Forwarded-For</code> 확인</td></tr><tr><td><code>$4</code>+<code>$5</code></td><td><code>[시각</code> + <code>오프셋]</code></td><td>타임라인 기준. <code>-F&#39;[][]&#39;</code>로 통째로 잡는 편이 낫다</td></tr><tr><td><code>$6</code></td><td><code>&quot;메서드</code></td><td><code>&quot;POST</code>는 업로드·로그인 후보</td></tr><tr><td><code>$7</code></td><td>URI (쿼리 포함)</td><td>공격 페이로드가 여기 있다</td></tr><tr><td><code>$8</code></td><td><code>프로토콜&quot;</code></td><td><code>HTTP/1.0</code> 고정은 스크립트 도구 신호</td></tr><tr><td><code>$9</code></td><td>상태 코드</td><td><strong>성공/실패 판정의 핵심</strong></td></tr><tr><td><code>$10</code></td><td>응답 바이트</td><td>급증은 유출 성공 신호. <code>-</code>는 <code>+0</code>으로 처리</td></tr><tr><td><code>$11</code></td><td>Referer</td><td><code>&quot;-&quot;</code>면 직접 접근(도구)</td></tr><tr><td><code>$12</code>~</td><td>User-Agent</td><td>여러 필드로 흩어진다. <code>-F&#39;&quot;&#39;</code> <code>$6</code> 사용</td></tr></tbody></table></div>
+<p>상태 코드 판정표다.</p>
+<div class="table-wrap"><table><thead><tr><th><code>$9</code></th><th>의미</th><th>포렌식 해석</th></tr></thead><tbody><tr><td><code>200</code></td><td>성공</td><td>공격이 통했다</td></tr><tr><td><code>201</code>/<code>204</code></td><td>생성/내용없음</td><td>API 성공</td></tr><tr><td><code>301</code>/<code>302</code></td><td>리다이렉트</td><td>로그인 성공 후 이동인 경우가 많다</td></tr><tr><td><code>304</code></td><td>변경 없음</td><td>캐시. 노이즈</td></tr><tr><td><code>401</code>/<code>403</code></td><td>인증·권한 실패</td><td>시도했으나 막혔다</td></tr><tr><td><code>404</code></td><td>없음</td><td><strong>스캔의 지문.</strong> 404가 몰린 IP가 스캐너다</td></tr><tr><td><code>500</code></td><td>서버 오류</td><td>인젝션 시도가 쿼리를 깨뜨린 흔적</td></tr></tbody></table></div>
+<p>다른 형식의 필드 번호다.</p>
+<div class="table-wrap"><table><thead><tr><th>형식</th><th>IP</th><th>시각</th><th>상태/결과</th></tr></thead><tbody><tr><td>Apache/nginx combined</td><td><code>$1</code></td><td><code>$4 $5</code></td><td><code>$9</code></td></tr><tr><td>syslog RFC3164</td><td>메시지 안 (<code>from</code> 다음)</td><td><code>$1 $2 $3</code></td><td>메시지 문구</td></tr><tr><td>IIS W3C</td><td><code>#Fields:</code>의 <code>c-ip</code> 위치</td><td><code>$1 $2</code></td><td><code>sc-status</code> 위치</td></tr><tr><td><code>/etc/passwd</code> (<code>-F:</code>)</td><td>—</td><td>—</td><td><code>$1</code>=계정 <code>$3</code>=UID <code>$7</code>=셸</td></tr><tr><td>CSV (<code>-F,</code>)</td><td>헤더 순서</td><td>헤더 순서</td><td>헤더 순서</td></tr></tbody></table></div>
+<p>IIS는 필드 순서가 설정마다 다르므로 번호를 고정하지 말고 헤더에서 계산한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># #Fields: 에서 c-ip 가 몇 번째인지 자동으로 찾아 그 필드를 집계한다
+awk &#39;/^#Fields:/ {for (i=2; i&lt;=NF; i++) if ($i==&quot;c-ip&quot;) col=i-1; next}
+     /^#/ {next}
+     col {c[$col]++}
+     END {for (k in c) print c[k], k}&#39; u_ex260314.log | sort -nr | head</code></pre></div>
+<p><code>#Fields:</code> 줄은 <code>#Fields:</code> 자체가 <code>$1</code>이므로 필드 위치에서 1을 빼는 것이 요점이다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th><code>awk</code>로 얻은 것</th><th>다음 목표</th></tr></thead><tbody><tr><td>상위 IP</td><td>pcap <code>ip.addr == &lt;IP&gt;</code>, EVTX 4624/4625 (<a href="./event-4624-logon.html">FOR-0083</a>)</td></tr><tr><td>404가 몰린 IP</td><td>스캐너 확정 → 그 IP의 200 응답만 재추출</td></tr><tr><td>200을 받은 URI</td><td>업로드된 웹셸 경로 후보</td></tr><tr><td>응답 크기 급증 지점</td><td>데이터 유출 시각</td></tr><tr><td>최초/최종 시각</td><td>다른 로그를 같은 구간으로 자른다 (<a href="./head-tail-less.html">FOR-0118</a>)</td></tr><tr><td>필드 개수 이상(<code>NF</code>)</td><td>형식이 섞인 줄 → 원문 확인 (<a href="./log-triage.html">FOR-0111</a>)</td></tr><tr><td>정규식 결과와 불일치</td><td><code>awk</code> 완전 일치를 기준값으로 채택 (<a href="./grep-e-regex.html">FOR-0113</a>)</td></tr><tr><td>값 목록</td><td>빈도 정렬 (<a href="./sort-uniq.html">FOR-0117</a>)</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>필드 번호를 확인하지 않고 쓰는 것.</strong> IIS는 <code>$1</code>이 날짜다. <code>head -1 | awk &#39;{for(i=1;i&lt;=NF;i++) print i, $i}&#39;</code>로 한 번 찍어 보는 데 3초가 걸린다.</li><li><strong><code>$4</code>를 시각 전체라고 믿는 것.</strong> Apache combined에서 시각은 <code>$4</code>+<code>$5</code>로 쪼개진다. <code>-F&#39;[][]&#39;</code>의 <code>$2</code>가 시각 전체다.</li><li><strong>User-Agent를 <code>$12</code>로 뽑는 것.</strong> 공백 때문에 여러 필드로 흩어진다. <code>-F&#39;&quot;&#39;</code>의 <code>$6</code>을 쓴다.</li><li><strong><code>$10 &gt; 100000</code>을 그냥 쓰는 것.</strong> 응답 크기가 <code>-</code>인 줄에서 문자열 비교가 되어 결과가 어긋난다. <code>$10+0 &gt; 100000</code>.</li><li><strong><code>for (k in arr)</code> 순서를 신뢰하는 것.</strong> 정해진 순서가 없다. 출력은 항상 <code>sort</code>에 넘긴다.</li><li><strong><code>if (arr[k])</code>로 존재를 확인하는 것.</strong> 없는 키를 생성해 배열이 오염된다. <code>if (k in arr)</code>.</li><li><strong><code>NR==FNR</code> 뒤에 <code>next</code>를 빼는 것.</strong> 첫 파일의 줄이 두 번째 블록에서도 처리되어 집계가 부풀려진다.</li><li><strong>정규식을 필드 없이 <code>$0</code>에 거는 것.</strong> <code>/203.0.113.77/</code>는 Referer나 쿼리 안의 IP도 잡는다. 출처 IP를 세려면 <code>$1==&quot;203.0.113.77&quot;</code>.</li><li><strong><code>substr</code>을 0부터 센다고 가정하는 것.</strong> <code>awk</code>는 1부터다.</li><li><strong><code>printf</code>에 <code>\n</code>을 안 붙이는 것.</strong> 출력이 한 줄로 붙어 나온다.</li><li><strong><code>gawk</code> 전용 함수를 <code>mawk</code>에서 쓰는 것.</strong> <code>strftime</code>·<code>mktime</code>·<code>gensub</code>·<code>PROCINFO</code>는 <code>gawk</code> 확장이다. <code>awk --version</code>으로 무엇인지 확인한다.</li><li><strong>CSV를 <code>-F,</code>로 자르는 것.</strong> 인용 필드 안의 쉼표(<code>&quot;Seoul, KR&quot;</code>)가 필드를 쪼갠다. 진짜 CSV는 전용 파서로 다룬다.</li><li><strong>큰따옴표로 프로그램을 감싸는 것.</strong> 셸이 <code>$1</code>을 먼저 확장해 빈 문자열로 만든다. <code>awk</code> 프로그램은 <strong>항상 작은따옴표</strong>.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<p>정규식 집계와 필드 집계를 나란히 세운다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) 필드 완전 일치 — 기준값
+awk &#39;$1==&quot;203.0.113.77&quot;&#39; access.log | wc -l
+
+# 2) 배열 카운트 — 같은 값이 나와야 한다
+awk &#39;{c[$1]++} END {print c[&quot;203.0.113.77&quot;]+0}&#39; access.log
+
+# 3) 정규식 (앵커 있음)
+grep -cE &#39;^203\.0\.113\.77[[:space:]]&#39; access.log
+
+# 4) 정규식 (앵커 없음) — 여기서 숫자가 커진다
+grep -c &#39;203\.0\.113\.77&#39; access.log</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1842
+1842
+1842
+1849</code></pre></div>
+<p>4번이 7 더 많다. Referer나 쿼리 문자열에 그 IP가 들어간 줄이다. <strong>필드 완전 일치가 기준값이고, 정규식은 앵커를 붙이더라도 보조 수단이다.</strong></p>
+<p>합계도 두 방법으로 확인한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">awk &#39;{s+=$10+0} END {print s}&#39; access.log
+awk &#39;{print $10}&#39; access.log | grep -E &#39;^[0-9]+$&#39; | paste -sd+ - | bc</code></pre></div>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;침해된 웹 서버의 access.log 에서 (1) 스캐너 IP (2) 웹셸 경로
+ (3) 유출된 데이터의 총 바이트를 구하세요.&quot;
+첨부: access.log (41,882줄, Apache combined)
+
+1. 첫 시도 (실패):
+   $ awk &#39;{print $1}&#39; access.log | sort | uniq -c | sort -nr | head -3
+      9821 10.0.0.50
+      8804 10.0.0.51
+      1842 203.0.113.77
+
+   -&gt; 1·2위가 사설 IP. 이걸 &quot;가장 많이 접속한 IP = 공격자&quot; 로 쓰면 오답이다.
+      빈도만으로는 판정이 안 된다.
+
+2. 접근 변경 — 빈도가 아니라 &quot;404 를 몇 개 만들었나&quot; 로 본다
+   $ awk &#39;$9==404 {c[$1]++} END {for (k in c) print c[k], k}&#39; access.log | sort -nr | head -3
+      1391 203.0.113.77
+         4 198.51.100.5
+         1 10.0.0.51
+
+   -&gt; 203.0.113.77 이 404 를 1,391개 만들었다. 스캐너 확정.
+      10.0.0.50/51 은 404 가 0건 = 정해진 엔드포인트만 치는 헬스체크다.
+
+3. 그 IP 의 상태 코드 분포로 성공 지점을 찾는다
+   $ awk &#39;$1==&quot;203.0.113.77&quot; {c[$9]++} END {for (k in c) print k, c[k]}&#39; access.log | sort -n
+   200 89
+   403 362
+   404 1391
+
+   -&gt; 200 이 89건. 이 안에 업로드 성공과 웹셸 실행이 있다.
+
+4. 200 을 받은 URI 를 본다
+   $ awk &#39;$1==&quot;203.0.113.77&quot; &amp;&amp; $9==200 {print $6, $7}&#39; access.log | sort | uniq -c | sort -nr
+        74 &quot;GET /u/av4tar.php
+         9 &quot;GET /
+         5 &quot;GET /item.php
+         1 &quot;POST /upload.php
+
+   -&gt; POST /upload.php 200 이 딱 1건 = 업로드 성공.
+      /u/av4tar.php 를 74회 GET = 웹셸이다. (파일명이 shell 이 아니라 av4tar 라
+      grep &#39;shell&#39; 로는 못 찾는다)
+
+5. 업로드 시각
+   $ awk -F&#39;[][]&#39; &#39;$0 ~ /POST \/upload\.php/ &amp;&amp; $0 ~ /&quot; 200 / {print $2}&#39; access.log
+   14/Mar/2026:07:19:44 +0900
+   -&gt; +0900 = KST. 그대로 07:19:44 KST.
+
+6. 웹셸 요청의 응답 바이트 합계 — 유출량
+   $ awk &#39;$1==&quot;203.0.113.77&quot; &amp;&amp; $7 ~ /^\/u\/av4tar\.php/ {s += $10+0; n++}
+          END {printf &quot;%d건 %d바이트 (%.2f MB)\n&quot;, n, s, s/1048576}&#39; access.log
+   74건 41938204 바이트 (40.00 MB)
+
+7. 어느 명령이 큰 응답을 냈나 (유출의 실체)
+   $ awk &#39;$1==&quot;203.0.113.77&quot; &amp;&amp; $7 ~ /av4tar/ {
+            if (match($7, /cmd=[^&amp;]+/)) print $10+0, substr($7, RSTART+4, RLENGTH-4)}&#39; access.log |
+       sort -nr | head -4
+   41871104 tar+-czf+-+/var/www/data
+      41118 cat+/etc/passwd
+       2244 ls+-la+/var/www/data
+         42 id
+
+   -&gt; tar 로 /var/www/data 를 통째로 스트리밍한 한 건이 41.8MB.
+      이것이 유출의 본체다.
+
+8. 교차검증 — 합계를 다른 방법으로
+   $ grep &#39;^203\.0\.113\.77 &#39; access.log | grep &#39;/u/av4tar\.php&#39; |
+       awk &#39;{print $10}&#39; | paste -sd+ - | bc
+   41938204
+   일치.
+
+정답: (1) 스캐너 203.0.113.77 (404 1,391건)
+      (2) 웹셸 /u/av4tar.php (업로드 2026-03-14 07:19:44 KST)
+      (3) 유출 41,938,204 바이트 (약 40MB, tar 스트리밍 1건이 41.8MB)</code></pre></div>
+<p>1단계의 실패가 이 글의 요지다. <strong>빈도 1위는 공격자가 아니다.</strong> <code>awk</code>의 조건부 집계(<code>$9==404 {c[$1]++}</code>)로 &quot;무엇을 많이 했는가&quot;를 봐야 판정이 된다. 그리고 4단계에서 웹셸 이름이 <code>av4tar.php</code>였다는 점 — 키워드 추측(<code>shell</code>)이 아니라 <strong>필드 집계로 찾아야</strong> 놓치지 않는다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>head -1 | awk &#39;{for(i=1;i&lt;=NF;i++) print i, $i}&#39;</code>로 필드 번호를 확정했는가</li><li><code>awk &#39;{print NF}&#39; | sort -n | uniq -c</code>로 형식이 섞인 줄을 걸렀는가</li><li>시각을 <code>$4 $5</code>가 아니라 <code>-F&#39;[][]&#39;</code>의 <code>$2</code>로 잡았는가</li><li>숫자 비교에 <code>+0</code>을 붙였는가 (<code>-</code>가 든 필드)</li><li>문자열 완전 일치(<code>==</code>)를 썼는가, 정규식(<code>~</code>)이 넓게 잡히지 않았는가</li><li><code>for (k in arr)</code> 출력을 <code>sort</code>에 넘겼는가</li><li><code>NR==FNR</code> 블록 끝에 <code>next</code>가 있는가</li><li>프로그램을 작은따옴표로 감쌌는가</li><li>빈도 1위가 헬스체크·크롤러가 아닌지 상태 코드 분포로 확인했는가</li><li><code>gawk</code> 전용 함수를 쓰지 않았는가 (<code>awk --version</code> 확인)</li><li>합계·개수를 다른 방법으로 한 번 더 세서 일치했는가</li><li>필드로 안 되는 형식(CSV 인용 필드, JSON)이면 전용 파서로 옮겼는가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-056 — GNU Awk User&#39;s Guide: 내장 변수(<code>NR</code> <code>NF</code> <code>FNR</code> <code>FS</code> <code>OFS</code> <code>RS</code>), <code>패턴 { 액션 }</code> 구조, 연관배열과 <code>in</code> 연산자, <code>printf</code> 서식, 내장 함수(<code>substr</code> <code>split</code> <code>gsub</code> <code>match</code>/<code>RSTART</code>/<code>RLENGTH</code>), 기본 <code>FS</code>의 공백 축약 규칙</li><li>SRC-058 — Apache HTTP Server, Log Files: Combined Log Format의 필드 순서와 <code>%b</code>가 값이 없을 때 <code>-</code>로 기록된다는 점</li><li><code>strftime</code>·<code>mktime</code>·<code>gensub</code>·<code>PROCINFO</code>는 <code>gawk</code> 확장이며 <code>mawk</code>·<code>busybox awk</code>에서는 동작하지 않는다. <code>awk --version</code>으로 구현을 확인할 것</li><li>상태 코드의 포렌식 해석(404 집중 = 스캐너 등)은 경험적 판단 기준이며 환경에 따라 달라진다</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./log-triage.html">
+    <span class="rel-id">FOR-0111 · 로그/Regex</span>
+    로그 파일 30초 트리아지: 형식·줄수·시간범위부터 확인한다
+  </a>
+  <a class="related-item" href="./grep-e-regex.html">
+    <span class="rel-id">FOR-0113 · 로그/Regex</span>
+    grep -E 확장 정규표현식(ERE) 실전: BRE와의 차이와 lookaround 대안
+  </a>
+  <a class="related-item" href="./ipv4-regex.html">
+    <span class="rel-id">FOR-0128 · 로그/Regex</span>
+    IPv4 주소 regex: 느슨한 패턴과 엄격한 패턴 골라 쓰기
+  </a>
+  <a class="related-item" href="./apache-nginx-timestamp-regex.html">
+    <span class="rel-id">FOR-0140 · 로그/Regex</span>
+    Apache/nginx/syslog timestamp regex: 10/Oct/2000 형식과 연도 없는 syslog
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./ripgrep.html"><span class="rel-id">← FOR-0114</span>ripgrep(rg) 옵션 레퍼런스: grep과 다른 기본값과 -P -z -u 활용</a>
+<a class="related-item" href="./powershell-get-content.html"><span class="rel-id">FOR-0120 →</span>PowerShell Get-Content 실전: -Tail, -Wait, -Raw, -ReadCount</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-내장-변수-7개">1단계 — 내장 변수 7개</a></li>
+<li class="toc-l3"><a href="#2단계-구분자-지정--f">2단계 — 구분자 지정 (`-F`)</a></li>
+<li class="toc-l3"><a href="#3단계-패턴-액션-구조">3단계 — 패턴 { 액션 } 구조</a></li>
+<li class="toc-l3"><a href="#4단계-연관배열로-집계">4단계 — 연관배열로 집계</a></li>
+<li class="toc-l3"><a href="#5단계-printf-서식">5단계 — printf 서식</a></li>
+<li class="toc-l3"><a href="#6단계-자주-쓰는-내장-함수">6단계 — 자주 쓰는 내장 함수</a></li>
+<li class="toc-l3"><a href="#7단계-두-로그를-키로-잇기">7단계 — 두 로그를 키로 잇기</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

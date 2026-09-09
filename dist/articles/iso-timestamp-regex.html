@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>ISO 8601 / RFC 3339 timestamp regex와 UTC 정규화 · FOR-0139 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%A1%9C%EA%B7%B8%2FRegex">로그/Regex</a> / FOR-0139
+      </div>
+      <header class="article-head">
+        <h1>ISO 8601 / RFC 3339 timestamp regex와 UTC 정규화</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">로그/Regex</span>
+      <span class="badge badge-type">레퍼런스</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d{1,9})?(?:Z|[+-]\d{2}:?\d{2})? 하나로 실전 ISO 8601/RFC 3339 변형을 거의 다 잡되, 끝의 오프셋 그룹이 매칭되지 않은 타임스탬프는 시간대를 알 수 없는 값이므로 UTC라고 가정하지 말고 그 로그의 시간대를 별도로 확정해야 한다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>grep, ripgrep, Python, PowerShell, jq, awk</td></tr>
+<tr><th>artifact</th><td><code>JSON log</code> · <code>journal</code> · <code>IIS log</code> · <code>EVTX SystemTime</code> · <code>audit.log</code> · <code>Sysmon UtcTime</code></td></tr>
+<tr><th>파일 경로</th><td><code>/var/log/journal</code> · <code>C:\inetpub\logs\LogFiles</code></td></tr>
+<tr><th>regex</th><td><code>\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}</code> · <code>\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d{1,9})?(?:Z|[+-]\d{2}:?\d{2})?</code> · <code>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})</code> · <code>\d{8}T\d{6}(?:Z|[+-]\d{4})?</code> · <code>\d{4}-W\d{2}(?:-\d)?</code> · <code>\d{4}-\d{3}(?:T|$)</code> · <code>(?:Z|[+-]\d{2}:?\d{2})$</code></td></tr>
+<tr><th>로그 필드</th><td><code>@timestamp</code> · <code>time</code> · <code>timestamp</code> · <code>SystemTime</code> · <code>UtcTime</code> · <code>date</code></td></tr>
+<tr><th>파일 형식</th><td><code>json</code> · <code>log</code> · <code>csv</code> · <code>jsonl</code></td></tr>
+<tr><th>검색 별칭</th><td>iso 8601 정규식 · 타임스탬프 정규식 · 시간 정규식 · utc 변환 · kst 변환 · z 시간 · +09:00 무슨 뜻 · 시간 왜 다름</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d{1,9})?(?:Z|[+-]\d{2}:?\d{2})?</code> 하나로 실전 ISO 8601/RFC 3339 변형을 거의 다 잡되, <strong>끝의 오프셋 그룹이 매칭되지 않은 타임스탬프는 시간대를 알 수 없는 값</strong>이므로 UTC라고 가정하지 말고 그 로그의 시간대를 별도로 확정해야 한다.</p>
+<h2 id="개념">개념</h2>
+<p>ISO 8601은 넓고 RFC 3339는 그중 인터넷용으로 좁힌 프로파일이다. <strong>로그에서 만나는 것은 대부분 RFC 3339</strong>이지만, 도구가 뱉는 변형은 ISO 8601 쪽까지 퍼져 있다.</p>
+<div class="table-wrap"><table><thead><tr><th>구성요소</th><th>RFC 3339</th><th>ISO 8601 추가 변형</th></tr></thead><tbody><tr><td>날짜</td><td><code>2026-03-14</code> (확장 형식만)</td><td><code>20260314</code> (기본 형식), <code>2026-W11-6</code>(주), <code>2026-073</code>(서수)</td></tr><tr><td>구분자</td><td><code>T</code> (대문자). 관례적으로 공백도 허용</td><td><code>T</code> 또는 생략(기본 형식)</td></tr><tr><td>시각</td><td><code>07:19:02</code></td><td><code>071902</code>, <code>07:19</code>(초 생략), <code>07</code>(분 생략)</td></tr><tr><td>소수 초</td><td><code>.123</code>, <code>.123456</code> (자리수 제한 없음)</td><td><code>,123</code> (쉼표도 소수점)</td></tr><tr><td>오프셋</td><td><code>Z</code> 또는 <code>+09:00</code> / <code>-07:00</code> <strong>필수</strong></td><td><code>+0900</code>, <code>+09</code>, 생략 가능</td></tr><tr><td><code>-00:00</code></td><td>&quot;오프셋을 모른다&quot;는 별도 의미</td><td>규정 없음</td></tr></tbody></table></div>
+<p>핵심 사실 세 가지다.</p>
+<ol><li><strong>RFC 3339는 오프셋을 필수로 요구한다.</strong> 오프셋이 없는 <code>2026-03-14T07:19:02</code>는 RFC 3339가 아니라 &quot;지역 시간(local)&quot; ISO 8601이고, <strong>어느 시간대인지 문자열만으로는 알 수 없다.</strong></li><li><code>Z</code>는 <code>+00:00</code>과 같은 순간을 가리킨다. Zulu의 Z다.</li><li><code>-00:00</code>은 <code>+00:00</code>과 순간은 같지만 <strong>&quot;실제 오프셋을 모른다&quot;</strong> 는 뜻으로 RFC 3339가 따로 정의한다. 로그에서 보이면 생성기가 시간대 정보를 잃었다는 신호다.</li></ol>
+<h3 id="같은-순간의-여러-표기">같은 순간의 여러 표기</h3>
+<div class="table-wrap"><table><thead><tr><th>표기</th><th>순간(UTC)</th><th>KST</th></tr></thead><tbody><tr><td><code>2026-03-13T22:19:02Z</code></td><td>2026-03-13 22:19:02</td><td>2026-03-14 07:19:02</td></tr><tr><td><code>2026-03-14T07:19:02+09:00</code></td><td>2026-03-13 22:19:02</td><td>2026-03-14 07:19:02</td></tr><tr><td><code>2026-03-14T07:19:02+0900</code></td><td>동일</td><td>동일</td></tr><tr><td><code>20260314T071902+0900</code></td><td>동일</td><td>동일</td></tr><tr><td><code>2026-03-13T15:19:02-07:00</code></td><td>동일</td><td>동일</td></tr><tr><td><code>2026-03-13T22:19:02.123456Z</code></td><td>동일 + 0.123456초</td><td></td></tr><tr><td><code>2026-03-14 07:19:02</code></td><td><strong>알 수 없다</strong></td><td><strong>알 수 없다</strong></td></tr></tbody></table></div>
+<p>마지막 줄이 이 글의 존재 이유다. 문자열 다섯 개는 같은 순간이고 여섯 번째는 순간이 아니라 &quot;벽시계 표시&quot;다.</p>
+<p>KST는 <code>+09:00</code>이며 현재 대한민국은 서머타임을 시행하지 않으므로 연중 고정이다. Unix epoch와의 관계는 <code>epoch = UTC초</code>이고, Windows FILETIME은 1601-01-01 UTC 기준 100ns 단위여서 Unix와 <strong>11644473600초</strong> 차이가 난다.</p>
+<h2 id="파일-경로">파일 / 경로</h2>
+<p>ISO 형식 타임스탬프가 나오는 자리다.</p>
+<div class="table-wrap"><table><thead><tr><th>대상</th><th>필드</th><th>형태</th><th>시간대</th></tr></thead><tbody><tr><td>EVTX <code>System/TimeCreated</code></td><td><code>SystemTime</code></td><td><code>2026-03-13T22:19:02.1234567Z</code></td><td><strong>UTC 고정</strong> (100ns 7자리)</td></tr><tr><td>Sysmon EventData</td><td><code>UtcTime</code></td><td><code>2026-03-13 22:19:02.123</code></td><td><strong>UTC 고정</strong>, <code>T</code> 없음</td></tr><tr><td>IIS W3C 로그</td><td><code>date</code> + <code>time</code> (별 컬럼)</td><td><code>2026-03-14</code> / <code>07:19:02</code></td><td><strong>UTC 고정</strong></td></tr><tr><td>systemd journal JSON</td><td><code>__REALTIME_TIMESTAMP</code></td><td>epoch 마이크로초(숫자)</td><td>UTC</td></tr><tr><td><code>journalctl -o short-iso-precise</code></td><td></td><td><code>2026-03-14T07:19:02.123456+0900</code></td><td>로컬 + 오프셋</td></tr><tr><td>rsyslog <code>RSYSLOG_FileFormat</code></td><td></td><td><code>2026-03-14T07:19:02.123456+09:00</code></td><td>로컬 + 오프셋</td></tr><tr><td>auditd <code>audit.log</code></td><td><code>msg=audit(1773... .123:456)</code></td><td>epoch 초.밀리</td><td>UTC</td></tr><tr><td>nginx <code>$time_iso8601</code></td><td></td><td><code>2026-03-14T07:19:02+09:00</code></td><td>로컬 + 오프셋</td></tr><tr><td>Elastic/OpenSearch, 대부분의 JSON 로그</td><td><code>@timestamp</code></td><td><code>2026-03-13T22:19:02.123Z</code></td><td>UTC 관례</td></tr><tr><td>Zeek TSV</td><td><code>ts</code></td><td>epoch 초.소수</td><td>UTC</td></tr><tr><td>EvtxECmd CSV</td><td><code>TimeCreated</code></td><td>도구 옵션에 따라 UTC 또는 로컬</td><td>옵션 확인 필요</td></tr><tr><td>Chrome/Edge 히스토리</td><td><code>visit_time</code></td><td>1601 기준 마이크로초(숫자)</td><td>UTC</td></tr></tbody></table></div>
+<p><strong>EVTX의 <code>SystemTime</code>과 Sysmon의 <code>UtcTime</code>은 UTC 고정</strong>이고, Sysmon의 다른 시각 필드(<code>CreationUtcTime</code> 등)도 UTC다. 반면 이벤트 뷰어 GUI는 로컬 시간으로 보여주므로 화면 값과 XML 값이 9시간 다르다.</p>
+<h2 id="주요-필드">주요 필드</h2>
+<h3 id="패턴-1-느슨한-후보-수집-가장-많이-쓴다">패턴 1 — 느슨한 후보 수집 (가장 많이 쓴다)</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>값</th></tr></thead><tbody><tr><td>매칭됨</td><td><code>2026-03-14T07:19:02</code>, <code>2026-03-14 07:19:02</code>, <code>2026-03-13T22:19:02.123Z</code>(앞부분만)</td></tr><tr><td>매칭 안 됨</td><td><code>20260314T071902</code>, <code>14/Mar/2026:07:19:02</code>, <code>Mar 14 07:19:02</code></td></tr><tr><td>용도</td><td>&quot;이 로그에 시각이 있나&quot; 확인, 시간 창 좁히기</td></tr></tbody></table></div>
+<p>소수와 오프셋을 잘라버리므로 <strong>정렬·병합에는 쓰지 않는다.</strong> 존재 확인용이다.</p>
+<h3 id="패턴-2-실전-통합-패턴-권장">패턴 2 — 실전 통합 패턴 (권장)</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d{1,9})?(?:Z|[+-]\d{2}:?\d{2})?</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>값</th></tr></thead><tbody><tr><td>매칭됨</td><td><code>2026-03-14T07:19:02+09:00</code>, <code>2026-03-14 07:19:02</code>, <code>2026-03-13T22:19:02.1234567Z</code>, <code>2026-03-14T07:19:02,123+0900</code></td></tr><tr><td>매칭 안 됨</td><td>기본 형식(<code>20260314T071902</code>), 주/서수 날짜</td></tr><tr><td>캡처 버전</td><td><code>(?P&lt;date&gt;...)-...</code>처럼 명명 그룹을 붙여 쓴다</td></tr></tbody></table></div>
+<p>명명 그룹으로 조각을 분해하는 버전이다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">(?P&lt;y&gt;\d{4})-(?P&lt;mo&gt;\d{2})-(?P&lt;d&gt;\d{2})[T ](?P&lt;H&gt;\d{2}):(?P&lt;M&gt;\d{2}):(?P&lt;S&gt;\d{2})(?:[.,](?P&lt;frac&gt;\d{1,9}))?(?P&lt;off&gt;Z|[+-]\d{2}:?\d{2})?</code></pre></div>
+<p><code>off</code> 그룹이 <code>None</code>이면 <strong>그 로그의 시간대를 알아내야 한다.</strong> 그것이 이 패턴을 쓰는 이유다.</p>
+<h3 id="패턴-3-엄격한-rfc-3339-오프셋-필수">패턴 3 — 엄격한 RFC 3339 (오프셋 필수)</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>값</th></tr></thead><tbody><tr><td>매칭됨</td><td><code>2026-03-14T07:19:02+09:00</code>, <code>2026-03-13T22:19:02Z</code></td></tr><tr><td>매칭 안 됨</td><td><code>2026-03-14 07:19:02+09:00</code>(공백 구분자), <code>...+0900</code>(콜론 없음), 오프셋 없는 것</td></tr><tr><td>용도</td><td>&quot;이 로그는 시간대가 명시되어 있다&quot;를 기계적으로 보증할 때</td></tr></tbody></table></div>
+<h3 id="패턴-4-iso-8601-변형들">패턴 4 — ISO 8601 변형들</h3>
+<div class="table-wrap"><table><thead><tr><th>변형</th><th>예</th><th>정규식</th></tr></thead><tbody><tr><td>기본 형식(구분자 없음)</td><td><code>20260314T071902Z</code></td><td><code>\d{8}T\d{6}(?:Z|[+-]\d{4})?</code></td></tr><tr><td>날짜만</td><td><code>2026-03-14</code></td><td><code>\d{4}-\d{2}-\d{2}(?![\d-])</code></td></tr><tr><td>주 날짜</td><td><code>2026-W11</code>, <code>2026-W11-6</code></td><td><code>\d{4}-W\d{2}(?:-\d)?</code></td></tr><tr><td>서수 날짜</td><td><code>2026-073</code></td><td><code>\d{4}-\d{3}(?![\d-])</code></td></tr><tr><td>기간(duration)</td><td><code>PT1H30M</code>, <code>P3DT4H</code></td><td><code>P(?:\d+Y)?(?:\d+M)?(?:\d+D)?(?:T(?:\d+H)?(?:\d+M)?(?:\d+(?:\.\d+)?S)?)?</code></td></tr><tr><td>구간(interval)</td><td><code>2026-03-14T00:00Z/2026-03-15T00:00Z</code></td><td>두 타임스탬프를 <code>/</code>로 이은 것</td></tr></tbody></table></div>
+<p>주/서수 날짜와 기간은 <strong>로그에서는 드물다.</strong> 자동화 도구 설정, CI 로그, 백업 정책 파일에서 나온다. <code>2026-073</code>은 패턴 1로는 잡히지 않으므로, &quot;날짜가 있어야 하는데 안 잡힌다&quot;면 이 변형을 의심한다.</p>
+<h3 id="오프셋-표기와-의미">오프셋 표기와 의미</h3>
+<div class="table-wrap"><table><thead><tr><th>오프셋</th><th>의미</th><th>주의</th></tr></thead><tbody><tr><td><code>Z</code></td><td>UTC (<code>+00:00</code>)</td><td>대문자. 소문자 <code>z</code>는 RFC 3339 위반이지만 실물이 존재하므로 <code>(?i)</code>로 받아둔다</td></tr><tr><td><code>+09:00</code></td><td>KST</td><td>RFC 3339 표기</td></tr><tr><td><code>+0900</code></td><td>KST</td><td>ISO 8601 기본 형식. <code>strptime %z</code>가 받는다</td></tr><tr><td><code>+09</code></td><td>KST</td><td>시만 있는 표기. 파서가 거부하는 경우가 많다</td></tr><tr><td><code>-07:00</code></td><td>PDT (미국 서부 서머타임)</td><td>여름</td></tr><tr><td><code>-08:00</code></td><td>PST</td><td>겨울. <strong>같은 서버 로그에서 3월/11월에 바뀐다</strong></td></tr><tr><td><code>+05:45</code></td><td>네팔</td><td>분 단위 오프셋이 존재한다. <code>\d{2}:00</code>으로 가정하면 안 된다</td></tr><tr><td><code>-00:00</code></td><td>순간은 UTC, <strong>오프셋 미상</strong></td><td>생성기가 시간대를 잃었다는 신호</td></tr><tr><td>(없음)</td><td>알 수 없음</td><td>로그 자체의 시간대를 별도 확정</td></tr></tbody></table></div>
+<h2 id="빠른-명령">빠른 명령</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">grep -Eo &#39;[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}:[0-9]{2}&#39; app.log | head</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) 이 로그에 ISO 시각이 있는지 + 형태 확인
+grep -Eom3 &#39;[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}:[0-9]{2}([.,][0-9]+)?(Z|[+-][0-9]{2}:?[0-9]{2})?&#39; app.log
+
+# 2) 오프셋이 붙어 있는 줄이 몇 %인지 (시간대 확정의 근거)
+total=$(grep -Ec &#39;[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:&#39; app.log)
+withtz=$(grep -Ec &#39;[0-9]{2}:[0-9]{2}:[0-9]{2}([.,][0-9]+)?(Z|[+-][0-9]{2}:?[0-9]{2})&#39; app.log)
+echo &quot;$withtz / $total&quot;
+
+# 3) 로그에 등장하는 오프셋 종류 (여러 개면 서버가 여러 대다)
+grep -Eo &#39;[0-9]{2}:[0-9]{2}:[0-9]{2}([.,][0-9]+)?(Z|[+-][0-9]{2}:?[0-9]{2})&#39; app.log |
+  grep -Eo &#39;(Z|[+-][0-9]{2}:?[0-9]{2})$&#39; | sort | uniq -c
+
+# 4) 특정 시간 창만 (문자열 비교로 충분하다 -- ISO 는 사전순 = 시간순)
+awk &#39;$0 &gt;= &quot;2026-03-14T07:00:00&quot; &amp;&amp; $0 &lt;= &quot;2026-03-14T08:00:00&quot;&#39; app.log
+grep -E &#39;2026-03-14T07:(1[5-9]|2[0-9]):&#39; app.log
+
+# 5) 시간순 정렬 (ISO 확장 형식 + 동일 오프셋이면 sort 로 끝난다)
+sort app.log | less
+
+# 6) 한 줄의 시각을 UTC 로 변환 (GNU date)
+TZ=UTC date -d &#39;2026-03-14T07:19:02+09:00&#39; --iso-8601=seconds
+# -&gt; 2026-03-13T22:19:02+00:00
+TZ=Asia/Seoul date -d &#39;2026-03-13T22:19:02Z&#39; --iso-8601=seconds
+# -&gt; 2026-03-14T07:19:02+09:00
+
+# 7) 오프셋 없는 로그를 KST 로 간주해 UTC 로 붙여 다시 쓰기
+awk &#39;{ if (match($0, /^[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}:[0-9]{2}/))
+         printf &quot;%s+09:00%s\n&quot;, substr($0, RSTART, RLENGTH), substr($0, RSTART+RLENGTH)
+       else print }&#39; app.log &gt; app.tz.log
+
+# 8) JSON 로그는 jq 로 (정규식 불필요)
+jq -r &#39;[.[&quot;@timestamp&quot;], .user, .msg] | @tsv&#39; app.jsonl | sort</code></pre></div>
+<p><strong>ISO 8601 확장 형식은 사전순 정렬이 곧 시간순 정렬이다.</strong> 오프셋이 모두 같거나 전부 <code>Z</code>라면 <code>sort</code> 한 번으로 병합이 끝난다. 오프셋이 섞여 있으면 반드시 UTC로 변환한 뒤 정렬한다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import re
+from datetime import datetime, timezone, timedelta
+
+KST = timezone(timedelta(hours=9))
+UTC = timezone.utc
+
+TS = re.compile(
+    r&#39;(?P&lt;ts&gt;\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}&#39;
+    r&#39;(?:[.,]\d{1,9})?(?P&lt;off&gt;Z|[+-]\d{2}:?\d{2})?)&#39;
+)
+
+def parse(s, assume=KST):
+    &quot;&quot;&quot;ISO 문자열 -&gt; aware datetime. 오프셋이 없으면 assume 을 붙인다.&quot;&quot;&quot;
+    t = s.replace(&#39; &#39;, &#39;T&#39;, 1).replace(&#39;,&#39;, &#39;.&#39;)
+    # Python 3.11 미만은 &#39;Z&#39; 와 콜론 없는 오프셋을 못 읽는다
+    if t.endswith((&#39;Z&#39;, &#39;z&#39;)):
+        t = t[:-1] + &#39;+00:00&#39;
+    m = re.search(r&#39;([+-]\d{2})(\d{2})$&#39;, t)
+    if m:
+        t = t[:m.start()] + f&#39;{m.group(1)}:{m.group(2)}&#39;
+    # 소수 초 7자리(EVTX 100ns)는 6자리로 자른다
+    t = re.sub(r&#39;\.(\d{6})\d+&#39;, r&#39;.\1&#39;, t)
+    dt = datetime.fromisoformat(t)
+    if dt.tzinfo is None:                 # naive -&gt; 가정한 시간대를 붙인다
+        dt = dt.replace(tzinfo=assume)    # replace: 벽시계 유지, 시간대 부여
+    return dt
+
+# 병합: 어떤 로그든 UTC aware 로 만들고 정렬한다
+rows = []
+for src, path, assume in [(&#39;web&#39;, &#39;access.log&#39;, KST), (&#39;auth&#39;, &#39;auth.log&#39;, UTC)]:
+    for line in open(path, encoding=&#39;utf-8&#39;, errors=&#39;replace&#39;):
+        m = TS.search(line)
+        if not m:
+            continue
+        dt = parse(m.group(&#39;ts&#39;), assume).astimezone(UTC)   # astimezone: 순간 유지
+        rows.append((dt, src, line.rstrip()))
+
+for dt, src, line in sorted(rows):
+    print(dt.isoformat(), dt.astimezone(KST).strftime(&#39;%H:%M:%S&#39;), src, line[:90])</code></pre></div>
+<p><strong><code>replace(tzinfo=)</code>와 <code>astimezone()</code>을 혼동하면 9시간이 틀어진다.</strong></p>
+<div class="table-wrap"><table><thead><tr><th>메서드</th><th>하는 일</th><th>쓰는 곳</th></tr></thead><tbody><tr><td><code>dt.replace(tzinfo=KST)</code></td><td>벽시계 숫자를 그대로 두고 시간대 라벨만 붙인다</td><td>naive 값에 &quot;이건 KST였다&quot;를 선언할 때</td></tr><tr><td><code>dt.astimezone(UTC)</code></td><td>순간을 유지하며 숫자를 바꾼다</td><td>표시 시간대를 바꿀 때</td></tr><tr><td><code>dt.replace(tzinfo=UTC)</code> (KST 값에)</td><td><strong>버그.</strong> 07:19 KST를 07:19 UTC로 만들어 9시간 어긋난다</td><td>없음</td></tr></tbody></table></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 오프셋이 있는 문자열: DateTimeOffset 을 쓴다 (오프셋을 보존한다)
+$o = [datetimeoffset]::Parse(&#39;2026-03-14T07:19:02+09:00&#39;)
+$o.UtcDateTime            # 2026-03-13 22:19:02
+$o.Offset                 # 09:00:00
+
+# 오프셋 없는 문자열은 로컬로 해석된다 -- 명시적으로 가정을 적는다
+$kst  = [timezoneinfo]::FindSystemTimeZoneById(&#39;Korea Standard Time&#39;)
+$naive = [datetime]::ParseExact(&#39;2026-03-14 07:19:02&#39;, &#39;yyyy-MM-dd HH:mm:ss&#39;, $null)
+$utc  = [timezoneinfo]::ConvertTimeToUtc($naive, $kst)     # 2026-03-13 22:19:02Z
+
+# UTC -&gt; KST
+[timezoneinfo]::ConvertTimeFromUtc([datetime]::Parse(&#39;2026-03-13T22:19:02Z&#39;).ToUniversalTime(), $kst)
+
+# 라운드트립으로 안전하게 파싱 (Z/오프셋 보존)
+[datetime]::Parse(&#39;2026-03-13T22:19:02Z&#39;, $null, [System.Globalization.DateTimeStyles]::RoundtripKind)
+
+# 항상 ISO 로 출력 (정렬·병합 가능한 형태)
+(Get-Date).ToUniversalTime().ToString(&#39;yyyy-MM-ddTHH:mm:ss.fffffffZ&#39;)
+
+# EVTX 를 CSV 로 뽑을 때는 UTC 로 고정해 두고 KST 컬럼을 따로 만든다
+Import-Csv .\evtx.csv | Select-Object *,
+  @{n=&#39;KST&#39;; e={ [datetimeoffset]::Parse($_.TimeCreated).ToOffset(&#39;09:00&#39;).ToString(&#39;yyyy-MM-dd HH:mm:ss&#39;) }} |
+  Sort-Object TimeCreated</code></pre></div>
+<h3 id="로그-병합-절차-이-글의-실사용-목적">로그 병합 절차 (이 글의 실사용 목적)</h3>
+<div class="table-wrap"><table><thead><tr><th>단계</th><th>하는 일</th><th>실패하면</th></tr></thead><tbody><tr><td>1</td><td>로그마다 첫 3줄로 <strong>형식과 오프셋 유무</strong>를 확정한다</td><td>이후 전부 어긋난다</td></tr><tr><td>2</td><td>오프셋이 없는 로그는 <strong>시간대를 근거로 확정</strong>한다 (아래 표)</td><td>9시간 오차</td></tr><tr><td>3</td><td>모든 시각을 <strong>UTC aware 값</strong>으로 변환한다</td><td>정렬이 뒤섞인다</td></tr><tr><td>4</td><td>UTC 기준으로 정렬·병합한다</td><td></td></tr><tr><td>5</td><td>최종 보고는 <strong>KST로 표시하고 UTC를 괄호로 병기</strong>한다</td><td>검증 불가</td></tr><tr><td>6</td><td>소수 초를 버리지 않는다 (같은 초 안의 순서)</td><td>인과관계가 뒤집힌다</td></tr></tbody></table></div>
+<p>오프셋 없는 로그의 시간대를 확정하는 근거다.</p>
+<div class="table-wrap"><table><thead><tr><th>근거</th><th>확인 방법</th></tr></thead><tbody><tr><td>시스템 시간대 설정</td><td>Linux <code>/etc/timezone</code>, <code>/etc/localtime</code> 심링크, <code>timedatectl</code></td></tr><tr><td>Windows 시간대</td><td>레지스트리 <code>TimeZoneKeyName</code> (<a href="./system-timezone.html">FOR-0054</a>)</td></tr><tr><td>같은 사건이 두 로그에 있다</td><td>오프셋 있는 로그의 그 줄과 대조해 차이를 계산</td></tr><tr><td>로그 파일 mtime</td><td>마지막 줄의 시각과 mtime 차이</td></tr><tr><td>컨테이너 로그</td><td>대부분 UTC (이미지 기본 TZ)</td></tr><tr><td>IIS·EVTX·Sysmon</td><td><strong>UTC 고정.</strong> 확인 불필요</td></tr></tbody></table></div>
+<h2 id="함께-보는-artifact">함께 보는 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>시각을 확정한 뒤</th><th>다음 목표</th></tr></thead><tbody><tr><td>사건 시각 (UTC)</td><td>다른 로그를 그 UTC ±5분으로 재검색</td></tr><tr><td>시스템 시간대</td><td>레지스트리 <code>TimeZoneKeyName</code> (<a href="./system-timezone.html">FOR-0054</a>)</td></tr><tr><td>EVTX/Sysmon 시각</td><td><code>SystemTime</code>은 UTC. GUI 표시값과 다름을 명시</td></tr><tr><td>여러 로그를 합쳐야 한다</td><td>CSV 병합 (<a href="./merge-evtx-csv.html">FOR-0107</a>)</td></tr><tr><td>파일시스템 시각과 대조</td><td><code>$MFT</code> MACB (<a href="./mft-macb.html">FOR-0023</a>) — FILETIME은 UTC</td></tr><tr><td>웹 로그 형식이 다르다</td><td>Apache/nginx 시각 형식 해부</td></tr><tr><td>오프셋이 여러 종류다</td><td>서버가 여러 대. 호스트별로 분리해 처리</td></tr></tbody></table></div>
+<h2 id="흔한-실수">흔한 실수</h2>
+<ul><li><strong>오프셋이 없는 값을 UTC로 가정하는 것.</strong> 가장 비싼 실수다. 한국 서버 로그는 대개 KST이고, 컨테이너는 UTC다. 9시간을 틀린 상태로 상관분석하면 인과관계가 완전히 사라진다. 오프셋이 없으면 시간대를 <strong>먼저 확정</strong>한다.</li><li><strong><code>Z</code>를 <code>+00:00</code>으로 변환하지 않고 <code>fromisoformat</code>에 넣는 것.</strong> Python 3.11 미만은 <code>2026-03-13T22:19:02Z</code>를 <code>ValueError</code>로 거부한다. 3.11 이상은 받아준다. 버전 의존을 피하려면 <code>Z</code>를 <code>+00:00</code>으로 치환한다.</li><li><strong>EVTX의 7자리 소수 초를 <code>fromisoformat</code>에 그대로 넣는 것.</strong> <code>22:19:02.1234567</code>은 100ns 단위 7자리인데 Python <code>datetime</code>은 마이크로초 6자리까지다. 3.11 미만에서 실패하고, 자릿수를 잘라야 한다.</li><li><strong><code>replace(tzinfo=)</code>로 시간대를 &quot;변환&quot;하려는 것.</strong> <code>replace</code>는 라벨만 바꾼다. 순간을 바꾸려면 <code>astimezone()</code>이다. 반대로 naive 값에 <code>astimezone()</code>을 쓰면 실행 머신의 로컬 시간대가 조용히 가정된다.</li><li><strong>소수 초를 버리고 초 단위로 정렬하는 것.</strong> 같은 초에 여러 이벤트가 있으면 순서가 뒤집혀 &quot;결과가 원인보다 먼저&quot;인 타임라인이 나온다.</li><li><strong><code>+0900</code>을 콜론 있는 표기로만 처리하는 것.</strong> <code>strptime</code>의 <code>%z</code>는 <code>+0900</code>, <code>+09:00</code>, <code>Z</code>를 모두 받지만(Python 3.7+), <code>fromisoformat</code>은 3.11 미만에서 <code>+0900</code>을 거부한다. 파서별 지원 범위가 다르다.</li><li><strong><code>-00:00</code>을 <code>+00:00</code>과 같게 취급해 넘기는 것.</strong> 순간은 같지만 &quot;오프셋 미상&quot;이라는 정보를 잃는다. 그 로그의 생성 환경을 의심해야 한다.</li><li><strong>로컬 시간에서 서머타임 전환을 무시하는 것.</strong> <code>-07:00</code>/<code>-08:00</code>처럼 오프셋이 계절마다 바뀌는 서버는 3월/11월 로그에서 같은 벽시계 시각이 두 번 나타나거나 아예 없다. 미국·유럽 서버 로그를 다룰 때 반드시 확인한다.</li><li><strong>정규식으로 날짜 유효성을 검증하려는 것.</strong> <code>2026-02-31T25:99:99</code>도 패턴 2에 매칭된다. 느슨하게 뽑고 <code>fromisoformat</code>/<code>DateTimeOffset.TryParse</code>에 넘겨 걸러내는 것이 짧고 정확하다.</li><li><strong><code>\d{4}-\d{2}-\d{2}</code>에 경계를 안 붙이는 것.</strong> <code>2026-073</code>(서수 날짜)이나 버전 문자열 <code>1.2026-03-14</code>의 일부가 잡힌다. 앞뒤에 <code>(?&lt;![\d-])</code> / <code>(?![\d-])</code>를 붙인다.</li><li><strong>기본 형식(<code>20260314T071902</code>)을 놓치는 것.</strong> 파일명·백업 이름·일부 도구 출력에서 쓰인다. 확장 형식 패턴으로는 절대 안 잡힌다.</li><li><strong>보고서에 시간대를 안 적는 것.</strong> <code>07:19:02</code>만 쓰면 검증할 수 없다. <code>2026-03-14 07:19:02 KST (2026-03-13 22:19:02 UTC)</code> 형태로 병기한다.</li></ul>
+<h2 id="mini-example">mini example</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;애플리케이션 로그(app.jsonl)와 웹 로그(access.log)를 시간순으로 합쳐
+ 웹셸 요청 직후 애플리케이션이 무엇을 실행했는지 구하세요.&quot;
+
+1. 형식 확인
+   $ head -1 app.jsonl
+   {&quot;@timestamp&quot;:&quot;2026-03-13T22:20:15.412Z&quot;,&quot;level&quot;:&quot;WARN&quot;,&quot;msg&quot;:&quot;exec: id&quot;}
+   $ head -1 access.log
+   203.0.113.77 - - [14/Mar/2026:07:19:02 +0900] &quot;GET /admin/ HTTP/1.1&quot; 403 199
+
+   app.jsonl 은 ISO + Z (UTC), access.log 는 Apache 형식 + +0900 (KST).
+
+2. 첫 시도 (실패):
+   $ cat app.jsonl access.log | sort | head -3
+   {&quot;@timestamp&quot;:&quot;2026-03-13T22:20:15.412Z&quot;,...
+   {&quot;@timestamp&quot;:&quot;2026-03-13T22:21:07.883Z&quot;,...
+   203.0.113.77 - - [14/Mar/2026:07:19:02 +0900] ...
+
+   이유: 두 로그의 형식이 다르므로 사전순 정렬이 시간순이 아니다.
+        게다가 access.log 는 줄 맨 앞이 IP 라서 시각이 정렬 키가 되지 못한다.
+        그리고 22:20Z 과 07:19+0900 중 어느 쪽이 먼저인지 눈으로는 알 수 없다.
+
+3. 두 번째 시도 (실패) -- 벽시계 숫자만 보고 맞추려 했다
+   웹 요청 07:19:02, 앱 로그 22:20:15 -&gt; &quot;15시간 차이? 관련 없음&quot; 이라고 결론.
+
+   이유: +0900 과 Z 를 무시했다.
+        07:19:02+09:00 = 2026-03-13T22:19:02Z 이므로
+        앱 로그 22:20:15Z 는 **웹 요청 73초 후**다. 밀접하게 관련된다.
+
+4. 접근 변경 -- 전부 UTC aware 로 만들고 병합
+   &gt;&gt;&gt; import re, json
+   &gt;&gt;&gt; from datetime import datetime, timezone, timedelta
+   &gt;&gt;&gt; KST, UTC = timezone(timedelta(hours=9)), timezone.utc
+   &gt;&gt;&gt; rows = []
+   &gt;&gt;&gt; for line in open(&#39;app.jsonl&#39;):
+   ...     o = json.loads(line)
+   ...     t = o[&#39;@timestamp&#39;].replace(&#39;Z&#39;, &#39;+00:00&#39;)
+   ...     rows.append((datetime.fromisoformat(t), &#39;app&#39;, o[&#39;msg&#39;]))
+   &gt;&gt;&gt; ap = re.compile(r&#39;\[(\d{2})/(\w{3})/(\d{4}):(\d{2}):(\d{2}):(\d{2}) ([+-]\d{4})\]&#39;)
+   &gt;&gt;&gt; MON = {m: i+1 for i, m in enumerate(
+   ...     &#39;Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec&#39;.split())}
+   &gt;&gt;&gt; for line in open(&#39;access.log&#39;):
+   ...     m = ap.search(line)
+   ...     if not m: continue
+   ...     d, mo, y, H, M, S, off = m.groups()
+   ...     tz = timezone(timedelta(hours=int(off[:3]), minutes=int(off[0]+off[3:])))
+   ...     dt = datetime(int(y), MON[mo], int(d), int(H), int(M), int(S), tzinfo=tz)
+   ...     rows.append((dt, &#39;web&#39;, line.split(&#39;&quot;&#39;)[1]))
+   &gt;&gt;&gt; for dt, src, msg in sorted(rows)[:6]:
+   ...     print(dt.astimezone(UTC).strftime(&#39;%H:%M:%S&#39;),
+   ...           dt.astimezone(KST).strftime(&#39;%H:%M:%S&#39;), src, msg)
+   22:19:02 07:19:02 web GET /admin/ HTTP/1.1
+   22:19:44 07:19:44 web POST /upload.php HTTP/1.1
+   22:20:15 07:20:15 web GET /uploads/av4tar.php?cmd=id HTTP/1.1
+   22:20:15 07:20:15 app exec: id
+   22:20:31 07:20:31 web GET /uploads/av4tar.php?cmd=whoami HTTP/1.1
+   22:20:31 07:20:31 app exec: whoami
+
+5. 소수 초까지 보고 인과 순서 확정
+   web  2026-03-13T22:20:15.318Z  GET /uploads/av4tar.php?cmd=id
+   app  2026-03-13T22:20:15.412Z  exec: id
+   -&gt; 요청이 94ms 먼저다. 웹 요청이 원인, 앱 실행이 결과.
+      초 단위로만 봤다면 두 줄의 순서를 보장할 수 없었다.
+
+6. 교차검증
+   $ TZ=UTC date -d &#39;14 Mar 2026 07:19:44 +0900&#39; --iso-8601=seconds
+   2026-03-13T22:19:44+00:00
+   업로드 성공(POST 200) 시각이 UTC 로 일치한다.
+
+정답: 2026-03-14 07:20:15 KST (2026-03-13 22:20:15 UTC) 에
+      /uploads/av4tar.php?cmd=id 요청 -&gt; 94ms 후 앱이 `id` 실행</code></pre></div>
+<p>3단계가 이 글의 핵심이다. <strong>오프셋을 읽지 않으면 73초 차이를 15시간 차이로 오독하고, 관련 있는 두 로그를 무관하다고 결론 내린다.</strong></p>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-075 — RFC 3339: <code>date-time</code> ABNF, <code>T</code> 구분자와 공백 허용에 관한 note, 소수 초 자리수 무제한, 오프셋 필수 규정, <code>Z</code>와 <code>-00:00</code>(&quot;오프셋 미상&quot;)의 구분</li><li>SRC-057 — Python 문서, <code>re</code> 및 <code>datetime</code>: <code>fromisoformat</code>/<code>strptime %z</code> 지원 범위, <code>replace(tzinfo=)</code>와 <code>astimezone()</code>의 의미 차이, 마이크로초 6자리 제한</li><li>ISO 8601 기본 형식·주 날짜·서수 날짜·기간(duration) 표기는 유료 표준 원문이 아니라 RFC 3339의 대비 서술과 실물 로그를 근거로 정리했으므로, 규격 세부(예: 소수점으로 쉼표 사용 허용 범위)는 표준 원문에서 확인할 것</li><li><code>fromisoformat</code>의 <code>Z</code>·콜론 없는 오프셋 지원은 Python 3.11에서 확장되었으므로 실행 환경의 버전을 확인할 것</li><li>EvtxECmd 등 도구의 CSV 출력 시간대(UTC/로컬)는 버전과 옵션에 따라 다르므로 실제 출력 헤더에서 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./apache-nginx-timestamp-regex.html">
+    <span class="rel-id">FOR-0140 · 로그/Regex</span>
+    Apache/nginx/syslog timestamp regex: 10/Oct/2000 형식과 연도 없는 syslog
+  </a>
+  <a class="related-item" href="./system-timezone.html">
+    <span class="rel-id">FOR-0054 · Registry</span>
+    SYSTEM hive 시간대(TimeZoneInformation)와 UTC/KST 보정
+  </a>
+  <a class="related-item" href="./merge-evtx-csv.html">
+    <span class="rel-id">FOR-0107 · Event Log</span>
+    여러 EVTX를 하나의 CSV로 합치기: 채널 통합·컬럼 정규화·sqlite 조인
+  </a>
+  <a class="related-item" href="./linux-path-regex.html">
+    <span class="rel-id">FOR-0138 · 로그/Regex</span>
+    Linux 경로 regex와 FHS 주요 경로별 포렌식 의미
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./linux-path-regex.html"><span class="rel-id">← FOR-0138</span>Linux 경로 regex와 FHS 주요 경로별 포렌식 의미</a>
+<a class="related-item" href="./apache-nginx-timestamp-regex.html"><span class="rel-id">FOR-0140 →</span>Apache/nginx/syslog timestamp regex: 10/Oct/2000 형식과 연도 없는 syslog</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#개념">개념</a></li>
+<li class="toc-l3"><a href="#같은-순간의-여러-표기">같은 순간의 여러 표기</a></li>
+<li class="toc-l2"><a href="#파일-경로">파일 / 경로</a></li>
+<li class="toc-l2"><a href="#주요-필드">주요 필드</a></li>
+<li class="toc-l3"><a href="#패턴-1-느슨한-후보-수집-가장-많이-쓴다">패턴 1 — 느슨한 후보 수집 (가장 많이 쓴다)</a></li>
+<li class="toc-l3"><a href="#패턴-2-실전-통합-패턴-권장">패턴 2 — 실전 통합 패턴 (권장)</a></li>
+<li class="toc-l3"><a href="#패턴-3-엄격한-rfc-3339-오프셋-필수">패턴 3 — 엄격한 RFC 3339 (오프셋 필수)</a></li>
+<li class="toc-l3"><a href="#패턴-4-iso-8601-변형들">패턴 4 — ISO 8601 변형들</a></li>
+<li class="toc-l3"><a href="#오프셋-표기와-의미">오프셋 표기와 의미</a></li>
+<li class="toc-l2"><a href="#빠른-명령">빠른 명령</a></li>
+<li class="toc-l3"><a href="#로그-병합-절차-이-글의-실사용-목적">로그 병합 절차 (이 글의 실사용 목적)</a></li>
+<li class="toc-l2"><a href="#함께-보는-artifact">함께 보는 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-실수">흔한 실수</a></li>
+<li class="toc-l2"><a href="#mini-example">mini example</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Event ID 4672 특수 권한 로그온: PrivilegeList로 관리자 세션을 확정한다 · FOR-0087 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Event%20Log">Event Log</a> / FOR-0087
+      </div>
+      <header class="article-head">
+        <h1>Event ID 4672 특수 권한 로그온: PrivilegeList로 관리자 세션을 확정한다</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Event Log</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>4672 는 로그온 세션에 민감 권한이 부여되었음을 기록하고, SubjectLogonId 로 4624 의 TargetLogonId 와 짝지어 &quot;이 세션은 관리자 권한이었다&quot;를 확정하는 것이 주 용도다. 0x3e7(SYSTEM) 4672 는 부팅 시 대량으로 쏟아지는 노이즈이므로, 비-SYSTEM 세션의 4672 만 남기면 그 시스템에서 관리자 권한을 쥔 세션 목록이 그대로 나온다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>EvtxECmd, PowerShell, Timeline Explorer, Event Viewer, wevtutil</td></tr>
+<tr><th>artifact</th><td><code>Security.evtx</code> · <code>4672</code> · <code>PrivilegeList</code> · <code>SeDebugPrivilege</code> · <code>SeBackupPrivilege</code> · <code>Audit Special Logon</code> · <code>EVTX</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Windows\System32\winevt\Logs\Security.evtx</code></td></tr>
+<tr><th>Event ID</th><td><code>4672</code></td></tr>
+<tr><th>regex</th><td><code>Se[A-Za-z]+Privilege</code> · <code>&quot;SubjectLogonId&quot;:&quot;?(0x[0-9a-fA-F]+)</code></td></tr>
+<tr><th>로그 필드</th><td><code>SubjectUserSid</code> · <code>SubjectUserName</code> · <code>SubjectDomainName</code> · <code>SubjectLogonId</code> · <code>PrivilegeList</code></td></tr>
+<tr><th>파일 형식</th><td><code>evtx</code></td></tr>
+<tr><th>검색 별칭</th><td>4672 · 관리자로 로그인했나 · 특수 권한 로그온 · sedebugprivilege · 권한 상승 흔적 · 0x3e7 4672 · 관리자 권한 확인</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>4672 는 로그온 세션에 민감 권한이 부여되었음을 기록하고, <strong><code>SubjectLogonId</code> 로 4624 의 <code>TargetLogonId</code> 와 짝지어 &quot;이 세션은 관리자 권한이었다&quot;를 확정하는 것</strong>이 주 용도다. <code>0x3e7</code>(SYSTEM) 4672 는 부팅 시 대량으로 쏟아지는 노이즈이므로, <strong>비-SYSTEM 세션의 4672 만 남기면 그 시스템에서 관리자 권한을 쥔 세션 목록이 그대로 나온다.</strong></p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;공격자가 관리자 권한을 획득했는가&quot;</li><li>&quot;이 로그온 세션은 일반 사용자인가 관리자인가&quot;</li><li>&quot;권한 상승이 언제 일어났는가&quot;</li><li>&quot;어떤 권한을 쥐었는가&quot; (데이터 반출용 백업 권한? 자격증명 탈취용 디버그 권한?)</li><li>4624 만으로는 권한 수준을 알 수 없을 때 (<code>ElevatedToken</code> 이 없는 이벤트 버전)</li></ul>
+<p>4672 는 <strong>단독으로는 아무 의미가 없다.</strong> 계정 이름과 권한 목록만 있고 접속 방식·출처 IP·세션 시작 시각이 없다. 반드시 4624 와 짝지어 읽는다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li><code>SubjectLogonId</code> ≠ <code>0x3e7</code> / <code>0x3e5</code> / <code>0x3e4</code> → <strong>사람이 쥔 관리자 권한.</strong> 여기부터 본다</li><li>4624 직후 1초 내에 4672 가 따라온다 → 그 로그온은 관리자 로그온이다</li><li><code>SubjectUserName</code> 이 서비스 계정인데 4672 가 붙었다 → 서비스 계정으로 대화형 접속했다는 이상 신호</li><li><code>PrivilegeList</code> 에 <code>SeBackupPrivilege</code> / <code>SeRestorePrivilege</code> → 파일 ACL 우회 = <strong>데이터 반출 준비</strong></li><li><code>PrivilegeList</code> 에 <code>SeLoadDriverPrivilege</code> → 드라이버 로드 = 루트킷 가능성</li><li>특정 계정의 4672 가 <strong>평소에는 없는데 사건 구간에만 있다</strong> → 그 계정이 관리자 그룹에 새로 들어갔다(4728/4732 확인)</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">EvtxECmd.exe -f &#39;C:\case\Security.evtx&#39; --inc 4672 --csv &#39;C:\case\out&#39; --csvf p.csv</code></pre></div>
+<p>SYSTEM 노이즈를 걷어내고 관리자 세션 목록을 만든다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$p = Import-Csv &#39;C:\case\out\p.csv&#39;
+
+# 원본 EventData 필드 이름으로 값을 뽑는다 (컬럼 배치 변화에 안전)
+function Fld { param($p,$n)
+  $m=[regex]::Match($p,&#39;&quot;&#39;+[regex]::Escape($n)+&#39;&quot;\s*:\s*&quot;?([^&quot;,}]*)&#39;); if($m.Success){$m.Groups[1].Value}else{&#39;&#39;} }
+
+$adm = $p | ForEach-Object {
+  [pscustomobject]@{
+    Time    = $_.TimeCreated
+    User    = Fld $_.Payload &#39;SubjectUserName&#39;
+    Domain  = Fld $_.Payload &#39;SubjectDomainName&#39;
+    Sid     = Fld $_.Payload &#39;SubjectUserSid&#39;
+    LogonId = (Fld $_.Payload &#39;SubjectLogonId&#39;).ToLower()
+    Privs   = Fld $_.Payload &#39;PrivilegeList&#39;
+  }
+} | Where-Object {
+  $_.LogonId -notin &#39;0x3e7&#39;,&#39;0x3e5&#39;,&#39;0x3e4&#39;,&#39;0x0&#39; -and
+  $_.User -notmatch &#39;\$$|^SYSTEM$|^LOCAL SERVICE$|^NETWORK SERVICE$&#39;
+}
+
+# 관리자 권한을 쥔 세션 목록 — 이 표가 이 글의 산출물
+$adm | Sort-Object Time | Format-Table Time, User, LogonId -AutoSize
+
+# 건수 비교로 노이즈 제거 효과를 확인한다
+[pscustomobject]@{ Raw = $p.Count; NonSystem = $adm.Count }</code></pre></div>
+<p><code>Raw</code> 가 7,000건인데 <code>NonSystem</code> 이 12건으로 줄어드는 것이 정상이다. <strong>그 12건이 전부 검토 대상이다.</strong></p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-필드표">1단계 — 필드표</h3>
+<p>4672 의 EventData 는 다섯 개뿐이다. 전부 &quot;권한을 받은 주체&quot;에 관한 것이다.</p>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>의미</th><th>읽는 법</th></tr></thead><tbody><tr><td><code>SubjectUserSid</code></td><td>권한을 받은 계정의 SID</td><td><code>S-1-5-18</code> = SYSTEM, <code>S-1-5-19</code> = LOCAL SERVICE, <code>S-1-5-20</code> = NETWORK SERVICE. <code>S-1-5-21-...-500</code> = 내장 Administrator</td></tr><tr><td><code>SubjectUserName</code></td><td>계정 이름</td><td><code>$</code> 로 끝나면 컴퓨터 계정</td></tr><tr><td><code>SubjectDomainName</code></td><td>계정 도메인</td><td>로컬이면 컴퓨터 이름</td></tr><tr><td><code>SubjectLogonId</code></td><td><strong>세션 ID (16진수)</strong></td><td><strong>4624 의 <code>TargetLogonId</code> 와 같은 값.</strong> 조인 키</td></tr><tr><td><code>PrivilegeList</code></td><td><strong>부여된 민감 권한 목록</strong></td><td>공백/개행으로 구분된 <code>Se*Privilege</code> 문자열들</td></tr></tbody></table></div>
+<p><code>PrivilegeList</code> 는 여러 권한이 하나의 문자열에 들어간다. 개별 권한을 세려면 쪼개야 한다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 권한별 빈도 — 어떤 권한이 어느 계정에 붙었는지
+$adm | ForEach-Object {
+  $u = $_.User
+  ($_.Privs -split &#39;[\s,;]+&#39;) | Where-Object { $_ -match &#39;^Se\w+Privilege$&#39; } |
+    ForEach-Object { [pscustomobject]@{ User=$u; Priv=$_ } }
+} | Group-Object Priv, User | Sort-Object Count -Descending |
+  Select-Object Count, Name | Format-Table -AutoSize</code></pre></div>
+<p><strong>4672 에는 <code>LogonType</code>·<code>IpAddress</code>·<code>WorkstationName</code> 이 없다.</strong> 접속 방식과 출처는 같은 <code>SubjectLogonId</code> 를 가진 4624 에서 가져온다(<a href="./event-4624-logon.html">FOR-0083</a>).</p>
+<h3 id="2단계-privilegelist-권한-의미표">2단계 — PrivilegeList 권한 의미표</h3>
+<p>4672 는 Microsoft 가 &quot;민감(sensitive)&quot; 으로 분류한 고정된 권한 집합에 대해서만 발생한다. 그 집합은 다음 13개다.</p>
+<div class="table-wrap"><table><thead><tr><th>권한</th><th>무엇을 할 수 있게 하는가</th><th>공격 관점의 의미</th><th>우선순위</th></tr></thead><tbody><tr><td><code>SeDebugPrivilege</code></td><td><strong>다른 프로세스의 메모리를 열고 조작</strong></td><td><strong>LSASS 메모리 덤프 = 자격증명 탈취.</strong> 프로세스 인젝션</td><td>최상</td></tr><tr><td><code>SeBackupPrivilege</code></td><td>파일 ACL 을 <strong>우회해 읽기</strong></td><td>접근 권한 없는 문서·하이브·<code>$MFT</code> 를 읽는다. <strong>데이터 반출</strong></td><td>최상</td></tr><tr><td><code>SeRestorePrivilege</code></td><td>파일 ACL 을 <strong>우회해 쓰기</strong>, 소유자 변경</td><td>시스템 파일 교체, 하이브 덮어쓰기</td><td>최상</td></tr><tr><td><code>SeTakeOwnershipPrivilege</code></td><td>임의 객체의 <strong>소유권 강제 획득</strong></td><td>ACL 로 막힌 대상을 통째로 가져간다</td><td>높음</td></tr><tr><td><code>SeLoadDriverPrivilege</code></td><td>커널 <strong>드라이버 로드/언로드</strong></td><td><strong>루트킷, 취약 드라이버 악용(BYOVD)</strong></td><td>최상</td></tr><tr><td><code>SeSecurityPrivilege</code></td><td>보안 로그 관리, 감사 설정 변경</td><td><strong>감사 로그 조작·삭제(1102 의 전제)</strong></td><td>최상</td></tr><tr><td><code>SeTcbPrivilege</code></td><td><strong>운영체제의 일부로 동작</strong></td><td>사실상 무제한. 토큰을 임의로 만든다</td><td>최상</td></tr><tr><td><code>SeImpersonatePrivilege</code></td><td>인증 후 <strong>클라이언트 가장</strong></td><td>토큰 가장 권한 상승(서비스 계정 탈출)</td><td>높음</td></tr><tr><td><code>SeAssignPrimaryTokenPrivilege</code></td><td>프로세스에 <strong>기본 토큰 할당</strong></td><td>다른 계정 컨텍스트로 프로세스 생성</td><td>높음</td></tr><tr><td><code>SeCreateTokenPrivilege</code></td><td><strong>액세스 토큰 직접 생성</strong></td><td>임의 신원 위조. 기본적으로 아무에게도 없다</td><td>최상</td></tr><tr><td><code>SeEnableDelegationPrivilege</code></td><td>계정을 <strong>위임 신뢰 대상으로 설정</strong></td><td>Kerberos 위임 악용</td><td>높음</td></tr><tr><td><code>SeAuditPrivilege</code></td><td>보안 감사 항목 <strong>생성</strong></td><td>위조 감사 레코드 삽입</td><td>보통</td></tr><tr><td><code>SeSystemEnvironmentPrivilege</code></td><td><strong>펌웨어 환경 변수</strong> 수정</td><td>부트 단계 지속성</td><td>보통</td></tr></tbody></table></div>
+<p><code>SeSystemtimePrivilege</code>(시스템 시각 변경)는 <strong>이 민감 권한 집합에 포함되지 않으므로 4672 의 <code>PrivilegeList</code> 에는 나타나지 않는다.</strong> 시각 조작 흔적은 4672 가 아니라 Security 채널의 4616(시스템 시간 변경)과 System 채널의 Kernel-General 이벤트에서 찾는다. 권한의 <em>사용</em>(부여가 아니라)은 4673 / 4674 에 남는다.</p>
+<h3 id="3단계-sedebugprivilege-를-정확히-읽는다">3단계 — SeDebugPrivilege 를 정확히 읽는다</h3>
+<p>여기서 흔한 오해를 바로잡는다. <strong><code>SeDebugPrivilege</code> 는 기본 설정에서 Administrators 그룹에 부여되어 있다.</strong> 따라서 기본 구성 시스템에서 관리자 계정이 로그온하면 그 4672 의 <code>PrivilegeList</code> 에는 거의 항상 <code>SeDebugPrivilege</code> 가 들어간다.</p>
+<div class="table-wrap"><table><thead><tr><th>명제</th><th>참/거짓</th></tr></thead><tbody><tr><td><code>SeDebugPrivilege</code> 가 4672 에 있다 = 자격증명 탈취가 일어났다</td><td><strong>거짓.</strong> 부여되었을 뿐 사용 여부는 알 수 없다</td></tr><tr><td><code>SeDebugPrivilege</code> 가 4672 에 있다 = 그 세션은 관리자 권한이다</td><td><strong>참.</strong> 기본 구성에서는 사실상 관리자 판별선</td></tr><tr><td>비-SYSTEM 세션의 4672 를 최우선으로 본다</td><td><strong>참.</strong> 이것이 실전 필터다</td></tr><tr><td><code>SeDebugPrivilege</code> 의 실제 사용을 확인하려면 4672 를 본다</td><td><strong>거짓.</strong> 4673(권한 사용) 또는 Sysmon 10(프로세스 접근)을 본다</td></tr></tbody></table></div>
+<p>즉 <code>SeDebugPrivilege</code> 는 <strong>&quot;이 세션은 관리자다&quot;</strong> 라는 강력한 신호이고, <strong>&quot;자격증명을 훔쳤다&quot;</strong> 는 별도 증거를 요구한다. 실전 필터는 이렇게 짠다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 최우선 검토 대상: 비-SYSTEM 세션 중 SeDebugPrivilege 를 쥔 것
+$adm | Where-Object { $_.Privs -match &#39;SeDebugPrivilege&#39; } |
+  Sort-Object Time | Format-Table Time, User, LogonId -AutoSize
+
+# 그중에서도 특히: 관리자여야 할 이유가 없는 계정
+$adm | Where-Object {
+  $_.Privs -match &#39;SeDebugPrivilege&#39; -and
+  $_.User -notmatch &#39;^(Administrator|admin|it_admin)$&#39;
+} | Sort-Object Time | Format-Table Time, User, LogonId -AutoSize
+
+# 데이터 반출 신호: 백업/복원 권한
+$adm | Where-Object { $_.Privs -match &#39;SeBackupPrivilege|SeRestorePrivilege&#39; } |
+  Sort-Object Time | Format-Table Time, User, Privs -AutoSize
+
+# 루트킷 신호: 드라이버 로드 권한
+$adm | Where-Object { $_.Privs -match &#39;SeLoadDriverPrivilege&#39; } |
+  Sort-Object Time | Format-Table Time, User, LogonId -AutoSize</code></pre></div>
+<h3 id="4단계-4624-와-짝지어-관리자-세션을-확정한다-주-용도">4단계 — 4624 와 짝지어 관리자 세션을 확정한다 (주 용도)</h3>
+<p><code>SubjectLogonId</code>(4672) = <code>TargetLogonId</code>(4624) 다. 이 조인이 4672 의 존재 이유다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$all = Import-Csv &#39;C:\case\out\all.csv&#39;   # 4624 와 4672 가 함께 든 CSV
+
+# 4624 를 LogonId 키로 색인
+$logons = @{}
+$all | Where-Object { $_.EventId -eq &#39;4624&#39; } | ForEach-Object {
+  $id = (Fld $_.Payload &#39;TargetLogonId&#39;).ToLower()
+  if ($id -and -not $logons.ContainsKey($id)) {
+    $logons[$id] = [pscustomobject]@{
+      Time = $_.TimeCreated
+      User = Fld $_.Payload &#39;TargetUserName&#39;
+      Type = Fld $_.Payload &#39;LogonType&#39;
+      Ip   = Fld $_.Payload &#39;IpAddress&#39;
+      Wks  = Fld $_.Payload &#39;WorkstationName&#39;
+    }
+  }
+}
+
+# 4672 에 4624 정보를 붙인다 — 관리자 세션 완성표
+$all | Where-Object { $_.EventId -eq &#39;4672&#39; } | ForEach-Object {
+  $id = (Fld $_.Payload &#39;SubjectLogonId&#39;).ToLower()
+  $l  = $logons[$id]
+  [pscustomobject]@{
+    PrivTime = $_.TimeCreated
+    LogonId  = $id
+    User     = Fld $_.Payload &#39;SubjectUserName&#39;
+    LogonUtc = $l.Time
+    Type     = $l.Type
+    Ip       = $l.Ip
+    Wks      = $l.Wks
+    HasDebug = [bool]($_.Payload -match &#39;SeDebugPrivilege&#39;)
+  }
+} | Where-Object {
+  $_.LogonId -notin &#39;0x3e7&#39;,&#39;0x3e5&#39;,&#39;0x3e4&#39;,&#39;0x0&#39; -and $_.User -notmatch &#39;\$$&#39;
+} | Sort-Object PrivTime | Format-Table -AutoSize</code></pre></div>
+<p>출력 예시:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">PrivTime               LogonId   User        LogonUtc               Type Ip             HasDebug
+--------               -------   ----        --------               ---- --             --------
+2026-03-14 07:18:44Z   0x1a2b3c  svc_backup  2026-03-14 07:18:44Z   10   203.0.113.77   True
+2026-03-14 09:02:11Z   0x2f4e10  jhkim       2026-03-14 09:02:11Z   10   192.168.10.24  True
+2026-03-13 00:12:03Z   0x30a112  jhkim       2026-03-13 00:12:03Z   2    -              True</code></pre></div>
+<p>이 표 한 장이 &quot;누가 언제 어디서 관리자 권한으로 들어왔는가&quot;의 완성형이다. <code>svc_backup</code> 이 공인 IP 에서 RDP 로 관리자 권한 세션을 만든 것이 즉시 보인다.</p>
+<p><strong>4672 인데 짝이 되는 4624 가 없는 경우</strong>도 있다. 원인은 세 가지다.</p>
+<div class="table-wrap"><table><thead><tr><th>원인</th><th>판정</th></tr></thead><tbody><tr><td>4624 가 로그의 시간 범위 밖 (롤오버)</td><td>첫 <code>EventRecordId</code> 확인</td></tr><tr><td>Audit Logon 은 꺼졌는데 Audit Special Logon 은 켜져 있었다</td><td>4719 확인. 4624 가 전 구간 0건</td></tr><tr><td>재부팅을 넘어 조인했다</td><td>Logon ID 는 <strong>부팅 구간 안에서만 유일</strong>하다</td></tr></tbody></table></div>
+<h3 id="5단계-system-노이즈의-정체">5단계 — SYSTEM 노이즈의 정체</h3>
+<p><code>SubjectLogonId = 0x3e7</code> 의 4672 는 부팅 직후와 서비스 시작마다 발생한다. 이유는 SYSTEM 이 위 13개 권한을 전부 갖고 있어서, SYSTEM 컨텍스트의 로그온이 만들어질 때마다 4672 가 찍히기 때문이다.</p>
+<div class="table-wrap"><table><thead><tr><th>세션 ID</th><th>계정</th><th>4672 발생 양상</th><th>처리</th></tr></thead><tbody><tr><td><code>0x3e7</code></td><td>SYSTEM (<code>S-1-5-18</code>)</td><td>부팅 시 수십~수백 건, 이후 지속</td><td><strong>제외.</strong> 단 시각은 부팅 시점 추정에 쓸 수 있다</td></tr><tr><td><code>0x3e5</code></td><td>LOCAL SERVICE (<code>S-1-5-19</code>)</td><td>서비스 시작 시</td><td>제외</td></tr><tr><td><code>0x3e4</code></td><td>NETWORK SERVICE (<code>S-1-5-20</code>)</td><td>서비스 시작 시</td><td>제외</td></tr><tr><td>컴퓨터 계정</td><td><code>WIN10$</code></td><td>도메인 인증 과정</td><td>제외</td></tr><tr><td>그 외 16진수</td><td>사람 또는 서비스 계정의 실제 세션</td><td>사건 구간에 소수</td><td><strong>전부 검토</strong></td></tr></tbody></table></div>
+<p>역으로 이용하는 방법도 있다. <strong><code>0x3e7</code> 4672 가 짧은 시간에 폭발적으로 몰린 지점은 부팅 시각의 근사치</strong>다. 6005/4608 이 지워졌을 때 부팅 경계를 추정하는 데 쓸 수 있다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 0x3e7 4672 의 분 단위 밀도 — 급증 지점이 부팅 근처
+$p | Where-Object { (Fld $_.Payload &#39;SubjectLogonId&#39;).ToLower() -eq &#39;0x3e7&#39; } |
+  Group-Object { ([datetime]$_.TimeCreated).ToString(&#39;yyyy-MM-dd HH:mm&#39;) } |
+  Sort-Object Count -Descending | Select-Object -First 10 Count, Name</code></pre></div>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">EvtxECmd CSV 한 행 (4672, 값은 예시)
+
+TimeCreated : 2026-03-14 07:18:44.9912345Z      &lt;- UTC
+EventId     : 4672
+Channel     : Security
+Computer    : WIN10-FIN01
+Payload     : {&quot;SubjectUserSid&quot;:&quot;S-1-5-21-1111111111-2222222222-3333333333-1108&quot;,
+               &quot;SubjectUserName&quot;:&quot;svc_backup&quot;,&quot;SubjectDomainName&quot;:&quot;WIN10-FIN01&quot;,
+               &quot;SubjectLogonId&quot;:&quot;0x1a2b3c&quot;,
+               &quot;PrivilegeList&quot;:&quot;SeSecurityPrivilege SeTakeOwnershipPrivilege
+                                SeLoadDriverPrivilege SeBackupPrivilege
+                                SeRestorePrivilege SeDebugPrivilege
+                                SeSystemEnvironmentPrivilege SeImpersonatePrivilege&quot;}</code></pre></div>
+<p>읽는 법: <code>svc_backup</code> 세션(<code>0x1a2b3c</code>)에 백업·복원·소유권·드라이버 로드·디버그·보안 로그 권한이 전부 부여되었다. 이는 <strong>로컬 Administrators 그룹 구성원의 표준 권한 세트</strong>이므로 &quot;관리자 권한 세션 확정&quot;으로 읽고, 개별 권한의 <em>사용</em>은 별도로 확증한다.</p>
+<p><code>PrivilegeList</code> 는 원본 XML 에서 개행과 탭이 섞인 문자열로 저장된다. CSV 로 나오면 공백으로 보이는 경우가 많으므로 <code>-split &#39;[\s,;]+&#39;</code> 로 쪼갠다.</p>
+<p><strong>EVTX 내부 <code>SystemTime</code> 은 항상 UTC 로 저장되고, EvtxECmd CSV 의 <code>TimeCreated</code> 도 UTC 다.</strong> Event Viewer 는 로컬 시간대로 변환해 보여준다. <strong>KST 로 답해야 하면 +9시간</strong>: <code>07:18:44Z</code> → <code>16:18:44 KST</code>. 4624 와 4672 는 보통 같은 초에 찍히므로, 한쪽을 로컬 시각으로 읽으면 조인은 되지만 답이 9시간 틀린다. 대상 시스템의 시간대는 <a href="./system-timezone.html">FOR-0054</a>에서 확인한다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>4672 에서 얻은 것</th><th>다음 목표</th><th>확인할 것</th></tr></thead><tbody><tr><td><code>SubjectLogonId</code></td><td>4624 (<a href="./event-4624-logon.html">FOR-0083</a>)</td><td>접속 방식, 출처 IP, 워크스테이션</td></tr><tr><td><code>SubjectLogonId</code></td><td>4634 / 4647 (<a href="./event-4634-4647-logoff.html">FOR-0085</a>)</td><td>관리자 세션의 지속 시간</td></tr><tr><td><code>SubjectLogonId</code></td><td>4688</td><td>그 관리자 세션에서 실행한 명령</td></tr><tr><td><code>SubjectLogonId</code></td><td>4648 (<a href="./event-4648-explicit-credentials.html">FOR-0086</a>)</td><td>그 권한으로 다른 서버에 붙었는가</td></tr><tr><td><code>SubjectLogonId</code></td><td>5140 / 5145</td><td>접근한 공유와 파일</td></tr><tr><td><code>SubjectUserName</code></td><td>4728 / 4732 / 4756</td><td><strong>그 계정이 언제 관리자 그룹에 들어갔는가</strong></td></tr><tr><td><code>SubjectUserName</code></td><td>4720 / 4738</td><td>계정 생성·변경 시각</td></tr><tr><td><code>SeDebugPrivilege</code></td><td>Sysmon 10 (ProcessAccess), 4673</td><td><strong>LSASS 접근이 실제로 있었는가</strong></td></tr><tr><td><code>SeBackupPrivilege</code></td><td>5145, <code>$MFT</code> (<a href="./mft-basics.html">FOR-0021</a>)</td><td>ACL 우회로 읽어 간 파일</td></tr><tr><td><code>SeSecurityPrivilege</code></td><td>1102, 4719</td><td>감사 로그를 실제로 지웠는가</td></tr><tr><td><code>SeLoadDriverPrivilege</code></td><td>System 채널 7045, Sysmon 6</td><td>로드된 드라이버와 서비스</td></tr><tr><td><code>0x3e7</code> 4672 밀도 급증</td><td>6005 / 4608 / Kernel-Power 41</td><td>부팅 시각 확정</td></tr><tr><td>4672 만 있고 4624 없음</td><td>4719 / 1102 / <code>EventRecordId</code></td><td>감사 정책 변경, 로그 삭제, 롤오버</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>SeDebugPrivilege</code> 를 보고 곧바로 &quot;자격증명 탈취&quot;라고 단정하는 것.</strong> 이 권한은 기본 설정에서 Administrators 그룹에 부여되어 있어 <strong>모든 관리자 로그온의 4672 에 거의 항상 포함된다.</strong> 부여는 사용이 아니다. 실제 사용은 4673 또는 Sysmon 10(LSASS 프로세스 접근)으로 확증한다.</li><li><strong><code>0x3e7</code> 을 계정 이름이나 특별한 값으로 취급하는 것.</strong> SYSTEM 세션 ID 다. 부팅 시 수백 건이 정상적으로 발생한다. 제외하지 않으면 표가 SYSTEM 으로 가득 찬다.</li><li><strong>4672 만 보고 결론을 내는 것.</strong> 4672 에는 <code>LogonType</code>·<code>IpAddress</code>·<code>WorkstationName</code> 이 <strong>없다.</strong> 접속 방식과 출처를 알려면 반드시 4624 와 조인해야 한다.</li><li><strong>4672 의 필드를 <code>Target*</code> 으로 찾는 것.</strong> 4672 는 <code>Subject*</code> 만 갖는다. <code>TargetLogonId</code> 는 존재하지 않는다. 반대로 4634/4647 은 <code>Target*</code> 만 갖는다 — 이벤트마다 접두어가 다르다.</li><li><strong><code>PrivilegeList</code> 를 하나의 값으로 필터하는 것.</strong> 여러 권한이 한 문자열에 개행·탭·공백으로 섞여 있다. <code>-eq &#39;SeDebugPrivilege&#39;</code> 는 절대 맞지 않는다. <code>-match</code> 또는 <code>-split</code> 을 쓴다.</li><li><strong><code>SeSystemtimePrivilege</code> 를 <code>PrivilegeList</code> 에서 찾는 것.</strong> 민감 권한 집합에 없으므로 4672 에 나타나지 않는다. 시각 조작은 4616(시스템 시간 변경)에서 찾는다.</li><li><strong>4672 가 없으면 관리자 권한이 없었다고 결론 내는 것.</strong> Audit Special Logon 하위 범주가 꺼져 있으면 아예 기록되지 않는다. 4719 를 확인하고, 4624 의 <code>ElevatedToken</code> 또는 4688 의 실행 내용으로 대체 판정한다.</li><li><strong>재부팅을 넘어 <code>SubjectLogonId</code> 로 조인하는 것.</strong> Logon ID 는 <strong>같은 컴퓨터의 같은 부팅 구간에서만 유일</strong>하다. 부팅 경계를 무시하면 다른 세션이 잘못 붙는다.</li><li><strong>16진수 대소문자.</strong> <code>0x1A2B3C</code> / <code>0x1a2b3c</code> 가 섞여 나온다. 조인 전에 <code>.ToLower()</code> 로 정규화하지 않으면 짝이 하나도 안 맞는다.</li><li><strong>정상 관리자 활동을 전부 공격으로 세는 것.</strong> 도메인 컨트롤러와 관리용 점프 호스트에서는 비-SYSTEM 4672 가 상시 발생한다. 워크스테이션에서는 드물다. <strong>호스트 역할에 따라 기준선이 완전히 다르다.</strong></li><li><strong>UTC/KST 혼동.</strong> 4624 와 4672 는 같은 초에 찍히므로 조인 자체는 성공하지만, 시각을 로컬로 읽으면 답이 9시간 틀린다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># A) 4624 와 4672 가 같은 LogonId 로 짝을 이루는지 (관리자 로그온 확정)
+$sid = &#39;0x1a2b3c&#39;
+Import-Csv &#39;C:\case\out\all.csv&#39; |
+  Where-Object { $_.Payload -imatch [regex]::Escape($sid) } |
+  Sort-Object TimeCreated |
+  Select-Object TimeCreated, EventId, MapDescription
+
+# B) 그 계정이 관리자 그룹에 언제 들어갔는가 — 4728/4732/4756
+Import-Csv &#39;C:\case\out\all.csv&#39; |
+  Where-Object { $_.EventId -in &#39;4720&#39;,&#39;4728&#39;,&#39;4732&#39;,&#39;4756&#39;,&#39;4738&#39; } |
+  Select-Object TimeCreated, EventId, MapDescription, UserName
+
+# C) 권한이 실제로 사용되었는가 — 4673 (Audit Sensitive Privilege Use)
+Import-Csv &#39;C:\case\out\all.csv&#39; |
+  Where-Object { $_.EventId -in &#39;4673&#39;,&#39;4674&#39; } |
+  Select-Object TimeCreated, EventId, MapDescription
+
+# D) 감사 정책이 Special Logon 을 기록하고 있었는가
+Import-Csv &#39;C:\case\out\all.csv&#39; |
+  Where-Object { $_.EventId -in &#39;4719&#39;,&#39;1102&#39; } |
+  Select-Object TimeCreated, EventId, MapDescription
+
+# E) XPath 로 특정 세션의 4672 만
+wevtutil qe &#39;C:\case\Security.evtx&#39; /lf:true /f:text `
+  /q:&quot;*[System[(EventID=4672)]] and *[EventData[Data[@Name=&#39;SubjectLogonId&#39;]=&#39;0x1a2b3c&#39;]]&quot;
+
+# F) 도구 독립 검증 — 건수 대조
+(Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\Security.evtx&#39;; Id=4672}).Count</code></pre></div>
+<p>B 가 특히 강력하다. <strong>4672 가 나타난 계정이 사건 직전에 4732(로컬 그룹 구성원 추가)로 Administrators 에 들어갔다면 권한 상승 시각이 초 단위로 확정된다.</strong></p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;공격자가 관리자 권한을 획득한 시각(KST)과 그때 사용한 계정을 구하세요.
+ 첨부: Security.evtx (48,213 events)&quot;
+
+1. EvtxECmd.exe -f Security.evtx --inc 4624,4672,4732 --csv out --csvf all.csv
+   -&gt; 4672 가 7,120건.
+
+2. 첫 시도 (실패한 접근):
+   4672 를 SeDebugPrivilege 로 필터했다.
+
+     Import-Csv out\all.csv |
+       Where-Object { $_.EventId -eq &#39;4672&#39; -and $_.Payload -match &#39;SeDebugPrivilege&#39; }
+     -&gt; 7,118건. 거의 줄지 않았다.
+
+   왜 틀렸나 (두 가지):
+   (a) SeDebugPrivilege 는 SYSTEM 도 갖고 있다. SYSTEM 4672 가 7천 건이므로
+       이 권한으로 필터하는 것은 필터가 아니다.
+   (b) 애초에 SeDebugPrivilege 는 Administrators 기본 권한이라
+       &quot;특별히 수상한 권한&quot;이 아니다. 판별력이 없다.
+
+3. 방향 전환 — 주체 세션 ID 로 먼저 걷어낸다:
+     Import-Csv out\all.csv |
+       Where-Object { $_.EventId -eq &#39;4672&#39; } | ForEach-Object {
+         [pscustomobject]@{
+           Time = $_.TimeCreated
+           User = Fld $_.Payload &#39;SubjectUserName&#39;
+           Id   = (Fld $_.Payload &#39;SubjectLogonId&#39;).ToLower()
+         }
+       } | Where-Object { $_.Id -notin &#39;0x3e7&#39;,&#39;0x3e5&#39;,&#39;0x3e4&#39; -and $_.User -notmatch &#39;\$$&#39; }
+
+   -&gt; 7,120건 -&gt; 12건. 볼 수 있는 크기가 됐다.
+
+     Time                   User        Id
+     2026-03-13 00:12:03Z   jhkim       0x30a112
+     2026-03-13 08:41:55Z   Administrator 0x9c114
+     ... (8건 생략, 모두 jhkim / Administrator)
+     2026-03-14 07:18:44Z   svc_backup  0x1a2b3c   &lt;- 처음 보는 계정
+     2026-03-14 09:02:11Z   jhkim       0x2f4e10
+
+4. 4624 와 조인해 접속 방식과 출처를 붙인다:
+     PrivTime               LogonId   User        Type Ip
+     2026-03-14 07:18:44Z   0x1a2b3c  svc_backup  10   203.0.113.77
+     2026-03-14 09:02:11Z   0x2f4e10  jhkim       10   192.168.10.24
+
+   -&gt; svc_backup: 서비스 계정인데 RDP(Type 10), 공인 IP. 조합이 부자연스럽다.
+
+5. 세 번째 확인 (여기서 한 번 더 막혔다):
+   &quot;svc_backup 은 원래 관리자였나?&quot;를 확인하지 않고 07:18:44 를 답했다.
+   그런데 svc_backup 의 4672 는 이 한 건이 전부였다.
+   평소에 관리자 권한을 쓴 적이 없는 계정이라는 뜻이다.
+
+   -&gt; 4732 를 확인한다:
+     2026-03-14 07:20:31Z  4732  Administrators 그룹에 svc_backup 추가
+                                 (SubjectUserName=svc_backup, SubjectLogonId=0x1a2b3c)
+
+   즉 07:18:44 에 이미 관리자 권한으로 로그온했고(계정이 원래 로컬 관리자였다),
+   07:20:31 에 자기 자신을 그룹에 명시적으로 추가해 지속성을 확보했다.
+   &quot;권한 획득 시각&quot;은 4672 가 처음 붙은 07:18:44 다.
+
+6. PrivilegeList 확인:
+   SeSecurityPrivilege SeTakeOwnershipPrivilege SeLoadDriverPrivilege
+   SeBackupPrivilege SeRestorePrivilege SeDebugPrivilege
+   SeSystemEnvironmentPrivilege SeImpersonatePrivilege
+   -&gt; SeBackupPrivilege 존재. ACL 우회 읽기 가능 = 데이터 반출 능력.
+
+7. 세션 활동 확인 (0x1a2b3c 로 4688):
+   07:19:31Z  cmd.exe
+   07:20:08Z  powershell.exe -enc SQBFAFgA...
+   07:24:55Z  C:\Users\svc_backup\Downloads\rclone.exe   &lt;- 반출 도구
+
+8. 시각 변환: 07:18:44Z + 9h = 2026-03-14 16:18:44 KST
+
+정답: svc_backup, 2026-03-14 16:18:44 KST</code></pre></div>
+<p>2단계의 실패가 이 글의 요점이다. <strong><code>SeDebugPrivilege</code> 로 필터하면 7,120건이 7,118건이 된다 — SYSTEM 이 그 권한을 갖고 있고, 관리자면 누구나 갖고 있기 때문이다.</strong> 실제로 작동하는 필터는 권한 이름이 아니라 <strong><code>SubjectLogonId</code> 가 <code>0x3e7</code>/<code>0x3e5</code>/<code>0x3e4</code> 가 아니라는 조건</strong>이고, 그것만으로 7,120건이 12건이 된다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>SubjectLogonId</code> 가 <code>0x3e7</code>/<code>0x3e5</code>/<code>0x3e4</code>/<code>0x0</code> 인 행을 제외했는가 — 이것만으로 99% 감소</li><li>컴퓨터 계정(<code>$</code> 로 끝남)을 제외했는가</li><li><code>SubjectLogonId</code> 를 <code>.ToLower()</code> 로 정규화하고 4624 와 조인했는가</li><li>4672 만 보고 <code>LogonType</code>/<code>IpAddress</code> 를 찾고 있지 않은가 — 그 필드는 4624 에 있다</li><li><code>PrivilegeList</code> 를 <code>-split</code> 으로 쪼개 개별 권한을 셌는가</li><li><code>SeBackupPrivilege</code> / <code>SeRestorePrivilege</code> / <code>SeLoadDriverPrivilege</code> / <code>SeSecurityPrivilege</code> 가 있는가 — 각각 반출·루트킷·로그 조작 신호</li><li>그 계정이 <strong>평소에도</strong> 4672 를 갖는 계정인가 — 기준선 비교가 판정의 절반이다</li><li>4728 / 4732 / 4756 을 확인했는가 — 관리자 그룹 편입 시각</li><li>권한의 실제 사용이 필요하면 4673 / Sysmon 10 을 봤는가</li><li>4672 가 전 구간 0건이면 → 4719(감사 정책 변경), 1102(로그 삭제)</li><li>호스트 역할을 고려했는가 — DC/점프 호스트는 비-SYSTEM 4672 가 정상적으로 많다</li><li>답이 UTC 인지 KST 인지 확인했는가 (+9시간)</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-022 — Microsoft Learn, Advanced security audit policy settings: 4672 가 속한 Audit Special Logon 하위 범주, 4673/4674(권한 사용) 및 4728/4732/4756(그룹 편입)과의 관계</li><li>SRC-001 — Microsoft Learn, Event 4624: <code>TargetLogonId</code> 와 4672 의 <code>SubjectLogonId</code> 가 동일한 세션 식별자라는 점, Logon ID 가 같은 부팅 구간에서만 유일하다는 점</li><li>SRC-086 — MITRE ATT&amp;CK Enterprise: <code>SeDebugPrivilege</code> 를 이용한 OS 자격증명 덤프, <code>SeLoadDriverPrivilege</code> 를 이용한 취약 드라이버 악용, <code>SeBackupPrivilege</code> 를 이용한 ACL 우회 데이터 수집</li><li><code>PrivilegeList</code> 에 실제로 나타나는 권한 집합은 로컬 보안 정책의 권한 할당에 따라 달라진다. 위 13개는 Microsoft 가 민감 권한으로 분류한 목록이며, 개별 시스템에서는 실제 이벤트의 <code>PrivilegeList</code> 값을 그대로 확인할 것</li></ul>
+<p>&lt;/content&gt;</p>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./event-4624-logon.html">
+    <span class="rel-id">FOR-0083 · Event Log</span>
+    Event ID 4624 성공 로그온 분석: 누가 어디서 어떻게 들어왔나
+  </a>
+  <a class="related-item" href="./event-4648-explicit-credentials.html">
+    <span class="rel-id">FOR-0086 · Event Log</span>
+    Event ID 4648 명시적 자격증명 로그온: runas와 측면 이동을 한 줄로 잡는다
+  </a>
+  <a class="related-item" href="./event-4634-4647-logoff.html">
+    <span class="rel-id">FOR-0085 · Event Log</span>
+    Event ID 4634 / 4647 로그오프: TargetLogonId로 세션 지속 시간을 계산한다
+  </a>
+  <a class="related-item" href="./logon-id-session-linking.html">
+    <span class="rel-id">FOR-0104 · Event Log</span>
+    Logon ID로 세션 전체 조립하기: TargetLogonId·SubjectLogonId 조인 절차
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./event-4648-explicit-credentials.html"><span class="rel-id">← FOR-0086</span>Event ID 4648 명시적 자격증명 로그온: runas와 측면 이동을 한 줄로 잡는다</a>
+<a class="related-item" href="./event-4688-process-creation.html"><span class="rel-id">FOR-0088 →</span>Event ID 4688 프로세스 생성: CommandLine 과 부모-자식 체인 재구성</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-필드표">1단계 — 필드표</a></li>
+<li class="toc-l3"><a href="#2단계-privilegelist-권한-의미표">2단계 — PrivilegeList 권한 의미표</a></li>
+<li class="toc-l3"><a href="#3단계-sedebugprivilege-를-정확히-읽는다">3단계 — SeDebugPrivilege 를 정확히 읽는다</a></li>
+<li class="toc-l3"><a href="#4단계-4624-와-짝지어-관리자-세션을-확정한다-주-용도">4단계 — 4624 와 짝지어 관리자 세션을 확정한다 (주 용도)</a></li>
+<li class="toc-l3"><a href="#5단계-system-노이즈의-정체">5단계 — SYSTEM 노이즈의 정체</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

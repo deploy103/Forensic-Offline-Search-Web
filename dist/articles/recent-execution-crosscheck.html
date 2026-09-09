@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>프로그램 실행 흔적 교차검증: 12개 증거원 비교표 · FOR-0076 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Registry">Registry</a> / FOR-0076
+      </div>
+      <header class="article-head">
+        <h1>프로그램 실행 흔적 교차검증: 12개 증거원 비교표</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Registry</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>&quot;이 프로그램이 실행되었는가&quot;는 단일 artifact로 답하지 않는다 — 기록 주체가 서로 다른 증거원 최소 2개(가능하면 3개)가 같은 방향을 가리킬 때만 실행을 단정하고, Shimcache처럼 실행을 보장하지 않는 것은 확증 카운트에 넣지 않는다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>RegRipper, RegistryExplorer, AppCompatCacheParser, AmcacheParser, PECmd, WinPrefetchView, EvtxECmd, Timeline Explorer, rla</td></tr>
+<tr><th>artifact</th><td><code>UserAssist</code> · <code>Prefetch</code> · <code>Amcache</code> · <code>Shimcache</code> · <code>AppCompatCache</code> · <code>BAM</code> · <code>DAM</code> · <code>MUICache</code> · <code>SRUM</code> · <code>Jump List</code> · <code>LNK</code> · <code>$MFT</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Windows\Prefetch</code> · <code>C:\Windows\AppCompat\Programs\Amcache.hve</code> · <code>C:\Windows\System32\sru\SRUDB.dat</code> · <code>C:\Users\&lt;user&gt;\AppData\Roaming\Microsoft\Windows\Recent</code> · <code>C:\Users\&lt;user&gt;\AppData\Roaming\Microsoft\Windows\Recent\AutomaticDestinations</code> · <code>C:\Windows\appcompat\pca\PcaAppLaunchDic.txt</code> · <code>C:\ProgramData\Microsoft\Windows\WER\ReportArchive</code></td></tr>
+<tr><th>레지스트리</th><td><code>SYSTEM\ControlSet001\Control\Session Manager\AppCompatCache</code> · <code>SYSTEM\ControlSet001\Services\bam\State\UserSettings</code> · <code>SYSTEM\ControlSet001\Services\dam\State\UserSettings</code> · <code>NTUSER.DAT\Software\Microsoft\Windows\CurrentVersion\Explorer\UserAssist</code> · <code>UsrClass.dat\Local Settings\Software\Microsoft\Windows\Shell\MuiCache</code> · <code>NTUSER.DAT\Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Compatibility Assistant\Store</code></td></tr>
+<tr><th>로그 필드</th><td><code>Run Count</code> · <code>Last Executed</code> · <code>LastRun</code> · <code>SourceCreated</code> · <code>LastModifiedTimeUTC</code> · <code>Executed</code> · <code>FileId</code> · <code>LinkDate</code> · <code>SubjectUserSid</code> · <code>CommandLine</code></td></tr>
+<tr><th>파일 형식</th><td><code>regf</code> · <code>pf</code> · <code>hve</code> · <code>lnk</code></td></tr>
+<tr><th>검색 별칭</th><td>실행했는지 확인 · 프로그램 실행 증거 · 실행 흔적 비교 · 어디서 실행 확인 · 실행 안 했다고 주장 · 실행 증거 교차검증</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>&quot;이 프로그램이 실행되었는가&quot;는 단일 artifact로 답하지 않는다 — <strong>기록 주체가 서로 다른 증거원 최소 2개(가능하면 3개)가 같은 방향을 가리킬 때만</strong> 실행을 단정하고, Shimcache처럼 실행을 보장하지 않는 것은 확증 카운트에 넣지 않는다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;피의자가 이 도구를 실행했는가&quot; — 실행 부인에 대한 반박</li><li>&quot;언제 실행했는가&quot; — 여러 artifact의 시각이 서로 다르다</li><li>&quot;몇 번 실행했는가&quot; — UserAssist와 Prefetch의 횟수가 다르다</li><li>Shimcache나 Amcache에만 이름이 있고 다른 곳엔 없다</li><li>실행 흔적이 하나도 없는데 실행되었다고 봐야 할 근거가 필요하다</li><li>반포렌식(Prefetch 삭제, 로그 소거)이 의심된다</li></ul>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>지문이 &quot;실행&quot;이라는 단어를 쓴다 → 무엇을 실행 증거로 인정할지부터 정한다</li><li>지문이 &quot;사용자가 직접&quot;이라고 한다 → UserAssist·Jump List 쪽으로 무게가 간다</li><li>지문이 &quot;몇 번&quot;이라고 한다 → 실행 횟수를 가진 artifact는 UserAssist와 Prefetch뿐이다</li><li>지문이 &quot;명령행 인자&quot;를 묻는다 → 레지스트리에는 없다. 4688·Sysmon 1·4104로 간다</li><li>첨부에 Prefetch 폴더가 없다 → 삭제됐는지, 애초에 비활성이었는지부터 판정한다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">PECmd.exe -d &quot;C:\case\Prefetch&quot; --csv &quot;C:\case\out&quot; --csvf pf.csv</code></pre></div>
+<p>세 줄로 1차 스캔을 끝낸다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) 실행 사실 + 횟수 + 최근 8회 시각
+PECmd.exe -d &quot;C:\case\Prefetch&quot; --csv &quot;C:\case\out&quot; --csvf pf.csv
+# 2) 사용자가 직접 실행했는가 + 횟수
+rip.exe -r &quot;C:\case\NTUSER.DAT&quot; -p userassist
+# 3) 사용자별 최근 실행 시각 (BAM)
+rip.exe -r &quot;C:\case\SYSTEM&quot; -p bam</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-증거원-비교표-이-글의-본체">1단계 — 증거원 비교표 (이 글의 본체)</h3>
+<div class="table-wrap"><table><thead><tr><th>artifact</th><th>기록 주체</th><th>실행 횟수</th><th>시각 개수</th><th>사용자 특정</th><th>&quot;실행&quot;을 보장하나</th><th>보존 특성</th></tr></thead><tbody><tr><td><strong>UserAssist</strong></td><td>Explorer (셸)</td><td><strong>있음</strong></td><td>마지막 1개</td><td><strong>가능</strong> (사용자 hive)</td><td>실행 보장. 단 <strong>Explorer 경유만</strong></td><td>프로필이 남는 동안 계속</td></tr><tr><td><strong>Prefetch</strong></td><td>커널 (Superfetch/Sysmain)</td><td><strong>있음</strong></td><td>Win8+ <strong>최근 8개</strong>, Win7은 1개</td><td>불가</td><td><strong>실행 보장</strong> (가장 강한 단독 증거)</td><td>Win8+ 최대 1024개 파일, 넘으면 오래된 것부터 삭제</td></tr><tr><td><strong>Amcache</strong></td><td>Appraiser 예약 작업</td><td>없음</td><td>등록 시각(키 LastWrite) + <code>LinkDate</code></td><td>불가</td><td><strong>보장 안 됨</strong> — 디스크에 있는 파일을 목록화</td><td>hive가 살아 있는 동안. 삭제된 파일도 남는다</td></tr><tr><td><strong>Shimcache / AppCompatCache</strong></td><td>커널 (shim 엔진)</td><td>없음</td><td>1개 — <strong>파일의 수정 시각</strong></td><td>불가</td><td><strong>보장 안 됨</strong> — 존재/호환성 검사일 수 있다</td><td>엔트리 상한 존재. <strong>종료 시 디스크에 기록</strong></td></tr><tr><td><strong>BAM / DAM</strong></td><td>백그라운드 활동 조절 서비스</td><td>없음</td><td>마지막 1개</td><td><strong>가능</strong> (키 이름이 SID)</td><td>실행 보장</td><td><strong>약 1주 단위로 정리</strong>된다. 오래된 것은 없다</td></tr><tr><td><strong>MUICache</strong></td><td>Explorer (셸)</td><td>없음</td><td><strong>없음</strong></td><td><strong>가능</strong> (사용자 hive)</td><td>강한 연관. 단독으로는 약하다</td><td>사용자 hive가 남는 동안</td></tr><tr><td><strong>SRUM</strong></td><td>진단 정책 서비스</td><td>없음</td><td>시간 단위 사용량 레코드 다수</td><td><strong>가능</strong> (사용자 SID)</td><td>실행 + 자원 사용 보장</td><td>약 30~60일. 주기적으로 DB에 기록</td></tr><tr><td><strong>EVTX 4688</strong></td><td>감사 정책</td><td>없음 (건별)</td><td><strong>모든 실행이 1건씩</strong></td><td><strong>가능</strong> (<code>SubjectUserSid</code>)</td><td><strong>실행 보장 + 명령행</strong></td><td>감사 정책이 켜져 있어야 존재. 로그 크기만큼</td></tr><tr><td><strong>Sysmon Event ID 1</strong></td><td>Sysmon 드라이버</td><td>없음 (건별)</td><td><strong>모든 실행이 1건씩</strong></td><td><strong>가능</strong></td><td><strong>실행 보장 + 해시 + 부모</strong></td><td>Sysmon이 설치된 환경에서만</td></tr><tr><td><strong>$MFT</strong></td><td>파일시스템</td><td>없음</td><td>파일의 MACB</td><td>불가</td><td><strong>실행과 무관</strong> — 존재와 시각만</td><td>볼륨이 있는 동안</td></tr><tr><td><strong>Jump List</strong></td><td>Explorer (셸)</td><td>항목별 접근 횟수</td><td>항목별 접근 시각</td><td><strong>가능</strong></td><td>앱 <strong>사용</strong> 보장 (문서 단위)</td><td>사용자 프로필 안</td></tr><tr><td><strong>LNK (Recent)</strong></td><td>Explorer (셸)</td><td>없음</td><td>대상 파일의 MACB + LNK 자체 MACB</td><td><strong>가능</strong></td><td><strong>파일 열기</strong> 보장. 프로그램 실행 증거는 아니다</td><td>사용자 프로필 안</td></tr></tbody></table></div>
+<p><strong>기록 주체 칼럼이 이 표의 핵심이다.</strong> 같은 주체(예: Explorer)에서 나온 세 가지는 서로를 확증하지 못한다. 하나의 원인(사용자가 Explorer를 썼다)에서 파생된 세 흔적이기 때문이다. <strong>주체가 다른 두 개</strong>를 골라야 진짜 교차검증이다.</p>
+<div class="table-wrap"><table><thead><tr><th>주체 계열</th><th>여기 속한 artifact</th></tr></thead><tbody><tr><td>셸(Explorer)</td><td>UserAssist, MUICache, Jump List, LNK, <code>Compatibility Assistant\Store</code></td></tr><tr><td>커널</td><td>Prefetch, Shimcache</td></tr><tr><td>서비스/예약 작업</td><td>Amcache, BAM/DAM, SRUM, PCA 로그</td></tr><tr><td>감사/모니터링</td><td>4688, Sysmon 1, 4104</td></tr><tr><td>파일시스템</td><td><code>$MFT</code>, <code>$UsnJrnl</code></td></tr></tbody></table></div>
+<h3 id="2단계-실행을-의미하지-않는-경우">2단계 — &quot;실행&quot;을 의미하지 않는 경우</h3>
+<p>이 단계를 건너뛰면 오답이 된다.</p>
+<div class="table-wrap"><table><thead><tr><th>artifact</th><th>실행 없이도 생기는 경우</th><th>그래서 어떻게 쓰나</th></tr></thead><tbody><tr><td><strong>Shimcache</strong></td><td>파일이 <strong>존재</strong>하기만 해도 shim 엔진이 검사하며 엔트리가 생길 수 있다. 폴더를 탐색기로 열어 실행 파일이 나열되는 것만으로도 등록되는 사례가 보고된다</td><td>&quot;그 경로에 그 파일이 <strong>있었다</strong>&quot;는 증거로만 쓴다. 실행 확증 카운트에 넣지 않는다</td></tr><tr><td><strong>Amcache</strong></td><td>Appraiser가 디스크를 스캔해 목록화한다. 압축을 풀어 놓기만 한 파일도 등록된다</td><td>파일의 <strong>존재·해시·경로</strong> 증거. 실행은 다른 곳에서</td></tr><tr><td><strong>MUICache</strong></td><td>셸이 그 실행 파일의 표시 이름을 조회할 때 등록된다. 실행 외 경로로 생길 수 있다</td><td>보조 근거. 시각이 없어 단독으로는 시점을 못 준다</td></tr><tr><td><strong>LNK / RecentDocs</strong></td><td><strong>문서를 열었다</strong>는 기록이다. 그 문서를 연 프로그램의 실행은 간접 증거</td><td>파일 접근 증거로 쓰고, 프로그램 실행은 따로 확증</td></tr><tr><td><strong><code>$MFT</code></strong></td><td>파일이 디스크에 있다는 것뿐이다</td><td>실행 파일이 언제 생겼는지(다운로드 시각)에 쓴다</td></tr><tr><td><strong>Prefetch</strong></td><td><code>.pf</code>가 있으면 실행됐다고 봐도 된다. 다만 <strong>다른 경로의 동명 파일은 별개 <code>.pf</code></strong> 이고, 파일명 해시는 경로에서 계산된다</td><td>강한 증거. 단 <code>.pf</code> 하나가 어느 경로의 실행인지는 내부 참조 목록으로 확인</td></tr><tr><td><strong>Amcache <code>LinkDate</code></strong></td><td>PE 헤더의 컴파일 시각이다. <strong>공격자가 조작할 수 있다</strong></td><td>실행 시각이 아니다. 동일 도구 식별용</td></tr><tr><td><strong>Shimcache의 시각</strong></td><td>파일의 <code>$SI</code> 수정 시각이다</td><td>실행 시각으로 쓰면 오답이다. <code>$MFT</code>와 대조해 확인</td></tr></tbody></table></div>
+<p><strong>한 문장으로: Shimcache와 Amcache는 &quot;있었다&quot;의 증거, Prefetch·UserAssist·BAM·4688은 &quot;실행됐다&quot;의 증거다.</strong></p>
+<h3 id="3단계-확증-절차">3단계 — 확증 절차</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1. 대상 실행 파일 이름/경로를 확정한다 (부분 문자열이라도)
+2. &quot;실행 보장&quot; 열이 참인 것부터 본다:
+     Prefetch -&gt; UserAssist -&gt; BAM -&gt; 4688/Sysmon 1 -&gt; SRUM
+3. 주체가 다른 2개에서 나오면 실행 확정
+4. 3개가 같은 시각대를 가리키면 시각까지 확정
+5. Shimcache/Amcache/MUICache 는 &quot;존재/등록&quot; 증거로 별도 기술
+6. 시각은 전부 UTC 로 모은 뒤 마지막에 한 번만 KST 보정한다</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 대상 이름으로 4개 CSV 를 동시에 훑는다
+$t = &#39;dump_tool&#39;
+Import-Csv &quot;C:\case\out\pf.csv&quot;  | Where-Object { $_.ExecutableName -match $t } |
+  Format-Table SourceFilename, RunCount, LastRun, SourceCreated
+Import-Csv &quot;C:\case\out\appcompat.csv&quot; | Where-Object { $_.Path -match $t } |
+  Format-Table ControlSet, CacheEntryPosition, Path, LastModifiedTimeUTC, Executed
+Import-Csv &quot;C:\case\out\amcache_associated.csv&quot; | Where-Object { $_.FullPath -match $t } |
+  Format-Table FullPath, SHA1, FileSize, LinkDate
+Import-Csv &quot;C:\case\out\evt.csv&quot; | Where-Object { $_.Payload -match $t } |
+  Format-Table TimeCreated, EventId, UserName, Payload</code></pre></div>
+<h3 id="4단계-시각이-서로-어긋날-때">4단계 — 시각이 서로 어긋날 때</h3>
+<p>각 artifact의 시각은 <strong>서로 다른 사건의 시각</strong>이다. 어긋나는 것이 정상이고, 어긋나는 방향이 정보다.</p>
+<div class="table-wrap"><table><thead><tr><th>관측</th><th>해석</th></tr></thead><tbody><tr><td>Prefetch <code>LastRun</code> &gt; UserAssist <code>Last Executed</code></td><td>마지막 실행이 Explorer 경유가 아니었다 (콘솔·스케줄러·스크립트)</td></tr><tr><td>UserAssist <code>Run Count</code> &gt; Prefetch <code>Run Count</code></td><td>Prefetch가 삭제·순환되었거나 다른 경로의 <code>.pf</code>로 분리됐다</td></tr><tr><td>Prefetch <code>Run Count</code> &gt; UserAssist <code>Run Count</code></td><td>자동 실행이 섞여 있다. 사용자 의도와 자동화를 분리해야 한다</td></tr><tr><td>Shimcache 시각 &lt; Prefetch 최초 실행</td><td>정상이다. Shimcache는 <strong>파일 수정 시각</strong>이므로 실행보다 앞선다</td></tr><tr><td>Shimcache 시각 &gt; 모든 실행 시각</td><td>파일이 실행 이후 교체되었거나 타임스탬프가 조작됐다</td></tr><tr><td>Amcache 등록 시각 ≫ 실행 시각</td><td>Appraiser가 나중에 스캔한 것이다. 실행 시각으로 쓰지 않는다</td></tr><tr><td>BAM에는 있고 Prefetch에는 없다</td><td>Prefetch가 삭제되었거나 비활성. <strong>BAM은 약 1주만 남으므로 최근 실행이라는 뜻</strong></td></tr><tr><td>Prefetch에는 있고 BAM에는 없다</td><td>1주보다 오래된 실행이다</td></tr><tr><td>4688은 있는데 Prefetch가 없다</td><td>Prefetch 비활성/삭제, 또는 매우 짧은 실행</td></tr><tr><td>Prefetch <code>.pf</code> 생성 시각이 실행보다 몇 초 늦다</td><td>정상이다. <code>.pf</code> 쓰기가 실행 직후 잠깐 지연된다</td></tr></tbody></table></div>
+<p><strong>Prefetch 파일 자체의 <code>$MFT</code> 생성 시각 ≈ 최초 실행 시각</strong>, <strong><code>.pf</code>의 수정 시각 ≈ 마지막 실행 시각</strong>이다. 파서 출력이 의심스러울 때 <code>$MFT</code>로 검증하는 우회로다 (<a href="./mft-basics.html">FOR-0021</a>).</p>
+<h3 id="5단계-하나도-없을-때">5단계 — 하나도 없을 때</h3>
+<div class="table-wrap"><table><thead><tr><th>확인</th><th>방법</th><th>판정</th></tr></thead><tbody><tr><td>Prefetch가 애초에 켜져 있었나</td><td><code>SYSTEM\ControlSet001\Control\Session Manager\Memory Management\PrefetchParameters</code>의 <code>EnablePrefetcher</code></td><td><code>0</code>이면 비활성. 부재가 반증이 아니다</td></tr><tr><td>Prefetch가 삭제됐나</td><td><code>$UsnJrnl</code>에서 <code>C:\Windows\Prefetch</code> 하위의 <code>FileDelete</code></td><td>대량 삭제면 반포렌식 (<a href="./usn-reason-flags.html">FOR-0028</a>)</td></tr><tr><td>다른 사용자 프로필인가</td><td>모든 <code>NTUSER.DAT</code>/<code>UsrClass.dat</code></td><td>사용자를 놓쳤을 수 있다</td></tr><tr><td>볼륨 섀도 카피가 있나</td><td>이전 시점의 hive·Prefetch</td><td>삭제 전 상태 회수</td></tr><tr><td>메모리 덤프가 있나</td><td>프로세스 목록·명령행 (<a href="./volatility-pslist.html">FOR-0214</a>)</td><td>실행 중이었다면 결정적</td></tr><tr><td>파일 자체는 남아 있나</td><td><code>$MFT</code>, 카빙</td><td>존재만이라도 증명</td></tr><tr><td>실행 파일이 삭제됐나</td><td><code>$UsnJrnl</code>, <code>$Recycle.Bin</code></td><td>삭제 시각이 실행 이후임을 보이면 정황 확보</td></tr><tr><td>부수 흔적이 있나</td><td>WER 크래시 보고서, 프로그램이 만든 로그·설정 파일·레지스트리 키</td><td>프로그램이 <strong>동작한 결과물</strong>이 실행의 증거가 된다</td></tr></tbody></table></div>
+<p><strong>부재를 실행하지 않았다는 증거로 쓰지 않는다.</strong> 각 artifact의 비활성 조건·보존 기간·삭제 가능성을 먼저 배제한 뒤에만 &quot;흔적 없음&quot;을 주장한다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p>각 도구에서 실제로 읽어야 하는 칼럼만 모았다.</p>
+<div class="table-wrap"><table><thead><tr><th>도구 / 출처</th><th>실행 판정에 쓰는 필드</th><th>주의</th></tr></thead><tbody><tr><td><code>PECmd</code></td><td><code>ExecutableName</code>, <code>RunCount</code>, <code>LastRun</code>, <code>PreviousRun0~6</code>, <code>SourceCreated</code>, <code>Directories</code>, <code>FilesLoaded</code></td><td>시각은 UTC. Win7은 <code>PreviousRun*</code>이 비어 있다</td></tr><tr><td><code>rip -p userassist</code></td><td>경로, 괄호 안 실행 횟수, 항목별 시각</td><td>ROT13 자동 해제. <code>CEBFF5CD</code>(exe)와 <code>F4E57C4B</code>(lnk) 둘 다 볼 것 (<a href="./userassist.html">FOR-0061</a>)</td></tr><tr><td><code>rip -p bam</code></td><td>값 이름의 <code>\Device\HarddiskVolumeN\...</code> 경로, 값 데이터 앞 8바이트 FILETIME</td><td>볼륨 번호를 드라이브 문자로 환산해야 한다 (<a href="./mounteddevices.html">FOR-0067</a>)</td></tr><tr><td><code>AppCompatCacheParser</code></td><td><code>CacheEntryPosition</code>, <code>Path</code>, <code>LastModifiedTimeUTC</code>, <code>Executed</code></td><td><code>Executed</code>는 Win10에서 의미 없는 값이 된다 (<a href="./appcompatcache.html">FOR-0079</a>)</td></tr><tr><td><code>AmcacheParser</code></td><td><code>FullPath</code>, <code>SHA1</code>, <code>FileSize</code>, <code>LinkDate</code>, <code>ProductName</code></td><td><code>SHA1</code>이 해시 대조의 핵심. 등록 시각은 실행 시각이 아니다</td></tr><tr><td><code>EvtxECmd</code> (4688)</td><td><code>NewProcessName</code>, <code>CommandLine</code>, <code>ParentProcessName</code>, <code>SubjectUserName</code></td><td>명령행은 별도 정책이 켜져 있어야 기록된다 (<a href="./event-4688-process-creation.html">FOR-0088</a>)</td></tr><tr><td>Sysmon 1</td><td><code>Image</code>, <code>CommandLine</code>, <code>Hashes</code>, <code>ParentImage</code>, <code>User</code></td><td>설치 환경에서만</td></tr><tr><td><code>SRUM</code></td><td>앱 경로, 사용자 SID, 시간대별 송수신 바이트</td><td>&quot;실행 + 네트워크 사용&quot;을 함께 준다</td></tr></tbody></table></div>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>확보한 것</th><th>다음에 열 것</th><th>무엇을 얻나</th></tr></thead><tbody><tr><td>실행 파일 경로</td><td><code>$MFT</code> (<a href="./mft-basics.html">FOR-0021</a>)</td><td>파일이 언제 생겼는가 = 유입 시각</td></tr><tr><td>실행 파일 해시 (Amcache)</td><td>다른 이미지·위협 인텔</td><td>동일 도구의 다른 감염 지점</td></tr><tr><td>실행 시각</td><td>EVTX 4688/Sysmon 1</td><td>명령행 인자와 부모 프로세스</td></tr><tr><td>실행 시각</td><td>4624 세션 (<a href="./event-4624-logon.html">FOR-0083</a>)</td><td>어느 로그온 세션 안의 행위인가</td></tr><tr><td>사용자 SID (BAM/SRUM)</td><td><code>ProfileList</code> (<a href="./sid-user-mapping.html">FOR-0074</a>)</td><td>실행 주체의 이름</td></tr><tr><td>Prefetch 참조 파일 목록</td><td>그 경로들의 <code>$MFT</code></td><td>프로그램이 무엇을 건드렸는가</td></tr><tr><td>SRUM 송수신량</td><td>PCAP·방화벽 로그</td><td>외부 전송 여부</td></tr><tr><td>실행 파일이 있던 폴더</td><td>ShellBags (<a href="./shellbags.html">FOR-0068</a>)</td><td>사용자가 그 폴더를 탐색했는가</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>Shimcache 항목을 실행 증거로 제시하는 것</strong> → 존재/호환성 검사만으로도 등록될 수 있고 시각은 파일 수정 시각이다 → &quot;그 경로에 그 파일이 있었다&quot;까지만 주장하고 실행은 Prefetch·UserAssist·BAM으로 확증한다.</li><li><strong>Amcache 등록 시각을 실행 시각으로 쓰는 것</strong> → Appraiser 예약 작업이 스캔한 시각이다 → 실행 시각은 다른 artifact에서 가져오고 Amcache는 해시·경로·크기에만 쓴다.</li><li><strong><code>LinkDate</code>를 실행 시각이나 다운로드 시각으로 읽는 것</strong> → PE 컴파일 타임스탬프이며 조작 가능하다 → 동일 바이너리 식별용으로만 쓴다.</li><li><strong>같은 주체의 artifact 2개로 &quot;교차검증했다&quot;고 말하는 것</strong> → UserAssist + MUICache는 둘 다 셸 기록이라 하나의 원인에서 파생된다 → 주체가 다른 것(커널/서비스/감사)을 섞는다.</li><li><strong>artifact가 없으면 실행하지 않았다고 결론 내는 것</strong> → Prefetch 비활성, BAM의 1주 한계, 로그 순환, 반포렌식이 모두 같은 &quot;부재&quot;를 만든다 → 부재의 원인을 먼저 배제한다.</li><li><strong>실행 횟수를 하나의 숫자로 합치는 것</strong> → UserAssist는 Explorer 경유만, Prefetch는 경로별로 센다 → 각각을 별도로 제시하고 차이를 해석한다.</li><li><strong><code>.pf</code> 파일명의 해시를 무시하고 이름만 보는 것</strong> → 같은 이름의 실행 파일이 다른 경로에 있으면 <code>.pf</code>가 따로 생긴다 → <code>.pf</code> 두 개가 나오면 경로가 둘이라는 뜻이다.</li><li><strong>BAM의 <code>\Device\HarddiskVolumeN</code> 경로를 그대로 답으로 쓰는 것</strong> → 드라이브 문자가 아니다 → <code>MountedDevices</code>로 환산한다.</li><li><strong>4688이 없는데 감사 정책을 확인하지 않는 것</strong> → 기본 설정에서는 4688이 기록되지 않는다 → <code>SECURITY\Policy\PolAdtEv</code>나 4688의 존재 자체로 정책 상태를 판정한다.</li><li><strong>시각을 artifact마다 따로 KST로 바꿔 비교하는 것</strong> → 변환 실수가 섞인다 → 전부 UTC로 모아 정렬한 뒤 최종 답에서만 +9시간 한다. FILETIME은 1601-01-01 UTC 기준 100ns, Unix와의 차이는 <code>11644473600</code>초다 (<a href="./system-timezone.html">FOR-0054</a>).</li><li><strong>키 LastWrite를 실행 시각으로 쓰는 것</strong> → 값 단위 시각이 아니다 → 값 안에 자체 FILETIME이 있는 UserAssist <code>0x3C</code>·BAM 앞 8바이트를 쓴다 (<a href="./registry-lastwrite-caveats.html">FOR-0077</a>).</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) 커널 계열 — Prefetch
+PECmd.exe -d &quot;C:\case\Prefetch&quot; --csv &quot;C:\case\out&quot; --csvf pf.csv</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 2) 셸 계열 — UserAssist
+rip.exe -r &quot;C:\case\clean\NTUSER.DAT&quot; -p userassist | Select-String &#39;dump_tool&#39;</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 3) 서비스 계열 — BAM (사용자 SID 별)
+rip.exe -r &quot;C:\case\clean\SYSTEM&quot; -p bam | Select-String &#39;dump_tool&#39;</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 4) 감사 계열 — 4688 명령행
+Import-Csv &quot;C:\case\out\evt.csv&quot; |
+  Where-Object { $_.EventId -eq 4688 -and $_.Payload -match &#39;dump_tool&#39; } |
+  Format-Table TimeCreated, UserName, Payload</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>확보한 조합</th><th>결론 강도</th></tr></thead><tbody><tr><td>Prefetch + UserAssist + BAM</td><td><strong>실행·주체·시각 모두 확정.</strong> 최상</td></tr><tr><td>Prefetch + 4688</td><td>실행 확정 + 명령행 확보. 주체는 4688의 SID로</td></tr><tr><td>UserAssist + BAM</td><td>사용자 확정. 실행 횟수는 UserAssist만</td></tr><tr><td>Shimcache + Amcache만</td><td><strong>실행 미확정.</strong> &quot;파일이 존재했다&quot;로만 기술</td></tr><tr><td>MUICache만</td><td>매우 약하다. 다른 증거를 더 찾는다</td></tr></tbody></table></div>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;피의자는 &#39;mimi.exe 를 실행한 적이 없다&#39;고 주장합니다. 실행 여부와 시각(KST),
+ 실행 주체를 판정하시오.
+ 첨부: SYSTEM, SOFTWARE, SAM, NTUSER.DAT(hjlee), Amcache.hve, Prefetch 폴더 없음,
+       Security.evtx&quot;
+
+1. 첫 시도 (실패):
+   AppCompatCacheParser.exe -f SYSTEM --csv out\
+   -&gt; CacheEntryPosition 3 | C:\Users\hjlee\Downloads\mimi.exe
+      LastModifiedTimeUTC 2026-04-07 02:11:09 | Executed: NA
+
+   &quot;Shimcache 에 있고 시각도 나왔으니 2026-04-07 11:11 KST 에 실행했다&quot;고 결론 낼 뻔했다.
+
+   왜 틀렸나:
+   (1) Shimcache 는 실행을 보장하지 않는다. Executed 가 NA 인 것이 그 신호다.
+   (2) 그 시각은 실행 시각이 아니라 파일의 수정 시각($SI mtime)이다.
+   =&gt; 두 가지를 동시에 틀렸다.
+
+2. 접근 변경 — &quot;실행 보장&quot; 열이 참인 것부터
+   Prefetch 폴더가 첨부에 없다. 먼저 비활성인지 삭제인지 판정한다.
+     SYSTEM\ControlSet001\Control\Session Manager\Memory Management\PrefetchParameters
+       EnablePrefetcher = 3   -&gt; 활성이었다. 즉 파일이 있었어야 한다.
+   -&gt; 부재의 원인이 &quot;비활성&quot;이 아니다. 삭제 가능성을 기록해 둔다.
+
+3. BAM 확인
+   rip.exe -r SYSTEM -p bam
+     S-1-5-21-3623811015-3361044348-30300820-1002
+       \Device\HarddiskVolume3\Users\hjlee\Downloads\mimi.exe
+         2026-04-09 07:52:30Z
+   -&gt; 실행 확정. 주체는 SID -1002.
+      BAM 은 약 1주만 남으므로 이 실행은 최근이다.
+
+4. 두 번째로 틀린 판단:
+   &quot;\Device\HarddiskVolume3 는 D: 겠지&quot;라고 적었다.
+   -&gt; MountedDevices 를 보니 HarddiskVolume3 = C: 였다.
+      경로는 C:\Users\hjlee\Downloads\mimi.exe. 볼륨 번호는 추측하지 않는다.
+
+5. 주체 이름 확정
+   rip.exe -r SOFTWARE -p profilelist
+     S-1-5-21-...-1002 -&gt; C:\Users\hjlee
+   NTUSER.DAT(hjlee) 의 UserAssist:
+     rip.exe -r NTUSER.DAT -p userassist | Select-String &#39;mimi&#39;
+     -&gt; 항목 없음
+
+6. 세 번째 판단 지점 — UserAssist 부재를 어떻게 읽을까
+   UserAssist 에 없다 = Explorer 를 통해 실행하지 않았다는 뜻이다.
+   실행 자체를 부정하지 않는다. 콘솔/스크립트 실행을 의심하고 4688 로 간다.
+
+     Import-Csv evt.csv | Where-Object { $_.EventId -eq 4688 -and $_.Payload -match &#39;mimi&#39; }
+       2026-04-09 07:52:29Z  4688  hjlee
+         NewProcessName  C:\Users\hjlee\Downloads\mimi.exe
+         ParentProcessName C:\Windows\System32\cmd.exe
+         CommandLine     mimi.exe privilege::debug sekurlsa::logonpasswords
+   -&gt; 주체가 다른 세 계열(서비스=BAM, 감사=4688)에서 확증. 명령행까지 확보.
+      cmd.exe 가 부모이므로 UserAssist 에 없는 것이 일관된다.
+
+7. Amcache 로 파일 동일성 확인
+   AmcacheParser.exe -f Amcache.hve -i --csv out\
+     FullPath  C:\Users\hjlee\Downloads\mimi.exe
+     SHA1      da39a3ee5e6b4b0d3255bfef95601890afd80709
+     LinkDate  2021-06-15 09:00:00
+   -&gt; LinkDate 는 컴파일 시각이므로 실행 시각과 무관. 해시는 도구 식별용으로 기록.
+
+8. Prefetch 부재의 원인 확정
+   $UsnJrnl 에서 C:\Windows\Prefetch 하위 FileDelete 다수 (2026-04-09 08:05Z)
+   -&gt; 실행 13분 뒤 Prefetch 일괄 삭제 = 반포렌식. 부재 자체가 증거가 되었다.
+
+9. 시간대 보정 (마지막에 한 번만)
+   SYSTEM\ControlSet001\Control\TimeZoneInformation
+     TimeZoneKeyName = Korea Standard Time, ActiveTimeBias = -540분
+   2026-04-09 07:52:29Z -&gt; 2026-04-09 16:52:29 KST
+
+정답:
+  실행됨. 2026-04-09 16:52:29 KST, 주체 hjlee (S-1-5-21-...-1002),
+  cmd.exe 에서 인자와 함께 실행. 근거는 BAM(서비스) + 4688(감사) 2계열 확증.
+  Shimcache 항목은 &quot;파일이 존재했다&quot;의 증거로만 인용.
+  Prefetch 폴더는 실행 13분 후 삭제됨.</code></pre></div>
+<p>1단계·4단계·6단계가 요점이다. <strong>Shimcache를 실행 증거로 쓰는 것, 볼륨 번호를 추측하는 것, UserAssist 부재를 실행 부정으로 읽는 것</strong>이 세 가지 대표 오답이다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li>&quot;실행 보장&quot; 열이 참인 artifact부터 봤는가 — Prefetch, UserAssist, BAM, 4688, Sysmon 1, SRUM</li><li>확증에 쓴 두 artifact의 <strong>기록 주체가 다른가</strong></li><li>Shimcache/Amcache/MUICache를 실행 증거 카운트에서 뺐는가</li><li>Prefetch 부재의 원인을 판정했는가 — <code>EnablePrefetcher</code>, <code>$UsnJrnl</code> 삭제 기록</li><li>BAM에 없다면 → 1주보다 오래된 실행일 수 있다. Prefetch·Amcache로 이동</li><li>UserAssist에 없다면 → 콘솔·스케줄러·서비스 실행 의심. 4688·7045로 이동</li><li>모든 사용자 프로필의 hive를 봤는가</li><li>볼륨 번호(<code>HarddiskVolumeN</code>)를 드라이브 문자로 환산했는가</li><li>시각을 전부 UTC로 모아 정렬했는가 — 마지막에 한 번만 KST 보정</li><li>흔적이 전무하다면 → VSS·메모리 덤프·WER·프로그램 산출물(로그·설정·레지스트리 키)로 우회</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-031 — Microsoft Learn, Application Compatibility / Shim infrastructure: shim 엔진이 실행 파일을 검사하는 시점과 AppCompatCache의 목적. <strong>실행이 아니라 호환성 검사가 기록 계기</strong>라는 판단의 근거</li><li>SRC-030 — Libyal libscca, Prefetch 파일 포맷 문서: 실행 횟수 필드, 마지막 실행 시각 배열(버전에 따라 1개 또는 8개), 파일명 해시가 경로에서 계산된다는 점</li><li>SRC-017 — Microsoft Learn, Windows Registry hives and file locations: UserAssist·BAM·MUICache·Shimcache가 어느 hive의 어느 키에 있는지</li><li>SRC-021 — Microsoft Learn, Event 4688: 프로세스 생성 이벤트의 필드(<code>NewProcessName</code>, <code>CommandLine</code>, <code>ParentProcessName</code>, <code>SubjectUserSid</code>)와 명령행 기록에 별도 설정이 필요하다는 점</li><li><strong>SRUM·Sysmon·UserAssist 항목은 각각 SRC-082(SRUM), SRC-024(Sysmon), SRC-009(UserAssist)에 근거가 있으며, 이 글은 비교표와 확증 절차만 제공한다.</strong> 각 필드의 정의는 해당 전담 글을 참조할 것</li><li><strong>BAM의 정리 주기(약 1주), SRUM의 보존 기간(약 30~60일), Prefetch 파일 개수 상한(Win8 이후 1024)은 OS 버전과 구성에 따라 달라지므로 실제 환경에서 확인할 것.</strong> 이 글은 &quot;짧다/길다&quot;의 상대 비교를 위해 통상값을 제시한다</li><li><code>PcaAppLaunchDic.txt</code>와 <code>Compatibility Assistant\Store</code>는 Windows 11 계열에서 주로 관측되며 존재 여부가 환경에 따라 다르므로, 있으면 보조 증거로만 쓸 것</li><li>각 파서의 CSV 컬럼명은 도구 버전에 따라 다를 수 있으므로 실제 출력 헤더에서 확인할 것</li><li>mini walkthrough의 시각·해시·SID는 설명을 위한 예시 값이다</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./userassist.html">
+    <span class="rel-id">FOR-0061 · Registry</span>
+    UserAssist로 사용자가 직접 실행한 프로그램 찾기
+  </a>
+  <a class="related-item" href="./bam-dam.html">
+    <span class="rel-id">FOR-0071 · Registry</span>
+    BAM/DAM 키로 사용자별 마지막 실행 시각 얻기
+  </a>
+  <a class="related-item" href="./appcompatcache.html">
+    <span class="rel-id">FOR-0079 · Registry</span>
+    AppCompatCache(Shimcache)와 Amcache: 실행 파일 캐시 두 개 정리
+  </a>
+  <a class="related-item" href="./event-4688-process-creation.html">
+    <span class="rel-id">FOR-0088 · Event Log</span>
+    Event ID 4688 프로세스 생성: CommandLine 과 부모-자식 체인 재구성
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./usb-serial-drive-letter.html"><span class="rel-id">← FOR-0075</span>USB 시리얼에서 드라이브 문자·사용자·시각까지 잇는 종합 절차</a>
+<a class="related-item" href="./registry-lastwrite-caveats.html"><span class="rel-id">FOR-0077 →</span>Registry LastWrite 시각을 믿으면 안 되는 7가지 경우</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-증거원-비교표-이-글의-본체">1단계 — 증거원 비교표 (이 글의 본체)</a></li>
+<li class="toc-l3"><a href="#2단계-실행을-의미하지-않는-경우">2단계 — &quot;실행&quot;을 의미하지 않는 경우</a></li>
+<li class="toc-l3"><a href="#3단계-확증-절차">3단계 — 확증 절차</a></li>
+<li class="toc-l3"><a href="#4단계-시각이-서로-어긋날-때">4단계 — 시각이 서로 어긋날 때</a></li>
+<li class="toc-l3"><a href="#5단계-하나도-없을-때">5단계 — 하나도 없을 때</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

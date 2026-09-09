@@ -109,11 +109,32 @@ function checkEntrypoint() {
 
   // Script load order must match what this test simulates.
   const scripts = [...html.matchAll(/<script[^>]+src=["']([^"']+)["']/g)].map((m) => m[1]);
-  const expected = ['./assets/search-index.js', './assets/search-core.js', './assets/app.js'];
+  const expected = [
+    './assets/search-index.js',
+    './assets/search-body.js',
+    './assets/search-core.js',
+    './assets/app.js',
+  ];
   if (JSON.stringify(scripts) !== JSON.stringify(expected)) {
     fail(`dist/index.html script order is ${JSON.stringify(scripts)}, expected ${JSON.stringify(expected)}`);
   } else {
-    ok('dist/index.html loads exactly the three local runtime scripts, in order');
+    ok('dist/index.html loads the four local runtime scripts, in order');
+  }
+
+  // Article pages must NOT pull search-body.js — that split is the whole point.
+  const articleDir = path.join(DIST, 'articles');
+  const firstArticle = fs.existsSync(articleDir)
+    ? fs.readdirSync(articleDir).find((f) => f.endsWith('.html'))
+    : null;
+  if (firstArticle) {
+    const aHtml = fs.readFileSync(path.join(articleDir, firstArticle), 'utf8');
+    const aScripts = [...aHtml.matchAll(/<script[^>]+src=["']([^"']+)["']/g)].map((m) => m[1]);
+    const aExpected = ['../assets/search-index.js', '../assets/search-core.js', '../assets/app.js'];
+    if (JSON.stringify(aScripts) !== JSON.stringify(aExpected)) {
+      fail(`article page script set is ${JSON.stringify(aScripts)}, expected ${JSON.stringify(aExpected)}`);
+    } else {
+      ok('article pages skip search-body.js (metadata index only)');
+    }
   }
 
   // No module/defer/type=module: file:// blocks ES module loading in browsers.
@@ -126,7 +147,9 @@ function checkEntrypoint() {
 }
 
 function bootRuntime() {
-  const files = ['search-index.js', 'search-core.js', 'app.js'].map((f) => path.join(DIST, 'assets', f));
+  const files = ['search-index.js', 'search-body.js', 'search-core.js', 'app.js'].map((f) =>
+    path.join(DIST, 'assets', f)
+  );
   for (const f of files) {
     if (!fs.existsSync(f)) {
       fail(`missing ${path.relative(ROOT, f)}`);
@@ -146,7 +169,7 @@ function bootRuntime() {
       return null;
     }
   }
-  ok('all three runtime scripts load with every network API stubbed to throw');
+  ok('all runtime scripts load with every network API stubbed to throw');
 
   if (!win.FORENSIC_INDEX) {
     fail('window.FORENSIC_INDEX was not defined by search-index.js');
@@ -156,6 +179,16 @@ function bootRuntime() {
     fail('window.ForensicSearch.search was not defined by search-core.js');
     return null;
   }
+  if (!win.FORENSIC_BODY) {
+    fail('window.FORENSIC_BODY was not defined by search-body.js');
+    return null;
+  }
+  const missingBody = win.FORENSIC_INDEX.docs.filter((d) => !win.FORENSIC_BODY[d.i]);
+  if (missingBody.length) {
+    fail(`${missingBody.length} indexed entr(ies) have no body text (e.g. ${missingBody[0].i})`);
+  } else {
+    ok(`body text present for all ${win.FORENSIC_INDEX.count} entries`);
+  }
   ok(`search index available in-page: ${win.FORENSIC_INDEX.count} docs, no fetch needed`);
   return win;
 }
@@ -164,7 +197,7 @@ function checkSearchWorks(win) {
   // A handful of representative queries: exact metadata, Korean, and a filter.
   const probes = ['$MFT', '4624', 'http.request.uri', '삭제 파일', 'pslist'];
   for (const q of probes) {
-    const results = win.ForensicSearch.search(win.FORENSIC_INDEX, q, { limit: 5 });
+    const results = win.ForensicSearch.search(win.FORENSIC_INDEX, q, { limit: 5, bodies: win.FORENSIC_BODY });
     if (results.length === 0) {
       fail(`search returned nothing for "${q}"`);
     } else {
@@ -173,7 +206,7 @@ function checkSearchWorks(win) {
   }
 
   // Every result must point at a page that exists on disk.
-  const all = win.ForensicSearch.search(win.FORENSIC_INDEX, '', { limit: 1000 });
+  const all = win.ForensicSearch.search(win.FORENSIC_INDEX, '', { limit: 1000, bodies: win.FORENSIC_BODY });
   for (const r of all) {
     const page = path.join(DIST, 'articles', `${r.slug}.html`);
     if (!fs.existsSync(page)) fail(`search result ${r.id} points at missing page ${r.slug}.html`);

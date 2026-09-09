@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Windows 경로 regex: 백슬래시 이스케이프와 UNC·확장 길이 접두 · FOR-0137 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%A1%9C%EA%B7%B8%2FRegex">로그/Regex</a> / FOR-0137
+      </div>
+      <header class="article-head">
+        <h1>Windows 경로 regex: 백슬래시 이스케이프와 UNC·확장 길이 접두</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">로그/Regex</span>
+      <span class="badge badge-type">레퍼런스</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>Windows 경로를 정규식으로 잡을 때 규칙은 하나다 — 정규식 엔진에 \\(백슬래시 2개)가 도달해야 리터럴 백슬래시 1개를 매칭하므로, 문자열 리터럴이 백슬래시를 삼키는 문법(셸 큰따옴표·Python 일반 문자열·JSON)에서는 4개를 쓰고 삼키지 않는 문법(셸/PowerShell 작은따옴표·Python raw)에서는 2개를 쓴다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>grep, ripgrep, PowerShell, Python, Select-String</td></tr>
+<tr><th>artifact</th><td><code>CommandLine</code> · <code>Image</code> · <code>TargetFilename</code> · <code>ConsoleHost_history.txt</code> · <code>Prefetch</code> · <code>memory strings</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Windows\Temp</code> · <code>C:\Users\Public</code> · <code>C:\ProgramData</code> · <code>C:\Users\%USERNAME%\AppData\Local\Temp</code> · <code>C:\Users\%USERNAME%\AppData\Roaming</code></td></tr>
+<tr><th>프로토콜</th><td>SMB</td></tr>
+<tr><th>regex</th><td><code>[A-Za-z]:\\</code> · <code>[A-Za-z]:\\(?:[^\\/:*?&quot;&lt;&gt;|\r\n]+\\)*[^\\/:*?&quot;&lt;&gt;|\r\n]*</code> · <code>\\\\[A-Za-z0-9._-]+\\[^\\/:*?&quot;&lt;&gt;|\r\n]+</code> · <code>%[A-Za-z_][A-Za-z0-9_()]*%</code> · <code>(?i)[A-Za-z]:\\(?:Windows\\Temp|ProgramData|Users\\Public|PerfLogs)\\</code> · <code>(?i)^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)</code></td></tr>
+<tr><th>로그 필드</th><td><code>CommandLine</code> · <code>Image</code> · <code>ParentImage</code> · <code>TargetFilename</code> · <code>ProcessName</code></td></tr>
+<tr><th>파일 형식</th><td><code>log</code> · <code>csv</code> · <code>json</code> · <code>txt</code></td></tr>
+<tr><th>검색 별칭</th><td>윈도우 경로 정규식 · 경로 regex · 백슬래시 몇 개 · unc 정규식 · 경로 뽑기 · exe 경로 추출 · 커맨드라인에서 경로</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>Windows 경로를 정규식으로 잡을 때 규칙은 하나다 — <strong>정규식 엔진에 <code>\\</code>(백슬래시 2개)가 도달해야 리터럴 백슬래시 1개를 매칭</strong>하므로, 문자열 리터럴이 백슬래시를 삼키는 문법(셸 큰따옴표·Python 일반 문자열·JSON)에서는 4개를 쓰고 삼키지 않는 문법(셸/PowerShell 작은따옴표·Python raw)에서는 2개를 쓴다.</p>
+<h2 id="개념">개념</h2>
+<p>Windows 경로는 네 가지 형태가 전부다. 이 네 개를 구분해서 써야 로그에서 경로를 놓치지 않는다.</p>
+<div class="table-wrap"><table><thead><tr><th>형태</th><th>예</th><th>정규식 조각</th><th>비고</th></tr></thead><tbody><tr><td>드라이브 절대경로</td><td><code>C:\Windows\System32\cmd.exe</code></td><td><code>[A-Za-z]:\\</code></td><td>가장 흔함</td></tr><tr><td>드라이브 상대경로</td><td><code>C:temp\a.txt</code></td><td><code>[A-Za-z]:(?!\\)</code></td><td>드라이브별 CWD 기준. 실전에서 드묾</td></tr><tr><td>루트 상대경로</td><td><code>\Windows\System32</code></td><td><code>^\\(?!\\)</code></td><td>현재 드라이브 기준</td></tr><tr><td>UNC</td><td><code>\\FILESRV01\share$\a.exe</code></td><td><code>\\\\[^\\/:*?&quot;&lt;&gt;|]+\\</code></td><td>원격. 랜섬웨어 확산 경로</td></tr><tr><td>확장 길이(로컬)</td><td><code>\\?\C:\very\long\path</code></td><td><code>\\\\\?\\[A-Za-z]:\\</code></td><td><code>MAX_PATH</code> 260자 제한 우회</td></tr><tr><td>확장 길이(UNC)</td><td><code>\\?\UNC\FILESRV01\share</code></td><td><code>\\\\\?\\UNC\\</code></td><td>위의 UNC 버전</td></tr><tr><td>장치 네임스페이스</td><td><code>\\.\PhysicalDrive0</code>, <code>\\.\C:</code></td><td><code>\\\\\.\\</code></td><td>디스크 직접 접근. 이미징 도구</td></tr></tbody></table></div>
+<p>경로 구성요소에 <strong>쓸 수 없는 문자</strong>는 다음과 같다. 이 목록이 그대로 &quot;경로 문자&quot; 부정 문자 클래스가 된다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">&lt; &gt; : &quot; / \ | ? *      그리고 0x00~0x1F 제어문자</code></pre></div>
+<p>따라서 &quot;한 구성요소&quot;는 <code>[^\\/:*?&quot;&lt;&gt;|\r\n]+</code> 로 표현한다. 구분자로 <code>/</code>도 Win32 API가 받아주지만 명령행에서는 스위치와 헷갈리므로 실제 로그에는 <code>\</code>가 압도적으로 많다. 둘 다 받으려면 <code>[\\/]</code>를 쓴다.</p>
+<h3 id="예약-이름">예약 이름</h3>
+<p>파일 이름 부분이 다음과 같으면 확장자가 붙어 있어도 장치로 해석된다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">CON  PRN  AUX  NUL  COM1..COM9  LPT1..LPT9</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">(?i)^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)</code></pre></div>
+<p><code>nul.txt</code>로 쓰면 파일이 만들어지지 않고 버려진다. 안티포렌식으로 <code>&gt; nul</code> 리다이렉션이나 <code>copy evil.exe \\.\C:\...</code> 같은 우회에 쓰이므로 명령행 로그에서 이 이름이 보이면 의도를 확인한다.</p>
+<h3 id="후행-공백과-점">후행 공백과 점</h3>
+<p>Win32 계층은 경로 끝의 공백과 점을 조용히 잘라낸다. 그래서 <code>evil.exe </code> (뒤 공백)와 <code>evil.exe.</code>은 <code>evil.exe</code>가 된다. 반면 <code>\\?\</code> 접두를 쓰면 잘라내지 않으므로 <strong>탐색기로는 지울 수 없는 파일</strong>이 만들어진다. 이런 파일이 있으면 <code>\\?\</code> 접두 경로로 접근한다.</p>
+<h2 id="파일-경로">파일 / 경로</h2>
+<p>경로 문자열이 실제로 나오는 자리다.</p>
+<div class="table-wrap"><table><thead><tr><th>대상</th><th>필드/파일</th><th>경로가 있는 위치</th></tr></thead><tbody><tr><td>Security 4688</td><td><code>NewProcessName</code>, <code>ParentProcessName</code>, <code>CommandLine</code></td><td>전체 경로 그대로</td></tr><tr><td>Sysmon Event 1</td><td><code>Image</code>, <code>ParentImage</code>, <code>CommandLine</code>, <code>CurrentDirectory</code></td><td>전체 경로</td></tr><tr><td>Sysmon Event 11</td><td><code>TargetFilename</code></td><td>생성된 파일</td></tr><tr><td>PowerShell 4104</td><td><code>ScriptBlockText</code></td><td>스크립트 안의 경로</td></tr><tr><td>PSReadLine 히스토리</td><td><code>%APPDATA%\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt</code></td><td>사용자가 친 명령 원문</td></tr><tr><td>Prefetch</td><td><code>*.pf</code> 내부 파일 참조 목록</td><td><code>\VOLUME{...}\WINDOWS\...</code> 형식</td></tr><tr><td>레지스트리 Run 키</td><td>값 데이터</td><td>인용부호 포함/미포함 혼재</td></tr><tr><td>작업 스케줄러</td><td><code>C:\Windows\System32\Tasks\</code> 하위 XML</td><td><code>&lt;Command&gt;</code>, <code>&lt;Arguments&gt;</code></td></tr><tr><td>메모리 덤프</td><td><code>strings</code> 결과</td><td>잘린 경로가 많다</td></tr></tbody></table></div>
+<h3 id="환경변수-경로-실제-값-대응표">환경변수 경로 — 실제 값 대응표</h3>
+<p>로그에는 확장 전 형태(<code>%TEMP%</code>)와 확장 후 형태(<code>C:\Users\hong\AppData\Local\Temp</code>)가 섞여 나온다. <strong>둘 다 잡아야 한다.</strong></p>
+<div class="table-wrap"><table><thead><tr><th>변수</th><th>일반적 확장 결과</th></tr></thead><tbody><tr><td><code>%SystemRoot%</code>, <code>%windir%</code></td><td><code>C:\Windows</code></td></tr><tr><td><code>%TEMP%</code>, <code>%TMP%</code> (사용자)</td><td><code>C:\Users\&lt;user&gt;\AppData\Local\Temp</code></td></tr><tr><td><code>%TEMP%</code> (SYSTEM 컨텍스트)</td><td><code>C:\Windows\Temp</code></td></tr><tr><td><code>%APPDATA%</code></td><td><code>C:\Users\&lt;user&gt;\AppData\Roaming</code></td></tr><tr><td><code>%LOCALAPPDATA%</code></td><td><code>C:\Users\&lt;user&gt;\AppData\Local</code></td></tr><tr><td><code>%USERPROFILE%</code></td><td><code>C:\Users\&lt;user&gt;</code></td></tr><tr><td><code>%ProgramData%</code></td><td><code>C:\ProgramData</code></td></tr><tr><td><code>%PUBLIC%</code></td><td><code>C:\Users\Public</code></td></tr><tr><td><code>%ProgramFiles%</code></td><td><code>C:\Program Files</code></td></tr><tr><td><code>%ProgramFiles(x86)%</code></td><td><code>C:\Program Files (x86)</code></td></tr><tr><td><code>%ComSpec%</code></td><td><code>C:\Windows\System32\cmd.exe</code></td></tr></tbody></table></div>
+<p>변수 참조 자체를 잡는 패턴이다. 괄호가 들어가는 <code>%ProgramFiles(x86)%</code>까지 포함한다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">%[A-Za-z_][A-Za-z0-9_()]*%</code></pre></div>
+<h2 id="주요-필드">주요 필드</h2>
+<h3 id="패턴-1-드라이브-절대경로-가장-많이-쓴다">패턴 1 — 드라이브 절대경로 (가장 많이 쓴다)</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">[A-Za-z]:\\(?:[^\\/:*?&quot;&lt;&gt;|\r\n]+\\)*[^\\/:*?&quot;&lt;&gt;|\r\n]*</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>값</th></tr></thead><tbody><tr><td>매칭됨</td><td><code>C:\Windows\System32\cmd.exe</code>, <code>D:\</code>, <code>C:\Program Files (x86)\App\a.exe</code></td></tr><tr><td>매칭 안 됨</td><td><code>\\SRV\share\a.exe</code>, <code>/var/log/syslog</code>, <code>HKLM\Software</code></td></tr><tr><td>주의</td><td>공백을 허용하므로 <code>C:\Program Files\...</code> 뒤의 산문까지 삼킨다</td></tr></tbody></table></div>
+<p>공백이 문제라면 공백을 제외한 변형을 쓴다. 대신 <code>Program Files</code>가 중간에 끊긴다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">[A-Za-z]:\\[^\s&quot;&lt;&gt;|]*</code></pre></div>
+<p><strong>공백을 포함한 경로를 정확히 잡는 유일하게 안전한 방법은 인용부호를 기준으로 삼는 것이다.</strong></p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">&quot;([A-Za-z]:\\[^&quot;]+)&quot;</code></pre></div>
+<h3 id="패턴-2-unc">패턴 2 — UNC</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">\\\\[A-Za-z0-9._-]+\\[^\\/:*?&quot;&lt;&gt;|\r\n]+(?:\\[^\\/:*?&quot;&lt;&gt;|\r\n]+)*</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>값</th></tr></thead><tbody><tr><td>매칭됨</td><td><code>\\FILESRV01\share\a.exe</code>, <code>\\10.0.0.5\C$\Windows</code>, <code>\\srv.corp.local\dfs\x</code></td></tr><tr><td>매칭 안 됨</td><td><code>\\?\C:\x</code> (호스트 자리에 <code>?</code> 불가), <code>\\.\C:</code></td></tr><tr><td>포렌식 의미</td><td>원격 실행/확산, 관리 공유(<code>C$</code>, <code>ADMIN$</code>, <code>IPC$</code>) 접근</td></tr></tbody></table></div>
+<p>관리 공유만 따로 본다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">(?i)\\\\[^\\]+\\(?:ADMIN\$|IPC\$|[A-Z]\$)(?:\\|\b)</code></pre></div>
+<h3 id="패턴-3-확장-길이-접두">패턴 3 — 확장 길이 접두</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">\\\\\?\\(?:UNC\\)?</code></pre></div>
+<p>백슬래시 5개 + <code>\?</code> + 백슬래시 2개다. <code>\\?\</code>라는 <strong>4글자</strong>를 매칭하는 데 정규식 소스에서 8글자가 필요하다. 이 지점에서 대부분 틀린다.</p>
+<div class="table-wrap"><table><thead><tr><th>리터럴</th><th>정규식 소스</th><th>길이</th></tr></thead><tbody><tr><td><code>\\</code></td><td><code>\\\\</code></td><td>4</td></tr><tr><td><code>\\?\</code></td><td><code>\\\\\?\\</code></td><td>8</td></tr><tr><td><code>\\.\</code></td><td><code>\\\\\.\\</code></td><td>8</td></tr><tr><td><code>\\?\UNC\</code></td><td><code>\\\\\?\\UNC\\</code></td><td>13</td></tr></tbody></table></div>
+<p><code>MAX_PATH</code>는 260자(널 종료 포함)다. <code>\\?\</code>를 붙이면 약 32,767자까지 쓸 수 있고, 경로 정규화(후행 공백/점 제거, <code>.</code>·<code>..</code> 해석, <code>/</code>→<code>\</code> 변환)를 <strong>건너뛴다</strong>. 그래서 <code>\\?\C:\case\a..</code>처럼 정상 API로는 만들 수 없는 이름이 존재할 수 있다.</p>
+<h3 id="패턴-4-명령행에서-실행-파일-경로만">패턴 4 — 명령행에서 실행 파일 경로만</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">(?i)(?:[A-Za-z]:\\|\\\\)[^&quot;\s]*\.(?:exe|dll|ps1|bat|cmd|vbs|js|jse|wsf|hta|scr|com|pif|msi|msc|cpl|sys)\b</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>값</th></tr></thead><tbody><tr><td>매칭됨</td><td><code>C:\Users\hong\AppData\Local\Temp\upd.exe</code>, <code>\\SRV\s\p.ps1</code></td></tr><tr><td>매칭 안 됨</td><td><code>cmd.exe</code> (경로 없는 이름만), <code>&quot;C:\Program Files\a b.exe&quot;</code> (공백)</td></tr><tr><td>짝 패턴</td><td>인용부호 버전 <code>&quot;([^&quot;]+\.(?:exe|dll|ps1))&quot;</code> 를 함께 돌린다</td></tr></tbody></table></div>
+<p>경로 없이 파일명만 나오는 경우(<code>cmd.exe /c ...</code>)를 놓치므로, 이름만 잡는 패턴을 별도로 돌린다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">(?i)\b[\w.$-]+\.(?:exe|dll|ps1|bat|cmd|vbs|hta|scr)\b</code></pre></div>
+<h3 id="패턴-5-의심-경로-가장-실전적">패턴 5 — 의심 경로 (가장 실전적)</h3>
+<p>정상 프로그램은 <code>C:\Program Files</code>, <code>C:\Windows\System32</code>에서 실행된다. <strong>아래 경로에서 실행 파일이 돌면 그 자체가 신호다.</strong></p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">(?i)[A-Za-z]:\\(?:Windows\\Temp|Windows\\Tasks|ProgramData|Users\\Public|PerfLogs|Recovery|\$Recycle\.Bin|Users\\[^\\]+\\(?:AppData\\(?:Local|Roaming|LocalLow)|Downloads|Favorites|Music|Pictures|Videos))\\</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>경로</th><th>정상 용도</th><th>공격에서의 용도</th></tr></thead><tbody><tr><td><code>C:\Windows\Temp</code></td><td>설치 프로그램 임시 파일</td><td>SYSTEM 권한 페이로드 드롭. <strong>가장 흔하다</strong></td></tr><tr><td><code>C:\Users\&lt;u&gt;\AppData\Local\Temp</code></td><td>브라우저·오피스 임시 파일</td><td>메일/문서 첨부 실행, 압축 해제 후 실행</td></tr><tr><td><code>C:\Users\&lt;u&gt;\AppData\Roaming</code></td><td>애플리케이션 설정</td><td>지속성(Run 키 대상), 사용자 권한 상주</td></tr><tr><td><code>C:\ProgramData</code></td><td>전 사용자 공용 데이터</td><td>ACL이 느슨해 쓰기 가능. 상주</td></tr><tr><td><code>C:\Users\Public</code></td><td>공용 문서</td><td>전 사용자 접근 가능. 측면 이동 스테이징</td></tr><tr><td><code>C:\PerfLogs</code></td><td>성능 로그(보통 빈 폴더)</td><td><strong>정상적으로는 비어 있다.</strong> 파일이 있으면 의심</td></tr><tr><td><code>C:\Windows\Tasks</code>, <code>C:\Windows\System32\Tasks</code></td><td>작업 스케줄러</td><td>작업 등록 지속성</td></tr><tr><td><code>C:\$Recycle.Bin</code></td><td>휴지통</td><td>삭제된 것처럼 숨기기</td></tr><tr><td><code>C:\Windows\System32\spool\drivers\color</code></td><td>색 프로파일</td><td>System32 하위인데 쓰기 가능. 우회 스테이징</td></tr></tbody></table></div>
+<h3 id="백슬래시를-몇-개-쓰는가-언어별-표">백슬래시를 몇 개 쓰는가 — 언어별 표</h3>
+<p><strong>규칙 하나만 기억한다: 정규식 엔진에 <code>\\</code> 2글자가 도달해야 한다.</strong> 문자열 리터럴이 백슬래시를 이스케이프 문자로 취급하면 2배로 쓴다.</p>
+<div class="table-wrap"><table><thead><tr><th>컨텍스트</th><th>백슬래시 1개를 매칭하려면</th><th>엔진이 받는 것</th></tr></thead><tbody><tr><td><code>grep -E &#39;...&#39;</code> (셸 작은따옴표)</td><td><code>\\</code></td><td><code>\\</code></td></tr><tr><td><code>grep -E &quot;...&quot;</code> (셸 큰따옴표)</td><td><code>\\\\</code></td><td><code>\\</code></td></tr><tr><td><code>grep -F</code> / <code>-SimpleMatch</code></td><td><code>\</code> (정규식 아님)</td><td>해당 없음</td></tr><tr><td>PowerShell <code>&#39;...&#39;</code> <strong>(권장)</strong></td><td><code>\\</code></td><td><code>\\</code></td></tr><tr><td>PowerShell <code>&quot;...&quot;</code></td><td><code>\\</code></td><td><code>\\</code></td></tr><tr><td>Python <code>r&#39;...&#39;</code> <strong>(권장)</strong></td><td><code>\\</code></td><td><code>\\</code></td></tr><tr><td>Python <code>&#39;...&#39;</code></td><td><code>\\\\</code></td><td><code>\\</code></td></tr><tr><td>JSON 파일 (Sigma 룰, 설정)</td><td><code>\\\\</code></td><td><code>\\</code></td></tr><tr><td>JavaScript <code>/.../</code> 리터럴</td><td><code>\\</code></td><td><code>\\</code></td></tr><tr><td>JavaScript <code>new RegExp(&#39;...&#39;)</code></td><td><code>\\\\</code></td><td><code>\\</code></td></tr><tr><td>YAML 큰따옴표</td><td><code>\\\\</code></td><td><code>\\</code></td></tr><tr><td>YAML 작은따옴표</td><td><code>\\</code></td><td><code>\\</code></td></tr></tbody></table></div>
+<p>PowerShell은 백슬래시가 이스케이프 문자가 아니다(백틱 `<code> </code> `<code>이 이스케이프다). 그래서 큰따옴표에서도 2개면 된다. 대신 큰따옴표 안의 </code>$<code>는 **변수로 확장**되므로 </code>$Recycle.Bin<code>·</code>$MFT`가 들어가는 경로와 정규식은 <strong>항상 작은따옴표</strong>로 감싼다.</p>
+<p>Windows 경로를 정규식으로 쓸 필요가 없을 때는 아예 이스케이프를 언어에 맡긴다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import re
+lit = re.escape(r&#39;C:\Users\hong\AppData\Local\Temp&#39;)   # 자동 이스케이프</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$pat = [regex]::Escape(&#39;C:\Users\hong\AppData\Local\Temp&#39;)</code></pre></div>
+<h2 id="빠른-명령">빠른 명령</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">grep -Eio &#39;[a-z]:\\\\[^&quot;&lt;&gt;|]+&#39; cmdline.txt | sort -u</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) 드라이브 절대경로 후보 전부 (셸 작은따옴표 -&gt; 백슬래시 2개)
+grep -Eio &#39;[a-z]:\\[^&quot;&lt;&gt;|]+&#39; cmdline.txt | sort -u
+
+# 2) 실행 파일 경로만
+grep -Eio &#39;(?:[a-z]:\\|\\\\)[^&quot;[:space:]]*\.(exe|dll|ps1|bat|cmd|vbs|hta|scr)&#39; cmdline.txt |
+  sort | uniq -c | sort -nr
+
+# 3) UNC 경로 (관리 공유 포함)
+grep -Eio &#39;\\\\[a-z0-9._-]+\\[^\\/:*?&quot;&lt;&gt;|]+&#39; cmdline.txt | sort -u
+
+# 4) 확장 길이 접두 -- 정상 로그에는 거의 없다
+grep -F &#39;\\?\&#39; cmdline.txt
+
+# 5) 의심 경로에서 실행된 것만
+grep -Eio &#39;[a-z]:\\(windows\\temp|programdata|users\\public|perflogs|users\\[^\\]+\\appdata\\(local|roaming))\\[^&quot;[:space:]]*&#39; cmdline.txt |
+  sort | uniq -c | sort -nr
+
+# 6) 환경변수 형태 (확장 전)
+grep -Eo &#39;%[A-Za-z_][A-Za-z0-9_()]*%&#39; cmdline.txt | sort | uniq -c | sort -nr
+
+# 7) 예약 이름 오용
+grep -Eiow &#39;(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.[a-z0-9]+)?&#39; cmdline.txt
+
+# 8) ripgrep -- PCRE2 로 lookaround까지
+rg -oiP &#39;(?&lt;=&quot;)[a-z]:\\[^&quot;]+(?=&quot;)&#39; cmdline.txt</code></pre></div>
+<p><code>grep -E</code>에서 백슬래시를 4개 쓰는 것과 2개 쓰는 것을 헷갈리면 아무것도 안 잡힌다. <strong>작은따옴표를 쓰면 항상 2개다.</strong></p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 실행 파일 경로 + 빈도 (정규식은 작은따옴표)
+Select-String -Path .\cmdline.txt -AllMatches -Pattern &#39;(?i)(?:[a-z]:\\|\\\\)[^&quot;\s]*\.(?:exe|dll|ps1|bat|cmd|vbs|hta|scr)&#39; |
+  ForEach-Object { $_.Matches.Value } |
+  Group-Object | Sort-Object Count -Descending | Select-Object -First 20 Count, Name
+
+# 의심 경로만
+$susp = &#39;(?i)[a-z]:\\(?:Windows\\Temp|ProgramData|Users\\Public|PerfLogs|Users\\[^\\]+\\AppData\\(?:Local|Roaming))\\&#39;
+Select-String -Path .\cmdline.txt -Pattern $susp
+
+# 인용부호로 감싸인 경로 (공백 포함 경로를 정확히 뽑는 방법)
+Select-String -Path .\cmdline.txt -AllMatches -Pattern &#39;&quot;([a-z]:\\[^&quot;]+)&quot;&#39; |
+  ForEach-Object { $_.Matches.Groups[1].Value } | Sort-Object -Unique
+
+# NTFS 메타파일이 들어가는 경로는 반드시 작은따옴표
+Get-Item -LiteralPath &#39;C:\$Recycle.Bin&#39; -Force
+
+# 경로 정규화는 정규식보다 .NET 이 정확하다
+[System.IO.Path]::GetFullPath(&#39;C:\Windows\..\Windows\System32\cmd.exe&#39;)
+[System.IO.Path]::GetFileName(&#39;C:\Users\hong\AppData\Local\Temp\upd.exe&#39;)</code></pre></div>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import re
+from collections import Counter
+
+WIN_ABS   = re.compile(r&#39;(?i)[a-z]:\\(?:[^\\/:*?&quot;&lt;&gt;|\r\n]+\\)*[^\\/:*?&quot;&lt;&gt;|\r\n]*&#39;)
+WIN_EXE   = re.compile(r&#39;(?i)(?:[a-z]:\\|\\\\)[^&quot;\s]*\.(?:exe|dll|ps1|bat|cmd|vbs|hta|scr)&#39;)
+UNC       = re.compile(r&#39;(?i)\\\\[a-z0-9._-]+\\[^\\/:*?&quot;&lt;&gt;|\r\n]+&#39;)
+EXTLEN    = re.compile(r&#39;\\\\\?\\(?:UNC\\)?&#39;)
+SUSPECT   = re.compile(
+    r&#39;(?i)[a-z]:\\(?:Windows\\Temp|Windows\\Tasks|ProgramData|Users\\Public|PerfLogs&#39;
+    r&#39;|\$Recycle\.Bin|Users\\[^\\]+\\AppData\\(?:Local|Roaming|LocalLow))\\&#39;
+)
+ENVVAR    = re.compile(r&#39;%[A-Za-z_][A-Za-z0-9_()]*%&#39;)
+
+text = open(&#39;cmdline.txt&#39;, encoding=&#39;utf-8&#39;, errors=&#39;replace&#39;).read()
+
+# 실행 파일 경로 빈도
+for p, n in Counter(m.lower() for m in WIN_EXE.findall(text)).most_common(20):
+    print(f&#39;{n:6d}  {p}&#39;)
+
+# 의심 경로가 들어간 줄만
+for line in text.splitlines():
+    if SUSPECT.search(line):
+        print(line)
+
+# 경로 분해는 정규식이 아니라 ntpath 로
+import ntpath
+p = r&#39;C:\Users\hong\AppData\Local\Temp\upd.exe&#39;
+print(ntpath.dirname(p), ntpath.basename(p), ntpath.splitext(p)[1])</code></pre></div>
+<p><code>re.escape()</code>와 <code>ntpath</code>를 쓰면 백슬래시 개수를 세지 않아도 된다. <strong>정규식은 &quot;찾을 때&quot;만 쓰고, &quot;분해할 때&quot;는 경로 라이브러리를 쓴다.</strong></p>
+<h2 id="함께-보는-artifact">함께 보는 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>경로에서 얻은 것</th><th>다음 목표</th></tr></thead><tbody><tr><td><code>C:\...\Temp\upd.exe</code> 같은 실행 경로</td><td>Prefetch·Amcache·ShimCache로 실행 시각 확정</td></tr><tr><td>실행 파일명</td><td>4688 / Sysmon Event 1 (<a href="./event-4688-process-creation.html">FOR-0088</a>)</td></tr><tr><td>파일 생성 경로</td><td><code>$MFT</code> (<a href="./mft-basics.html">FOR-0021</a>)로 디스크상 생성/수정 시각</td></tr><tr><td>UNC <code>\\HOST\C$</code></td><td>4624 Logon Type 3 + 공유 접근 (<a href="./event-4624-logon.html">FOR-0083</a>)</td></tr><tr><td><code>AppData\Roaming</code> 상주 파일</td><td>Run/RunOnce 레지스트리 (<a href="./run-runonce.html">FOR-0063</a>)</td></tr><tr><td><code>\\?\</code> 접두 파일</td><td>탐색기로 못 보는 파일. <code>dir /a</code>와 <code>$MFT</code>로 확인</td></tr><tr><td>다운로드 경로</td><td>브라우저 다운로드 DB, Zone.Identifier ADS (<a href="./alternate-data-streams.html">FOR-0035</a>)</td></tr><tr><td>Linux 쪽 경로가 섞여 있다</td><td>컨테이너/WSL 여부 확인</td></tr></tbody></table></div>
+<h2 id="흔한-실수">흔한 실수</h2>
+<ul><li><strong>백슬래시를 2개 쓸 자리에 1개를 쓰는 것.</strong> <code>C:\Windows</code>를 정규식 <code>C:\Windows</code>로 검색하면 <code>\W</code>가 &quot;단어 문자가 아닌 것&quot;으로 해석되어 엉뚱한 것이 잡힌다. <code>\d</code> <code>\s</code> <code>\b</code> <code>\t</code> <code>\n</code> 도 같은 사고를 낸다 — <code>\temp</code>는 탭+<code>emp</code>다.</li><li><strong>셸 큰따옴표에서 개수를 안 늘리는 것.</strong> <code>grep -E &quot;C:\\Windows&quot;</code>는 셸이 <code>\\</code>를 <code>\</code>로 줄여 정규식에 <code>\W</code>가 도달한다. 작은따옴표를 쓰거나 4개로 늘린다.</li><li><strong>공백을 허용하는 패턴으로 뒤의 산문까지 삼키는 것.</strong> <code>C:\Program Files\App\a.exe was launched by ...</code> 전체가 한 매칭이 된다. 인용부호 기준(<code>&quot;([A-Za-z]:\\[^&quot;]+)&quot;</code>)이나 확장자 앵커(<code>\.exe\b</code>)로 끝을 고정한다.</li><li><strong>UNC를 <code>\\\\</code>로만 시작 판정하는 것.</strong> <code>\\?\</code>와 <code>\\.\</code>도 백슬래시 2개로 시작한다. 호스트 자리에 <code>?</code>/<code>.</code>이 오는 경우를 먼저 제외(<code>\\\\(?![?.]\\)</code>)해야 한다.</li><li><strong>대소문자를 구분하는 것.</strong> Windows 경로는 대소문자를 구분하지 않는다. 로그에는 <code>C:\WINDOWS\system32\CMD.EXE</code>가 섞여 나오므로 <code>(?i)</code>나 <code>grep -i</code>가 필수다. 반대로 <code>Select-String</code>은 기본이 대소문자 무시라 <code>-CaseSensitive</code>를 잘못 켜면 놓친다.</li><li><strong>환경변수 형태를 무시하는 것.</strong> <code>%TEMP%\a.exe</code>와 <code>C:\Users\hong\AppData\Local\Temp\a.exe</code>는 같은 파일이지만 정규식으로는 전혀 다르다. 두 패턴을 모두 돌리고 결과를 합친다.</li><li><strong><code>/</code>를 구분자로 쓴 경로를 놓치는 것.</strong> Win32 API가 <code>C:/Windows/System32</code>를 받아주므로 스크립트·JSON 설정·웹 로그에 실제로 등장한다. <code>[\\/]</code>로 받는다.</li><li><strong>후행 공백·점을 정규식이 잘라주리라 기대하는 것.</strong> 정규식은 아무것도 정규화하지 않는다. <code>evil.exe </code>와 <code>evil.exe</code>는 다른 문자열이므로 <code>\s*$</code>로 명시해 흡수하거나 비교 전에 <code>TrimEnd()</code> 한다.</li><li><strong><code>$</code> 들어간 경로를 PowerShell 큰따옴표에 넣는 것.</strong> <code>&quot;C:\$Recycle.Bin&quot;</code>은 <code>$Recycle</code> 변수로 확장되어 경로가 <code>C:\.Bin</code>이 된다. 명령이 조용히 실패한다. <code>&#39;C:\$Recycle.Bin&#39;</code>으로 쓴다. 관리 공유 <code>C$</code>도 같은 이유로 작은따옴표를 쓴다.</li><li><strong>경로 분해를 정규식으로 하는 것.</strong> 디렉터리/파일명/확장자 분리는 <code>ntpath</code>, <code>[System.IO.Path]</code>, <code>Split-Path</code>가 정확하다. 정규식은 &quot;찾기&quot;용이다.</li><li><strong>8.3 단축 이름을 놓치는 것.</strong> <code>C:\PROGRA~1\...</code>, <code>C:\Users\hong\AppDa~1\...</code> 형태가 로그에 남는다. <code>~\d</code> 를 포함한 이름을 따로 검색한다.</li></ul>
+<h2 id="mini-example">mini example</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;침해 서버의 프로세스 생성 명령행 덤프(cmdline.txt, 24,180줄)에서
+ 정상 프로그램 디렉터리 밖에서 실행된 실행 파일의 전체 경로를 구하세요.&quot;
+
+1. 형식 확인
+   $ head -2 cmdline.txt
+   2026-03-14T07:19:02+09:00 4688 SYSTEM &quot;C:\Windows\System32\svchost.exe -k netsvcs&quot;
+   2026-03-14T07:19:44+09:00 4688 CORP\hong &quot;C:\Program Files\Google\Chrome\Application\chrome.exe&quot;
+
+2. 첫 시도 (실패):
+   $ grep -Eo &#39;C:\Windows&#39; cmdline.txt | head -3
+   (0건)
+
+   이유: 정규식 엔진이 받은 것은 `C:\Windows` 이고 `\W` 는 &quot;단어 문자가 아닌 것&quot; 이다.
+        `C:` 뒤에 비단어 문자 + `indows` 를 찾으므로 실제 경로와 맞지 않는다.
+        백슬래시를 2개 써야 한다.
+
+   $ grep -Eo &#39;C:\\Windows&#39; cmdline.txt | wc -l
+   18042
+   -&gt; 정상 동작.
+
+3. 두 번째 시도 (부분 실패) -- 실행 파일 경로 전체를 뽑으려 했다
+   $ grep -Eio &#39;[a-z]:\\[^&quot;]+&#39; cmdline.txt | head -3
+   C:\Windows\System32\svchost.exe -k netsvcs
+   C:\Program Files\Google\Chrome\Application\chrome.exe
+   C:\Windows\System32\cmd.exe /c whoami
+
+   인자까지 붙어 나왔다. `[^&quot;]+` 가 공백을 허용하기 때문이다.
+
+4. 접근 변경 -- 확장자로 끝을 고정
+   $ grep -Eio &#39;[a-z]:\\[^&quot;]*?\.(exe|dll|ps1|bat|cmd|vbs|hta|scr)&#39; cmdline.txt |
+       tr &#39;A-Z&#39; &#39;a-z&#39; | sort | uniq -c | sort -nr | head -5
+     18042 c:\windows\system32\svchost.exe
+      2210 c:\program files\google\chrome\application\chrome.exe
+      1904 c:\windows\system32\cmd.exe
+       311 c:\windows\explorer.exe
+        14 c:\programdata\intel\driverupdate.exe
+
+   `-Eio` 의 `-o` 는 게으른 수량자가 없는 ERE 에서는 최장 일치를 하므로,
+   실제로는 grep -P 또는 다음처럼 공백 제외 클래스를 쓰는 편이 안전하다.
+
+   $ grep -Eio &#39;[a-z]:\\[^&quot;[:space:]]*\.(exe|dll|ps1)&#39; cmdline.txt | sort -u | wc -l
+   187
+
+5. 정상 디렉터리를 제외 -- 의심 경로만 남긴다
+   $ grep -Eio &#39;[a-z]:\\[^&quot;[:space:]]*\.(exe|dll|ps1|bat|cmd|vbs|hta|scr)&#39; cmdline.txt |
+       tr &#39;A-Z&#39; &#39;a-z&#39; |
+       grep -Ev &#39;^c:\\(windows\\(system32|syswow64|winsxs)|program files( \(x86\))?)\\&#39; |
+       sort | uniq -c | sort -nr
+        14 c:\programdata\intel\driverupdate.exe
+         6 c:\users\hong\appdata\local\temp\upd.exe
+         3 c:\users\public\p.ps1
+         1 c:\windows\temp\a.dll
+
+6. 원문에서 문맥 확인
+   $ grep -i &#39;driverupdate.exe&#39; cmdline.txt | head -2
+   2026-03-14T07:31:20+09:00 4688 NT AUTHORITY\SYSTEM &quot;C:\ProgramData\Intel\DriverUpdate.exe -s&quot;
+   2026-03-14T07:31:21+09:00 4688 NT AUTHORITY\SYSTEM &quot;cmd.exe /c schtasks /create /tn IntelUpd /tr C:\ProgramData\Intel\DriverUpdate.exe /sc minute /mo 30&quot;
+
+   `C:\ProgramData` 는 정상 프로그램의 실행 위치가 아니고,
+   `Intel` 이라는 이름과 달리 30분 주기 작업으로 등록되어 있다.
+
+7. 교차검증 -- 환경변수 형태로도 남았는지
+   $ grep -Eio &#39;%[a-z_][a-z0-9_()]*%[^&quot;[:space:]]*&#39; cmdline.txt | sort -u
+   %ComSpec%
+   %ProgramData%\Intel\DriverUpdate.exe
+   %TEMP%\upd.exe
+
+   같은 파일이 확장 전 형태로도 존재한다. 5단계 목록만 봤다면 이 줄들을 놓쳤다.
+
+정답: C:\ProgramData\Intel\DriverUpdate.exe
+      (보조 흔적: C:\Users\hong\AppData\Local\Temp\upd.exe, C:\Users\Public\p.ps1)</code></pre></div>
+<p>2단계와 3단계가 핵심이다. <strong>백슬래시는 2개, 경로의 끝은 확장자나 인용부호로 고정한다.</strong> 그리고 7단계처럼 <code>%TEMP%</code> 형태를 별도로 한 번 더 훑지 않으면 같은 파일의 절반을 놓친다.</p>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-079 — Microsoft Learn, Naming Files, Paths, and Namespaces: 금지 문자 목록, 예약 이름(CON/PRN/AUX/NUL/COM/LPT), <code>MAX_PATH</code> 260, <code>\\?\</code> 확장 길이 접두와 정규화 생략, <code>\\.\</code> 장치 네임스페이스, 후행 공백·점 처리</li><li>SRC-057 — Python 문서, <code>re</code>: <code>re.escape()</code>, raw string 표기, 문자 클래스와 lookaround 동작</li><li>예약 이름 목록은 Windows 버전에 따라 <code>COM0</code>/<code>LPT0</code>와 상위 문자 변형이 추가로 명시되는 경우가 있으므로 대상 시스템의 MS 문서 원문에서 확인할 것</li><li><code>%TEMP%</code> 등 환경변수의 확장 결과는 프로필·정책·실행 컨텍스트(SYSTEM vs 사용자)에 따라 달라지므로 대상 시스템의 실제 값으로 확인할 것</li><li>표에 정리한 &quot;정상적으로는 비어 있는 디렉터리&quot;(<code>C:\PerfLogs</code> 등)는 설치된 소프트웨어에 따라 예외가 있으므로 기준선과 비교할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./linux-path-regex.html">
+    <span class="rel-id">FOR-0138 · 로그/Regex</span>
+    Linux 경로 regex와 FHS 주요 경로별 포렌식 의미
+  </a>
+  <a class="related-item" href="./ipv4-regex.html">
+    <span class="rel-id">FOR-0128 · 로그/Regex</span>
+    IPv4 주소 regex: 느슨한 패턴과 엄격한 패턴 골라 쓰기
+  </a>
+  <a class="related-item" href="./powershell-select-string.html">
+    <span class="rel-id">FOR-0121 · 로그/Regex</span>
+    PowerShell Select-String으로 로그 검색하기 (Windows용 grep)
+  </a>
+  <a class="related-item" href="./event-4688-process-creation.html">
+    <span class="rel-id">FOR-0088 · Event Log</span>
+    Event ID 4688 프로세스 생성: CommandLine 과 부모-자식 체인 재구성
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./email-regex.html"><span class="rel-id">← FOR-0132</span>이메일 주소 regex: 실용 패턴과 RFC 문법의 간극</a>
+<a class="related-item" href="./linux-path-regex.html"><span class="rel-id">FOR-0138 →</span>Linux 경로 regex와 FHS 주요 경로별 포렌식 의미</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#개념">개념</a></li>
+<li class="toc-l3"><a href="#예약-이름">예약 이름</a></li>
+<li class="toc-l3"><a href="#후행-공백과-점">후행 공백과 점</a></li>
+<li class="toc-l2"><a href="#파일-경로">파일 / 경로</a></li>
+<li class="toc-l3"><a href="#환경변수-경로-실제-값-대응표">환경변수 경로 — 실제 값 대응표</a></li>
+<li class="toc-l2"><a href="#주요-필드">주요 필드</a></li>
+<li class="toc-l3"><a href="#패턴-1-드라이브-절대경로-가장-많이-쓴다">패턴 1 — 드라이브 절대경로 (가장 많이 쓴다)</a></li>
+<li class="toc-l3"><a href="#패턴-2-unc">패턴 2 — UNC</a></li>
+<li class="toc-l3"><a href="#패턴-3-확장-길이-접두">패턴 3 — 확장 길이 접두</a></li>
+<li class="toc-l3"><a href="#패턴-4-명령행에서-실행-파일-경로만">패턴 4 — 명령행에서 실행 파일 경로만</a></li>
+<li class="toc-l3"><a href="#패턴-5-의심-경로-가장-실전적">패턴 5 — 의심 경로 (가장 실전적)</a></li>
+<li class="toc-l3"><a href="#백슬래시를-몇-개-쓰는가-언어별-표">백슬래시를 몇 개 쓰는가 — 언어별 표</a></li>
+<li class="toc-l2"><a href="#빠른-명령">빠른 명령</a></li>
+<li class="toc-l2"><a href="#함께-보는-artifact">함께 보는 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-실수">흔한 실수</a></li>
+<li class="toc-l2"><a href="#mini-example">mini example</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

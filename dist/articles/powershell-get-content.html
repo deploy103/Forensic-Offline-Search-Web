@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>PowerShell Get-Content 실전: -Tail, -Wait, -Raw, -ReadCount · FOR-0120 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%A1%9C%EA%B7%B8%2FRegex">로그/Regex</a> / FOR-0120
+      </div>
+      <header class="article-head">
+        <h1>PowerShell Get-Content 실전: -Tail, -Wait, -Raw, -ReadCount</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">로그/Regex</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>Get-Content는 기본적으로 줄 단위 문자열 배열을 돌려주고 -Raw를 주면 파일 전체를 문자열 하나로 돌려준다. 이 차이가 성능과 정규식 동작을 모두 바꾸므로, 로그를 만나면 -TotalCount로 앞을 보고 -Tail로 끝을 보고 큰 파일은 -ReadCount로 흘려보내는 것이 순서다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>PowerShell, Get-Content, Measure-Object, Select-String</td></tr>
+<tr><th>artifact</th><td><code>access.log</code> · <code>app.log</code> · <code>text log</code> · <code>Zone.Identifier</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\inetpub\logs\LogFiles</code> · <code>C:\Windows\System32\LogFiles</code> · <code>C:\Windows\Logs</code></td></tr>
+<tr><th>로그 필드</th><td><code>Lines</code> · <code>Words</code> · <code>Characters</code> · <code>Length</code></td></tr>
+<tr><th>파일 형식</th><td><code>log</code> · <code>txt</code> · <code>csv</code> · <code>json</code> · <code>jsonl</code></td></tr>
+<tr><th>검색 별칭</th><td>파워쉘 파일 읽기 · 파워쉘 cat · 파워쉘 tail · tail -f 파워쉘 · get-content · 윈도우에서 tail · 파워쉘 로그 실시간 · 파워쉘 줄 수</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>Get-Content</code>는 기본적으로 <strong>줄 단위 문자열 배열</strong>을 돌려주고 <code>-Raw</code>를 주면 <strong>파일 전체를 문자열 하나</strong>로 돌려준다. 이 차이가 성능과 정규식 동작을 모두 바꾸므로, 로그를 만나면 <code>-TotalCount</code>로 앞을 보고 <code>-Tail</code>로 끝을 보고 큰 파일은 <code>-ReadCount</code>로 흘려보내는 것이 순서다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>첨부된 로그의 <strong>형식을 먼저 확인</strong>해야 하는 상황 — 형식을 모르면 정규식을 못 만든다</li><li>수백 MB 로그를 메모장/VS Code로 열 수 없는 상황</li><li>문제 지문이 &quot;마지막 로그&quot;, &quot;최초 기록&quot;을 묻는 상황</li><li>실행 중인 프로세스가 로그를 계속 쓰고 있어 <strong>실시간 관찰</strong>이 필요한 상황</li><li>한글이 포함된 로그가 물음표나 깨진 글자로 나오는 상황</li><li>파일 앞부분 몇 바이트만 보고 <strong>매직 바이트</strong>를 확인해야 하는 상황</li></ul>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>확장자가 <code>.log</code> <code>.txt</code> <code>.csv</code> <code>.json</code> 이면 텍스트로 읽는다</li><li>파일 크기가 수십 MB 이상이면 <code>-Raw</code>나 <code>(Get-Content ...)</code> 괄호 감싸기를 쓰면 안 된다</li><li>첫 줄이 헤더인지 데이터인지 (CSV는 헤더, syslog는 바로 데이터)</li><li>한글이 깨지면 인코딩 문제이고, 물음표가 나오면 콘솔 폰트 문제일 수도 있다</li><li>파일 크기가 계속 커지고 있으면 아직 쓰이는 중인 활성 로그다</li></ol>
+<p>크기를 먼저 본다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Get-ChildItem .\access.log | Select-Object Name, Length, LastWriteTime</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Name       Length LastWriteTime
+----       ------ -------------
+access.log 8412775 2026-03-14 07:41:09</code></pre></div>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Get-Content .\access.log -TotalCount 3</code></pre></div>
+<p>앞·뒤·줄 수를 한 번에 확인하는 세 줄이 실제 시작점이다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Get-Content .\access.log -TotalCount 3       # 앞 3줄 = 형식 판별
+Get-Content .\access.log -Tail 3             # 뒤 3줄 = 마지막 기록 시각
+Get-Content .\access.log | Measure-Object -Line</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">203.0.113.77 - - [14/Mar/2026:07:19:02 +0900] &quot;GET /admin/ HTTP/1.1&quot; 403 199
+192.168.10.24 - - [14/Mar/2026:07:19:05 +0900] &quot;GET /index.html HTTP/1.1&quot; 200 5120
+198.51.100.5 - - [14/Mar/2026:07:19:07 +0900] &quot;GET /favicon.ico HTTP/1.1&quot; 404 209
+
+Lines      : 41882
+Words      :
+Characters :
+Property   :</code></pre></div>
+<p><code>+0900</code>이 보이므로 이 로그의 시각은 KST다. UTC 기준 artifact와 비교할 때는 9시간을 빼야 한다.</p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-파라미터-8개만-외운다">1단계 — 파라미터 8개만 외운다</h3>
+<div class="table-wrap"><table><thead><tr><th>파라미터</th><th>하는 일</th><th>반환 형태</th><th>Linux 대응</th></tr></thead><tbody><tr><td><code>-Path</code></td><td>대상 파일. 와일드카드 허용</td><td>—</td><td>파일 인자</td></tr><tr><td><code>-LiteralPath</code></td><td>경로를 <strong>문자 그대로</strong>. <code>[</code> <code>]</code> <code>*</code> 포함 경로에 필수</td><td>—</td><td>—</td></tr><tr><td><code>-TotalCount N</code></td><td>앞에서 N개만 읽고 멈춘다. 별칭 <code>-First</code>, <code>-Head</code></td><td>줄 배열</td><td><code>head -n N</code></td></tr><tr><td><code>-Tail N</code></td><td>뒤에서 N개. 별칭 <code>-Last</code></td><td>줄 배열</td><td><code>tail -n N</code></td></tr><tr><td><code>-Wait</code></td><td>파일을 열어 둔 채 새 내용이 붙으면 계속 출력</td><td>줄 스트림</td><td><code>tail -f</code></td></tr><tr><td><code>-Raw</code></td><td>파일 전체를 <strong>문자열 하나</strong>로</td><td>문자열 1개</td><td>—</td></tr><tr><td><code>-ReadCount N</code></td><td>파이프라인으로 한 번에 N줄씩 넘긴다</td><td>N개짜리 배열 묶음</td><td>—</td></tr><tr><td><code>-Delimiter S</code></td><td>줄 구분자를 <code>S</code>로 바꾼다</td><td>S 기준 조각</td><td><code>awk RS=S</code></td></tr><tr><td><code>-Encoding E</code></td><td>읽을 때 적용할 인코딩</td><td>줄 배열</td><td><code>iconv</code></td></tr></tbody></table></div>
+<p>별칭은 <code>gc</code>, <code>cat</code>, <code>type</code> 세 개다. 대회장에서는 <code>gc</code>가 가장 빠르다.</p>
+<p><code>-ReadCount</code> 기본값은 1이고, 0을 주면 전부 한 번에 보낸다.</p>
+<h3 id="2단계--raw-vs-기본-동작의-차이를-몸으로-익힌다">2단계 — <code>-Raw</code> vs 기본 동작의 차이를 몸으로 익힌다</h3>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$lines = Get-Content .\access.log        # String[] — 줄마다 원소 1개
+$raw   = Get-Content .\access.log -Raw   # String   — 원소 1개
+
+$lines.Count      # 41882
+$raw.Count        # 1
+$raw.Length       # 8412775  (문자 수)
+$lines[0].Length  # 76       (첫 줄 문자 수)</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>비교 항목</th><th>기본 (줄 배열)</th><th><code>-Raw</code> (문자열 하나)</th></tr></thead><tbody><tr><td>반환 타입</td><td><code>String[]</code></td><td><code>String</code></td></tr><tr><td><code>.Count</code></td><td>줄 수</td><td>항상 1</td></tr><tr><td>여러 줄에 걸친 정규식</td><td>불가 (줄마다 따로 본다)</td><td>가능</td></tr><tr><td>메모리</td><td>줄마다 객체 → 오버헤드 큼</td><td>파일 크기만큼 한 덩어리</td></tr><tr><td>큰 파일 속도</td><td>느리다</td><td>훨씬 빠르다</td></tr><tr><td>인덱싱</td><td><code>$lines[100]</code></td><td>불가</td></tr></tbody></table></div>
+<p>정규식이 줄바꿈을 넘어야 하는 경우(멀티라인 XML, 스택 트레이스, JSON 들여쓰기)는 <code>-Raw</code>가 유일한 답이다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 여러 줄에 걸친 &lt;Data&gt; 블록 추출 — -Raw 없으면 절대 안 걸린다
+$raw = Get-Content .\report.xml -Raw
+[regex]::Matches($raw, &#39;(?s)&lt;Data Name=&quot;CommandLine&quot;&gt;(.*?)&lt;/Data&gt;&#39;) |
+  ForEach-Object { $_.Groups[1].Value }</code></pre></div>
+<p><code>(?s)</code>는 <code>.</code>이 줄바꿈까지 매칭하게 하는 인라인 옵션이다.</p>
+<h3 id="3단계-큰-파일은--readcount로-흘려보낸다">3단계 — 큰 파일은 <code>-ReadCount</code>로 흘려보낸다</h3>
+<p><code>(Get-Content huge.log)</code>처럼 괄호로 감싸면 <strong>파일 전체가 배열로 메모리에 올라간다.</strong> 수 GB 파일에서는 이것만으로 세션이 죽는다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 나쁜 예 — 전체를 배열로 만든다
+$all = Get-Content .\huge.log
+$all | Where-Object { $_ -match &#39;ERROR&#39; }
+
+# 좋은 예 — 2000줄씩 파이프로 흘린다
+Get-Content .\huge.log -ReadCount 2000 | Select-String -Pattern &#39;ERROR&#39;</code></pre></div>
+<p><code>-ReadCount</code>를 1보다 크게 주면 <strong>파이프라인에 배열이 흐른다.</strong> 이것이 최대 함정이다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 의도대로 안 되는 코드 — $_ 가 문자열이 아니라 배열이다
+Get-Content .\huge.log -ReadCount 1000 | ForEach-Object { $_.Substring(0,10) }
+# -&gt; Method invocation failed ... [System.Object[]] 에 Substring 없음
+
+# 고친 코드 — 배열을 한 겹 더 풀어 준다
+Get-Content .\huge.log -ReadCount 1000 | ForEach-Object { $_ } |
+  ForEach-Object { $_.Substring(0,10) }</code></pre></div>
+<p><code>Select-String</code>은 배열 입력을 알아서 줄 단위로 처리하므로 <code>-ReadCount</code>와 그대로 조합된다. 검색은 <a href="./powershell-select-string.html">FOR-0121</a>로 넘긴다.</p>
+<p>가장 빠른 방법은 .NET을 직접 부르는 것이다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 스트리밍 열거자 — 메모리에 한 줄씩만 올린다
+[System.IO.File]::ReadLines((Resolve-Path .\huge.log)) |
+  Where-Object { $_ -like &#39;*ERROR*&#39; } | Select-Object -First 20</code></pre></div>
+<p><code>Resolve-Path</code>로 감싸는 이유가 중요하다. .NET 메서드는 PowerShell의 현재 위치가 아니라 <strong>프로세스의 작업 디렉터리</strong>를 기준으로 상대 경로를 푼다. 상대 경로를 그대로 넘기면 엉뚱한 폴더를 보거나 <code>FileNotFoundException</code>이 난다.</p>
+<h3 id="4단계--wait로-실시간-관찰">4단계 — <code>-Wait</code>로 실시간 관찰</h3>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># tail -f 와 같다. 마지막 20줄을 보여준 뒤 새 줄을 계속 붙인다
+Get-Content .\app.log -Tail 20 -Wait</code></pre></div>
+<p><code>-Wait</code>는 파일을 열어 둔 채 주기적으로(약 1초 간격) 크기 변화를 확인해 새 내용을 출력한다. 종료는 Ctrl+C다.</p>
+<p>실전에서는 필터와 함께 쓴다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 실시간으로 실패 로그온만 흘려보기
+Get-Content .\auth.log -Tail 0 -Wait | Select-String -Pattern &#39;Failed password&#39;
+
+# 악성 프로세스가 만들 파일을 감시하며 로그를 본다
+Get-Content .\app.log -Wait | Where-Object { $_ -match &#39;exec|cmd|powershell&#39; }</code></pre></div>
+<p>주의: <code>-Wait</code>는 프로세스가 살아 있는 <strong>라이브 시스템 대응</strong>용이다. 정지된 이미지에서 뜬 파일에 쓰면 아무것도 나오지 않고 그냥 멈춘 것처럼 보인다.</p>
+<h3 id="5단계-인코딩과-한글-깨짐">5단계 — 인코딩과 한글 깨짐</h3>
+<p>기본 인코딩이 <strong>PowerShell 버전마다 다르다.</strong> 이것이 한글 깨짐의 대부분이다.</p>
+<div class="table-wrap"><table><thead><tr><th>환경</th><th>기본 인코딩</th><th>UTF-8 로그를 그냥 읽으면</th></tr></thead><tbody><tr><td>Windows PowerShell 5.1</td><td>시스템 ANSI 코드페이지 (한국어 Windows는 CP949)</td><td>한글이 <code>ìƒ‰</code> 같은 깨진 글자</td></tr><tr><td>PowerShell 7.x</td><td>UTF-8 (BOM 없음)</td><td>정상</td></tr><tr><td>PowerShell 7.x + CP949 로그</td><td>UTF-8로 가정</td><td>한글이 <code>ìƒ‰</code> 또는 대체 문자</td></tr></tbody></table></div>
+<p>해결은 명시하는 것뿐이다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Get-Content .\korean.log -Encoding utf8      # UTF-8 로그
+Get-Content .\korean.log -Encoding oem       # 콘솔/CP949 로 저장된 로그
+Get-Content .\korean.log -Encoding unicode   # UTF-16LE (Windows 툴 출력이 흔히 이것)</code></pre></div>
+<p>BOM으로 먼저 판정하면 추측이 필요 없다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># PowerShell 7
+Get-Content .\korean.log -AsByteStream -TotalCount 4 | ForEach-Object { $_.ToString(&#39;X2&#39;) }
+
+# Windows PowerShell 5.1
+Get-Content .\korean.log -Encoding Byte -TotalCount 4 | ForEach-Object { $_.ToString(&#39;X2&#39;) }</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">EF
+BB
+BF
+7B</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>첫 바이트</th><th>인코딩</th><th><code>-Encoding</code> 값</th></tr></thead><tbody><tr><td><code>EF BB BF</code></td><td>UTF-8 with BOM</td><td><code>utf8</code></td></tr><tr><td><code>FF FE</code></td><td>UTF-16 LE</td><td><code>unicode</code></td></tr><tr><td><code>FE FF</code></td><td>UTF-16 BE</td><td><code>bigendianunicode</code></td></tr><tr><td>BOM 없음 + <code>7B</code>(<code>{</code>) 같은 ASCII</td><td>UTF-8 또는 ANSI</td><td>한글 확인 후 <code>utf8</code> / <code>oem</code></td></tr></tbody></table></div>
+<p>같은 바이트 읽기로 <strong>매직 바이트 확인</strong>도 끝난다. <code>50 4B 03 04</code>면 ZIP, <code>89 50 4E 47</code>면 PNG다.</p>
+<p><code>-Encoding Byte</code>는 Windows PowerShell 5.1 전용이고 PowerShell 6 이상에서는 <code>-AsByteStream</code>으로 바뀌었다. 둘을 섞으면 파라미터 오류가 난다.</p>
+<h3 id="6단계--delimiter와-ads">6단계 — <code>-Delimiter</code>와 ADS</h3>
+<p>줄바꿈이 아닌 구분자로 잘라야 할 때가 있다. NUL 구분 리스트, 레코드 구분자가 <code>;</code>인 덤프 등이다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># ; 를 레코드 구분자로 사용
+Get-Content .\records.txt -Delimiter &#39;;&#39; | ForEach-Object { $_.Trim() }</code></pre></div>
+<p><code>-Delimiter</code>로 자르면 구분자 자체가 각 조각의 끝에 남는다. 그래서 위처럼 <code>Trim()</code>이나 <code>TrimEnd(&#39;;&#39;)</code>이 필요하다.</p>
+<p>Windows에서는 대체 데이터 스트림도 <code>Get-Content</code>로 읽는다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Get-Item .\suspicious.exe -Stream *
+Get-Content .\suspicious.exe -Stream Zone.Identifier</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">[ZoneTransfer]
+ZoneId=3
+ReferrerUrl=http://203.0.113.77/payload
+HostUrl=http://203.0.113.77/payload/suspicious.exe</code></pre></div>
+<p><code>ZoneId=3</code>은 인터넷에서 내려온 파일이라는 증거다. 스트림 자체는 <a href="./alternate-data-streams.html">FOR-0035</a>에서 다룬다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p><code>Get-Content</code>가 무엇을 돌려주는지 알면 뒤에 붙일 커맨드릿이 정해진다.</p>
+<div class="table-wrap"><table><thead><tr><th>호출</th><th>반환 타입</th><th><code>.Count</code></th><th>그다음 붙일 것</th></tr></thead><tbody><tr><td><code>Get-Content f</code></td><td><code>String[]</code></td><td>줄 수</td><td><code>Where-Object</code>, <code>Select-String</code>, <code>[int]</code> 인덱싱</td></tr><tr><td><code>Get-Content f -Raw</code></td><td><code>String</code></td><td>1</td><td><code>[regex]::Matches</code>, <code>-split</code>, <code>-match</code></td></tr><tr><td><code>Get-Content f -TotalCount 5</code></td><td><code>String[]</code></td><td>5 이하</td><td>형식 판별</td></tr><tr><td><code>Get-Content f -Tail 5</code></td><td><code>String[]</code></td><td>5 이하</td><td>마지막 시각 확인</td></tr><tr><td><code>Get-Content f -ReadCount 500</code></td><td><code>String[]</code> 묶음 스트림</td><td>묶음 개수</td><td><code>Select-String</code>, <code>ForEach-Object { $_ }</code></td></tr><tr><td><code>Get-Content f -AsByteStream</code></td><td><code>Byte[]</code></td><td>바이트 수</td><td><code>ToString(&#39;X2&#39;)</code></td></tr><tr><td><code>Get-Content f -Delimiter &#39;;&#39;</code></td><td><code>String[]</code></td><td>조각 수</td><td><code>Trim()</code></td></tr></tbody></table></div>
+<p>줄 수를 세는 방법도 반환 타입에 따라 다르다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Get-Content .\access.log | Measure-Object -Line   # 스트리밍. 큰 파일에도 안전
+(Get-Content .\access.log).Count                  # 전체를 배열로 올린다. 작은 파일만
+((Get-Content .\access.log -Raw) -split &quot;\r?\n&quot;).Count   # -Raw 로 읽었을 때</code></pre></div>
+<p><code>-Raw</code> 결과에 <code>.Count</code>를 쓰면 무조건 1이 나온다. 줄 수를 센 줄 알고 오답을 쓰는 대표적인 사고다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>여기서 얻은 것</th><th>다음 목표</th></tr></thead><tbody><tr><td>로그 형식 (Apache / syslog / CSV / JSON)</td><td>그 형식 전용 파서 또는 정규식</td></tr><tr><td>로그의 마지막 시각</td><td>그 시각 전후의 EVTX·$MFT 활동</td></tr><tr><td><code>+0900</code> 같은 오프셋 표기</td><td>로그 시각의 시간대 확정. UTC artifact와 맞추기</td></tr><tr><td>첫 4바이트 매직</td><td>텍스트가 아니면 헥스 편집기·카빙으로 전환</td></tr><tr><td><code>Zone.Identifier</code>의 <code>HostUrl</code></td><td>다운로드 출처 IP·도메인 → pcap, 브라우저 히스토리</td></tr><tr><td>파일 크기가 계속 증가</td><td>라이브 프로세스 존재 → <code>-Wait</code>로 관찰</td></tr><tr><td>파일 크기가 0</td><td>로그 삭제·초기화 의심 → $MFT (<a href="./mft-basics.html">FOR-0021</a>)</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>(Get-Content huge.log)</code>로 감싸는 것.</strong> 괄호는 파이프라인을 끝내고 전체를 배열로 만들라는 뜻이다. 수 GB에서 메모리가 폭발한다. <code>-ReadCount</code>나 <code>[System.IO.File]::ReadLines</code>로 흘려보낸다.</li><li><strong><code>-Raw</code> 결과에 <code>.Count</code>를 쓰는 것.</strong> <code>-Raw</code>는 원소 1개인 문자열이라 항상 1이 나온다. 줄 수는 <code>Measure-Object -Line</code>으로 센다.</li><li><strong><code>-Raw</code> 없이 여러 줄 정규식을 시도하는 것.</strong> 기본 모드는 줄마다 따로 매칭하므로 줄바꿈을 넘는 패턴은 절대 안 걸린다. <code>-Raw</code> + <code>(?s)</code>가 정답이다.</li><li><strong><code>-ReadCount</code>를 켜고 <code>$_</code>를 문자열로 취급하는 것.</strong> 파이프라인에 흐르는 것은 N개짜리 배열이다. <code>$_.Substring()</code>이 죽는다. <code>ForEach-Object { $_ }</code>로 한 겹 풀거나 <code>Select-String</code>에 그대로 넘긴다.</li><li><strong>기본 인코딩을 믿는 것.</strong> PowerShell 5.1은 ANSI(CP949), PowerShell 7은 UTF-8이 기본이다. 같은 명령이 두 환경에서 다른 결과를 낸다. 한글이 섞이면 <code>-Encoding</code>을 항상 명시한다.</li><li><strong><code>-Encoding Byte</code>와 <code>-AsByteStream</code>을 섞는 것.</strong> 앞은 5.1 전용, 뒤는 6 이상 전용이다. <code>$PSVersionTable.PSVersion</code>을 먼저 확인한다.</li><li><strong>증거 파일에 <code>Set-Content</code> / <code>Add-Content</code> / <code>Out-File</code>을 쓰는 것.</strong> 쓰기는 $STANDARD_INFORMATION 시각을 바꾸고 $UsnJrnl 레코드를 남긴다. 증거의 시간선을 조사자가 오염시키는 것이다. 결과는 항상 <strong>다른 드라이브의 작업 폴더</strong>에 저장하고, 원본은 해시로 고정한다.</li><li><strong><code>-Path</code>에 대괄호가 든 경로를 주는 것.</strong> <code>-Path</code>는 <code>[</code> <code>]</code> <code>*</code> <code>?</code>를 와일드카드로 해석한다. <code>C:\case\log[1].txt</code>는 매칭 실패한다. <code>-LiteralPath</code>를 쓴다.</li><li><strong>.NET 메서드에 상대 경로를 주는 것.</strong> <code>[System.IO.File]</code> 계열은 PowerShell의 현재 위치를 모른다. <code>Resolve-Path</code>로 절대 경로를 만들어 넘긴다.</li><li><strong>정지된 이미지에서 <code>-Wait</code>를 쓰는 것.</strong> 새 내용이 붙을 일이 없으므로 영원히 대기한다. 멈춘 것으로 오해해 시간을 버린다.</li><li><strong><code>-Tail</code>을 앞에서 세는 것으로 착각하는 것.</strong> <code>-Tail</code>은 끝에서, <code>-TotalCount</code>는 앞에서다. 별칭 <code>-Last</code> / <code>-First</code>로 외우면 헷갈리지 않는다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<p>같은 값을 다른 경로로 확인한다. 줄 수는 특히 자주 틀린다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Get-Content .\access.log | Measure-Object -Line | Select-Object Lines
+((Get-Content .\access.log -Raw) -split &quot;\r?\n&quot; | Where-Object { $_ -ne &#39;&#39; }).Count</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">wc -l access.log
+awk &#39;END{print NR}&#39; access.log</code></pre></div>
+<p>네 숫자가 어긋나는 원인은 정해져 있다.</p>
+<div class="table-wrap"><table><thead><tr><th>증상</th><th>원인</th></tr></thead><tbody><tr><td><code>wc -l</code>이 1 적다</td><td>마지막 줄에 줄바꿈이 없다. <code>wc -l</code>은 줄바꿈 개수를 센다</td></tr><tr><td><code>-split</code>이 1 많다</td><td>파일 끝 줄바꿈 뒤의 빈 문자열이 원소로 남는다</td></tr><tr><td>PowerShell이 훨씬 적다</td><td>파일에 CR만 있는 구형 Mac 개행이거나 NUL 바이트가 섞였다</td></tr><tr><td>전부 다르다</td><td>텍스트 파일이 아니다. 매직 바이트를 다시 확인한다</td></tr></tbody></table></div>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;첨부된 서버 로그에서 마지막으로 기록된 요청 시각과 전체 요청 수를 구하고,
+ 로그에 포함된 한글 오류 메시지를 원문 그대로 제출하세요.&quot;
+첨부: server.log (약 240MB)
+
+1. 크기 확인
+   Get-ChildItem .\server.log | Select-Object Length
+   -&gt; 251658240
+      =&gt; 편집기로 열면 안 된다.
+
+2. 첫 시도 (실패):
+   $log = Get-Content .\server.log
+   $log.Count
+   -&gt; 몇 분간 응답 없음. 세션 메모리가 3GB 를 넘고 콘솔이 멈춘다.
+      원인: 240MB 파일의 모든 줄이 PSObject 래핑된 문자열로 메모리에 올라간다.
+
+3. 접근 변경 — 앞뒤만 보고 줄 수는 스트리밍으로 센다
+   Get-Content .\server.log -TotalCount 2
+   -&gt; 2026-03-14T07:19:02Z INFO  GET /index.html 200
+      2026-03-14T07:19:03Z INFO  GET /style.css 200
+
+   Get-Content .\server.log -Tail 2
+   -&gt; 2026-03-14T09:58:41Z ERROR POST /upload 500
+      2026-03-14T09:58:44Z ERROR ??? ?? ??
+
+   Get-Content .\server.log | Measure-Object -Line
+   -&gt; Lines : 1204471
+
+   시각 표기가 Z 로 끝난다 =&gt; 이 로그는 UTC 다.
+   마지막 요청 09:58:44 UTC = 2026-03-14 18:58:44 KST.
+
+4. 두 번째 실패 — 한글이 물음표로 나온다
+   Get-Content .\server.log -Tail 1
+   -&gt; 2026-03-14T09:58:44Z ERROR ??? ?? ??
+      Windows PowerShell 5.1 이 CP949 로 읽었고, 로그는 UTF-8 이었다.
+
+5. 인코딩 명시
+   Get-Content .\server.log -Tail 1 -Encoding utf8
+   -&gt; 2026-03-14T09:58:44Z ERROR 인증 서버 응답 없음
+
+   BOM 으로 확증
+   Get-Content .\server.log -Encoding Byte -TotalCount 3 |
+     ForEach-Object { $_.ToString(&#39;X2&#39;) }
+   -&gt; 32 30 32   (BOM 없는 UTF-8. 그래도 본문은 UTF-8 이다)
+
+6. 교차검증
+   wc -l server.log
+   -&gt; 1204471 server.log      (Measure-Object 와 일치)
+
+정답: 마지막 요청 2026-03-14 09:58:44 UTC (18:58:44 KST) /
+      전체 1204471건 / 오류 메시지 &quot;인증 서버 응답 없음&quot;</code></pre></div>
+<p>2단계와 4단계가 이 글의 핵심이다. <strong>큰 파일은 변수에 담지 않는다. 한글이 보이면 인코딩을 명시한다.</strong></p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>Get-ChildItem</code>으로 <strong>크기</strong>를 봤는가 — 크기가 전략을 결정한다</li><li><code>-TotalCount 3</code>으로 형식을 확인했는가</li><li><code>$PSVersionTable.PSVersion</code>을 확인했는가 — 인코딩 기본값이 다르다</li><li>한글이 깨지면 <code>-Encoding utf8</code> / <code>-Encoding oem</code>을 둘 다 시도했는가</li><li>여러 줄 정규식이 필요한데 <code>-Raw</code>를 빠뜨리지 않았는가</li><li><code>-ReadCount</code>를 켠 상태에서 <code>$_</code>를 문자열로 다루고 있지 않은가</li><li>줄 수를 <code>-Raw</code> 결과의 <code>.Count</code>로 세고 있지 않은가</li><li>경로에 <code>[</code> <code>]</code>가 있는데 <code>-Path</code>를 쓰고 있지 않은가</li><li><code>-Wait</code>가 멈춘 것처럼 보이면, 그 파일이 지금도 쓰이는 파일인가</li><li>결과를 원본과 같은 볼륨에 쓰고 있지 않은가 — 증거 오염</li><li>텍스트가 아닐 가능성 — 첫 4바이트 매직을 확인했는가</li><li>검색·집계가 목적이면 <code>Select-String</code>으로 넘어갈 시점인가 (<a href="./powershell-select-string.html">FOR-0121</a>)</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-007 — Microsoft Learn, Select-String: <code>Get-Content</code> 출력을 파이프로 넘길 때의 동작과 <code>-Encoding</code> 파라미터 대응 확인</li><li><code>Get-Content</code> 자체의 파라미터 전체 목록(<code>-ReadCount</code>, <code>-Delimiter</code>, <code>-Wait</code>, <code>-AsByteStream</code>)은 Microsoft Learn의 <code>Get-Content</code> (Microsoft.PowerShell.Management) 문서가 1차 출처다. 이 SRC는 <code>research/sources.json</code>에 아직 없으므로 추가가 필요하다</li><li><code>-Wait</code>의 폴링 간격, <code>-Delimiter</code>의 구분자 잔류 동작은 PowerShell 버전에 따라 세부가 다를 수 있으므로 실제 환경에서 확인할 것</li><li>기본 인코딩(5.1 = ANSI, 7.x = UTF-8)은 버전 의존이다. <code>$PSVersionTable</code>로 먼저 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./powershell-select-string.html">
+    <span class="rel-id">FOR-0121 · 로그/Regex</span>
+    PowerShell Select-String으로 로그 검색하기 (Windows용 grep)
+  </a>
+  <a class="related-item" href="./alternate-data-streams.html">
+    <span class="rel-id">FOR-0035 · 디스크/NTFS</span>
+    ADS(Alternate Data Stream)와 Zone.Identifier로 다운로드 출처 찾기
+  </a>
+  <a class="related-item" href="./grep-basics.html">
+    <span class="rel-id">FOR-0112 · 로그/Regex</span>
+    grep 기본 옵션 레퍼런스: -i -v -c -o -w -E -P -r 와 종료 코드
+  </a>
+  <a class="related-item" href="./grep-e-regex.html">
+    <span class="rel-id">FOR-0113 · 로그/Regex</span>
+    grep -E 확장 정규표현식(ERE) 실전: BRE와의 차이와 lookaround 대안
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./awk-fields.html"><span class="rel-id">← FOR-0115</span>awk로 로그 필드 추출·집계: $1 NF NR과 연관배열 카운트</a>
+<a class="related-item" href="./powershell-select-string.html"><span class="rel-id">FOR-0121 →</span>PowerShell Select-String으로 로그 검색하기 (Windows용 grep)</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-파라미터-8개만-외운다">1단계 — 파라미터 8개만 외운다</a></li>
+<li class="toc-l3"><a href="#2단계--raw-vs-기본-동작의-차이를-몸으로-익힌다">2단계 — `-Raw` vs 기본 동작의 차이를 몸으로 익힌다</a></li>
+<li class="toc-l3"><a href="#3단계-큰-파일은--readcount로-흘려보낸다">3단계 — 큰 파일은 `-ReadCount`로 흘려보낸다</a></li>
+<li class="toc-l3"><a href="#4단계--wait로-실시간-관찰">4단계 — `-Wait`로 실시간 관찰</a></li>
+<li class="toc-l3"><a href="#5단계-인코딩과-한글-깨짐">5단계 — 인코딩과 한글 깨짐</a></li>
+<li class="toc-l3"><a href="#6단계--delimiter와-ads">6단계 — `-Delimiter`와 ADS</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

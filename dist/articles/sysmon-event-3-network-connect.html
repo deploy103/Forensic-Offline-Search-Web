@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Sysmon Event ID 3 NetworkConnect: 프로세스와 통신을 잇는 유일한 로그 · FOR-0100 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Event%20Log">Event Log</a> / FOR-0100
+      </div>
+      <header class="article-head">
+        <h1>Sysmon Event ID 3 NetworkConnect: 프로세스와 통신을 잇는 유일한 로그</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Event Log</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>Sysmon Event ID 3은 어느 프로세스가 어느 IP·포트로 연결했는지를 한 줄에 기록한다. pcap은 프로세스를 모르고 4624는 페이로드를 모르므로, 호스트에서 이 둘을 잇는 로그는 사실상 이것뿐이다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Sysmon, EvtxECmd, Wireshark, PowerShell, Timeline Explorer</td></tr>
+<tr><th>artifact</th><td><code>Sysmon</code> · <code>NetworkConnect</code> · <code>DnsQuery</code> · <code>Initiated</code> · <code>DestinationIp</code> · <code>ProcessGuid</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Windows\System32\winevt\Logs\Microsoft-Windows-Sysmon%4Operational.evtx</code></td></tr>
+<tr><th>Event ID</th><td><code>3</code> · <code>22</code></td></tr>
+<tr><th>프로토콜</th><td>TCP, UDP, DNS, HTTP, TLS</td></tr>
+<tr><th>Wireshark 필터</th><td><code>ip.addr == 45.146.164.9 &amp;&amp; tcp.port == 4444</code> · <code>tcp.flags.syn == 1 &amp;&amp; tcp.flags.ack == 0</code></td></tr>
+<tr><th>tshark field</th><td><code>ip.src</code> · <code>ip.dst</code> · <code>tcp.dstport</code> · <code>frame.time_epoch</code></td></tr>
+<tr><th>regex</th><td><code>DestinationIp:\s*([0-9]{1,3}(?:\.[0-9]{1,3}){3})</code></td></tr>
+<tr><th>로그 필드</th><td><code>RuleName</code> · <code>UtcTime</code> · <code>ProcessGuid</code> · <code>ProcessId</code> · <code>Image</code> · <code>User</code> · <code>Protocol</code> · <code>Initiated</code> · <code>SourceIsIpv6</code> · <code>SourceIp</code> · <code>SourceHostname</code> · <code>SourcePort</code> · <code>SourcePortName</code> · <code>DestinationIsIpv6</code> · <code>DestinationIp</code> · <code>DestinationHostname</code> · <code>DestinationPort</code> · <code>DestinationPortName</code></td></tr>
+<tr><th>파일 형식</th><td><code>evtx</code></td></tr>
+<tr><th>검색 별칭</th><td>sysmon 네트워크 연결 · sysmon 3 · 어떤 프로세스가 통신했나 · 비콘 탐지 · c2 통신 찾기 · sysmon 22 dns · 프로세스별 접속 ip</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>Sysmon Event ID 3은 <strong>어느 프로세스가 어느 IP·포트로 연결했는지</strong>를 한 줄에 기록한다. pcap은 프로세스를 모르고 4624는 페이로드를 모르므로, 호스트에서 이 둘을 잇는 로그는 사실상 이것뿐이다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;C2 서버 IP는 무엇인가&quot; — <code>DestinationIp</code></li><li>&quot;이 통신을 일으킨 프로세스는 무엇인가&quot; — pcap만으로는 절대 알 수 없는 값</li><li>&quot;비콘(주기적 통신)이 있는가&quot; — 같은 목적지로 규칙적 간격 반복</li><li>&quot;<code>rundll32.exe</code>가 외부로 나갔는가&quot; — 정상 시스템 프로세스의 비정상 통신</li><li>&quot;도메인 → IP → 프로세스&quot;를 연결 — Sysmon 22와 묶는다</li><li>pcap이 없는 문제에서 네트워크 증거 확보</li></ul>
+<p>프로세스 자체(명령행·부모·해시)는 Sysmon 1 전담 글(FOR-0099)에서 얻는다. 여기서는 그 <code>ProcessGuid</code>가 만든 연결을 다룬다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>첨부에 Sysmon evtx가 있고 지문이 &quot;통신&quot;, &quot;접속&quot;, &quot;유출&quot; → Event 3</li><li>IP가 하나 주어졌다 → <code>DestinationIp</code>로 바로 필터</li><li>지문에 &quot;주기&quot;, &quot;몇 초마다&quot;, &quot;규칙적&quot; → 비콘 분석</li><li>지문에 &quot;도메인&quot; → Sysmon 22(DnsQuery) 먼저</li><li>pcap과 Sysmon이 함께 있다 → 시각·IP·포트 3개로 대조</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 원본: Microsoft-Windows-Sysmon%4Operational.evtx -&gt; sysmon.evtx
+Get-WinEvent -Path &#39;C:\case\sysmon.evtx&#39; -FilterXPath &#39;*[System[EventID=3]]&#39; | Format-List</code></pre></div>
+<p>객체로 뽑아 두고 시작한다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$sm = &#39;C:\case\sysmon.evtx&#39;
+
+$p3 = Get-WinEvent -Path $sm -FilterXPath &#39;*[System[EventID=3]]&#39; |
+  ForEach-Object {
+    $x = [xml]$_.ToXml()
+    $d = @{}
+    $x.Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.&#39;#text&#39; }
+    [pscustomobject]@{
+      UtcTime   = [datetime]::Parse($d[&#39;UtcTime&#39;])
+      Image     = $d[&#39;Image&#39;]
+      User      = $d[&#39;User&#39;]
+      Guid      = $d[&#39;ProcessGuid&#39;]
+      Proto     = $d[&#39;Protocol&#39;]
+      Initiated = $d[&#39;Initiated&#39;]
+      Src       = $d[&#39;SourceIp&#39;]
+      SrcPort   = $d[&#39;SourcePort&#39;]
+      Dst       = $d[&#39;DestinationIp&#39;]
+      DstHost   = $d[&#39;DestinationHostname&#39;]
+      DstPort   = [int]$d[&#39;DestinationPort&#39;]
+      DstPortNm = $d[&#39;DestinationPortName&#39;]
+    }
+  } | Sort-Object UtcTime
+
+# 아웃바운드 목적지 상위 목록
+$p3 | Where-Object { $_.Initiated -eq &#39;true&#39; } |
+  Group-Object Image, Dst, DstPort | Sort-Object Count -Descending |
+  Select-Object -First 20 Count, Name | Format-Table -AutoSize</code></pre></div>
+<p>출력 예시:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Count Name
+----- ----
+ 1284 C:\Program Files\Google\Chrome\Application\chrome.exe, 142.250.76.100, 443
+  173 C:\Windows\Temp\svchost.exe, 45.146.164.9, 4444
+   31 C:\Windows\System32\rundll32.exe, 185.220.101.7, 443
+    2 C:\Users\svc_backup\Downloads\rclone.exe, 45.146.164.9, 8080</code></pre></div>
+<p>두 번째 줄과 세 번째 줄이 답이다. <code>\Temp\</code>의 실행 파일과 <code>rundll32.exe</code>는 외부로 나가지 않는다.</p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-필드표">1단계 — 필드표</h3>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>의미</th><th>실전 활용</th></tr></thead><tbody><tr><td><code>RuleName</code></td><td>매칭된 설정 규칙 태그</td><td>설정에서 지정했을 때만 값이 있다</td></tr><tr><td><code>UtcTime</code></td><td><strong>이미 UTC인 연결 시각</strong></td><td>변환하지 않는다</td></tr><tr><td><code>ProcessGuid</code></td><td>연결을 만든 프로세스 GUID</td><td><strong>Sysmon 1과 잇는 키</strong></td></tr><tr><td><code>ProcessId</code></td><td>PID</td><td>재사용됨. 단독 사용 금지</td></tr><tr><td><code>Image</code></td><td>연결을 만든 실행 파일 경로</td><td>경로 자체가 1차 판정 근거</td></tr><tr><td><code>User</code></td><td>실행 계정</td><td>서비스 계정의 외부 연결은 이상 신호</td></tr><tr><td><code>Protocol</code></td><td><code>tcp</code> / <code>udp</code></td><td>UDP는 기록이 누락되기 쉽다</td></tr><tr><td><code>Initiated</code></td><td><code>true</code>=아웃바운드, <code>false</code>=인바운드</td><td><strong>방향 판정의 유일한 근거</strong></td></tr><tr><td><code>SourceIsIpv6</code></td><td>출발지가 IPv6인가</td><td><code>true</code>면 IPv6 주소 표기</td></tr><tr><td><code>SourceIp</code></td><td>출발지 IP</td><td>보통 이 호스트의 IP</td></tr><tr><td><code>SourceHostname</code></td><td>출발지 호스트명</td><td>자기 호스트 이름. 비어 있을 수 있다</td></tr><tr><td><code>SourcePort</code></td><td>출발지 포트</td><td>아웃바운드면 임의 고포트</td></tr><tr><td><code>SourcePortName</code></td><td>출발지 포트의 서비스명</td><td>대개 빈 값</td></tr><tr><td><code>DestinationIsIpv6</code></td><td>목적지가 IPv6인가</td><td>—</td></tr><tr><td><code>DestinationIp</code></td><td><strong>목적지 IP</strong></td><td>C2 후보</td></tr><tr><td><code>DestinationHostname</code></td><td>목적지 호스트명</td><td><strong>역방향 조회 결과. 비어 있는 경우가 많다</strong></td></tr><tr><td><code>DestinationPort</code></td><td><strong>목적지 포트</strong></td><td>4444, 8080, 1337 등은 즉시 의심</td></tr><tr><td><code>DestinationPortName</code></td><td>목적지 포트 서비스명</td><td><code>https</code>, <code>http</code>, <code>ldap</code> 등</td></tr></tbody></table></div>
+<h3 id="2단계-이-로그의-값-세-가지-증거의-빈칸을-메운다">2단계 — 이 로그의 값: 세 가지 증거의 빈칸을 메운다</h3>
+<div class="table-wrap"><table><thead><tr><th>증거</th><th>아는 것</th><th>모르는 것</th></tr></thead><tbody><tr><td>pcap</td><td>패킷 전문, 페이로드, 바이트 수</td><td><strong>어느 프로세스가 보냈는지</strong></td></tr><tr><td>Security 4624/4625</td><td>계정, 로그온 IP</td><td>통신 내용, 프로세스</td></tr><tr><td>Sysmon 1</td><td>프로세스, 명령행, 부모</td><td>통신 여부</td></tr><tr><td><strong>Sysmon 3</strong></td><td><strong>프로세스 + 목적지 IP/포트 + 시각</strong></td><td>페이로드, 전송량</td></tr></tbody></table></div>
+<p>즉 Sysmon 3은 페이로드를 모른다. 그래서 <strong>pcap이 있으면 Sysmon 3으로 프로세스를 특정하고, pcap으로 내용을 읽는</strong> 순서가 정석이다.</p>
+<h3 id="3단계-방향-판정">3단계 — 방향 판정</h3>
+<div class="table-wrap"><table><thead><tr><th><code>Initiated</code></th><th>의미</th><th>읽는 법</th></tr></thead><tbody><tr><td><code>true</code></td><td>이 호스트의 프로세스가 <strong>밖으로</strong> 연결</td><td><code>DestinationIp</code>가 상대방</td></tr><tr><td><code>false</code></td><td>밖에서 이 호스트로 <strong>들어온</strong> 연결</td><td><code>SourceIp</code>가 상대방</td></tr></tbody></table></div>
+<p><code>Initiated</code>를 무시하고 항상 <code>DestinationIp</code>를 상대방으로 읽으면, 인바운드 이벤트에서 자기 호스트 IP를 공격자 IP로 답하게 된다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 방향을 정규화해 &quot;상대방 주소&quot; 컬럼을 만든다
+$p3 | Select-Object UtcTime, Image, Initiated,
+  @{n=&#39;Peer&#39;;     e={ if ($_.Initiated -eq &#39;true&#39;) { $_.Dst }     else { $_.Src } }},
+  @{n=&#39;PeerPort&#39;; e={ if ($_.Initiated -eq &#39;true&#39;) { $_.DstPort } else { $_.SrcPort } }} |
+  Format-Table -AutoSize</code></pre></div>
+<h3 id="4단계-비콘-탐지-간격-통계">4단계 — 비콘 탐지 (간격 통계)</h3>
+<p>C2 비콘은 <strong>같은 목적지로 일정 간격 반복</strong>이다. 간격의 표준편차가 작으면 사람이 아니라 타이머다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$p3 | Where-Object { $_.Initiated -eq &#39;true&#39; } |
+  Group-Object { &quot;{0}|{1}|{2}&quot; -f $_.Image, $_.Dst, $_.DstPort } |
+  Where-Object { $_.Count -ge 10 } |
+  ForEach-Object {
+    $t = ($_.Group | Sort-Object UtcTime).UtcTime
+    $gaps = for ($i = 1; $i -lt $t.Count; $i++) { ($t[$i] - $t[$i-1]).TotalSeconds }
+    $mean = ($gaps | Measure-Object -Average).Average
+    $sd   = if ($gaps.Count -gt 1) {
+              [Math]::Sqrt((($gaps | ForEach-Object { [Math]::Pow($_ - $mean, 2) }) |
+                Measure-Object -Sum).Sum / ($gaps.Count - 1))
+            } else { 0 }
+    [pscustomobject]@{
+      Target   = $_.Name
+      Hits     = $_.Count
+      MeanSec  = [Math]::Round($mean, 1)
+      StdDev   = [Math]::Round($sd, 1)
+      Jitter   = if ($mean -gt 0) { [Math]::Round($sd / $mean * 100, 1) } else { 0 }
+      FirstUtc = $t[0]
+      LastUtc  = $t[-1]
+    }
+  } | Sort-Object Jitter | Format-Table -AutoSize</code></pre></div>
+<p>출력:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Target                                              Hits MeanSec StdDev Jitter FirstUtc            LastUtc
+------                                              ---- ------- ------ ------ --------            -------
+C:\Windows\Temp\svchost.exe|45.146.164.9|4444        173    60.2    2.1    3.5  2026-03-14 07:22:05 2026-03-14 10:14:47
+C:\...\rundll32.exe|185.220.101.7|443                 31   300.9   18.4    6.1  2026-03-14 07:41:10 2026-03-14 10:12:33
+C:\...\chrome.exe|142.250.76.100|443                1284     8.1   57.3  707.4  2026-03-14 06:02:11 2026-03-14 18:44:02</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>Jitter(표준편차/평균)</th><th>판정</th></tr></thead><tbody><tr><td>0 ~ 15%</td><td><strong>비콘 확정.</strong> 타이머 기반 주기 통신</td></tr><tr><td>15 ~ 40%</td><td>지터를 넣은 비콘 가능. 기간을 늘려 재계산</td></tr><tr><td>40% 이상</td><td>사람/애플리케이션의 불규칙 통신</td></tr></tbody></table></div>
+<p>위 출력에서 60초 주기(지터 3.5%)가 비콘이고, 300초 주기의 <code>rundll32.exe</code>는 더 은밀한 두 번째 채널이다. Chrome은 지터가 707%로 정상이다.</p>
+<p>CSV로 내려 SQLite에서 볼 때는 같은 계산을 이렇게 한다.</p>
+<div class="code-block" data-lang="sql"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-sql">-- sysmon3(utc_time, image, dst_ip, dst_port) 테이블 가정
+WITH ordered AS (
+  SELECT image, dst_ip, dst_port, utc_time,
+         LAG(utc_time) OVER (PARTITION BY image, dst_ip, dst_port ORDER BY utc_time) AS prev_t
+  FROM sysmon3
+),
+gaps AS (
+  SELECT image, dst_ip, dst_port,
+         (julianday(utc_time) - julianday(prev_t)) * 86400.0 AS gap
+  FROM ordered WHERE prev_t IS NOT NULL
+)
+SELECT image, dst_ip, dst_port,
+       COUNT(*) AS hits,
+       ROUND(AVG(gap), 1) AS mean_sec,
+       ROUND(SQRT(AVG(gap * gap) - AVG(gap) * AVG(gap)), 1) AS sd_sec
+FROM gaps
+GROUP BY image, dst_ip, dst_port
+HAVING hits &gt;= 10
+ORDER BY sd_sec / (mean_sec + 0.001) ASC;</code></pre></div>
+<h3 id="5단계-비정상-조합-필터">5단계 — 비정상 조합 필터</h3>
+<p>정상 환경에서 <strong>외부로 나가지 않는 프로세스</strong>들이 있다. 이들이 나가면 그 자체가 침해다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$never = &#39;rundll32|regsvr32|mshta|wscript|cscript|certutil|bitsadmin|&#39; +
+         &#39;notepad\.exe|calc\.exe|winword|excel|powerpnt|&#39; +
+         &#39;cmd\.exe|schtasks|whoami|net\.exe|net1\.exe|&#39; +
+         &#39;installutil|regasm|regsvcs|msbuild|msiexec|w3wp&#39;
+
+$p3 | Where-Object { $_.Initiated -eq &#39;true&#39; -and $_.Image -match $never } |
+  Select-Object UtcTime, Image, User, Dst, DstPort, DstHost |
+  Sort-Object UtcTime | Format-Table -AutoSize</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>조합</th><th>의미</th></tr></thead><tbody><tr><td><code>rundll32.exe</code> → 외부 443</td><td>로드된 DLL이 C2와 통신. 지속성 DLL 의심</td></tr><tr><td><code>regsvr32.exe</code> → 외부</td><td>Squiblydoo류 원격 스크립틀릿 실행</td></tr><tr><td><code>mshta.exe</code> → 외부</td><td>HTA 원격 실행</td></tr><tr><td><code>certutil.exe</code> / <code>bitsadmin.exe</code> → 외부</td><td>파일 다운로드 LOLBin</td></tr><tr><td><code>powershell.exe</code> → 외부 비표준 포트</td><td>다운로더 또는 리버스 셸</td></tr><tr><td><code>winword.exe</code> → 외부</td><td>문서 내 원격 템플릿·매크로 다운로드</td></tr><tr><td><code>w3wp.exe</code> → 외부</td><td>웹셸이 밖으로 연결(리버스 채널)</td></tr><tr><td>임의 프로세스 → 4444/1337/8080/9001</td><td>흔한 리스너 포트</td></tr><tr><td><code>\Temp\</code>·<code>\AppData\</code> 실행 파일 → 외부</td><td>드롭된 바이너리의 통신</td></tr></tbody></table></div>
+<p>포트만으로 판정하지 않는다. <strong>정상 포트(443)를 쓰는 C2가 더 흔하다.</strong> 프로세스와 목적지 조합, 그리고 주기성이 근거다.</p>
+<h3 id="6단계-sysmon-22dnsquery로-도메인-ip-프로세스">6단계 — Sysmon 22(DnsQuery)로 도메인 → IP → 프로세스</h3>
+<p><code>DestinationHostname</code>은 역방향 조회 결과라 대개 비어 있다. 도메인을 알려면 DNS 질의 이벤트를 봐야 한다.</p>
+<div class="table-wrap"><table><thead><tr><th>Event 22 필드</th><th>의미</th></tr></thead><tbody><tr><td><code>UtcTime</code></td><td>질의 시각(UTC)</td></tr><tr><td><code>ProcessGuid</code> / <code>ProcessId</code> / <code>Image</code></td><td>질의한 프로세스</td></tr><tr><td><code>QueryName</code></td><td><strong>질의한 도메인</strong></td></tr><tr><td><code>QueryStatus</code></td><td>0이면 성공, 그 외는 오류 코드</td></tr><tr><td><code>QueryResults</code></td><td><strong>응답 레코드 목록</strong>(주소들이 <code>;</code>로 이어짐)</td></tr><tr><td><code>User</code></td><td>실행 계정</td></tr></tbody></table></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$p22 = Get-WinEvent -Path $sm -FilterXPath &#39;*[System[EventID=22]]&#39; |
+  ForEach-Object {
+    $x = [xml]$_.ToXml()
+    $d = @{}
+    $x.Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.&#39;#text&#39; }
+    [pscustomobject]@{
+      UtcTime = [datetime]::Parse($d[&#39;UtcTime&#39;])
+      Image   = $d[&#39;Image&#39;]
+      Guid    = $d[&#39;ProcessGuid&#39;]
+      Query   = $d[&#39;QueryName&#39;]
+      Status  = $d[&#39;QueryStatus&#39;]
+      Results = $d[&#39;QueryResults&#39;]
+    }
+  } | Sort-Object UtcTime
+
+# Event 3 의 목적지 IP 가 어느 도메인의 응답에 들어 있었는지 역추적
+$target = &#39;185.220.101.7&#39;
+$p22 | Where-Object { $_.Results -match [regex]::Escape($target) } |
+  Select-Object UtcTime, Image, Query, Results | Format-Table -AutoSize</code></pre></div>
+<p>출력:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">UtcTime             Image                              Query                     Results
+-------             -----                              -----                     -------
+2026-03-14 07:41:08 C:\Windows\System32\rundll32.exe   cdn-metrics.example.org   type: 5 cdn-metrics...;::ffff:185.220.101.7;</code></pre></div>
+<p>DNS 질의 시각(07:41:08)이 연결 시각(07:41:10)보다 <strong>2초 앞선다.</strong> 이 순서가 맞아야 같은 사건이다. 순서가 뒤바뀌면 IP를 하드코딩한 통신이거나 캐시 사용이다.</p>
+<div class="table-wrap"><table><thead><tr><th>패턴</th><th>해석</th></tr></thead><tbody><tr><td>22 없이 3만 있다</td><td><strong>IP 하드코딩 C2</strong> 또는 DNS 캐시 히트. 도메인 증거 없음</td></tr><tr><td>22의 <code>QueryName</code>이 무작위 문자열 + 긴 서브도메인</td><td>DNS 터널링/DGA 의심</td></tr><tr><td><code>QueryStatus</code>가 0이 아닌 질의 반복</td><td>죽은 C2 도메인에 계속 시도</td></tr><tr><td>같은 도메인을 여러 프로세스가 질의</td><td>정상 CDN일 가능성</td></tr></tbody></table></div>
+<h3 id="7단계-pcap과-대조">7단계 — pcap과 대조</h3>
+<p>세 값이 모두 맞아야 같은 연결이다.</p>
+<div class="table-wrap"><table><thead><tr><th>대조 축</th><th>Sysmon 3</th><th>pcap</th></tr></thead><tbody><tr><td>시각</td><td><code>UtcTime</code> (UTC)</td><td>캡처 시각(캡처 장비 시간대 확인 필수)</td></tr><tr><td>IP</td><td><code>DestinationIp</code></td><td><code>ip.dst</code></td></tr><tr><td>포트</td><td><code>DestinationPort</code> + <code>SourcePort</code></td><td><code>tcp.dstport</code> + <code>tcp.srcport</code></td></tr></tbody></table></div>
+<p><strong><code>SourcePort</code>가 가장 강한 연결 키다.</strong> 같은 목적지로 여러 연결이 있을 때 출발 포트가 세션을 유일하게 지정한다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">ip.addr == 45.146.164.9 &amp;&amp; tcp.port == 4444
+tcp.flags.syn == 1 &amp;&amp; tcp.flags.ack == 0 &amp;&amp; ip.dst == 45.146.164.9</code></pre></div>
+<p>pcap 쪽 첫 SYN 시각과 Sysmon 3의 <code>UtcTime</code>이 초 단위로 일치하면 확정이다. 어긋나면 캡처 장비의 시간대·NTP 오차를 먼저 의심한다. Wireshark 초기 훑기 절차는 <a href="./wireshark-30sec-triage.html">FOR-0146</a>, HTTP 본문에서 유출 데이터를 찾는 방법은 <a href="./http-post-find.html">FOR-0158</a>을 본다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p><code>UtcTime</code>은 <strong>이미 UTC</strong>다. Event Viewer 상단에 보이는 시각은 EVTX <code>SystemTime</code>(UTC)을 조회 PC의 로컬 시간대로 변환한 값이므로 둘이 다르게 보인다. 답이 KST면 <code>UtcTime</code> + 9시간.</p>
+<div class="table-wrap"><table><thead><tr><th>상황</th><th>해석</th></tr></thead><tbody><tr><td><code>DestinationHostname</code>이 빈 값</td><td>정상. 역방향 조회 실패/미수행. Sysmon 22로 도메인을 얻는다</td></tr><tr><td><code>DestinationIp</code>가 <code>::ffff:1.2.3.4</code></td><td>IPv4-mapped IPv6 표기. 실제로는 IPv4다</td></tr><tr><td><code>SourceHostname</code>이 FQDN</td><td>이 호스트의 이름. 상대방이 아니다</td></tr><tr><td><code>Protocol = udp</code>인 건수가 극히 적음</td><td>설정에서 제외됐거나 UDP 기록 특성. 없다고 통신이 없었던 것은 아니다</td></tr><tr><td>같은 목적지 연속 다수</td><td>재시도 또는 비콘. 간격을 계산해 구분</td></tr><tr><td><code>DestinationPortName</code>이 빈 값</td><td>알려진 서비스 포트가 아니다. 오히려 의심 신호</td></tr></tbody></table></div>
+<p>IP 문자열을 로그에서 뽑을 때 쓰는 정규식은 <a href="./ipv4-regex.html">FOR-0128</a>을 참고한다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>여기서 얻은 값</th><th>다음에 볼 것</th><th>확인할 내용</th></tr></thead><tbody><tr><td><code>ProcessGuid</code></td><td>Sysmon 1 (FOR-0099)</td><td>명령행·부모·해시</td></tr><tr><td><code>ProcessGuid</code></td><td>Sysmon 11</td><td>통신 전후에 만든 파일(다운로드 산물)</td></tr><tr><td><code>DestinationIp</code></td><td>Sysmon 22 <code>QueryResults</code></td><td>그 IP를 준 도메인</td></tr><tr><td><code>DestinationIp</code> + <code>SourcePort</code></td><td>pcap</td><td>실제 페이로드와 전송량</td></tr><tr><td><code>DestinationIp</code></td><td>방화벽·프록시 로그</td><td>전송 바이트(유출량 산정)</td></tr><tr><td><code>Image</code></td><td><code>$MFT</code> (<a href="./mft-basics.html">FOR-0021</a>)</td><td>그 실행 파일의 생성·삭제 시각</td></tr><tr><td><code>User</code></td><td>4624 (<a href="./event-4624-logon.html">FOR-0083</a>)</td><td>어느 로그온 세션에서 실행됐는가</td></tr><tr><td>비콘 시작 시각</td><td>그 시각 직전의 Sysmon 1/11</td><td>감염 경로(최초 실행)</td></tr><tr><td>비콘 종료 시각</td><td>Sysmon 5 · 4689</td><td>프로세스 종료 또는 탐지·차단 시점</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>Initiated</code>를 무시하는 것.</strong> <code>false</code>는 인바운드다 → <code>DestinationIp</code>가 자기 호스트여서 자기 IP를 공격자로 답하게 된다 → 방향에 따라 상대방 주소를 골라 쓴다.</li><li><strong><code>DestinationHostname</code>이 비었다고 도메인이 없다고 결론 내리는 것.</strong> 이 필드는 역방향 조회 결과다 → Sysmon 22의 <code>QueryName</code>/<code>QueryResults</code>로 도메인을 얻는다.</li><li><strong>포트 번호만으로 악성 판정하는 것.</strong> 현대 C2는 443/80을 쓴다 → 프로세스·경로·주기성 조합으로 판단한다.</li><li><strong>Sysmon 3의 건수를 트래픽 양으로 읽는 것.</strong> 이벤트는 연결 시도 단위이며 전송 바이트가 없다 → 유출량은 pcap·프록시·SRUM으로 구한다.</li><li><strong><code>UtcTime</code>에 다시 9시간을 더하는 것.</strong> 이미 UTC다 → KST 답에만 +9시간을 한 번 적용한다.</li><li><strong>Sysmon 3이 없어서 통신이 없었다고 보는 것.</strong> Sysmon 3은 노이즈가 커서 설정에서 대량 제외되는 대표 이벤트다 → 설정을 확인하고 pcap·방화벽·<code>netstat</code> 메모리 흔적으로 보완한다.</li><li><strong>PID로 프로세스를 특정하는 것.</strong> PID는 재사용된다 → <code>ProcessGuid</code>로 Sysmon 1과 잇는다.</li><li><strong>비콘 판정을 건수로만 하는 것.</strong> Chrome은 수천 건이지만 정상이다 → 간격의 표준편차(지터)로 판정한다.</li><li><strong><code>::ffff:</code> 접두 IP를 IPv6로 보고 넘기는 것.</strong> IPv4-mapped 표기다 → 뒤쪽 IPv4로 정규화해 비교한다.</li><li><strong>pcap 시각과 그대로 비교하는 것.</strong> 캡처 장비의 시간대·NTP 오차가 있다 → 첫 SYN과 <code>UtcTime</code>의 오프셋을 먼저 구해 보정한다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$sm = &#39;C:\case\sysmon.evtx&#39;
+
+# 1) 아웃바운드 목적지 요약 (공인 IP만)
+$p3 | Where-Object {
+  $_.Initiated -eq &#39;true&#39; -and
+  $_.Dst -notmatch &#39;^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|127\.|169\.254\.|::1$)&#39;
+} | Group-Object Dst, DstPort | Sort-Object Count -Descending |
+  Select-Object -First 15 Count, Name
+
+# 2) 그 목적지를 만든 프로세스의 Sysmon 1 (명령행)
+Get-WinEvent -Path $sm -FilterXPath &#39;*[System[EventID=1]]&#39; |
+  Where-Object { $_.Message -match &#39;svchost\.exe&#39; -and $_.Message -match &#39;Temp&#39; } |
+  Select-Object -First 3 TimeCreated, Message
+
+# 3) DNS 질의로 도메인 확보
+$p22 | Where-Object { $_.Results -match &#39;45\.146\.164\.9&#39; } | Select-Object UtcTime, Query, Image
+
+# 4) 통신 전후에 생성된 파일 (Sysmon 11)
+Get-WinEvent -Path $sm -FilterXPath &#39;*[System[EventID=11]]&#39; |
+  Where-Object { $_.Message -match &#39;svchost\.exe&#39; } | Select-Object -First 10 TimeCreated, Message
+
+# 5) 인바운드 연결만 (측면 이동 수신 측)
+$p3 | Where-Object { $_.Initiated -eq &#39;false&#39; } |
+  Select-Object UtcTime, Image, Src, SrcPort, DstPort | Format-Table -AutoSize</code></pre></div>
+<p>Sysmon 3의 목적지, Sysmon 22의 도메인, pcap의 세션이 같은 시각대에 정렬되면 통신 경로가 확정된다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;침해된 호스트의 C2 서버 주소와 비콘 주기(초)를 구하시오.
+ 첨부: Microsoft-Windows-Sysmon%4Operational.evtx (Event 3: 41,882건)&quot;
+
+1. 첫 시도 (실패):
+   Event 3 에서 DestinationPort 가 4444, 1337, 31337 인 것만 찾았다.
+   -&gt; 0건. &quot;C2 통신이 없다&quot; 고 판단하고 멈췄다. 오답.
+
+   왜 틀렸나:
+   포트 목록으로 필터한 것이 문제였다. 이 사건의 C2 는 443 을 썼다.
+   비표준 포트 목록은 오래된 가정이다.
+
+2. 피벗 — 포트를 버리고 &quot;프로세스 + 목적지 + 주기&quot;로 접근했다.
+   먼저 아웃바운드를 프로세스별로 집계:
+     Count Name
+     ----- ----
+      1284 chrome.exe, 142.250.76.100, 443
+       288 rundll32.exe, 185.220.101.7, 443     &lt;- rundll32 가 외부로?
+        94 svchost.exe(C:\Windows\Temp\), 45.146.164.9, 443
+
+   rundll32.exe 는 정상 환경에서 외부로 나가지 않는다. 후보 확정.
+
+3. 간격 통계로 비콘 판정:
+     Target                                 Hits MeanSec StdDev Jitter
+     rundll32.exe|185.220.101.7|443          288    30.1    0.9    3.0
+     svchost.exe(Temp)|45.146.164.9|443       94   120.4   11.8    9.8
+     chrome.exe|142.250.76.100|443          1284     8.1   57.3  707.4
+
+   -&gt; rundll32 는 30초 주기(지터 3%). 비콘 확정.
+      Temp\svchost.exe 는 120초 주기의 두 번째 채널.
+
+4. 도메인 확인 (Sysmon 22):
+   185.220.101.7 을 QueryResults 에 포함한 질의:
+     07:41:08  rundll32.exe  cdn-metrics.example.org
+   -&gt; DNS 질의가 첫 연결 2초 전. 같은 사건 확정.
+
+5. 최초 실행 경로 (Sysmon 1, 같은 ProcessGuid):
+   07:41:05  rundll32.exe C:\ProgramData\Intel\ime.dll,Start
+     ParentProcessGuid -&gt; 07:41:04  cmd.exe /c rundll32 ...
+       ParentProcessGuid -&gt; 07:20:08  powershell.exe -nop -w hidden -enc ...
+
+6. 시간대: UtcTime 은 UTC. 07:41:08 UTC = 16:41:08 KST (+9h)
+
+정답: C2 185.220.101.7 (cdn-metrics.example.org, TCP 443), 비콘 주기 30초</code></pre></div>
+<p>1단계의 실패가 이 주제의 대표 오답이다. <strong>포트로 C2를 찾지 않는다.</strong> &quot;나가지 않아야 할 프로세스가 나갔다&quot; + &quot;간격이 규칙적이다&quot; 두 축이 실제 판정 근거다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>Initiated</code>로 방향을 갈랐는가 → 인바운드에서 상대방은 <code>SourceIp</code>다</li><li>사설 IP·루프백을 걸러 냈는가 → 공인 IP만 남기면 후보가 급감한다</li><li>포트가 아니라 프로세스로 걸렀는가 → <code>rundll32</code>/<code>regsvr32</code>/<code>mshta</code>/LOLBin 우선</li><li>간격 표준편차를 계산했는가 → 건수가 아니라 규칙성이 비콘의 정의다</li><li>Sysmon 22를 봤는가 → 도메인은 여기에만 있다</li><li>Event 3이 거의 없는가 → 설정 제외 가능성. pcap·방화벽으로 보완</li><li><code>ProcessGuid</code>로 Sysmon 1을 엮었는가 → 명령행과 감염 경로가 거기 있다</li><li>유출량이 필요한가 → Sysmon 3에는 바이트 수가 없다. pcap/프록시/SRUM으로 간다</li><li>pcap 시각이 어긋나는가 → 첫 SYN 기준으로 오프셋을 구해 보정한다</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-024 — Microsoft Learn, Sysmon: Event ID 3 NetworkConnect와 Event ID 22 DnsQuery의 필드 목록, 채널 이름</li><li>SRC-086 — MITRE ATT&amp;CK Enterprise: C2 채널·비콘·LOLBin 아웃바운드 통신의 탐지 관점</li><li>SRC-012 — RFC 791 IPv4: 사설 주소 대역 판별과 IPv4 주소 표기 기준</li><li>Sysmon 3은 설정 파일의 포함/제외 규칙에 크게 좌우되며 UDP 기록 특성도 버전에 따라 다르다. 로그가 비어 있는 것을 &quot;통신 없음&quot;으로 해석하지 말고 설정을 확인할 것</li><li>Event 22의 <code>QueryResults</code> 표기 형식(<code>type: 5</code> 등 접두)은 Sysmon 버전에 따라 다를 수 있으므로 실제 이벤트로 확인할 것</li><li>비콘 판정의 지터 임계값(15%/40%)은 경험적 기준이며 공식 문서의 수치가 아니다. 후보 정렬용으로만 쓰고 최종 판정은 목적지·프로세스와 함께 할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./sysmon-event-1-process-create.html">
+    <span class="rel-id">FOR-0099 · Event Log</span>
+    Sysmon Event ID 1 ProcessCreate: ProcessGuid로 프로세스 계보 복원
+  </a>
+  <a class="related-item" href="./wireshark-30sec-triage.html">
+    <span class="rel-id">FOR-0146 · Network/PCAP</span>
+    Wireshark 30초 트리아지: pcap을 받고 처음 할 다섯 가지
+  </a>
+  <a class="related-item" href="./sysmon-event-11-file-create.html">
+    <span class="rel-id">FOR-0101 · Event Log</span>
+    Sysmon Event ID 11 FileCreate: 누가 이 파일을 만들었는가
+  </a>
+  <a class="related-item" href="./sysmon-event-13-registry-set.html">
+    <span class="rel-id">FOR-0102 · Event Log</span>
+    Sysmon Event ID 13 RegistryEvent: 레지스트리를 바꾼 프로세스 특정
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./sysmon-event-1-process-create.html"><span class="rel-id">← FOR-0099</span>Sysmon Event ID 1 ProcessCreate: ProcessGuid로 프로세스 계보 복원</a>
+<a class="related-item" href="./sysmon-event-11-file-create.html"><span class="rel-id">FOR-0101 →</span>Sysmon Event ID 11 FileCreate: 누가 이 파일을 만들었는가</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-필드표">1단계 — 필드표</a></li>
+<li class="toc-l3"><a href="#2단계-이-로그의-값-세-가지-증거의-빈칸을-메운다">2단계 — 이 로그의 값: 세 가지 증거의 빈칸을 메운다</a></li>
+<li class="toc-l3"><a href="#3단계-방향-판정">3단계 — 방향 판정</a></li>
+<li class="toc-l3"><a href="#4단계-비콘-탐지-간격-통계">4단계 — 비콘 탐지 (간격 통계)</a></li>
+<li class="toc-l3"><a href="#5단계-비정상-조합-필터">5단계 — 비정상 조합 필터</a></li>
+<li class="toc-l3"><a href="#6단계-sysmon-22dnsquery로-도메인-ip-프로세스">6단계 — Sysmon 22(DnsQuery)로 도메인 → IP → 프로세스</a></li>
+<li class="toc-l3"><a href="#7단계-pcap과-대조">7단계 — pcap과 대조</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

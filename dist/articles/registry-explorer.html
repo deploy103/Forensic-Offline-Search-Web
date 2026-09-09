@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>RegistryExplorer로 hive 열기: 북마크·플러그인·삭제 레코드 · FOR-0059 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Registry">Registry</a> / FOR-0059
+      </div>
+      <header class="article-head">
+        <h1>RegistryExplorer로 hive 열기: 북마크·플러그인·삭제 레코드</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Registry</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>RegistryExplorer는 regf hive 파일을 트리로 직접 열어 보는 GUI 도구로, 트랜잭션 로그 반영·포렌식 키 북마크·플러그인 자동 디코딩·삭제 레코드 복구를 한 화면에서 처리한다. &quot;어느 키를 봐야 할지 모를 때&quot; 북마크 목록이 답을 대신 알려주는 것이 이 도구의 가장 큰 가치다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>RegistryExplorer, RECmd, rla, RegRipper, Timeline Explorer</td></tr>
+<tr><th>artifact</th><td><code>Registry hive</code> · <code>dirty hive</code> · <code>transaction log</code> · <code>deleted record</code> · <code>value slack</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Users\&lt;user&gt;\NTUSER.DAT</code> · <code>C:\Windows\System32\config\SYSTEM</code> · <code>C:\Windows\System32\config\SOFTWARE</code></td></tr>
+<tr><th>로그 필드</th><td><code>Value Name</code> · <code>Value Type</code> · <code>Data</code> · <code>Value Slack</code> · <code>Last Write Timestamp</code></td></tr>
+<tr><th>파일 형식</th><td><code>regf</code> · <code>reb</code> · <code>csv</code></td></tr>
+<tr><th>검색 별칭</th><td>레지스트리 익스플로러 · registry explorer 사용법 · hive 어떻게 여나 · 레지스트리 뷰어 · recmd · 북마크로 찾기 · 삭제된 레지스트리 값</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>RegistryExplorer는 <code>regf</code> hive 파일을 <strong>트리로 직접 열어 보는</strong> GUI 도구로, 트랜잭션 로그 반영·포렌식 키 북마크·플러그인 자동 디코딩·삭제 레코드 복구를 한 화면에서 처리한다. &quot;어느 키를 봐야 할지 모를 때&quot; 북마크 목록이 답을 대신 알려주는 것이 이 도구의 가장 큰 가치다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>확장자 없는 hive 파일(<code>SYSTEM</code>, <code>NTUSER.DAT</code>, <code>Amcache.hve</code>)이 첨부로 주어졌다</li><li>RegRipper 플러그인이 없는 키, 또는 <strong>문제 출제자가 임의로 만들어 넣은 키</strong>를 찾아야 한다</li><li>값이 이진 데이터라 사람 눈으로는 못 읽는다 (UserAssist, AppCompatCache 등)</li><li>공격자가 지운 레지스트리 값을 복구해야 한다</li><li>키 하나의 LastWrite와 값의 원문 바이트를 직접 확인해 근거로 삼아야 한다</li></ul>
+<p><code>regedit</code>는 hive <strong>파일</strong>을 열지 못한다(<code>파일 &gt; 하이브 로드</code>로 마운트하면 라이브 레지스트리를 오염시키고 관리자 권한이 필요하다). 오프라인 hive는 전용 파서로 읽는다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>첨부 파일 선두 4바이트가 <code>72 65 67 66</code>(<code>regf</code>) → hive다. 확장자와 무관하게 RegistryExplorer로 열린다</li><li><code>.LOG1</code>/<code>.LOG2</code>가 hive와 같이 왔다 → dirty일 가능성이 높으니 로드 시 경고를 반드시 처리한다</li><li>파일 이름이 뭉개졌거나 <code>unknown.dat</code> 형태 → 로드하면 트리 루트에 원래 hive 경로가 보여 정체가 드러난다</li><li>지문이 &quot;삭제된 설정&quot;, &quot;지운 자동실행&quot; → 삭제 레코드 복구가 답이다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">RegistryExplorer.exe → hive 파일을 창에 드래그앤드롭 → 좌측 트리에서 Available Bookmarks</code></pre></div>
+<ol><li>hive와 <code>.LOG1</code>/<code>.LOG2</code>를 <strong>같은 폴더에</strong> 둔 상태로 hive를 드래그앤드롭한다(<code>File</code> 메뉴의 hive 로드와 동일)</li><li>dirty hive 경고가 뜨면 <strong>트랜잭션 로그를 반영하는 쪽을 택한다.</strong> 무시하면 최신 변경이 빠진다</li><li>좌측의 북마크 목록에서 필요한 항목(UserAssist, Run, TypedPaths 등)을 골라 해당 키로 점프한다</li><li>우측 값 목록에서 값을 클릭하고, 플러그인이 붙는 키라면 아래쪽에 디코딩된 표가 나온다</li><li>결과를 CSV/TSV로 내보내 Timeline Explorer나 Excel로 넘긴다</li></ol>
+<p>CLI로 여러 hive를 한 번에 처리할 때는 자매 도구 RECmd를 쓴다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">RECmd.exe -d &#39;C:\case\hives&#39; --bn &#39;BatchExamples\Kroll_Batch.reb&#39; --csv &#39;C:\case\out&#39;</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-hive-로드">1단계 — hive 로드</h3>
+<div class="table-wrap"><table><thead><tr><th>방법</th><th>설명</th></tr></thead><tbody><tr><td>드래그앤드롭</td><td>창에 파일을 끌어다 놓는다. 가장 빠르다</td></tr><tr><td><code>File</code> 메뉴의 hive 로드</td><td>파일 선택 대화상자로 고른다</td></tr><tr><td>여러 개 동시 로드</td><td>hive를 여러 개 열면 트리에 루트가 여러 개 생긴다. <code>SYSTEM</code> + <code>SOFTWARE</code> + <code>NTUSER.DAT</code>을 함께 열고 비교하는 것이 실전 패턴</td></tr></tbody></table></div>
+<p>로드된 루트 노드에는 그 hive가 원래 있던 경로(base block <code>0x30</code>의 UTF-16LE 문자열)가 함께 보인다. <strong>이름을 잃어버린 파일의 정체를 이걸로 확정한다.</strong></p>
+<h3 id="2단계-dirty-hive-경고와-트랜잭션-로그">2단계 — dirty hive 경고와 트랜잭션 로그</h3>
+<p>hive의 base block에는 primary sequence number(<code>0x04</code>)와 secondary(<code>0x08</code>)가 있고, 두 값이 다르면 그 hive는 정상 종료되지 않은 <strong>dirty</strong> 상태다. 미반영 변경은 <code>.LOG1</code>/<code>.LOG2</code>에만 존재한다.</p>
+<div class="table-wrap"><table><thead><tr><th>상황</th><th>도구의 반응</th><th>해야 할 일</th></tr></thead><tbody><tr><td>dirty + 같은 폴더에 로그 있음</td><td>dirty임을 알리고 로그를 반영할지 묻는다</td><td>반영을 택한다. 정리된 hive를 저장해 두면 재작업이 없다</td></tr><tr><td>dirty + 로그 없음</td><td>로그가 없어 반영할 수 없다고 경고한다</td><td>이미지로 돌아가 <code>.LOG1</code>/<code>.LOG2</code>를 다시 추출한다</td></tr><tr><td>clean</td><td>경고 없이 열린다</td><td>그대로 진행</td></tr></tbody></table></div>
+<p>경고를 지나쳐 버렸거나 여러 hive를 일괄 처리해야 하면 CLI 도구 <code>rla</code>로 먼저 반영한다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 폴더에 있는 모든 hive + 로그를 한 번에 반영해 clean hive 를 만든다
+rla.exe -d &#39;C:\case\hives&#39; --out &#39;C:\case\clean&#39;</code></pre></div>
+<p><strong>이 단계를 건너뛰면 &quot;마지막 실행&quot;, &quot;마지막 입력&quot;, &quot;마지막 마운트&quot; 류의 답이 조용히 틀린다.</strong> 값이 아예 안 보이는 것이 아니라 한 세대 이전 값이 보이기 때문에 눈치채기 어렵다.</p>
+<h3 id="3단계-트리-탐색과-값-목록">3단계 — 트리 탐색과 값 목록</h3>
+<div class="table-wrap"><table><thead><tr><th>화면 영역</th><th>내용</th></tr></thead><tbody><tr><td>좌측 트리</td><td>키 계층. 하위 키/값 개수와 키의 LastWrite를 함께 보여준다</td></tr><tr><td>우측 값 목록</td><td>선택한 키의 값들. 값 이름 / 타입(<code>RegSz</code>, <code>RegBinary</code>, <code>RegDword</code> 등) / 데이터 / <strong>값 slack</strong></td></tr><tr><td>값 상세</td><td>선택한 값의 원시 바이트를 hex와 문자열로 함께 보여준다</td></tr><tr><td>하단 플러그인 패널</td><td>그 키에 전용 플러그인이 있으면 디코딩 결과가 표로 나온다</td></tr></tbody></table></div>
+<p><strong>값 slack</strong>은 값 데이터가 이전에 더 길었을 때 남는 잔여 바이트다. 값이 짧게 덮어써진 경우 이전 문자열의 뒷부분이 slack에 남아 있을 수 있어, 지워진 경로·URL의 단서가 된다. 다른 파서들은 대부분 보여주지 않는 정보다.</p>
+<h3 id="4단계-플러그인-자동-디코딩">4단계 — 플러그인 (자동 디코딩)</h3>
+<p>포렌식적으로 중요한 키는 값이 이진 인코딩이라 눈으로 못 읽는다. 해당 키를 선택하면 플러그인이 이를 표로 풀어 준다.</p>
+<div class="table-wrap"><table><thead><tr><th>대상</th><th>플러그인이 해주는 일</th></tr></thead><tbody><tr><td>UserAssist</td><td>ROT13 해제, Run Count / Focus Time / Last Executed 컬럼화 (<a href="./userassist.html">FOR-0061</a>)</td></tr><tr><td>AppCompatCache (Shimcache)</td><td>캐시 엔트리를 경로 + 순서 + 시각으로 분해</td></tr><tr><td>RecentDocs, TypedURLs 류 MRU 키</td><td><code>MRUListEx</code> 순서를 풀어 최신순 정렬</td></tr><tr><td>계정/서비스 관련 키</td><td>이진 값(<code>F</code>/<code>V</code> 등)을 필드로 분해</td></tr></tbody></table></div>
+<p>플러그인이 붙는 키 목록은 배포 버전마다 늘어난다. 사용 중인 버전에서 무엇이 지원되는지는 프로그램 안의 플러그인 목록으로 확인한다. <strong>ShellBags(<code>BagMRU</code>)는 구조가 커서 같은 제작자의 전용 도구(ShellBags Explorer)를 쓰는 것이 정석</strong>이므로, RegistryExplorer에서 <code>BagMRU</code> 트리를 눈으로 훑어 위치만 확인하고 파싱은 전용 도구나 RegRipper로 넘긴다(<a href="./usrclass-dat.html">FOR-0058</a>).</p>
+<h3 id="5단계-북마크-이-도구의-핵심-기능">5단계 — 북마크 (이 도구의 핵심 기능)</h3>
+<p>RegistryExplorer에는 <strong>포렌식적으로 중요한 키를 미리 등록해 둔 북마크 목록</strong>이 들어 있다. 좌측에서 북마크 목록을 열면 hive 종류별로 분류된 항목이 나오고, 항목을 고르면 그 키로 바로 이동한다. 트리에서도 북마크된 키는 표시가 되어 눈에 띈다.</p>
+<div class="table-wrap"><table><thead><tr><th>왜 중요한가</th><th>설명</th></tr></thead><tbody><tr><td>경로를 외울 필요가 없다</td><td><code>Software\Microsoft\Windows\CurrentVersion\Explorer\...</code>를 타이핑하지 않는다</td></tr><tr><td>체크리스트가 된다</td><td>그 hive에서 볼 만한 키가 목록으로 나오므로 빠뜨림이 줄어든다</td></tr><tr><td>처음 보는 hive에 유용하다</td><td><code>SECURITY</code>, <code>Amcache.hve</code> 처럼 익숙하지 않은 hive에서 시작점을 준다</td></tr><tr><td>사용자 북마크 추가</td><td>문제에서 반복해 보는 키를 직접 등록해 재사용한다</td></tr></tbody></table></div>
+<p>시간에 쫓기는 상황에서는 <strong>북마크 목록을 위에서 아래로 훑는 것</strong>이 가장 빠른 트리아지다.</p>
+<h3 id="6단계-검색-find">6단계 — 검색 (Find)</h3>
+<p>키 이름을 모를 때 쓴다. 검색 대상을 고를 수 있다.</p>
+<div class="table-wrap"><table><thead><tr><th>검색 대상</th><th>쓰는 상황</th></tr></thead><tbody><tr><td>키 이름</td><td><code>USBSTOR</code>, <code>Run</code>, <code>BagMRU</code> 처럼 키 이름을 아는 경우</td></tr><tr><td>값 이름</td><td><code>MRUListEx</code>, <code>UserChoice</code> 등</td></tr><tr><td>값 데이터</td><td>경로·파일명·URL 문자열로 역추적. <strong>가장 많이 쓴다</strong></td></tr><tr><td>값 slack</td><td>지워진 흔적 찾기</td></tr></tbody></table></div>
+<p><code>AppData\Roaming</code>, <code>Temp</code>, <code>.ps1</code>, <code>http</code> 같은 문자열로 값 데이터를 검색하면 어느 키에 무엇이 박혀 있는지 한 번에 드러난다. 유니코드 문자열은 hive 안에서 UTF-16LE로 저장되므로, 문자열 검색이 안 잡히면 hex 검색으로 바꿔 시도한다.</p>
+<h3 id="7단계-삭제-레코드-복구-deleted-records">7단계 — 삭제 레코드 복구 (Deleted Records)</h3>
+<p>레지스트리에서 키/값을 지워도 hive 파일의 셀은 즉시 재사용되지 않는다. RegistryExplorer는 이 미할당 셀에서 <code>nk</code>/<code>vk</code> 레코드를 복구해 별도로 보여준다.</p>
+<div class="table-wrap"><table><thead><tr><th>복구 대상</th><th>얻을 수 있는 것</th></tr></thead><tbody><tr><td>삭제된 키</td><td>키 이름과 LastWrite. 부모를 못 찾으면 부모 없는 항목으로 분류된다</td></tr><tr><td>삭제된 값</td><td>값 이름, 타입, 데이터</td></tr></tbody></table></div>
+<p>공격자가 자동실행 값을 지운 경우, 지운 사실 자체와 지워진 값의 내용이 여기서 나온다. 복구된 항목은 <strong>부모 경로가 불확실할 수 있으므로</strong> 결론을 낼 때는 &quot;삭제 레코드에서 복구됨&quot;을 명시하고 다른 아티팩트로 뒷받침한다.</p>
+<h3 id="8단계-내보내기와-recmd">8단계 — 내보내기와 RECmd</h3>
+<p>값 목록/플러그인 결과는 표 형태이므로 CSV·TSV로 내보내 Timeline Explorer나 Excel에서 정렬·필터한다. 자동화가 필요하면 CLI 자매 도구 RECmd를 쓴다.</p>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>RegistryExplorer</th><th>RECmd</th></tr></thead><tbody><tr><td>형태</td><td>GUI</td><td>CLI</td></tr><tr><td>대상</td><td>hive 1개 이상을 눈으로 탐색</td><td>폴더 안의 hive를 일괄 처리</td></tr><tr><td>무엇을 뽑을지 지정</td><td>사람이 트리에서 클릭</td><td><strong>배치 파일</strong>(<code>.reb</code>)에 미리 적어 둔다</td></tr><tr><td>출력</td><td>화면 + CSV/TSV 내보내기</td><td>CSV 파일</td></tr></tbody></table></div>
+<p><strong>배치 파일</strong>은 &quot;어떤 hive의 어떤 키/값을 뽑아 어떤 이름의 컬럼으로 낼지&quot;를 적어 둔 텍스트(YAML) 파일이다. 배포판의 <code>BatchExamples</code> 폴더에 기본 배치가 함께 들어 있고, 그것을 지정하면 북마크에 해당하는 키들을 한 번에 CSV로 떨어뜨린다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 폴더 안의 모든 hive 에 기본 배치를 적용
+RECmd.exe -d &#39;C:\case\hives&#39; --bn &#39;BatchExamples\Kroll_Batch.reb&#39; --csv &#39;C:\case\out&#39;
+
+# hive 1개, 특정 키만
+RECmd.exe -f &#39;C:\case\NTUSER.DAT&#39; --sk &#39;TypedPaths&#39; --csv &#39;C:\case\out&#39;</code></pre></div>
+<p>옵션 이름은 버전에 따라 달라질 수 있으므로 <code>RECmd.exe</code>를 인자 없이 실행해 실제 도움말을 먼저 본다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>의미</th><th>주의</th></tr></thead><tbody><tr><td>키의 LastWrite</td><td>그 키의 값이 마지막으로 추가/변경/삭제된 시각. FILETIME <strong>UTC</strong></td><td>값 단위 시각이 아니다. 값이 여러 개면 어느 값 때문인지 모른다</td></tr><tr><td>값 타입</td><td><code>RegSz</code>(문자열), <code>RegExpandSz</code>(환경변수 포함), <code>RegBinary</code>, <code>RegDword</code>, <code>RegMultiSz</code></td><td><code>RegBinary</code>인데 사람이 읽을 문자열이 보이면 UTF-16LE다</td></tr><tr><td>Data</td><td>값 데이터. 문자열이면 그대로, 이진이면 hex</td><td>이진 값의 앞 8바이트가 FILETIME인 경우가 많다</td></tr><tr><td>Value Slack</td><td>값 데이터 뒤의 잔여 바이트</td><td>이전 값의 조각. 단정 근거로는 약하지만 단서로 강하다</td></tr><tr><td>플러그인 표의 시각 컬럼</td><td>값 데이터 안에서 뽑아낸 자체 타임스탬프</td><td>키 LastWrite보다 <strong>정확하다.</strong> 우선 채택</td></tr><tr><td>삭제 레코드 표시</td><td>미할당 셀에서 복구된 항목</td><td>부모 경로가 추정일 수 있다</td></tr></tbody></table></div>
+<p>모든 시각은 UTC다. KST 답을 요구하면 +9시간, Unix epoch와의 차이는 <code>11644473600</code>초다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>여기서 얻은 것</th><th>다음 목표</th><th>무엇을 확인하나</th></tr></thead><tbody><tr><td>hive 루트에 찍힌 원래 경로</td><td>어느 hive인지 확정 (<a href="./registry-hive-map.html">FOR-0051</a>)</td><td><code>NTUSER.DAT</code>인지 <code>UsrClass.dat</code>인지</td></tr><tr><td><code>NTUSER.DAT</code>의 사용자 활동 키</td><td>키 인덱스 (<a href="./ntuser-dat.html">FOR-0057</a>)</td><td>다음에 볼 키 목록</td></tr><tr><td><code>BagMRU</code> 위치</td><td><code>UsrClass.dat</code> ShellBags (<a href="./usrclass-dat.html">FOR-0058</a>)</td><td>탐색기로 방문한 폴더</td></tr><tr><td>UserAssist 플러그인 표</td><td>Prefetch, <code>Amcache.hve</code></td><td>실행 사실·해시 교차검증</td></tr><tr><td>실행 파일 경로</td><td><code>$MFT</code> (<a href="./mft-basics.html">FOR-0021</a>)</td><td>파일 생성·삭제 시각</td></tr><tr><td>시간대(<code>SYSTEM</code>)</td><td>모든 시각 보정 (<a href="./system-timezone.html">FOR-0054</a>)</td><td>UTC ↔ 로컬 변환 기준</td></tr><tr><td>CSV로 내보낸 결과</td><td>Timeline Explorer / <code>Import-Csv</code></td><td>다른 아티팩트와 통합 타임라인</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>dirty hive 경고를 지나치는 것.</strong> 가장 자주 나오는 실수다. 반영하지 않으면 값이 &quot;없는&quot; 게 아니라 <strong>한 세대 이전 값이 정상처럼 보인다.</strong> 로드할 때마다 경고 문구를 읽는다.</li><li><strong>hive만 복사해 놓고 <code>.LOG1</code>/<code>.LOG2</code>를 두고 오는 것.</strong> 도구가 반영해 주려 해도 로그가 없으면 못 한다. 추출은 항상 hive + 로그 세트로 한다.</li><li><strong><code>regedit</code>의 하이브 로드로 증거 hive를 마운트하는 것.</strong> 라이브 레지스트리를 건드리고 hive 파일이 수정될 수 있다. 오프라인 파서로만 읽는다.</li><li><strong>키 LastWrite를 값의 시각으로 쓰는 것.</strong> 키 단위·마지막 1회다. 플러그인이 값 안에서 뽑아 준 시각이 있으면 그쪽이 정답이다.</li><li><strong><code>CurrentControlSet</code> 경로를 트리에서 찾는 것.</strong> 부팅 시 만들어지는 링크라 오프라인 hive에 없다. <code>Select\Current</code>로 <code>ControlSet001</code> 같은 실제 이름을 확인한다(<a href="./system-controlset.html">FOR-0053</a>).</li><li><strong>플러그인 표만 보고 원본 값을 확인하지 않는 것.</strong> 표는 해석 결과다. 답으로 제출할 값은 원시 데이터에서 한 번 더 확인한다. 특히 시각은 UTC/로컬 표기 혼동이 잦다.</li><li><strong>삭제 레코드에서 복구된 항목을 확정 사실처럼 쓰는 것.</strong> 부모 키를 못 찾은 항목은 경로가 추정이다. &quot;삭제 레코드 복구&quot;임을 명시하고 다른 아티팩트로 뒷받침한다.</li><li><strong>문자열 검색이 안 잡히면 없다고 결론내는 것.</strong> hive 내부 문자열은 UTF-16LE다. ASCII 검색으로 안 나오면 hex 검색이나 값 slack 검색으로 바꾼다.</li><li><strong>hive 하나만 열고 판단하는 것.</strong> 사용자 활동은 <code>NTUSER.DAT</code> + <code>UsrClass.dat</code>, 시스템 사실은 <code>SYSTEM</code> + <code>SOFTWARE</code>가 쌍이다. 한쪽만 보면 절반이 빈다.</li><li><strong>원본 hive를 직접 열어 쓰기 가능 상태로 두는 것.</strong> 작업용 복사본에서 작업하고, 원본 해시를 먼저 기록한다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<p>같은 사실을 GUI와 CLI 양쪽에서 확인하면 해석 실수를 잡을 수 있다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) GUI: 북마크로 UserAssist 로 점프해 플러그인 표 확인 (사람 눈)
+
+# 2) CLI: 같은 키를 RegRipper 로 덤프해 대조
+rip.exe -r &#39;C:\case\clean\NTUSER.DAT&#39; -p userassist &gt; &#39;C:\case\ua_rr.txt&#39;
+
+# 3) CLI: RECmd 배치로 CSV 산출
+RECmd.exe -f &#39;C:\case\clean\NTUSER.DAT&#39; --bn &#39;BatchExamples\Kroll_Batch.reb&#39; --csv &#39;C:\case\out&#39;
+
+# 4) 두 결과의 항목 수와 시각이 같은지 확인
+Select-String -Path &#39;C:\case\ua_rr.txt&#39; -Pattern &#39;dump_tool&#39;</code></pre></div>
+<p>세 결과가 어긋나면 원인은 대개 <strong>한쪽만 트랜잭션 로그를 반영했기 때문</strong>이다. 어느 hive 파일을 먹였는지부터 확인한다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;감염 PC에서 뽑은 NTUSER.DAT, ntuser.dat.LOG1, ntuser.dat.LOG2 가 주어진다.
+ 사용자가 실행한 악성 실행 파일의 경로와, 공격자가 등록했다가 지운
+ 자동실행 값의 내용을 구하세요.&quot;
+
+1. 첫 시도 (실패):
+   NTUSER.DAT 을 드래그앤드롭.
+   &quot;dirty hive&quot; 경고 창이 떴지만 로그 반영을 하지 않고 그냥 열었다.
+
+   - 북마크로 UserAssist 로 점프 -&gt; 플러그인 표의 최신 항목이 사건 전날이다
+   - Software\Microsoft\Windows\CurrentVersion\Run -&gt; 값이 하나도 없다
+   -&gt; &quot;자동실행 등록 없음, 실행 흔적도 없음&quot; 이라고 결론냈다. 둘 다 오답.
+
+   왜 틀렸나:
+   primary(0x04)=0x51, secondary(0x08)=0x53 로 불일치하는 dirty hive 였고,
+   사건 당일 변경분 전체가 ntuser.dat.LOG1 에만 있었다.
+
+2. 피벗 1: 트랜잭션 로그 반영 후 재로드
+   rla.exe -f NTUSER.DAT --out clean\
+   clean\NTUSER.DAT 을 다시 로드 -&gt; 경고 없이 열린다(clean)
+
+   UserAssist 플러그인 표:
+     Program Name                                        Run Count  Last Executed (UTC)
+     C:\Users\jhkim\AppData\Roaming\svc\updater.exe             2   2026-03-14 08:12:47
+
+3. 피벗 2: Run 키는 여전히 비어 있다 -&gt; 삭제 레코드를 본다
+   Deleted Records 목록에서 복구된 값:
+     Key  : Software\Microsoft\Windows\CurrentVersion\Run  (복구, 부모 확인됨)
+     Value: SvcUpdater
+     Type : RegSz
+     Data : C:\Users\jhkim\AppData\Roaming\svc\updater.exe
+   -&gt; 등록했다가 지운 자동실행 값이 그대로 남아 있었다.
+
+4. 보강: Find 로 값 데이터 검색
+   검색 대상 = 값 데이터, 검색어 = AppData\Roaming\svc
+   -&gt; Run(삭제), UserAssist, MuiCache 후보 등 3곳에서 히트.
+      같은 경로가 여러 키에서 나오므로 우연이 아니다.
+
+5. 교차검증
+   rip.exe -r clean\NTUSER.DAT -p userassist | Select-String &#39;updater&#39;
+   -&gt; 같은 경로, Run Count 2, 같은 UTC 시각
+
+6. 시간 보정
+   2026-03-14 08:12:47 UTC + 9h = 2026-03-14 17:12:47 KST
+
+정답: C:\Users\jhkim\AppData\Roaming\svc\updater.exe
+      삭제된 자동실행 값 = Run\SvcUpdater (같은 경로), 2026-03-14 17:12:47 KST 마지막 실행</code></pre></div>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><strong>dirty hive 경고를 처리했는가</strong> — 안 했으면 <code>rla</code>로 반영해 다시 로드한다</li><li><strong><code>.LOG1</code>/<code>.LOG2</code>를 같이 가져왔는가</strong> — 없으면 이미지로 돌아간다</li><li>찾는 키가 안 보이는가 → 북마크 목록을 위에서 아래로 훑는다</li><li>키 이름을 모르는가 → <strong>값 데이터 검색</strong>으로 문자열부터 찾는다</li><li>문자열 검색이 안 잡히는가 → UTF-16LE 이므로 hex 검색 또는 값 slack 검색으로 전환</li><li>값이 지워진 것 같은가 → 삭제 레코드 목록 확인</li><li>값이 이진이라 못 읽는가 → 플러그인 지원 여부 확인, 없으면 RegRipper로 넘긴다(<a href="./regripper.html">FOR-0060</a>)</li><li>hive가 여러 개인가 → 동시에 로드해 <code>SYSTEM</code>/<code>SOFTWARE</code>/사용자 hive를 나란히 비교한다</li><li>결과가 많아 정리가 안 되는가 → CSV로 내보내 Timeline Explorer에서 정렬한다</li><li>GUI가 실행되지 않는가(.NET 런타임 문제) → RECmd 또는 RegRipper로 CLI 경로를 택한다</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-004 — Eric Zimmerman 도구 문서: RegistryExplorer의 hive 로드, 트랜잭션 로그 처리, 플러그인 자동 디코딩, 북마크, 삭제 레코드 복구, 자매 도구 RECmd와 배치 파일 개념</li><li>SRC-027 — Libyal libregf, REGF 포맷 문서: base block의 sequence number로 dirty 판정, 값 타입, 삭제된 <code>nk</code>/<code>vk</code> 셀이 즉시 재사용되지 않는다는 점, hive 내부 문자열이 UTF-16LE라는 점</li><li>SRC-017 — Microsoft Learn, Windows Registry hives and file locations: hive 파일과 루트키 대응, <code>regedit</code>의 하이브 로드가 라이브 레지스트리에 마운트된다는 점</li><li><strong>메뉴 이름, 창 배치, 경고 문구, 북마크·플러그인 목록, RECmd 스위치는 도구 버전에 따라 다르다.</strong> 이 글은 기능 단위로 서술했으므로 실제 화면과 <code>RECmd.exe</code> 도움말에서 이름을 확인할 것</li><li>배치 파일 이름(<code>BatchExamples</code> 폴더의 기본 배치)은 배포판마다 다르므로 실제 폴더를 열어 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./registry-hive-map.html">
+    <span class="rel-id">FOR-0051 · Registry</span>
+    Registry hive 전체 지도: 루트키와 디스크상 파일 대응표
+  </a>
+  <a class="related-item" href="./ntuser-dat.html">
+    <span class="rel-id">FOR-0057 · Registry</span>
+    NTUSER.DAT 기본: 사용자별 hive와 포렌식 키 인덱스
+  </a>
+  <a class="related-item" href="./regripper.html">
+    <span class="rel-id">FOR-0060 · Registry</span>
+    RegRipper 3.0 사용법: rip.exe 옵션과 hive별 플러그인
+  </a>
+  <a class="related-item" href="./userassist.html">
+    <span class="rel-id">FOR-0061 · Registry</span>
+    UserAssist로 사용자가 직접 실행한 프로그램 찾기
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./usrclass-dat.html"><span class="rel-id">← FOR-0058</span>UsrClass.dat 기본: ShellBags가 사는 hive와 HKCU\Software\Classes</a>
+<a class="related-item" href="./regripper.html"><span class="rel-id">FOR-0060 →</span>RegRipper 3.0 사용법: rip.exe 옵션과 hive별 플러그인</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-hive-로드">1단계 — hive 로드</a></li>
+<li class="toc-l3"><a href="#2단계-dirty-hive-경고와-트랜잭션-로그">2단계 — dirty hive 경고와 트랜잭션 로그</a></li>
+<li class="toc-l3"><a href="#3단계-트리-탐색과-값-목록">3단계 — 트리 탐색과 값 목록</a></li>
+<li class="toc-l3"><a href="#4단계-플러그인-자동-디코딩">4단계 — 플러그인 (자동 디코딩)</a></li>
+<li class="toc-l3"><a href="#5단계-북마크-이-도구의-핵심-기능">5단계 — 북마크 (이 도구의 핵심 기능)</a></li>
+<li class="toc-l3"><a href="#6단계-검색-find">6단계 — 검색 (Find)</a></li>
+<li class="toc-l3"><a href="#7단계-삭제-레코드-복구-deleted-records">7단계 — 삭제 레코드 복구 (Deleted Records)</a></li>
+<li class="toc-l3"><a href="#8단계-내보내기와-recmd">8단계 — 내보내기와 RECmd</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

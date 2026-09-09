@@ -45,7 +45,9 @@
       { "name": "SrumECmd", "purpose": "SRUDB.dat 파싱 → 앱별 네트워크 송수신량·실행 시간", "alternative_in_kit": "ESEDatabaseView (원시 테이블만 보임)" },
       { "name": "Timeline Explorer", "purpose": "대용량 CSV 뷰어. 컬럼 필터·정렬·조건부 서식. 타임라인 통합에 사실상 필수", "alternative_in_kit": "Excel (수십만 행에서 느림), PowerShell Import-Csv" },
       { "name": "streams (Sysinternals)", "purpose": "ADS 목록/삭제", "alternative_in_kit": "dir /r, PowerShell Get-Item -Stream *" },
-      { "name": "TrID", "purpose": "파일 형식 판정(시그니처 DB 기반)", "alternative_in_kit": "DIE, file (WSL)" }
+      { "name": "TrID", "purpose": "파일 형식 판정(시그니처 DB 기반)", "alternative_in_kit": "DIE, file (WSL)" },
+      { "name": "RECmd", "purpose": "RegistryExplorer 의 CLI 자매 도구. 배치 파일로 여러 hive의 관심 키를 일괄 추출", "alternative_in_kit": "RegRipper (rip.exe -a)" },
+      { "name": "ShellBags Explorer / SBECmd", "purpose": "UsrClass.dat 의 BagMRU/Bags 를 폴더 트리로 복원. ShellBags 는 전용 파서 없이는 사실상 해석 불가", "alternative_in_kit": "RegRipper shellbags 플러그인 (트리 복원은 안 됨)" }
     ]
   },
   "linux": [

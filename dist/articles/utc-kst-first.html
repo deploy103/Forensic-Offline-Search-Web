@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>분석 시작 전 UTC/KST 시간대 확정 절차 · FOR-0009 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%ED%8A%B8%EB%A6%AC%EC%95%84%EC%A7%80">트리아지</a> / FOR-0009
+      </div>
+      <header class="article-head">
+        <h1>분석 시작 전 UTC/KST 시간대 확정 절차</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">트리아지</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>증거물의 시간대를 먼저 확정해 메모지 맨 위에 적고, 모든 artifact 값을 UTC로 정규화해서 한 타임라인에 올린 뒤 최종 답을 낼 때만 한 번 KST(+9)로 변환한다. artifact마다 즉석에서 +9를 하면 이중 변환과 순서 뒤바뀜이 반드시 생긴다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>DCode, Timeline Explorer, python3, PowerShell, sqlite3, TZ</td></tr>
+<tr><th>artifact</th><td><code>FILETIME</code> · <code>WebKit timestamp</code> · <code>PRTime</code> · <code>Unix epoch</code> · <code>DOS date-time</code> · <code>SYSTEMTIME</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Windows\System32\config\SYSTEM</code> · <code>/etc/timezone</code> · <code>/etc/localtime</code></td></tr>
+<tr><th>regex</th><td><code>^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(Z|[+-]\d{2}:?\d{2})?$</code></td></tr>
+<tr><th>로그 필드</th><td><code>TimeCreated</code> · <code>SystemTime</code> · <code>last_visit_time</code> · <code>last_visit_date</code> · <code>PreviousTime</code> · <code>NewTime</code></td></tr>
+<tr><th>파일 형식</th><td><code>evtx</code> · <code>regf</code> · <code>sqlite</code> · <code>csv</code></td></tr>
+<tr><th>검색 별칭</th><td>utc kst 맞추기 · 시간대 통일 · 시각 보정 절차 · 시간대 먼저 · 타임라인 시간 안 맞음 · 시각 정규화 · 몇 시간 더해야 하나</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>증거물의 시간대를 먼저 확정해 메모지 맨 위에 적고, <strong>모든 artifact 값을 UTC로 정규화해서 한 타임라인에 올린 뒤 최종 답을 낼 때만 한 번 KST(+9)로 변환한다.</strong> artifact마다 즉석에서 +9를 하면 이중 변환과 순서 뒤바뀜이 반드시 생긴다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>여러 artifact(<code>$MFT</code>, EVTX, 브라우저 DB, 웹 로그)를 한 타임라인에 합쳐야 하는 문제</li><li>&quot;몇 시에 무엇을 했는가&quot;를 KST로 답해야 하는 문제</li><li>답을 냈는데 정확히 9시간 또는 18시간 틀린 경우</li><li>사건 순서(A 다음 B)가 논리적으로 말이 안 되는 경우 — 복사 전에 업로드했다는 식</li><li>여러 호스트의 로그를 대조해야 하는 경우</li></ul>
+<p>시간대 처리는 <strong>문제 종류와 무관하게 항상 붙는 세금</strong>이다. 절차로 고정해 두지 않으면 매번 같은 실수를 반복한다.</p>
+<p>시간대 값 자체(레지스트리 <code>TimeZoneInformation</code>, <code>Bias</code> 부호, <code>ActiveTimeBias</code>)는 <a href="./system-timezone.html">FOR-0054</a>가 전담한다. 이 글은 <strong>그 값을 얻은 다음의 분석 작업 흐름</strong>을 다룬다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>문제가 요구하는 시간대 표기 — <code>KST</code>, <code>UTC</code>, <code>현지 시각</code>, <code>+09:00</code>, 아무 언급 없음</li><li>첨부에 <code>SYSTEM</code> hive 또는 <code>/etc/timezone</code>이 있는가 → 시간대를 확정할 수 있다</li><li>도구 출력 시각 끝에 <code>Z</code>가 붙어 있는가 → 그 값은 UTC다</li><li>로그 문자열에 <code>+0900</code> 같은 오프셋이 박혀 있는가 → 이미 로컬이다</li><li>로그에 <strong>연도가 없는가</strong> — <code>Mar 14 16:22:41</code> 형태의 syslog는 연도를 따로 확정해야 한다</li><li>정수 타임스탬프의 <strong>자릿수</strong> — 이것만으로 형식이 거의 결정된다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">TZ=UTC date -d @1773465761 &#39;+%F %T %Z&#39;</code></pre></div>
+<p>분석을 시작하기 전에 다음 4줄을 메모지 맨 위에 적는다. 이것이 이 글의 전부다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">[TZ NOTE]  case: 2026-CTF-03
+  1. 증거물 시간대  : Korea Standard Time (Bias -540) = UTC+9
+  2. 문제 요구 시간대: KST
+  3. 작업 기준       : 전부 UTC 로 정규화. 표기는 항상 &quot;...Z&quot;
+  4. 최종 변환       : 제출 직전 1회만 +9h, 답에 &quot;KST&quot; 명시</code></pre></div>
+<p>시간대를 확정할 수 없으면 3번을 <code>기준=UTC, 미확정</code>으로 적고 <strong>UTC로만 답한다.</strong> 근거 없이 +9를 하는 것보다 UTC로 답하고 근거를 적는 쪽이 부분 점수에 유리하다.</p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-증거물의-시간대를-확정한다">1단계 — 증거물의 시간대를 확정한다</h3>
+<div class="table-wrap"><table><thead><tr><th>증거물</th><th>확인 위치</th><th>얻는 값</th></tr></thead><tbody><tr><td>Windows 이미지 / <code>SYSTEM</code> hive</td><td><code>SYSTEM\ControlSet00N\Control\TimeZoneInformation</code></td><td><code>TimeZoneKeyName</code>, <code>Bias</code> — <a href="./system-timezone.html">FOR-0054</a></td></tr><tr><td>Linux 이미지</td><td><code>/etc/timezone</code> (문자열), <code>/etc/localtime</code> (심볼릭 링크 대상)</td><td><code>Asia/Seoul</code> 등 tz 이름</td></tr><tr><td>웹/앱 서버 로그만 있음</td><td>로그 줄의 오프셋 표기 <code>+0900</code></td><td>그 서버의 로컬 오프셋</td></tr><tr><td>pcap만 있음</td><td>패킷 시각은 <strong>캡처 호스트 기준 Unix epoch(UTC)</strong></td><td>HTTP <code>Date:</code> 헤더와 대조</td></tr><tr><td>아무 근거 없음</td><td>—</td><td>UTC로 고정하고 그렇게 명시</td></tr></tbody></table></div>
+<p><code>Bias</code> 부호는 직관과 반대다. 한 줄만 기억한다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">UTC = 로컬 + Bias      (분 단위)
+로컬 = UTC - Bias
+KST: Bias = -540  -&gt;  로컬 = UTC + 9h</code></pre></div>
+<h3 id="2단계-artifact를-저장-시간대-4개-부류로-분류한다">2단계 — artifact를 &quot;저장 시간대&quot; 4개 부류로 분류한다</h3>
+<p>정규화 규칙은 값 하나하나가 아니라 <strong>저장 형식의 부류</strong>로 결정된다. 부류만 판정하면 나머지는 기계적이다.</p>
+<div class="table-wrap"><table><thead><tr><th>부류</th><th>판정 방법</th><th>정규화 규칙</th></tr></thead><tbody><tr><td>A. epoch 정수 = <strong>UTC</strong></td><td>FILETIME / WebKit / Unix / PRTime</td><td>그대로 UTC. <strong>여기에 +9 하면 안 된다</strong></td></tr><tr><td>B. 로컬 시각 문자열/워드, 오프셋 없음</td><td>FAT DOS date, EXIF, SYSTEMTIME 구조체</td><td><strong>변환 금지.</strong> 호스트 시간대를 알면 UTC로 되돌려 기록</td></tr><tr><td>C. 오프셋 포함 문자열</td><td><code>+0900</code>, <code>Z</code>, <code>+09:00</code></td><td>표기 그대로 신뢰. UTC로 되돌려 정규화</td></tr><tr><td>D. 연도/오프셋 없음</td><td>syslog RFC 3164</td><td>연도와 시간대를 <strong>외부 근거로 보강</strong></td></tr></tbody></table></div>
+<h4 id="a-부류-utc로-저장되는-값-전부-epoch-정수">A 부류 — UTC로 저장되는 값 (전부 epoch 정수)</h4>
+<div class="table-wrap"><table><thead><tr><th>artifact</th><th>저장 형식</th><th>기준 시각</th></tr></thead><tbody><tr><td><code>$MFT</code> <code>$SI</code>/<code>$FN</code> MACB</td><td>FILETIME (100ns)</td><td>1601-01-01 UTC</td></tr><tr><td><code>$UsnJrnl</code> <code>$J</code> / <code>$LogFile</code></td><td>FILETIME</td><td>1601-01-01 UTC</td></tr><tr><td>레지스트리 키 LastWrite</td><td>FILETIME</td><td>1601-01-01 UTC</td></tr><tr><td>EVTX <code>TimeCreated SystemTime</code></td><td>FILETIME (XML 렌더는 ISO 8601 <code>Z</code>)</td><td>1601-01-01 UTC</td></tr><tr><td>Prefetch 실행 시각</td><td>FILETIME</td><td>1601-01-01 UTC</td></tr><tr><td>UserAssist 마지막 실행 시각</td><td>FILETIME</td><td>1601-01-01 UTC</td></tr><tr><td>BAM/DAM 실행 시각</td><td>FILETIME</td><td>1601-01-01 UTC</td></tr><tr><td>LNK / Jump List 대상 MAC</td><td>FILETIME</td><td>1601-01-01 UTC</td></tr><tr><td><code>$Recycle.Bin</code> <code>$I</code> 삭제 시각</td><td>FILETIME</td><td>1601-01-01 UTC</td></tr><tr><td>Shimcache / Amcache</td><td>FILETIME</td><td>1601-01-01 UTC</td></tr><tr><td>Chrome/Edge <code>last_visit_time</code></td><td>WebKit (마이크로초)</td><td>1601-01-01 UTC</td></tr><tr><td>Firefox <code>last_visit_date</code></td><td>PRTime (마이크로초)</td><td>1970-01-01 UTC</td></tr><tr><td>SQLite <code>unixepoch</code> 정수</td><td>Unix (초/밀리초)</td><td>1970-01-01 UTC</td></tr></tbody></table></div>
+<p><strong>자릿수로 형식을 판별한다.</strong> 값을 보자마자 부류가 정해진다.</p>
+<div class="table-wrap"><table><thead><tr><th>자릿수</th><th>예시</th><th>형식</th><th>초 단위 환산</th></tr></thead><tbody><tr><td>10</td><td><code>1773465761</code></td><td>Unix 초</td><td>그대로</td></tr><tr><td>13</td><td><code>1773465761000</code></td><td>Unix 밀리초</td><td><code>/1000</code></td></tr><tr><td>16</td><td><code>1773465761000000</code></td><td>Unix 마이크로초 / PRTime</td><td><code>/1000000</code></td></tr><tr><td>17</td><td><code>13417139361000000</code></td><td>WebKit (1601 기준 마이크로초)</td><td><code>/1000000 - 11644473600</code></td></tr><tr><td>18</td><td><code>133560000000000000</code></td><td>FILETIME (1601 기준 100ns)</td><td><code>/10000000 - 11644473600</code></td></tr></tbody></table></div>
+<h4 id="b-부류-로컬-시각이-그대로-박힌-값-변환-금지">B 부류 — 로컬 시각이 그대로 박힌 값 (변환 금지)</h4>
+<div class="table-wrap"><table><thead><tr><th>artifact</th><th>저장 형식</th><th>주의점</th></tr></thead><tbody><tr><td>FAT / exFAT DOS date-time</td><td>날짜 워드 + 시각 워드</td><td>시간대 정보 없음. 2초 단위</td></tr><tr><td>exFAT UTC 오프셋 바이트</td><td>DOS date-time + 오프셋 필드</td><td>오프셋 필드가 있으면 그것만 적용</td></tr><tr><td>ZIP local file header 시각</td><td>DOS date-time</td><td>압축한 PC의 로컬 시각</td></tr><tr><td><code>NetworkList</code> <code>DateCreated</code>/<code>DateLastConnected</code></td><td><code>SYSTEMTIME</code> 구조체(16바이트)</td><td><strong>로컬 시각</strong> — <a href="./networklist.html">FOR-0072</a></td></tr><tr><td>EXIF <code>DateTimeOriginal</code></td><td><code>YYYY:MM:DD HH:MM:SS</code></td><td>촬영 기기의 로컬 시각</td></tr><tr><td>탐색기/Event Viewer 화면 표시</td><td>렌더링 결과</td><td><strong>분석 PC</strong>의 로컬 시각</td></tr><tr><td>일부 애플리케이션 텍스트 로그</td><td>자유 문자열</td><td>그 호스트의 로컬 시각</td></tr></tbody></table></div>
+<p>이 부류를 UTC 타임라인에 올릴 때는 <strong>호스트 시간대를 빼서 UTC로 되돌린다.</strong> KST 호스트라면 <code>UTC = 로컬 - 9h</code>다. 되돌릴 근거가 없으면 타임라인에 <code>(local, tz?)</code> 표시를 달고 절대 시각 비교에서 제외한다.</p>
+<h4 id="c-부류-오프셋이-표기된-문자열">C 부류 — 오프셋이 표기된 문자열</h4>
+<div class="table-wrap"><table><thead><tr><th>로그</th><th>표기 예시</th><th>처리</th></tr></thead><tbody><tr><td>ISO 8601 / RFC 3339</td><td><code>2026-03-14T07:04:19Z</code>, <code>2026-03-14T16:04:19+09:00</code></td><td>표기 그대로. <code>Z</code>는 UTC</td></tr><tr><td>Apache access log (CLF)</td><td><code>[14/Mar/2026:16:22:41 +0900]</code></td><td>이미 로컬. <strong>+9 금지</strong></td></tr><tr><td>nginx access log (기본)</td><td><code>[14/Mar/2026:16:22:41 +0900]</code></td><td>동일</td></tr><tr><td>journald / RFC 5424 syslog</td><td><code>2026-03-14T16:22:41.123456+09:00</code></td><td>표기 그대로</td></tr><tr><td>PDF <code>/CreationDate</code></td><td><code>D:20260314162241+09&#39;00&#39;</code></td><td>표기 그대로</td></tr><tr><td>HTTP <code>Date:</code> 헤더</td><td><code>Sat, 14 Mar 2026 07:04:19 GMT</code></td><td>GMT = UTC</td></tr></tbody></table></div>
+<p><code>+0900</code>이 붙은 값은 <strong>이미 KST다.</strong> 여기에 9시간을 더하는 것이 오답 원인 1위다.</p>
+<h4 id="d-부류-연도가-없는-syslog">D 부류 — 연도가 없는 syslog</h4>
+<p>전통 syslog(RFC 3164) 타임스탬프는 <code>Mmm dd hh:mm:ss</code> 형식으로 <strong>연도도 시간대도 없다.</strong></p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Mar 14 16:22:41 web01 sshd[2841]: Accepted password for admin from 10.0.0.5</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>없는 정보</th><th>보강 방법</th></tr></thead><tbody><tr><td>연도</td><td>파일의 <code>$MFT</code>/<code>stat</code> mtime, 로테이션 파일명(<code>auth.log.1</code>), 로그 안의 연도 표기 줄(재부팅 배너), 문제 지문의 연도</td></tr><tr><td>시간대</td><td>그 호스트의 <code>/etc/timezone</code>, 같은 사건이 찍힌 다른 로그(C 부류)와 대조</td></tr><tr><td>12월→1월 경계</td><td>연도 증가 지점을 로그 순서로 판정</td></tr></tbody></table></div>
+<h3 id="3단계-전부-utc로-정규화한다">3단계 — 전부 UTC로 정규화한다</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">[원칙]
+1) A 부류: 정수 -&gt; UTC datetime. 끝. 더 이상 손대지 않는다
+2) B 부류: 로컬 - (호스트 오프셋) -&gt; UTC. 근거 없으면 UTC 칸을 비우고 표시
+3) C 부류: 표기 오프셋을 빼서 -&gt; UTC
+4) D 부류: 연도/시간대 보강 후 -&gt; UTC
+5) 정규화된 값은 항상 &quot;2026-03-14 07:04:19Z&quot; 처럼 Z 를 붙여 적는다
+6) 정렬·간격 계산·상관분석은 UTC 값으로만 한다
+7) 제출 직전 +9h 한 번, 답에 KST 명시</code></pre></div>
+<p>Z 표기를 강제하는 이유는 단순하다. <strong>표기가 없는 시각은 몇 시간 뒤 자신도 어느 시간대인지 모른다.</strong></p>
+<h3 id="4단계-변환-명령-모음">4단계 — 변환 명령 모음</h3>
+<p>FILETIME은 1601-01-01 UTC 기준 100ns 단위이고, Unix epoch와의 차이는 <code>11644473600</code>초다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Unix초   = FILETIME / 10000000 - 11644473600
+FILETIME = (Unix초 + 11644473600) * 10000000
+WebKit   = (Unix초 + 11644473600) * 1000000
+PRTime   = Unix초 * 1000000</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>도구</th><th>입력 형식 지정</th><th>특징</th></tr></thead><tbody><tr><td>DCode</td><td>드롭다운으로 <code>Windows: 64 bit Hex Value</code>, <code>Google Chrome</code>, <code>Unix: Numeric</code> 등 선택</td><td>GUI. 대상 시간대를 KST로 지정하면 한 번에 나온다</td></tr><tr><td>Python</td><td>직접 계산</td><td>대량 변환·스크립트에 유리</td></tr><tr><td>PowerShell</td><td><code>[datetime]::FromFileTimeUtc</code></td><td>Windows에서 별도 설치 없이 즉시</td></tr><tr><td>GNU <code>date</code></td><td><code>TZ=... date -d @&lt;초&gt;</code></td><td>Unix 초 전용. 파이프에 넣기 좋다</td></tr><tr><td><code>sqlite3</code></td><td><code>datetime(..., &#39;unixepoch&#39;)</code></td><td>브라우저 DB를 SQL 안에서 변환</td></tr></tbody></table></div>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import datetime
+
+def ft_to_utc(ft):            # FILETIME (18자리)
+    return datetime.datetime(1601, 1, 1) + datetime.timedelta(microseconds=ft // 10)
+
+def webkit_to_utc(wk):        # Chrome/Edge (17자리)
+    return datetime.datetime(1601, 1, 1) + datetime.timedelta(microseconds=wk)
+
+def prtime_to_utc(pr):        # Firefox (16자리)
+    return datetime.datetime(1970, 1, 1) + datetime.timedelta(microseconds=pr)
+
+KST = datetime.timezone(datetime.timedelta(hours=9))
+u = ft_to_utc(133560000000000000)
+print(u.strftime(&#39;%F %T&#39;) + &#39;Z&#39;, &#39;-&gt;&#39;, u.replace(tzinfo=datetime.timezone.utc).astimezone(KST))</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># FILETIME(정수) -&gt; UTC / KST. 작업 기준은 UTC, 표시만 KST
+$ft  = 133560000000000000
+$utc = [datetime]::FromFileTimeUtc($ft)
+&quot;{0}Z&quot; -f $utc.ToString(&#39;yyyy-MM-dd HH:mm:ss&#39;)
+&quot;{0} KST&quot; -f $utc.AddHours(9).ToString(&#39;yyyy-MM-dd HH:mm:ss&#39;)
+
+# 이미 UTC 인 CSV 컬럼을 KST 컬럼으로 한 번에 추가
+Import-Csv .\evtx.csv | Select-Object *, @{
+  n = &#39;TimeKST&#39;
+  e = { ([datetime]::Parse($_.TimeCreated)).ToUniversalTime().AddHours(9) }
+} | Export-Csv .\evtx_kst.csv -NoTypeInformation -Encoding UTF8</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># Unix초 -&gt; UTC / KST
+TZ=UTC       date -d @1773465761 &#39;+%F %T %Z&#39;
+TZ=Asia/Seoul date -d @1773465761 &#39;+%F %T %Z&#39;
+
+# 오프셋 붙은 로그 시각 -&gt; UTC 로 되돌리기
+TZ=UTC date -d &#39;2026-03-14T16:22:41+09:00&#39; &#39;+%F %T %Z&#39;</code></pre></div>
+<div class="code-block" data-lang="sql"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-sql">-- Chrome History (WebKit) : UTC 와 KST 를 나란히
+SELECT url,
+       datetime(last_visit_time/1000000 - 11644473600, &#39;unixepoch&#39;)             AS utc,
+       datetime(last_visit_time/1000000 - 11644473600, &#39;unixepoch&#39;, &#39;+9 hours&#39;) AS kst
+FROM urls ORDER BY last_visit_time DESC LIMIT 20;
+
+-- Firefox places.sqlite (PRTime)
+SELECT url,
+       datetime(last_visit_date/1000000, &#39;unixepoch&#39;)             AS utc,
+       datetime(last_visit_date/1000000, &#39;unixepoch&#39;, &#39;+9 hours&#39;) AS kst
+FROM moz_places ORDER BY last_visit_date DESC LIMIT 20;</code></pre></div>
+<p><code>sqlite3</code>의 <code>&#39;localtime&#39;</code> 수정자는 <strong>분석 PC의 시간대</strong>를 쓴다. 증거물 시간대와 다르면 틀린 값이 나오므로 <code>&#39;+9 hours&#39;</code>처럼 오프셋을 직접 적는다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="table-wrap"><table><thead><tr><th>본 값</th><th>판정</th><th>해야 할 일</th></tr></thead><tbody><tr><td><code>2026-03-14 07:04:19Z</code></td><td>UTC 확정</td><td>그대로 타임라인에</td></tr><tr><td><code>2026-03-14T16:04:19+09:00</code></td><td>로컬(KST) 확정</td><td>9시간 빼서 UTC로</td></tr><tr><td><code>2026-03-14 16:04:19</code> (표기 없음)</td><td><strong>미확정</strong></td><td>어느 도구·artifact에서 나왔는지 역추적</td></tr><tr><td><code>133560000000000000</code></td><td>FILETIME</td><td><code>/10000000 - 11644473600</code></td></tr><tr><td><code>13417139361000000</code></td><td>WebKit</td><td><code>/1000000 - 11644473600</code></td></tr><tr><td><code>1773465761</code></td><td>Unix 초</td><td>그대로</td></tr><tr><td><code>Mar 14 16:22:41</code></td><td>연도·오프셋 없음</td><td>보강 후 사용</td></tr><tr><td><code>1980-01-01 00:00:00</code></td><td>DOS date-time 0값</td><td>시각 정보 없음. 증거로 못 쓴다</td></tr><tr><td><code>1601-01-01 00:00:00</code></td><td>FILETIME 0값</td><td>&quot;설정되지 않음&quot;. 삭제·미기록 의미</td></tr><tr><td><code>1970-01-01 09:00:00</code></td><td>Unix 0에 +9한 결과</td><td>값이 0이었다. 변환 오류가 아니다</td></tr></tbody></table></div>
+<p><code>1601-01-01</code>과 <code>1980-01-01</code>이 보이면 <strong>변환이 틀린 것이 아니라 원본 값이 0</strong>이다. 이 구분을 못 하면 없는 오류를 찾느라 시간을 버린다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>이 글에서 얻은 것</th><th>다음에 할 일</th><th>확인 사항</th></tr></thead><tbody><tr><td>증거물 시간대 = UTC+9</td><td><code>SYSTEM</code> hive 재확인</td><td><code>TimeZoneKeyName</code>, 키 LastWrite (<a href="./system-timezone.html">FOR-0054</a>)</td></tr><tr><td>UTC 정규화된 통합 타임라인</td><td>사건 시각 ±5분의 모든 artifact</td><td>순서가 논리적으로 성립하는가 (<a href="./ntfs-artifact-timeline.html">FOR-0050</a>)</td></tr><tr><td><code>$MFT</code> MACB (UTC)</td><td><code>$UsnJrnl</code> <code>$J</code></td><td>같은 사건이 초 단위로 붙어 있는가</td></tr><tr><td>시간대 키 LastWrite가 사건 이후</td><td>그 시점 전후 EVTX</td><td>시간대 설정 변경 = 조작 시도인가</td></tr><tr><td>시스템 시각 변경 흔적</td><td>Security 로그의 시각 변경 이벤트</td><td>변경 전후 구간의 시각 신뢰도 재평가</td></tr><tr><td>웹 로그 오프셋 <code>+0900</code></td><td>서버 호스트 시간대</td><td>클라이언트 이미지 시간대와 같은가</td></tr><tr><td>자릿수 17 정수</td><td>Chrome History <code>urls</code></td><td>WebKit 변환 후 방문 URL (<a href="./chrome-history.html">FOR-0191</a>)</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>이미 로컬인 값에 +9를 하는 것.</strong> <code>[14/Mar/2026:16:22:41 +0900]</code>, FAT DOS date, EXIF <code>DateTimeOriginal</code>, <code>NetworkList</code>의 <code>SYSTEMTIME</code>은 이미 로컬 시각이다. 여기에 9시간을 더하면 9시간 미래로 간다. 오프셋 표기가 있거나 B 부류면 변환하지 않는다.</li><li><strong>도구가 이미 변환한 값에 또 +9를 하는 것.</strong> Autopsy 케이스 시간대, Timeline Explorer 표시, Event Viewer 화면은 이미 로컬로 렌더링된 값이다. 여기에 손으로 9시간을 더하면 총 18시간 오차가 난다. <strong>원본 CSV/XML의 raw 값을 기준으로 계산한다.</strong></li><li><strong>artifact마다 즉석에서 +9를 하는 것.</strong> 어떤 값은 변환했고 어떤 값은 안 했는지 추적할 수 없게 된다. 30분 뒤 자기 메모를 믿을 수 없다. UTC로 전부 모은 뒤 마지막에 한 번만 변환한다.</li><li><strong>서머타임 지역에 고정 오프셋을 쓰는 것.</strong> <code>Eastern Standard Time</code>은 여름에 UTC-4, 겨울에 UTC-5다. 사건 날짜가 어느 구간인지 보고 <code>Bias + DaylightBias</code>를 쓴다. 한국은 서머타임이 없어 이 함정이 안 보이지만, 문제 이미지가 미국/유럽 환경이면 1시간이 틀린다.</li><li><strong>epoch 단위를 혼동하는 것.</strong> 13자리를 초로 읽으면 서기 58000년대가 나오고, 10자리를 밀리초로 읽으면 1970년 1월 중순이 나온다. <strong>자릿수 표를 먼저 본다.</strong></li><li><strong>연도 없는 syslog에 현재 연도를 넣는 것.</strong> 문제 이미지가 2026년에 배포되었어도 로그는 2024년일 수 있다. 파일 mtime과 로테이션 파일명으로 연도를 확정한다.</li><li><strong>시스템 시각 조작을 고려하지 않는 것.</strong> Security 로그의 시각 변경 이벤트(<code>4616</code>)는 <code>PreviousTime</code>과 <code>NewTime</code>을 함께 기록한다. 이 이벤트가 있으면 <strong>그 구간의 모든 로컬 시각 해석이 흔들린다.</strong> 조작 구간은 절대 시각 대신 <code>EventRecordID</code> 같은 단조 증가 값으로 순서를 판정한다.</li><li><strong>호스트 간 시계 오차를 시간대 문제로 오해하는 것.</strong> 9시간 1분 23초처럼 딱 떨어지지 않는 차이는 NTP 미동기다. 시간대 변환으로 해결되지 않는다. 이 경우 절대 시각을 맞추려 하지 말고 <strong>각 호스트 내부의 순서</strong>로 논증한다.</li><li><strong>엑셀이 시각 문자열을 다시 해석하게 두는 것.</strong> CSV를 엑셀로 열면 <code>2026-03-14 07:04:19</code>가 로컬 서식으로 재해석되고 초가 잘리기도 한다. 대용량 CSV는 Timeline Explorer로 보거나 텍스트로 다룬다.</li><li><strong>답에 시간대를 안 적는 것.</strong> <code>2026-03-14 16:04:19</code>만 제출하면 채점자가 UTC로 읽을 수 있다. <code>KST</code> 또는 <code>+09:00</code>을 명시한다. 문제가 시각 표기 형식을 지정했으면 그 형식을 글자 그대로 따른다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<p>정규화가 맞았는지 값 하나를 두 방향에서 확인한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) FILETIME -&gt; Unix초 -&gt; 다시 FILETIME 왕복
+python3 -c &quot;
+ft=133560000000000000
+u=ft/10000000-11644473600
+print(int(u), int((u+11644473600)*10000000)==ft)&quot;</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 2) 같은 사건이 찍힌 두 로그의 차이가 정확히 오프셋만큼인가
+TZ=UTC date -d &#39;2026-03-14T16:22:41+09:00&#39; &#39;+%F %T %Z&#39;   # 07:22:41 UTC</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>관찰</th><th>결론</th></tr></thead><tbody><tr><td>두 artifact 차이가 정확히 9시간</td><td>한쪽만 변환됐다. 부류 판정을 다시 한다</td></tr><tr><td>정확히 18시간</td><td>같은 값에 +9를 두 번 했다</td></tr><tr><td>정확히 1시간</td><td>서머타임 구간 판정 오류</td></tr><tr><td>8시간 / 15시간 등</td><td>증거물 시간대가 KST가 아니다</td></tr><tr><td>9시간 1분대 어긋남</td><td>호스트 시계 오차. 순서로 논증</td></tr><tr><td>사건 순서가 인과에 위배</td><td>변환 방향이 반대다</td></tr><tr><td>시각이 1601년 / 1980년</td><td>원본 값이 0. 변환 오류가 아니다</td></tr></tbody></table></div>
+<p>논리 검사가 가장 강력하다. <strong>파일 생성보다 업로드가 먼저 나오면 변환이 틀린 것이다.</strong></p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;내부 문서가 외부로 유출됐다. 유출 파일이 생성된 시각부터 업로드까지의
+ 경과 시간(분)과 업로드 시각을 KST로 답하시오.&quot;
+첨부: SYSTEM, $MFT, access.log, History (Chrome)
+
+1. 첫 시도 (실패):
+   각 도구 출력을 그대로 엑셀에 붙여 시각 컬럼으로 정렬했다.
+
+     $MFT      secret.xlsx Created0x10 : 2026-03-14 07:04:19
+     access.log POST /upload.php       : 14/Mar/2026:16:22:41 +0900
+     History   last_visit_time         : 13417139361000000
+
+   문자열 정렬 결과:
+     07:04:19  파일 생성
+     16:22:41  업로드
+   -&gt; 경과 시간 = 9시간 18분 22초 = 558분 이라고 답했다.  오답.
+
+   왜 틀렸나:
+   $MFT 값은 FILETIME = UTC 이고, access.log 값은 이미 KST(+0900) 다.
+   서로 다른 시간대의 값을 같은 축에 놓고 뺐다. 9시간이 통째로 섞였다.
+   게다가 History 의 17자리 정수는 아예 변환도 하지 않고 정렬에서 빠졌다.
+
+2. 피벗: 부류를 판정하고 전부 UTC 로 되돌린다
+   먼저 시간대 확정:
+     SYSTEM\ControlSet001\Control\TimeZoneInformation
+       TimeZoneKeyName = Korea Standard Time
+       Bias            = -540      -&gt; 로컬 = UTC + 9h
+       StandardStart / DaylightStart = 전부 00  -&gt; DST 없음
+
+   부류 판정:
+     $MFT Created0x10      -&gt; A (FILETIME, UTC)      : 변환 불필요
+     access.log +0900      -&gt; C (오프셋 포함)        : -9h 해서 UTC 로
+     History last_visit    -&gt; A (WebKit 17자리)      : /1000000-11644473600
+
+3. UTC 정규화
+   $MFT       2026-03-14 07:04:19Z
+   access.log 16:22:41 +0900 - 9h = 2026-03-14 07:22:41Z
+   History    13417139361000000/1000000-11644473600 = 1773465761
+              TZ=UTC date -d @1773465761 -&gt; 2026-03-14 07:22:41Z
+
+4. UTC 축에서 정렬
+   07:04:19Z  $MFT      secret.xlsx 생성
+   07:22:41Z  History   업로드 페이지 방문
+   07:22:41Z  access.log POST /upload.php   &lt;- 브라우저 기록과 초 단위 일치
+
+   경과 = 07:22:41 - 07:04:19 = 18분 22초 -&gt; 18분
+   History 와 access.log 가 같은 초에 맞물린 것이 정규화가 맞았다는 증거다.
+
+5. 최종 변환 (제출 직전 1회)
+   업로드 07:22:41Z + 9h = 2026-03-14 16:22:41 KST
+
+6. 검산
+   558분과 18분의 차이는 정확히 540분 = 9시간.
+   1차 시도의 오차가 오프셋 하나였음이 확인된다.
+
+정답: 경과 18분 / 업로드 2026-03-14 16:22:41 KST</code></pre></div>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>[TZ NOTE]</code> 4줄을 적었는가 — 안 적었으면 지금 적는다</li><li>각 값의 부류(A/B/C/D)를 판정했는가</li><li>정수 타임스탬프의 <strong>자릿수</strong>를 세었는가 — 10/13/16/17/18</li><li>도구가 이미 시간대를 적용해 출력하고 있지 않은가 (<code>Z</code> 유무, 도구 시간대 설정)</li><li>오프셋이 표기된 값에 또 변환하지 않았는가</li><li>차이가 정확히 9 / 18 / 8 / 1시간인가 — 각각 변환 누락 / 이중 변환 / 다른 시간대 / DST</li><li>사건 순서가 인과에 맞는가 — 안 맞으면 변환 방향이 반대다</li><li>시각이 <code>1601-01-01</code> / <code>1980-01-01</code>인가 — 원본 값이 0이다</li><li>syslog의 연도를 파일 mtime이나 로테이션 파일명으로 확정했는가</li><li>시스템 시각 변경 이벤트가 있는가 — 있으면 그 구간은 순서로만 판정</li><li>답에 <code>KST</code>/<code>UTC</code>를 명시했는가, 문제가 지정한 표기 형식과 같은가</li><li>시간대를 확정할 근거가 아예 없으면 UTC로 답하고 근거를 함께 적는다</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-014 — Microsoft Learn, File Times: FILETIME은 1601-01-01 UTC 기준 100ns 단위이며 Unix epoch와의 차이가 <code>11644473600</code>초라는 정의</li><li>SRC-018 — Microsoft Learn, <code>TIME_ZONE_INFORMATION</code>: <code>Bias</code>가 분 단위이고 <strong>UTC = 로컬 + Bias</strong>라는 부호 정의, <code>StandardBias</code>/<code>DaylightBias</code>가 <code>Bias</code>에 더해진다는 규칙</li><li>SRC-075 — RFC 3339 / ISO 8601: <code>Z</code>와 <code>+09:00</code> 오프셋 표기의 의미, 오프셋이 없는 시각 표기는 시간대 미확정이라는 점</li><li>연도 없는 syslog(RFC 3164) 형식은 구현체마다 다를 수 있으므로 실제 로그 헤더로 확인할 것</li><li>시각 변경 이벤트의 EventData 필드명(<code>PreviousTime</code>/<code>NewTime</code>)은 Windows 버전에 따라 다를 수 있으므로 실제 EVTX에서 확인할 것</li><li>DCode의 형식 드롭다운 명칭은 도구 버전에 따라 다를 수 있으므로 실제 화면에서 확인할 것</li><li>문제에서 요구하는 정확한 flag/시각 표기 형식은 대회마다 다르다. 이 글은 특정 flag 형식을 가정하지 않는다</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./system-timezone.html">
+    <span class="rel-id">FOR-0054 · Registry</span>
+    SYSTEM hive 시간대(TimeZoneInformation)와 UTC/KST 보정
+  </a>
+  <a class="related-item" href="./hash-integrity.html">
+    <span class="rel-id">FOR-0010 · 트리아지</span>
+    해시로 분석 전후 무결성 확인 (MD5/SHA1/SHA256)
+  </a>
+  <a class="related-item" href="./ntfs-artifact-timeline.html">
+    <span class="rel-id">FOR-0050 · 디스크/NTFS</span>
+    NTFS artifact 종합 타임라인 만들기: $MFT·$J·EVTX·Prefetch를 한 축에
+  </a>
+  <a class="related-item" href="./sqlite-timestamp-conversion.html">
+    <span class="rel-id">FOR-0202 · 브라우저/웹</span>
+    SQLite 시각 변환: 자릿수로 체계 판정하고 datetime 으로 뽑기
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./verify-real-file-type.html"><span class="rel-id">← FOR-0002</span>확장자 대신 실제 파일 형식 확인하기: file·DIE·xxd 판정 근거와 우선순위</a>
+<a class="related-item" href="./hash-integrity.html"><span class="rel-id">FOR-0010 →</span>해시로 분석 전후 무결성 확인 (MD5/SHA1/SHA256)</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-증거물의-시간대를-확정한다">1단계 — 증거물의 시간대를 확정한다</a></li>
+<li class="toc-l3"><a href="#2단계-artifact를-저장-시간대-4개-부류로-분류한다">2단계 — artifact를 &quot;저장 시간대&quot; 4개 부류로 분류한다</a></li>
+<li class="toc-l3"><a href="#3단계-전부-utc로-정규화한다">3단계 — 전부 UTC로 정규화한다</a></li>
+<li class="toc-l3"><a href="#4단계-변환-명령-모음">4단계 — 변환 명령 모음</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

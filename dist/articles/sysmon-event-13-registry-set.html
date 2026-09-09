@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Sysmon Event ID 13 RegistryEvent: 레지스트리를 바꾼 프로세스 특정 · FOR-0102 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Event%20Log">Event Log</a> / FOR-0102
+      </div>
+      <header class="article-head">
+        <h1>Sysmon Event ID 13 RegistryEvent: 레지스트리를 바꾼 프로세스 특정</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Event Log</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>Sysmon Event ID 13은 레지스트리 값 설정마다 바꾼 프로세스(Image)와 경로(TargetObject), 새 데이터(Details) 를 남긴다. hive 분석은 키의 LastWrite 시각만 알고 주체를 모르므로, &quot;누가 이 값을 썼는가&quot;에 답하는 것은 이 로그뿐이다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Sysmon, EvtxECmd, Registry Explorer, PowerShell, Timeline Explorer</td></tr>
+<tr><th>artifact</th><td><code>Sysmon</code> · <code>RegistryEvent</code> · <code>TargetObject</code> · <code>Details</code> · <code>SetValue</code> · <code>지속성</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Windows\System32\winevt\Logs\Microsoft-Windows-Sysmon%4Operational.evtx</code></td></tr>
+<tr><th>레지스트리</th><td><code>HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon</code> · <code>HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options</code> · <code>HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows\AppInit_DLLs</code> · <code>HKLM\SYSTEM\CurrentControlSet\Services</code> · <code>HKCU\Software\Classes\CLSID</code></td></tr>
+<tr><th>Event ID</th><td><code>13</code> · <code>12</code> · <code>14</code></td></tr>
+<tr><th>regex</th><td><code>^\\REGISTRY\\(MACHINE|USER)\\</code> · <code>HKU\\S-1-5-21-[0-9-]+</code></td></tr>
+<tr><th>로그 필드</th><td><code>RuleName</code> · <code>EventType</code> · <code>UtcTime</code> · <code>ProcessGuid</code> · <code>ProcessId</code> · <code>Image</code> · <code>TargetObject</code> · <code>Details</code> · <code>NewName</code> · <code>User</code></td></tr>
+<tr><th>파일 형식</th><td><code>evtx</code></td></tr>
+<tr><th>검색 별칭</th><td>sysmon 레지스트리 변경 · sysmon 13 · 누가 레지스트리를 바꿨나 · 레지스트리 지속성 탐지 · registry set 이벤트 · sysmon 12 14 · 레지스트리 변경 주체</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>Sysmon Event ID 13은 레지스트리 값 설정마다 <strong>바꾼 프로세스(<code>Image</code>)와 경로(<code>TargetObject</code>), 새 데이터(<code>Details</code>)</strong> 를 남긴다. hive 분석은 키의 <code>LastWrite</code> 시각만 알고 주체를 모르므로, &quot;누가 이 값을 썼는가&quot;에 답하는 것은 이 로그뿐이다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;Run 키에 등록한 프로세스는 무엇인가&quot; — 지속성 등록 주체</li><li>&quot;서비스가 언제 어떤 <code>ImagePath</code>로 만들어졌는가&quot;</li><li>&quot;IFEO <code>Debugger</code>가 언제 심어졌는가&quot;</li><li>&quot;이 레지스트리 값을 누가 지웠는가&quot; — Event 12</li><li>hive의 <code>LastWrite</code>만으로는 시점·주체가 불충분할 때</li><li>값이 여러 번 바뀐 이력 복원 (hive에는 마지막 상태만 남는다)</li></ul>
+<p>레지스트리 hive 자체의 구조와 파일 위치는 <a href="./registry-hive-map.html">FOR-0051</a>을, <code>LastWrite</code>의 한계는 FOR-0077을 본다. <strong>이 로그가 그 한계를 정확히 보완한다.</strong></p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>지문에 &quot;지속성&quot;, &quot;자동 실행 등록&quot;, &quot;누가 등록했나&quot; → Event 13</li><li>레지스트리 경로가 하나 주어졌다 → <code>TargetObject</code>로 필터(단, 정규화 필요)</li><li>지문에 &quot;값이 삭제됐다&quot;, &quot;키가 사라졌다&quot; → Event 12</li><li>지문에 &quot;이름이 바뀐 키&quot; → Event 14</li><li>hive에서 값은 찾았는데 시점을 모른다 → Event 13의 <code>UtcTime</code></li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 원본: Microsoft-Windows-Sysmon%4Operational.evtx -&gt; sysmon.evtx
+Get-WinEvent -Path &#39;C:\case\sysmon.evtx&#39; -FilterXPath &#39;*[System[EventID=13]]&#39; | Format-List</code></pre></div>
+<p>객체로 뽑고 경로를 <strong>정규화</strong>해 둔다. 이 정규화가 이 글의 실전 핵심이다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$sm = &#39;C:\case\sysmon.evtx&#39;
+
+function Normalize-RegPath([string]$p) {
+  $q = $p
+  $q = $q -replace &#39;^\\REGISTRY\\MACHINE\\&#39;, &#39;HKLM\&#39;
+  $q = $q -replace &#39;^\\REGISTRY\\USER\\&#39;,    &#39;HKU\&#39;
+  $q = $q -replace &#39;^HKLM\\System\\ControlSet\d{3}\\&#39;, &#39;HKLM\SYSTEM\CurrentControlSet\&#39;
+  $q = $q -replace &#39;^HKLM\\SYSTEM\\ControlSet\d{3}\\&#39;, &#39;HKLM\SYSTEM\CurrentControlSet\&#39;
+  return $q
+}
+
+$p13 = Get-WinEvent -Path $sm -FilterXPath &#39;*[System[EventID=12 or EventID=13 or EventID=14]]&#39; |
+  ForEach-Object {
+    $x = [xml]$_.ToXml()
+    $d = @{}
+    $x.Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.&#39;#text&#39; }
+    [pscustomobject]@{
+      UtcTime  = [datetime]::Parse($d[&#39;UtcTime&#39;])
+      Id       = $_.Id
+      Type     = $d[&#39;EventType&#39;]
+      Image    = $d[&#39;Image&#39;]
+      Guid     = $d[&#39;ProcessGuid&#39;]
+      Target   = Normalize-RegPath $d[&#39;TargetObject&#39;]
+      Raw      = $d[&#39;TargetObject&#39;]
+      Details  = $d[&#39;Details&#39;]
+      NewName  = $d[&#39;NewName&#39;]
+      User     = $d[&#39;User&#39;]
+    }
+  } | Sort-Object UtcTime
+
+$p13 | Where-Object { $_.Id -eq 13 } |
+  Select-Object UtcTime, Image, Target, Details | Format-Table -AutoSize</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-12-13-14-를-함께-본다">1단계 — 12 / 13 / 14 를 함께 본다</h3>
+<div class="table-wrap"><table><thead><tr><th>ID</th><th>이름</th><th><code>EventType</code> 값</th><th>추가 필드</th><th>무엇을 알려주는가</th></tr></thead><tbody><tr><td>12</td><td>RegistryEvent (Object create and delete)</td><td><code>CreateKey</code>, <code>DeleteKey</code>, <code>DeleteValue</code></td><td>—</td><td>키/값의 <strong>생성·삭제</strong></td></tr><tr><td>13</td><td>RegistryEvent (Value Set)</td><td><code>SetValue</code></td><td><code>Details</code></td><td><strong>값 데이터 기록</strong></td></tr><tr><td>14</td><td>RegistryEvent (Key and Value Rename)</td><td><code>RenameKey</code>, <code>RenameValue</code></td><td><code>NewName</code></td><td>이름 변경 전/후</td></tr></tbody></table></div>
+<p>세 이벤트를 반드시 함께 조회한다. 공격자는 <strong>12(CreateKey) → 13(SetValue)</strong> 순서로 지속성을 심고, 흔적 제거 때는 <strong>12(DeleteValue)</strong> 만 남긴다. 13만 보면 삭제 흔적을 통째로 놓친다.</p>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>의미</th></tr></thead><tbody><tr><td><code>RuleName</code></td><td>설정 규칙 태그. 지정 안 하면 빈 값</td></tr><tr><td><code>EventType</code></td><td>위 표의 동작 종류</td></tr><tr><td><code>UtcTime</code></td><td><strong>이미 UTC인 변경 시각</strong></td></tr><tr><td><code>ProcessGuid</code> / <code>ProcessId</code></td><td>변경을 수행한 프로세스</td></tr><tr><td><code>Image</code></td><td><strong>변경 주체의 실행 파일 경로</strong></td></tr><tr><td><code>TargetObject</code></td><td>대상 키/값의 전체 경로</td></tr><tr><td><code>Details</code></td><td><strong>설정된 값 데이터</strong>(13만)</td></tr><tr><td><code>NewName</code></td><td>변경 후 이름(14만)</td></tr><tr><td><code>User</code></td><td>변경 주체의 실행 계정</td></tr></tbody></table></div>
+<h3 id="2단계-targetobject-경로-정규화-실전-함정">2단계 — TargetObject 경로 정규화 (실전 함정)</h3>
+<p><code>TargetObject</code>는 커널 표기와 축약 표기가 섞여 나온다. 문제 지문의 경로를 그대로 검색하면 <strong>0건이 나오고 &quot;흔적이 없다&quot;고 오판</strong>하게 된다.</p>
+<div class="table-wrap"><table><thead><tr><th>실제 로그에 나오는 형태</th><th>사람이 아는 형태</th></tr></thead><tbody><tr><td><code>HKLM\SOFTWARE\...</code></td><td><code>HKEY_LOCAL_MACHINE\SOFTWARE\...</code> (동일)</td></tr><tr><td><code>\REGISTRY\MACHINE\SOFTWARE\...</code></td><td><code>HKLM\SOFTWARE\...</code></td></tr><tr><td><code>\REGISTRY\USER\S-1-5-21-...\Software\...</code></td><td><code>HKCU\Software\...</code>(해당 사용자)</td></tr><tr><td><code>HKU\S-1-5-21-1004\Software\...</code></td><td><code>HKCU\Software\...</code></td></tr><tr><td><code>HKU\S-1-5-21-1004_Classes\CLSID\...</code></td><td><code>HKCU\Software\Classes\CLSID\...</code></td></tr><tr><td><code>HKLM\System\ControlSet001\Services\...</code></td><td><code>HKLM\SYSTEM\CurrentControlSet\Services\...</code></td></tr></tbody></table></div>
+<p><strong>가장 많이 걸리는 것이 마지막 줄이다.</strong> <code>CurrentControlSet</code>은 실행 중에만 존재하는 심볼릭 링크이므로 로그에는 <code>ControlSet001</code>(또는 <code>ControlSet002</code>)로 기록된다. <code>CurrentControlSet</code>으로 검색하면 서비스 지속성이 전부 안 잡힌다. ControlSet 번호와 <code>Select</code> 키의 의미는 <a href="./registry-hive-map.html">FOR-0051</a>에 정리돼 있다.</p>
+<p><code>HKU\&lt;SID&gt;</code>는 사용자를 SID로만 알려 준다. SID → 사용자 이름 변환이 필요하다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># SID 별 변경 건수 (사용자 특정)
+$p13 | Where-Object { $_.Target -match &#39;^HKU\\S-1-5-21&#39; } |
+  Group-Object { ($_.Target -split &#39;\\&#39;)[1] } | Sort-Object Count -Descending |
+  Select-Object Count, Name</code></pre></div>
+<p>SID와 계정 이름 매핑은 <code>ProfileList</code> 또는 SAM hive에서 얻는다.</p>
+<h3 id="3단계-details-읽기">3단계 — Details 읽기</h3>
+<p><code>Details</code>는 값 데이터를 문자열로 표현한 것이며, 타입에 따라 접두가 붙는다.</p>
+<div class="table-wrap"><table><thead><tr><th><code>Details</code> 예시</th><th>원래 값 타입</th><th>해석</th></tr></thead><tbody><tr><td><code>C:\Windows\Temp\svchost.exe</code></td><td><code>REG_SZ</code></td><td>문자열 그대로</td></tr><tr><td><code>DWORD (0x00000001)</code></td><td><code>REG_DWORD</code></td><td>16진수. <code>1</code></td></tr><tr><td><code>QWORD (0x0000000000000001)</code></td><td><code>REG_QWORD</code></td><td>64비트 정수</td></tr><tr><td><code>Binary Data</code></td><td><code>REG_BINARY</code></td><td><strong>내용이 표시되지 않는다</strong></td></tr><tr><td>긴 문자열이 도중에 끊김</td><td>길이 초과</td><td><strong>잘려서 기록된다</strong></td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>상황</th><th>대응</th></tr></thead><tbody><tr><td><code>Details = Binary Data</code></td><td>값 자체는 로그에 없다 → hive에서 그 값을 직접 읽는다(Registry Explorer)</td></tr><tr><td><code>Details</code>가 잘려 있다</td><td>마지막 상태는 hive에 있다 → Event 13으로 <strong>시점과 주체</strong>, hive로 <strong>전체 데이터</strong></td></tr><tr><td><code>Details = (Empty)</code> 유형 표기</td><td>빈 값 설정. 값 삭제와 구분해야 한다(삭제는 Event 12)</td></tr></tbody></table></div>
+<p><strong>즉 Event 13과 hive 분석은 역할이 갈린다.</strong> 시점·주체·변경 이력은 Event 13, 최종 데이터 전문은 hive다.</p>
+<h3 id="4단계-지속성-탐지-실전-필터">4단계 — 지속성 탐지 실전 필터</h3>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$persist = @(
+  &#39;\\CurrentVersion\\Run$&#39;,
+  &#39;\\CurrentVersion\\Run\\&#39;,
+  &#39;\\CurrentVersion\\RunOnce&#39;,
+  &#39;\\CurrentVersion\\RunServices&#39;,
+  &#39;\\CurrentControlSet\\Services\\[^\\]+\\ImagePath&#39;,
+  &#39;\\CurrentControlSet\\Services\\[^\\]+\\ServiceDll&#39;,
+  &#39;\\CurrentVersion\\Winlogon\\(Shell|Userinit|Taskman|Notify)&#39;,
+  &#39;\\Image File Execution Options\\[^\\]+\\(Debugger|GlobalFlag)&#39;,
+  &#39;\\CurrentVersion\\Windows\\(AppInit_DLLs|LoadAppInit_DLLs)&#39;,
+  &#39;\\CLSID\\\{[^}]+\}\\InprocServer32&#39;,
+  &#39;\\CurrentVersion\\Explorer\\Shell Folders&#39;,
+  &#39;\\Environment\\UserInitMprLogonScript&#39;
+) -join &#39;|&#39;
+
+$p13 | Where-Object { $_.Target -match $persist } |
+  Select-Object UtcTime, Id, Type, Image, User, Target, Details |
+  Sort-Object UtcTime | Format-Table -AutoSize</code></pre></div>
+<p>출력:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">UtcTime             Id Type      Image                       Target                                                         Details
+-------             -- ----      -----                       ------                                                         -------
+2026-03-14 07:31:02 13 SetValue  C:\Windows\Temp\svchost.exe  HKU\S-1-5-21-1004\Software\Microsoft\Windows\CurrentVersion\Run\Updater  C:\Windows\Temp\svchost.exe
+2026-03-14 07:33:47 13 SetValue  C:\Windows\System32\sc.exe   HKLM\SYSTEM\CurrentControlSet\Services\WinSvcHlp\ImagePath     C:\ProgramData\Intel\ime.exe
+2026-03-14 07:35:20 13 SetValue  C:\...\v1.0\powershell.exe   HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\sethc.exe\Debugger  C:\Windows\System32\cmd.exe
+2026-03-14 09:44:11 12 DeleteValue C:\Windows\Temp\svchost.exe HKU\S-1-5-21-1004\Software\Microsoft\Windows\CurrentVersion\Run\Updater</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>대상</th><th>기법</th><th>판정 근거</th></tr></thead><tbody><tr><td><code>...\CurrentVersion\Run</code> / <code>RunOnce</code></td><td>로그온 시 자동 실행</td><td><code>Details</code>의 경로가 사용자 쓰기 가능 폴더면 확정</td></tr><tr><td><code>...\Services\&lt;name&gt;\ImagePath</code></td><td>서비스 지속성</td><td>System.evtx 7045와 시각 대조</td></tr><tr><td><code>...\Winlogon\Shell</code> / <code>Userinit</code></td><td>셸 하이재킹</td><td>정상값은 <code>explorer.exe</code> / <code>userinit.exe</code>뿐</td></tr><tr><td><code>...\Image File Execution Options\&lt;exe&gt;\Debugger</code></td><td>IFEO 하이재킹</td><td>접근성 도구(<code>sethc.exe</code>, <code>utilman.exe</code>)면 백도어</td></tr><tr><td><code>...\Windows\AppInit_DLLs</code></td><td>모든 프로세스에 DLL 주입</td><td>값이 비어 있는 것이 정상</td></tr><tr><td><code>...\CLSID\{...}\InprocServer32</code></td><td><strong>COM 하이재킹</strong></td><td><code>HKU</code>(사용자) 쪽에 생기면 <code>HKLM</code>보다 우선하므로 강한 신호</td></tr><tr><td><code>...\Environment\UserInitMprLogonScript</code></td><td>로그온 스크립트</td><td>값 자체가 드물다</td></tr></tbody></table></div>
+<p>마지막 줄(Event 12 <code>DeleteValue</code>)이 중요하다. <strong>공격자가 작업을 마치고 Run 값을 지웠다.</strong> hive만 보면 그 값은 애초에 없었던 것처럼 보인다. Event 12/13이 있어야 &quot;등록했다가 지웠다&quot;는 사실이 남는다.</p>
+<h3 id="5단계-hive-분석과의-결정적-차이">5단계 — hive 분석과의 결정적 차이</h3>
+<div class="table-wrap"><table><thead><tr><th>질문</th><th>레지스트리 hive</th><th><strong>Sysmon 12/13/14</strong></th></tr></thead><tbody><tr><td>현재 값</td><td>답한다</td><td>마지막 <code>SetValue</code>의 <code>Details</code>(잘릴 수 있음)</td></tr><tr><td>값이 바뀐 시각</td><td>키 단위 <code>LastWrite</code>만</td><td><strong>값 단위로 정확히</strong></td></tr><tr><td><strong>누가 바꿨는가</strong></td><td><strong>모른다</strong></td><td><strong>답한다</strong> (<code>Image</code>, <code>User</code>, <code>ProcessGuid</code>)</td></tr><tr><td>값별 변경 시각</td><td>불가(키 단위)</td><td>값마다 개별 이벤트</td></tr><tr><td>여러 번 바뀐 이력</td><td>마지막 상태만</td><td><strong>모든 변경이 순서대로</strong></td></tr><tr><td>삭제된 값</td><td>흔적 없음(슬랙 제외)</td><td>Event 12에 남는다</td></tr><tr><td>조사 가능 구간</td><td>이미지 획득 시점의 상태</td><td>Sysmon 설치 이후</td></tr></tbody></table></div>
+<p>hive의 <code>LastWrite</code>는 <strong>키</strong>의 마지막 수정 시각이므로, 같은 키 안의 다른 값을 나중에 건드리면 원래 관심 값의 변경 시각을 알 수 없게 된다. Event 13은 값 단위로 시각을 남기므로 이 한계가 없다.</p>
+<h3 id="6단계-프로세스-주체로-정상비정상-가르기">6단계 — 프로세스 주체로 정상/비정상 가르기</h3>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 지속성 경로를 건드린 프로세스 분포
+$p13 | Where-Object { $_.Target -match $persist } |
+  Group-Object Image | Sort-Object Count -Descending | Select-Object Count, Name</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th><code>Image</code></th><th>판정</th></tr></thead><tbody><tr><td><code>C:\Windows\System32\svchost.exe</code>, <code>services.exe</code>, <code>TrustedInstaller.exe</code></td><td>대개 정상 시스템 동작</td></tr><tr><td>설치 프로그램(<code>msiexec.exe</code>, <code>setup.exe</code>)</td><td>정상 설치. 시각을 설치 이벤트와 대조</td></tr><tr><td><code>reg.exe</code>, <code>sc.exe</code>, <code>schtasks.exe</code>, <code>powershell.exe</code>, <code>cmd.exe</code></td><td><strong>수동 조작.</strong> 명령행을 Sysmon 1에서 확인</td></tr><tr><td><code>\Temp\</code>·<code>\AppData\</code>의 실행 파일</td><td><strong>악성 확정 후보</strong></td></tr><tr><td><code>rundll32.exe</code>, <code>regsvr32.exe</code>, <code>mshta.exe</code></td><td>LOLBin. 로드된 모듈을 확인</td></tr></tbody></table></div>
+<p><code>reg.exe</code>가 값을 썼다면 Sysmon 1의 <code>CommandLine</code>에 <strong>완전한 명령</strong>이 남아 있다. 두 로그를 <code>ProcessGuid</code>로 잇는다(<a href="./event-4624-logon.html">FOR-0083</a>의 세션 피벗과 같은 방식이다).</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p><code>UtcTime</code>은 <strong>이미 UTC</strong>다. Event Viewer 상단 시각은 EVTX <code>SystemTime</code>(UTC)을 로컬 시간대로 변환해 보여 준다. 답이 KST면 +9시간. 이미지의 시간대 설정 확인은 <a href="./system-timezone.html">FOR-0054</a>를 본다.</p>
+<div class="table-wrap"><table><thead><tr><th>상황</th><th>해석</th></tr></thead><tbody><tr><td><code>TargetObject</code>가 <code>\REGISTRY\</code>로 시작</td><td>커널 표기. <code>HKLM</code>/<code>HKU</code>로 정규화해 비교</td></tr><tr><td><code>HKU\&lt;SID&gt;_Classes</code></td><td>사용자별 <code>Software\Classes</code>. COM 하이재킹의 주요 무대</td></tr><tr><td>같은 값에 13이 연속 다수</td><td>정상 프로그램의 주기적 상태 저장(노이즈)</td></tr><tr><td><code>Details</code>가 hive 값과 다르다</td><td>이후에 또 변경됐다. 마지막 13을 찾는다</td></tr><tr><td>Event 13이 거의 없다</td><td>설정에서 경로 기준으로만 켜 둔 상태. 제외 규칙을 확인</td></tr><tr><td><code>EventType</code>이 비어 있다</td><td>파싱 문제. XML 원문을 확인</td></tr></tbody></table></div>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>여기서 얻은 값</th><th>다음에 볼 것</th><th>확인할 내용</th></tr></thead><tbody><tr><td><code>ProcessGuid</code></td><td>Sysmon 1</td><td>변경 주체의 명령행·부모·해시</td></tr><tr><td><code>Details</code>의 실행 파일 경로</td><td>Sysmon 11 · <code>$MFT</code></td><td>그 파일이 언제 어떻게 생겼는가</td></tr><tr><td><code>Details</code>의 실행 파일 경로</td><td>Sysmon 1의 <code>Image</code></td><td>실제로 실행됐는가(지속성 발동)</td></tr><tr><td><code>Services\&lt;name&gt;\ImagePath</code></td><td>System.evtx 7045 / Security 4697</td><td>서비스 설치 이벤트와 시각 일치</td></tr><tr><td><code>Run</code> 값 이름</td><td>hive의 Run 키 현재 상태 (FOR-0063)</td><td>값이 아직 남아 있는가</td></tr><tr><td><code>TargetObject</code>의 <code>HKU\&lt;SID&gt;</code></td><td><code>ProfileList</code> · SAM</td><td>SID → 사용자 이름</td></tr><tr><td><code>UtcTime</code></td><td>4624 세션 (<a href="./event-4624-logon.html">FOR-0083</a>)</td><td>어느 로그온 세션의 행위인가</td></tr><tr><td>Event 12 <code>DeleteValue</code></td><td>hive 슬랙·트랜잭션 로그</td><td>삭제된 값의 잔존 데이터</td></tr><tr><td>변경 시각</td><td>키의 <code>LastWrite</code>(FOR-0077)</td><td>두 시각이 일치하는지, 이후 다른 변경이 있었는지</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>CurrentControlSet</code>으로 검색하는 것.</strong> 로그에는 <code>ControlSet001</code>로 기록된다 → 서비스 지속성이 전부 누락된다 → 정규화 함수로 <code>ControlSet\d{3}</code> → <code>CurrentControlSet</code> 치환 후 검색한다.</li><li><strong><code>HKCU</code>로 검색하는 것.</strong> 로그는 <code>HKU\&lt;SID&gt;</code> 또는 <code>\REGISTRY\USER\&lt;SID&gt;</code>로 남는다 → 0건이 나온다 → SID 형태로 검색하거나 정규화한다.</li><li><strong><code>\REGISTRY\MACHINE\</code> 표기를 다른 하이브로 착각하는 것.</strong> <code>HKLM</code>과 같은 곳이다 → 접두만 다르다.</li><li><strong><code>Details = Binary Data</code>를 로그 손상으로 보는 것.</strong> 이진 값은 내용이 표시되지 않는 정상 동작이다 → 데이터가 필요하면 hive에서 그 값을 직접 읽는다.</li><li><strong>잘린 <code>Details</code>를 전체 값으로 답하는 것.</strong> 긴 데이터는 끊긴다 → 최종 데이터는 hive에서 확인하고, Event 13은 시점·주체 근거로 쓴다.</li><li><strong>Event 13만 조회하는 것.</strong> 삭제(값/키)는 Event 12에 있다 → 12/13/14를 한 번에 조회한다.</li><li><strong><code>Image</code>가 시스템 프로세스면 무조건 정상으로 넘기는 것.</strong> DLL 주입된 <code>svchost.exe</code>도 시스템 경로다 → <code>ProcessGuid</code>로 Sysmon 1을 확인해 부모와 명령행을 본다.</li><li><strong>hive의 <code>LastWrite</code>를 값 변경 시각으로 답하는 것.</strong> <code>LastWrite</code>는 키 단위이며 같은 키의 다른 값 변경으로도 갱신된다 → 값 단위 시각은 Event 13이 유일한 근거다.</li><li><strong><code>UtcTime</code>에 9시간을 또 더하는 것.</strong> 이미 UTC다 → KST 답에만 한 번 적용한다.</li><li><strong>노이즈를 그대로 두고 보는 것.</strong> 정상 프로그램이 초당 수십 건씩 값을 쓴다 → 지속성 경로 화이트리스트로 먼저 좁힌다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$sm = &#39;C:\case\sysmon.evtx&#39;
+
+# 1) 지속성 경로 변경 전체 (12/13/14 동시)
+$p13 | Where-Object { $_.Target -match $persist } | Format-Table UtcTime, Id, Type, Image, Target, Details -AutoSize
+
+# 2) 변경 주체의 명령행 (Sysmon 1)
+Get-WinEvent -Path $sm -FilterXPath &#39;*[System[EventID=1]]&#39; |
+  Where-Object { $_.Message -match &#39;reg\.exe|sc\.exe|schtasks&#39; } |
+  Select-Object -First 10 TimeCreated, Message
+
+# 3) 서비스 설치 이벤트와 대조
+Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\System.evtx&#39;; Id=7045}
+
+# 4) 등록된 파일이 실제로 실행됐는가
+Get-WinEvent -Path $sm -FilterXPath &#39;*[System[EventID=1]]&#39; |
+  Where-Object { $_.Message -match &#39;ime\.exe&#39; } | Select-Object TimeCreated
+
+# 5) 삭제된 값 (12) 만 따로
+$p13 | Where-Object { $_.Id -eq 12 -and $_.Type -match &#39;Delete&#39; } |
+  Select-Object UtcTime, Type, Image, Target</code></pre></div>
+<p>Event 13의 시각, 7045의 서비스 설치 시각, hive의 <code>LastWrite</code>가 정합해야 한다. 세 값이 어긋나면 이후 추가 변경이 있었다는 뜻이다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;공격자가 등록한 지속성 두 가지와, 각각을 등록한 프로세스를 답하시오.
+ 첨부: Microsoft-Windows-Sysmon%4Operational.evtx, SYSTEM/SOFTWARE/NTUSER.DAT&quot;
+
+1. 첫 시도 (실패):
+   문제 지문의 경로 표기를 그대로 써서 검색했다.
+
+     $p | Where-Object { $_.Target -match &#39;HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run&#39; }
+     -&gt; 0건
+     $p | Where-Object { $_.Target -match &#39;CurrentControlSet\\Services&#39; }
+     -&gt; 0건
+
+   &quot;레지스트리 지속성은 없다&quot; 고 결론 내리고 예약 작업을 뒤졌다. 오답.
+
+   왜 틀렸나:
+   Sysmon 의 TargetObject 표기가 다르다.
+     - HKCU 는 HKU\S-1-5-21-...  로 기록된다
+     - CurrentControlSet 은 ControlSet001 로 기록된다
+   사람이 쓰는 경로 문자열로는 매칭되지 않는다.
+
+2. 피벗 — 원본 TargetObject 를 그대로 몇 건 출력해 표기를 확인했다.
+
+     HKU\S-1-5-21-1004\Software\Microsoft\Windows\CurrentVersion\Run\Updater
+     HKLM\System\ControlSet001\Services\WinSvcHlp\ImagePath
+     \REGISTRY\MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\...
+
+   -&gt; 세 가지 표기가 섞여 있었다. 정규화 함수를 만들어 다시 검색.
+
+3. 정규화 후 결과:
+   07:31:02  13 SetValue
+     Image   C:\Windows\Temp\svchost.exe
+     Target  HKU\S-1-5-21-1004\...\CurrentVersion\Run\Updater
+     Details C:\Windows\Temp\svchost.exe
+     User    WIN10\jhkim
+
+   07:33:47  13 SetValue
+     Image   C:\Windows\System32\sc.exe
+     Target  HKLM\SYSTEM\CurrentControlSet\Services\WinSvcHlp\ImagePath
+     Details C:\ProgramData\Intel\ime.exe
+     User    NT AUTHORITY\SYSTEM
+
+4. sc.exe 의 명령행 확인 (같은 ProcessGuid 로 Sysmon 1):
+   07:33:47  sc.exe create WinSvcHlp binPath= &quot;C:\ProgramData\Intel\ime.exe&quot; start= auto
+     Parent -&gt; powershell.exe -nop -w hidden -enc ...
+
+5. hive 와 대조:
+   NTUSER.DAT 의 Run 키에는 Updater 값이 없었다.
+   -&gt; Event 12 를 확인: 09:44:11 DeleteValue (Image = Temp\svchost.exe)
+      등록했다가 지웠다. hive 만 보면 존재 자체를 놓친다.
+   SYSTEM hive 에는 WinSvcHlp 서비스가 남아 있었고 LastWrite 는 07:33:47.
+
+6. 시간대: UtcTime 은 이미 UTC. 07:31:02 UTC = 16:31:02 KST (+9h)
+
+정답:
+  (1) HKCU Run\Updater = C:\Windows\Temp\svchost.exe  등록 주체 C:\Windows\Temp\svchost.exe (이후 삭제)
+  (2) 서비스 WinSvcHlp ImagePath = C:\ProgramData\Intel\ime.exe  등록 주체 sc.exe (부모 powershell.exe)</code></pre></div>
+<p>1단계의 0건이 이 글에서 가장 중요한 함정이다. <strong>경로 표기를 정규화하지 않으면 있는 증거도 없다고 답한다.</strong> 그리고 5단계에서 보듯 <strong>hive에서 사라진 값도 Event 12/13에는 남는다.</strong></p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>TargetObject</code>를 정규화했는가 → <code>ControlSet001</code>, <code>HKU\&lt;SID&gt;</code>, <code>\REGISTRY\MACHINE\</code></li><li>원본 <code>TargetObject</code> 몇 건을 그냥 출력해 봤는가 → 표기 확인이 가장 빠른 진단</li><li>12/14도 함께 조회했는가 → 삭제·이름 변경이 여기 있다</li><li><code>Details</code>가 잘렸거나 <code>Binary Data</code>인가 → 최종 데이터는 hive에서 읽는다</li><li><code>Image</code>가 <code>reg.exe</code>/<code>sc.exe</code>/<code>powershell.exe</code>인가 → Sysmon 1의 명령행에 전체 명령이 있다</li><li>Event 13이 거의 없는가 → 설정 제외. hive <code>LastWrite</code>와 트랜잭션 로그로 보완</li><li>서비스 지속성이면 7045/4697과 시각을 맞췄는가</li><li>등록된 파일이 실제로 실행됐는가 → 같은 경로가 Sysmon 1의 <code>Image</code>로 등장하는지 확인</li><li><code>HKU\&lt;SID&gt;</code>의 사용자 이름을 확정했는가 → <code>ProfileList</code>/SAM으로 변환</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-024 — Microsoft Learn, Sysmon: Event ID 12/13/14 RegistryEvent의 필드와 <code>EventType</code> 값, 레지스트리 경로 축약 표기</li><li>SRC-017 — Microsoft Learn, Windows Registry hives and file locations: <code>HKLM</code>/<code>HKU</code> 루트 키와 hive 파일 대응, <code>CurrentControlSet</code> 표기</li><li>SRC-086 — MITRE ATT&amp;CK Enterprise: Run 키·서비스·IFEO·AppInit_DLLs·COM 하이재킹 등 레지스트리 기반 지속성 기법</li><li><code>Details</code>의 문자열 길이 제한(잘리는 기준 바이트 수)은 문서화된 상수를 확인하지 못해 단정하지 않았다. 잘린 것으로 보이면 hive에서 값을 직접 읽을 것</li><li>경로 축약 표기(<code>\REGISTRY\MACHINE\</code> vs <code>HKLM\</code>)가 어느 조건에서 어떤 형태로 나오는지는 Sysmon 버전과 이벤트 경로에 따라 다르다. <strong>실제 로그의 원본 <code>TargetObject</code>를 먼저 출력해 확인</strong>한 뒤 정규화 규칙을 확정할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./registry-lastwrite-caveats.html">
+    <span class="rel-id">FOR-0077 · Registry</span>
+    Registry LastWrite 시각을 믿으면 안 되는 7가지 경우
+  </a>
+  <a class="related-item" href="./sysmon-event-1-process-create.html">
+    <span class="rel-id">FOR-0099 · Event Log</span>
+    Sysmon Event ID 1 ProcessCreate: ProcessGuid로 프로세스 계보 복원
+  </a>
+  <a class="related-item" href="./run-runonce.html">
+    <span class="rel-id">FOR-0063 · Registry</span>
+    Run·RunOnce와 자동실행 지속성 레지스트리 키 전수 점검
+  </a>
+  <a class="related-item" href="./sysmon-event-3-network-connect.html">
+    <span class="rel-id">FOR-0100 · Event Log</span>
+    Sysmon Event ID 3 NetworkConnect: 프로세스와 통신을 잇는 유일한 로그
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./sysmon-event-11-file-create.html"><span class="rel-id">← FOR-0101</span>Sysmon Event ID 11 FileCreate: 누가 이 파일을 만들었는가</a>
+<a class="related-item" href="./event-record-id-tracking.html"><span class="rel-id">FOR-0103 →</span>EventRecordID로 이벤트 순서 확정하기: 같은 초의 인과와 번호 gap 판독</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-12-13-14-를-함께-본다">1단계 — 12 / 13 / 14 를 함께 본다</a></li>
+<li class="toc-l3"><a href="#2단계-targetobject-경로-정규화-실전-함정">2단계 — TargetObject 경로 정규화 (실전 함정)</a></li>
+<li class="toc-l3"><a href="#3단계-details-읽기">3단계 — Details 읽기</a></li>
+<li class="toc-l3"><a href="#4단계-지속성-탐지-실전-필터">4단계 — 지속성 탐지 실전 필터</a></li>
+<li class="toc-l3"><a href="#5단계-hive-분석과의-결정적-차이">5단계 — hive 분석과의 결정적 차이</a></li>
+<li class="toc-l3"><a href="#6단계-프로세스-주체로-정상비정상-가르기">6단계 — 프로세스 주체로 정상/비정상 가르기</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

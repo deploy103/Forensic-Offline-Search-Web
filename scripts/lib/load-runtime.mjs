@@ -12,14 +12,15 @@ import vm from 'node:vm';
 import { ROOT, DIST } from './site.mjs';
 
 const INDEX_FILE = path.join(DIST, 'assets', 'search-index.js');
+const BODY_FILE = path.join(DIST, 'assets', 'search-body.js');
 const CORE_FILE = path.join(ROOT, 'assets', 'search-core.js');
 
 /**
- * @returns {{ index: object, Search: object }}
+ * @returns {{ index: object, bodies: object, Search: object }}
  * @throws if dist has not been built yet
  */
 export function loadSearchRuntime() {
-  for (const f of [INDEX_FILE, CORE_FILE]) {
+  for (const f of [INDEX_FILE, BODY_FILE, CORE_FILE]) {
     if (!fs.existsSync(f)) {
       throw new Error(`missing ${path.relative(ROOT, f)} — run node scripts/build.mjs first`);
     }
@@ -30,7 +31,7 @@ export function loadSearchRuntime() {
   globals.self = globals;
   const sandbox = vm.createContext(globals);
 
-  for (const file of [INDEX_FILE, CORE_FILE]) {
+  for (const file of [INDEX_FILE, BODY_FILE, CORE_FILE]) {
     vm.runInContext(fs.readFileSync(file, 'utf8'), sandbox, {
       filename: path.relative(ROOT, file),
     });
@@ -42,5 +43,5 @@ export function loadSearchRuntime() {
   if (!Search || typeof Search.search !== 'function') {
     throw new Error('search-core.js did not define ForensicSearch.search');
   }
-  return { index, Search };
+  return { index, bodies: globals.FORENSIC_BODY || null, Search };
 }

@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>있어야 할 레지스트리 키가 없을 때: 삭제된 키 복구 6가지 접근 · FOR-0078 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Registry">Registry</a> / FOR-0078
+      </div>
+      <header class="article-head">
+        <h1>있어야 할 레지스트리 키가 없을 때: 삭제된 키 복구 6가지 접근</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Registry</span>
+      <span class="badge badge-type">트러블슈팅</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>레지스트리 키가 안 보이는 원인은 삭제·제거·정책·애초에 없었음 4가지이고, 복구는 트랜잭션 로그 반영 → hive 내부 미할당 셀 스캔 → hive 문자열 검색 → VSS/RegBack → 메모리 hive 순으로 시도한다 — 그리고 삭제 사실 자체가 증거가 되는 경우가 많다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>RegistryExplorer, rla, RegRipper, Volatility 3, Arsenal Image Mounter, strings, HxD, FTK Imager</td></tr>
+<tr><th>artifact</th><td><code>deleted registry key</code> · <code>hive slack</code> · <code>unallocated cell</code> · <code>트랜잭션 로그</code> · <code>RegBack</code> · <code>VSS</code> · <code>nk record</code> · <code>vk record</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Windows\System32\config\SYSTEM.LOG1</code> · <code>C:\Windows\System32\config\SYSTEM.LOG2</code> · <code>C:\Windows\System32\config\RegBack</code> · <code>C:\Users\&lt;user&gt;\NTUSER.DAT.LOG1</code> · <code>C:\Windows\System32\config</code></td></tr>
+<tr><th>레지스트리</th><td><code>SYSTEM\ControlSet001\Control\Session Manager\Configuration Manager</code> · <code>NTUSER.DAT\Software\Microsoft\Windows\CurrentVersion\Run</code> · <code>SYSTEM\ControlSet001\Services</code></td></tr>
+<tr><th>regex</th><td><code>nk[\x20-\x7e]{0,2}</code> · <code>[Ss]oftware\\Microsoft\\Windows\\CurrentVersion\\Run</code></td></tr>
+<tr><th>로그 필드</th><td><code>Deleted Records</code> · <code>primary sequence number</code> · <code>secondary sequence number</code> · <code>cell size</code> · <code>LastWrite</code></td></tr>
+<tr><th>파일 형식</th><td><code>regf</code></td></tr>
+<tr><th>검색 별칭</th><td>레지스트리 키 없다 · 삭제된 키 복구 · 레지스트리 슬랙 · regback · hive 카빙 · 지워진 레지스트리 값</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>레지스트리 키가 안 보이는 원인은 삭제·제거·정책·애초에 없었음 4가지이고, 복구는 <strong>트랜잭션 로그 반영 → hive 내부 미할당 셀 스캔 → hive 문자열 검색 → VSS/<code>RegBack</code> → 메모리 hive</strong> 순으로 시도한다 — 그리고 <strong>삭제 사실 자체가 증거</strong>가 되는 경우가 많다.</p>
+<h2 id="증상">증상</h2>
+<ul><li>RegRipper 플러그인 출력이 <code>Key not found</code> 또는 빈 결과다</li><li><code>Run</code>/<code>RunOnce</code>처럼 반드시 있어야 할 키가 아예 없거나 값이 0개다</li><li>서비스가 실행된 흔적은 있는데 <code>Services\&lt;name&gt;</code> 키가 없다</li><li><code>USBSTOR</code>에 장치가 있는데 <code>MountedDevices</code>에 대응 항목이 없다</li><li>다른 사용자 hive에는 있는 키가 이 사용자 hive에만 없다</li><li>RegistryExplorer 하단에 &quot;deleted records&quot; 개수가 0이 아닌 숫자로 표시된다</li><li>EVTX·Prefetch는 활동을 말하는데 레지스트리만 조용하다</li></ul>
+<h2 id="가장-가능성-높은-원인">가장 가능성 높은 원인</h2>
+<div class="table-wrap"><table><thead><tr><th>순위</th><th>원인</th><th>어떤 모양으로 보이나</th><th>결정적 판별점</th></tr></thead><tbody><tr><td>1</td><td><strong>도구/경로 문제</strong> (삭제가 아니다)</td><td>플러그인 이름 오타, 잘못된 hive, <code>CurrentControlSet</code> 입력</td><td>다른 도구로 열면 키가 있다. <strong>가장 먼저 배제</strong></td></tr><tr><td>2</td><td><strong>트랜잭션 로그 미반영</strong></td><td>최근 생성된 키가 안 보인다</td><td>hive 헤더의 primary ≠ secondary (dirty)</td></tr><tr><td>3</td><td><strong>공격자/사용자가 삭제</strong></td><td>부모 키의 LastWrite가 사건 시각. 미할당 셀에 잔존</td><td><code>$UsnJrnl</code>에 그 시각의 hive 파일 변경, 4657/Sysmon 13</td></tr><tr><td>4</td><td><strong>프로그램 제거 / 정리 도구</strong></td><td>관련 키가 무리로 사라졌다</td><td><code>Uninstall</code> 키 부재, 제거 로그, 같은 시각의 일괄 변경</td></tr><tr><td>5</td><td><strong>정책/구성으로 비활성</strong></td><td>키가 아니라 <strong>값</strong>만 없다</td><td>그룹 정책 관련 키 존재, <code>Policies</code> 하위 값</td></tr><tr><td>6</td><td><strong>애초에 없었다</strong></td><td>OS 버전이 그 키를 안 쓴다</td><td>다른 정상 이미지·다른 사용자 hive와 대조</td></tr></tbody></table></div>
+<p><strong>1과 2를 배제하기 전에 &quot;삭제됐다&quot;고 결론 내지 않는다.</strong> 실전에서 &quot;키가 없다&quot;의 절반 이상이 1·2다.</p>
+<h2 id="1차-확인">1차 확인</h2>
+<h3 id="①-도구경로-문제-배제">① 도구·경로 문제 배제</h3>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 플러그인 이름을 눈으로 확인한다 — 이름 오타가 빈 출력의 최대 원인
+rip.exe -l | Select-String &#39;run|usb|shell|bam&#39;</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>확인</th><th>방법</th></tr></thead><tbody><tr><td>플러그인 이름이 맞는가</td><td><code>rip.exe -l</code>로 목록 확인. <code>shellbag</code>(X) / <code>shellbags</code>(O)</td></tr><tr><td>hive를 맞게 골랐는가</td><td><code>userassist</code>는 <code>NTUSER.DAT</code>, <code>usbstor</code>는 <code>SYSTEM</code></td></tr><tr><td><code>CurrentControlSet</code>을 쓰지 않았는가</td><td>오프라인 hive에는 없다. <code>Select\Current</code>로 <code>ControlSet001</code> 확인 (<a href="./system-controlset.html">FOR-0053</a>)</td></tr><tr><td>hive가 손상되지 않았는가</td><td>선두 4바이트가 <code>regf</code>인지, 체크섬 오류가 없는지</td></tr><tr><td>사용자를 맞게 골랐는가</td><td>모든 프로필의 hive를 확인</td></tr></tbody></table></div>
+<h3 id="②-트랜잭션-로그를-반영한다">② 트랜잭션 로그를 반영한다</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">xxd -l 16 SYSTEM</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">00000000: 7265 6766 3f01 0000 3e01 0000 ....
+                    ^primary        ^secondary   -&gt; 다르면 dirty</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># hive + .LOG1 + .LOG2 를 같은 폴더에 두고 반영
+rla.exe -d &quot;C:\case\config&quot; --out &quot;C:\case\clean&quot;</code></pre></div>
+<p><strong>트랜잭션 로그는 &quot;최근 삭제 전 상태&quot;를 담고 있을 수 있다.</strong> 로그에는 아직 hive 본체에 반영되지 않은 변경이 들어 있으므로, 반영 전 hive와 반영 후 hive를 <strong>둘 다 보관하고 비교</strong>한다.</p>
+<div class="table-wrap"><table><thead><tr><th>비교 결과</th><th>해석</th></tr></thead><tbody><tr><td>반영 후에 키가 생겼다</td><td>원인 2. 삭제가 아니었다</td></tr><tr><td>반영 후에 키가 사라졌다</td><td><strong>로그에 삭제 연산이 담겨 있었다.</strong> 반영 전 hive가 삭제 이전 스냅숏이다</td></tr><tr><td>둘 다 없다</td><td>원인 3~6으로 진행</td></tr></tbody></table></div>
+<h3 id="③-hive-내부-미할당deleted-셀을-스캔한다">③ hive 내부 미할당(deleted) 셀을 스캔한다</h3>
+<p>hive는 파일 안에서 셀 단위로 공간을 관리하고, <strong>키를 삭제하면 셀이 해제될 뿐 내용이 즉시 지워지지 않는다.</strong> 그 영역이 레지스트리 슬랙이다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">RegistryExplorer -&gt; hive 로드 -&gt; 좌측 하단 &quot;Deleted Records&quot; 노드
+  Recovered keys / Recovered values 를 확인
+  Options 에서 삭제 레코드 복구 기능이 켜져 있는지 본다</code></pre></div>
+<p>셀 헤더의 크기 값이 <strong>음수면 사용 중, 양수면 해제된 셀</strong>이다. 파서는 이 부호로 삭제 레코드를 찾아낸다. 손으로 카빙할 때도 같은 규칙을 쓴다.</p>
+<div class="table-wrap"><table><thead><tr><th>복구 가능성</th><th>조건</th></tr></thead><tbody><tr><td>높다</td><td>삭제 직후 이미지를 떴고, 그 hive에 이후 쓰기가 적었다</td></tr><tr><td>중간</td><td>삭제 후 시간이 지났지만 hive가 작다</td></tr><tr><td>낮다</td><td>삭제 후 hive에 대량 쓰기가 있었다. 셀이 재사용됐다</td></tr><tr><td>없다</td><td>hive가 압축·재구성(정상 종료 시 정리)되었다</td></tr></tbody></table></div>
+<p>복구된 레코드는 <strong>부모 관계가 끊겨 있는 경우가 많다.</strong> 키 이름과 값은 나와도 전체 경로를 알 수 없으므로, 값 이름/데이터의 특징으로 원래 위치를 추정하고 그 근거를 함께 적는다.</p>
+<h2 id="2차-확인">2차 확인</h2>
+<h3 id="④-hive-파일에-직접-문자열패턴-검색">④ hive 파일에 직접 문자열·패턴 검색</h3>
+<p>파서가 못 살린 조각을 찾는 마지막 수단이다. <strong>키 이름은 hive 안에서 ASCII 또는 UTF-16LE 중 하나로 저장되므로 두 인코딩을 모두 돌린다.</strong></p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># ASCII 로 저장된 이름
+strings -a -t d SYSTEM | grep -i -n &#39;svchost\|Run\|Services&#39;
+
+# UTF-16LE 로 저장된 이름
+strings -el -t d SYSTEM | grep -i -n &#39;svchost\|Run\|Services&#39;
+
+# nk/vk 레코드 시그니처 주변을 직접 본다
+grep -a -b -o &#39;nk&#39; SYSTEM | head -40</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># Windows 만 있을 때
+Select-String -Path &quot;C:\case\SYSTEM&quot; -Pattern &#39;suspicious_name&#39; -Encoding unicode
+Select-String -Path &quot;C:\case\SYSTEM&quot; -Pattern &#39;suspicious_name&#39; -Encoding ascii</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>결과</th><th>해석</th></tr></thead><tbody><tr><td>이름이 나오고 주변에 <code>nk</code>가 있다</td><td>삭제된 키 레코드의 잔존. HxD로 오프셋을 열어 구조 확인</td></tr><tr><td>이름만 나오고 구조가 없다</td><td>다른 값의 데이터 안에 문자열로 들어 있을 수 있다. 오해하지 않도록 문맥 확인</td></tr><tr><td>아무것도 없다</td><td>그 hive에는 흔적이 없다. ⑤·⑥으로</td></tr></tbody></table></div>
+<p>문자열이 나왔다는 것만으로 &quot;그 키가 있었다&quot;고 단정하지 않는다. <strong><code>nk</code> 레코드 구조가 함께 확인될 때만 키의 존재를 주장한다.</strong></p>
+<h3 id="⑤-볼륨-섀도-카피-백업-hive">⑤ 볼륨 섀도 카피 / 백업 hive</h3>
+<div class="table-wrap"><table><thead><tr><th>소스</th><th>경로 / 방법</th><th>성공 조건</th></tr></thead><tbody><tr><td>볼륨 섀도 카피</td><td>Arsenal Image Mounter로 이미지를 마운트하고 섀도 카피 선택 (<a href="./arsenal-image-mounter.html">FOR-0017</a>)</td><td>사건 시각 이전의 스냅숏이 존재</td></tr><tr><td><code>RegBack</code></td><td><code>C:\Windows\System32\config\RegBack</code></td><td><strong>Windows 10 1803 이후 기본 비활성</strong>이라 파일 크기가 0바이트인 경우가 많다</td></tr><tr><td><code>RegBack</code> 활성 여부</td><td><code>SYSTEM\ControlSet001\Control\Session Manager\Configuration Manager</code>의 <code>EnablePeriodicBackup</code></td><td><code>1</code>이면 다시 켜 둔 환경. 백업이 실제로 존재할 수 있다</td></tr><tr><td>시스템 복원 지점</td><td>VSS 안의 <code>config</code> 폴더</td><td>복원 지점이 남아 있어야 한다</td></tr><tr><td>백업 소프트웨어</td><td>백업 이미지·<code>.vhdx</code> 등</td><td>사건과 무관하게 존재해야 한다</td></tr></tbody></table></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># RegBack 이 실제로 내용을 담고 있는지 크기로 판정한다
+Get-ChildItem &quot;C:\case\mount\Windows\System32\config\RegBack&quot; |
+  Select-Object Name, Length, LastWriteTimeUtc</code></pre></div>
+<p>크기가 0이면 그 경로는 포기하고 VSS로 간다.</p>
+<h3 id="⑥-메모리-덤프의-hive">⑥ 메모리 덤프의 hive</h3>
+<p>메모리에는 <strong>로드된 hive의 최신 상태</strong>가 있고, 디스크에 기록되기 전의 내용도 포함한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">vol -f mem.raw windows.registry.hivelist
+vol -f mem.raw windows.registry.printkey --key &quot;Software\Microsoft\Windows\CurrentVersion\Run&quot;</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>장점</th><th>한계</th></tr></thead><tbody><tr><td>디스크에 없는 최신 값이 있을 수 있다</td><td>메모리 덤프가 있어야 한다</td></tr><tr><td>휘발성 hive(<code>HKLM\HARDWARE</code>)도 볼 수 있다</td><td>삭제된 키는 대체로 이미 사라졌다</td></tr><tr><td>종료 시 기록되는 Shimcache의 최신 상태</td><td>페이지 아웃된 부분은 결손</td></tr></tbody></table></div>
+<p>프로세스 목록 등 다른 메모리 분석과 함께 진행한다 (<a href="./volatility-pslist.html">FOR-0214</a>).</p>
+<h2 id="다른-방법">다른 방법</h2>
+<h3 id="삭제-사실-자체를-증거로-쓴다">삭제 사실 자체를 증거로 쓴다</h3>
+<p>키를 못 살려도 <strong>&quot;그 시각에 이 hive에서 무언가 지워졌다&quot;</strong>는 것은 증명할 수 있다.</p>
+<div class="table-wrap"><table><thead><tr><th>근거</th><th>무엇을 보나</th><th>무엇을 말할 수 있나</th></tr></thead><tbody><tr><td><strong>부모 키의 LastWrite</strong></td><td>삭제된 키가 있어야 했던 부모 키의 시각</td><td>서브키 목록이 그 시각에 변경됐다. 삭제 시각의 후보</td></tr><tr><td><strong><code>$UsnJrnl</code></strong></td><td>hive 파일·<code>.LOG1</code>의 <code>DataOverwrite</code>/<code>DataExtend</code>/<code>DataTruncation</code></td><td>hive가 언제 수정됐는가 (<a href="./usnjrnl-basics.html">FOR-0027</a>)</td></tr><tr><td><strong><code>$MFT</code></strong></td><td>hive 파일의 <code>$SI</code> 수정 시각</td><td>마지막 수정 시각 (조작 가능)</td></tr><tr><td><strong><code>$LogFile</code></strong></td><td>hive 파일에 대한 쓰기 연산</td><td>짧은 보존 창 안이면 상세 기록</td></tr><tr><td><strong>EVTX 4657</strong></td><td>레지스트리 값 변경 감사</td><td>감사 정책이 켜져 있었다면 삭제 주체까지</td></tr><tr><td><strong>Sysmon 12/13/14</strong></td><td>키 생성/삭제, 값 설정, 키 이름 변경</td><td>Sysmon 환경이면 가장 명확</td></tr><tr><td><strong>미할당 셀의 잔존</strong></td><td>복구된 키 이름</td><td>무엇이 지워졌는지</td></tr></tbody></table></div>
+<p>부모 키 LastWrite는 <strong>삭제 외의 원인으로도 갱신되므로 단독 근거로 쓰지 않는다.</strong> <code>$UsnJrnl</code>의 hive 파일 변경 시각과 시각이 일치할 때만 삭제 시각으로 제시한다 (<a href="./registry-lastwrite-caveats.html">FOR-0077</a>).</p>
+<h3 id="각-방법의-성공-조건-요약">각 방법의 성공 조건 요약</h3>
+<div class="table-wrap"><table><thead><tr><th>방법</th><th>성공 조건</th><th>얻는 것</th></tr></thead><tbody><tr><td>① 도구/경로 재확인</td><td>—</td><td>대부분 여기서 끝난다</td></tr><tr><td>② 트랜잭션 로그</td><td>hive가 dirty, <code>.LOG1</code>/<code>.LOG2</code> 확보</td><td>삭제 직전 상태</td></tr><tr><td>③ 미할당 셀 스캔</td><td>셀이 재사용되지 않았다</td><td>키 이름·값 (경로는 불확실)</td></tr><tr><td>④ 문자열 검색</td><td>이름 문자열이 덮이지 않았다</td><td>이름 조각</td></tr><tr><td>⑤ VSS / <code>RegBack</code></td><td>스냅숏·백업이 존재</td><td><strong>완전한 과거 hive</strong> (가장 좋다)</td></tr><tr><td>⑥ 메모리 hive</td><td>덤프 존재</td><td>최신 상태</td></tr><tr><td>삭제 사실 증명</td><td><code>$UsnJrnl</code> 또는 감사 로그</td><td>삭제 시각·주체</td></tr></tbody></table></div>
+<h2 id="실제-예시">실제 예시</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;악성 프로그램이 자동실행으로 등록되었다는 신고입니다. 그런데 Run 키에 항목이
+ 없습니다. 등록된 항목의 이름과 등록·삭제 시각을 구하시오.
+ 첨부: NTUSER.DAT(+LOG1/LOG2), SYSTEM, $MFT, $UsnJrnl 파싱 CSV, Security.evtx&quot;
+
+1. 첫 시도 (실패):
+   rip.exe -r NTUSER.DAT -p runkey
+   -&gt; 빈 출력.
+   &quot;공격자가 Run 키를 삭제했다&quot;고 결론 낼 뻔했다.
+
+   왜 성급했나:
+   플러그인 이름부터 확인하지 않았다.
+     rip.exe -l | Select-String &#39;run&#39;
+     -&gt; 목록에 있는 이름은 run 이었다. runkey 는 존재하지 않는 이름이었다.
+   rip.exe -r NTUSER.DAT -p run
+   -&gt; 이번엔 키는 나오지만 값이 0개다. 키는 있고 항목만 없다.
+
+2. 두 번째 시도 (실패):
+   &quot;값이 0개니 원래 아무것도 없었다&quot;고 판단했다.
+   -&gt; hive 헤더 확인:
+      xxd -l 16 NTUSER.DAT
+      00000000: 7265 6766 8a02 0000 8902 0000
+      primary 0x28a != secondary 0x289  -&gt; dirty.
+      트랜잭션 로그를 반영하지 않은 상태로 판단했다.
+
+   rla.exe -f NTUSER.DAT --out clean\
+   rip.exe -r clean\NTUSER.DAT -p run
+   -&gt; 여전히 값 0개. 다만 Run 키의 LastWrite 가 2026-04-09 08:31:12Z 로 갱신됐다.
+      (반영 전에는 2026-02-11 이었다)
+   =&gt; 로그 안에 그 시각의 변경이 담겨 있었다. 값이 삭제된 연산일 가능성이 높다.
+
+3. 세 번째 시도 (부분 실패):
+   미할당 셀을 본다.
+     RegistryExplorer 로 clean\NTUSER.DAT 로드 -&gt; Deleted Records
+     -&gt; 복구된 값 1개: 이름 &quot;OneDriveHelper&quot;, 데이터 일부만 남음
+        (데이터의 앞부분만 살아 있어 전체 경로가 잘렸다)
+   경로가 잘려 답으로 쓰기 부족하다. 다음 방법으로 보강한다.
+
+4. 문자열 검색으로 데이터 보강
+   strings -el -t d clean/NTUSER.DAT | grep -i &#39;onedrivehelper&#39;
+   -&gt; 1179648  OneDriveHelper
+      1179700  C:\Users\hjlee\AppData\Roaming\OneDriveHelper\odhelper.exe
+   HxD 로 오프셋 1179648 주변을 열어 vk 레코드 구조 확인 -&gt; 값 레코드 잔존 확정.
+
+5. 삭제 시각 확정
+   Run 키 LastWrite            2026-04-09 08:31:12Z   (단독 근거로는 부족)
+   $UsnJrnl 에서 NTUSER.DAT 관련:
+     2026-04-09 08:31:12Z  DataOverwrite|DataExtend  NTUSER.DAT   .\Users\hjlee
+   -&gt; 두 시각이 일치. 삭제 시각으로 제시할 근거가 생겼다.
+
+6. 등록 시각은 어디서?
+   Run 키 LastWrite 는 마지막 변경(삭제) 시각이므로 등록 시각이 아니다.
+   $UsnJrnl 에서 odhelper.exe 의 FileCreate: 2026-04-07 23:14:50Z
+   Prefetch: ODHELPER.EXE-*.pf 최초 실행 2026-04-08 00:02:11Z
+   -&gt; 등록은 파일 생성 시각 이후 ~ 첫 실행 시각 사이로 범위 제시.
+      정확한 등록 시각은 이 증거들로는 확정 불가. 그렇게 적는다.
+
+7. VSS 확인 (더 좋은 근거를 찾는다)
+   이미지를 Arsenal Image Mounter 로 마운트 -&gt; 섀도 카피 2026-04-08 존재
+   그 안의 NTUSER.DAT 을 꺼내 rip -p run
+   -&gt; OneDriveHelper = C:\Users\hjlee\AppData\Roaming\OneDriveHelper\odhelper.exe
+   =&gt; 완전한 값 확보. 4번의 추정이 확증됐다.
+
+정답:
+  삭제된 자동실행 항목: OneDriveHelper
+    -&gt; C:\Users\hjlee\AppData\Roaming\OneDriveHelper\odhelper.exe
+  삭제 시각: 2026-04-09 08:31:12Z = 2026-04-09 17:31:12 KST
+    (근거: Run 키 LastWrite + $UsnJrnl 의 NTUSER.DAT 쓰기 일치)
+  등록 시각: 2026-04-07 23:14:50Z ~ 2026-04-08 00:02:11Z 사이 (확정 불가, 범위로 제시)</code></pre></div>
+<p>1·2단계가 요점이다. <strong>플러그인 이름과 트랜잭션 로그를 배제하기 전에 &quot;공격자가 지웠다&quot;고 결론 내면 두 번 틀린다.</strong> 그리고 7단계처럼 <strong>VSS가 있으면 다른 모든 방법보다 먼저 확인하는 것이 이득</strong>이다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>rip.exe -l</code>로 플러그인 이름을 확인했는가 — 빈 출력의 최대 원인</li><li>hive를 맞게 골랐는가, <code>CurrentControlSet</code>을 입력하지 않았는가</li><li><code>rla</code>로 로그를 반영했는가 — <strong>반영 전 hive도 보관했는가</strong></li><li>헤더의 primary/secondary sequence number를 봤는가</li><li>RegistryExplorer의 Deleted Records를 봤는가</li><li>hive에 ASCII와 UTF-16LE <strong>두 인코딩으로</strong> 문자열 검색을 했는가</li><li>VSS·<code>RegBack</code>·백업 이미지를 확인했는가 — <code>RegBack</code>은 크기 0인지 먼저 본다</li><li>메모리 덤프가 있는가 — <code>windows.registry.hivelist</code></li><li>다른 사용자 hive·다른 이미지와 대조해 &quot;애초에 없었다&quot;를 배제했는가</li><li>복구가 실패했다면 → 삭제 사실 자체를 <code>$UsnJrnl</code>·부모 키 LastWrite·4657·Sysmon 13으로 증명했는가</li><li>복구된 레코드의 <strong>경로가 불확실하면</strong> 그 한계를 답에 함께 적었는가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-027 — Libyal libregf, REGF 포맷 문서: hive의 셀 구조와 <strong>셀 크기가 음수면 할당·양수면 해제</strong>라는 판정 기준, <code>nk</code>/<code>vk</code> 레코드 시그니처, 키 이름이 ASCII 또는 UTF-16LE로 저장된다는 점, 트랜잭션 로그의 역할과 sequence number</li><li>SRC-004 — Eric Zimmerman 문서: RegistryExplorer의 삭제 레코드 복구 기능과 <code>rla</code>의 트랜잭션 로그 반영 동작</li><li>SRC-013 — Microsoft Learn, Change Journals: hive 파일 자체의 변경을 <code>$UsnJrnl</code>의 <code>DataOverwrite</code>/<code>DataExtend</code>/<code>DataTruncation</code>으로 관측하는 근거</li><li><strong><code>RegBack</code>이 Windows 10 1803 이후 기본적으로 채워지지 않는다는 점과 <code>EnablePeriodicBackup</code> 값으로 다시 활성화할 수 있다는 점은 환경에 따라 다르므로, 실제 이미지에서 폴더 안 파일의 크기가 0인지 먼저 확인할 것</strong></li><li>RegistryExplorer의 메뉴/노드 이름(Deleted Records, 복구 옵션 위치)은 도구 버전에 따라 다를 수 있으므로 실제 화면에서 확인할 것</li><li>Volatility 3의 레지스트리 플러그인은 SRC-006(Volatility 3 문서)에 근거가 있으며, 이 글은 사용 위치만 제시한다</li><li>4657·Sysmon 12/13/14의 필드 정의는 Event Log 전담 글의 몫이다</li><li>실제 예시의 오프셋·시각·항목명은 설명을 위한 예시 값이다</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./registry-hive-map.html">
+    <span class="rel-id">FOR-0051 · Registry</span>
+    Registry hive 전체 지도: 루트키와 디스크상 파일 대응표
+  </a>
+  <a class="related-item" href="./registry-lastwrite-caveats.html">
+    <span class="rel-id">FOR-0077 · Registry</span>
+    Registry LastWrite 시각을 믿으면 안 되는 7가지 경우
+  </a>
+  <a class="related-item" href="./run-runonce.html">
+    <span class="rel-id">FOR-0063 · Registry</span>
+    Run·RunOnce와 자동실행 지속성 레지스트리 키 전수 점검
+  </a>
+  <a class="related-item" href="./usnjrnl-basics.html">
+    <span class="rel-id">FOR-0027 · 디스크/NTFS</span>
+    $UsnJrnl($J)로 삭제·생성·이름변경 흔적 복원하기
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./registry-lastwrite-caveats.html"><span class="rel-id">← FOR-0077</span>Registry LastWrite 시각을 믿으면 안 되는 7가지 경우</a>
+<a class="related-item" href="./appcompatcache.html"><span class="rel-id">FOR-0079 →</span>AppCompatCache(Shimcache)와 Amcache: 실행 파일 캐시 두 개 정리</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#증상">증상</a></li>
+<li class="toc-l2"><a href="#가장-가능성-높은-원인">가장 가능성 높은 원인</a></li>
+<li class="toc-l2"><a href="#1차-확인">1차 확인</a></li>
+<li class="toc-l3"><a href="#①-도구경로-문제-배제">① 도구·경로 문제 배제</a></li>
+<li class="toc-l3"><a href="#②-트랜잭션-로그를-반영한다">② 트랜잭션 로그를 반영한다</a></li>
+<li class="toc-l3"><a href="#③-hive-내부-미할당deleted-셀을-스캔한다">③ hive 내부 미할당(deleted) 셀을 스캔한다</a></li>
+<li class="toc-l2"><a href="#2차-확인">2차 확인</a></li>
+<li class="toc-l3"><a href="#④-hive-파일에-직접-문자열패턴-검색">④ hive 파일에 직접 문자열·패턴 검색</a></li>
+<li class="toc-l3"><a href="#⑤-볼륨-섀도-카피-백업-hive">⑤ 볼륨 섀도 카피 / 백업 hive</a></li>
+<li class="toc-l3"><a href="#⑥-메모리-덤프의-hive">⑥ 메모리 덤프의 hive</a></li>
+<li class="toc-l2"><a href="#다른-방법">다른 방법</a></li>
+<li class="toc-l3"><a href="#삭제-사실-자체를-증거로-쓴다">삭제 사실 자체를 증거로 쓴다</a></li>
+<li class="toc-l3"><a href="#각-방법의-성공-조건-요약">각 방법의 성공 조건 요약</a></li>
+<li class="toc-l2"><a href="#실제-예시">실제 예시</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

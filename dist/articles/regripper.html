@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>RegRipper 3.0 사용법: rip.exe 옵션과 hive별 플러그인 · FOR-0060 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Registry">Registry</a> / FOR-0060
+      </div>
+      <header class="article-head">
+        <h1>RegRipper 3.0 사용법: rip.exe 옵션과 hive별 플러그인</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Registry</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>RegRipper는 hive 파일을 키별 전용 플러그인으로 파싱해 텍스트로 떨어뜨리는 CLI 도구이며, rip.exe -r &lt;hive&gt; -a로 그 hive에 해당하는 플러그인을 전부 돌린 뒤 Select-String으로 후처리하는 것이 실전에서 가장 빠른 레지스트리 트리아지다. 플러그인 이름은 버전마다 다르므로 항상 rip.exe -l로 먼저 확인한다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>RegRipper, rip.exe, rr.exe, rla, RegistryExplorer, Timeline Explorer</td></tr>
+<tr><th>artifact</th><td><code>Registry hive</code> · <code>RegRipper plugin</code> · <code>TLN</code> · <code>Amcache.hve</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Windows\System32\config\SYSTEM</code> · <code>C:\Windows\System32\config\SOFTWARE</code> · <code>C:\Windows\System32\config\SAM</code> · <code>C:\Users\&lt;user&gt;\NTUSER.DAT</code> · <code>C:\Users\&lt;user&gt;\AppData\Local\Microsoft\Windows\UsrClass.dat</code> · <code>C:\Windows\AppCompat\Programs\Amcache.hve</code></td></tr>
+<tr><th>로그 필드</th><td><code>LastWrite Time</code> · <code>TLN time</code> · <code>TLN source</code> · <code>TLN host</code> · <code>TLN user</code> · <code>TLN description</code></td></tr>
+<tr><th>파일 형식</th><td><code>regf</code> · <code>hve</code> · <code>tln</code></td></tr>
+<tr><th>검색 별칭</th><td>regripper 사용법 · 레그리퍼 · rip.exe 옵션 · 레지스트리 일괄 추출 · 플러그인 목록 보기 · hive 텍스트로 뽑기 · regripper tln</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>RegRipper는 hive 파일을 <strong>키별 전용 플러그인으로 파싱해 텍스트로 떨어뜨리는</strong> CLI 도구이며, <code>rip.exe -r &lt;hive&gt; -a</code>로 그 hive에 해당하는 플러그인을 전부 돌린 뒤 <code>Select-String</code>으로 후처리하는 것이 실전에서 가장 빠른 레지스트리 트리아지다. 플러그인 이름은 버전마다 다르므로 <strong>항상 <code>rip.exe -l</code>로 먼저 확인한다.</strong></p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>hive 여러 개를 짧은 시간에 통째로 훑어야 한다 (GUI로 클릭할 시간이 없다)</li><li>결과를 텍스트로 받아 <code>Select-String</code>·<code>grep</code>으로 걸러내고 싶다</li><li>알려진 키(USB, 시간대, 계정, 설치 프로그램, 실행 흔적)의 <strong>정답을 바로 뽑고</strong> 싶다</li><li>레지스트리 항목들을 하나의 타임라인으로 합치고 싶다 (TLN 출력)</li><li>GUI를 못 쓰는 환경이거나, 같은 작업을 스크립트로 반복해야 한다</li></ul>
+<p>반대로 <strong>어느 키에 무엇이 있는지 모를 때 트리를 헤매는 용도로는 부적합</strong>하다. 그건 RegistryExplorer의 일이다(<a href="./registry-explorer.html">FOR-0059</a>).</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>첨부에 hive가 3개 이상 → 손으로 클릭할 게 아니라 <code>-a</code>로 일괄 처리한다</li><li>지문이 &quot;USB 시리얼&quot;, &quot;설치된 프로그램&quot;, &quot;계정 목록&quot;, &quot;시간대&quot; 처럼 <strong>정형화된 값</strong>을 묻는다 → 전용 플러그인이 있다</li><li>답이 시각의 순서 문제다 → <code>-aT</code>로 TLN을 뽑아 정렬한다</li><li>hive와 함께 <code>.LOG1</code>/<code>.LOG2</code>가 왔다 → RegRipper는 로그를 반영하지 않으므로 <code>rla</code>를 먼저 돌린다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">rip.exe -r &#39;C:\case\SYSTEM&#39; -a &gt; &#39;C:\case\out\system.txt&#39;</code></pre></div>
+<ol><li><code>rla</code>로 트랜잭션 로그를 먼저 반영한다 (dirty hive 대비)</li><li>hive마다 <code>-a</code>로 전부 뽑아 텍스트 파일로 저장한다</li><li><code>Select-String</code>으로 필요한 부분만 걸러 읽는다</li><li>원하는 값이 안 나오면 <code>rip.exe -l</code>로 플러그인 이름을 확인해 <code>-p</code>로 개별 실행한다</li></ol>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 로그 반영 -&gt; 일괄 덤프 -&gt; 검색
+rla.exe -d &#39;C:\case\hives&#39; --out &#39;C:\case\clean&#39;
+rip.exe -r &#39;C:\case\clean\SYSTEM&#39;   -a | Out-File -Encoding utf8 &#39;C:\case\out\system.txt&#39;
+rip.exe -r &#39;C:\case\clean\SOFTWARE&#39; -a | Out-File -Encoding utf8 &#39;C:\case\out\software.txt&#39;
+Select-String -Path &#39;C:\case\out\*.txt&#39; -Pattern &#39;USBSTOR|SerialNumber|TimeZone&#39;</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-ripexe-옵션">1단계 — rip.exe 옵션</h3>
+<div class="table-wrap"><table><thead><tr><th>옵션</th><th>의미</th><th>비고</th></tr></thead><tbody><tr><td><code>-r &lt;hive&gt;</code></td><td>파싱할 hive 파일 경로</td><td>필수. 경로에 공백이 있으면 인용부호</td></tr><tr><td><code>-p &lt;plugin&gt;</code></td><td>플러그인 <strong>1개</strong>만 실행</td><td>이름은 <code>-l</code>로 확인한 것만 쓴다</td></tr><tr><td><code>-f &lt;profile&gt;</code></td><td>프로파일(플러그인 세트) 실행</td><td>프로파일 파일은 <code>plugins</code> 폴더에 있다</td></tr><tr><td><code>-l</code></td><td>사용 가능한 플러그인 <strong>전체 목록</strong> 출력</td><td>작업 시작 전 한 번은 본다</td></tr><tr><td><code>-a</code></td><td>그 hive 종류에 해당하는 플러그인을 <strong>전부</strong> 실행</td><td>실무에서 가장 많이 쓴다</td></tr><tr><td><code>-aT</code></td><td>같은 방식으로 <strong>TLN 형식</strong> 출력</td><td>타임라인용</td></tr></tbody></table></div>
+<p>버전에 따라 목록을 CSV로 뽑는 스위치, hive 종류를 추정하는 스위치, TLN의 host/user 필드를 지정하는 스위치가 함께 제공된다. <strong>정확한 스위치 집합은 <code>rip.exe -h</code>(또는 인자 없이 실행)로 확인한다.</strong> 문서에서 본 옵션이 내 버전에 없을 수 있다.</p>
+<p>RegRipper 3.0에서는 프로파일보다 <code>-a</code>가 권장 경로다. 프로파일은 &quot;이 hive에 이 플러그인들을 돌려라&quot;를 적어 둔 목록 파일이므로, 필요하면 직접 만들어 재사용한다.</p>
+<p><code>rip.exe</code>는 자기 배포 폴더의 <code>plugins</code> 디렉터리를 찾아 동작한다. 플러그인을 못 찾는다는 오류가 나면 <strong><code>rip.exe</code>가 있는 폴더에서 실행</strong>하거나 전체 경로로 호출한다.</p>
+<h3 id="2단계-플러그인-이름은-반드시-먼저-확인한다">2단계 — 플러그인 이름은 반드시 먼저 확인한다</h3>
+<p>이 도구에서 시간을 가장 많이 낭비하는 원인은 <strong>없는 플러그인 이름을 타이핑하는 것</strong>이다. 이름은 버전과 배포본마다 추가·개명된다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 전체 목록
+rip.exe -l &gt; &#39;C:\case\out\plugins.txt&#39;
+
+# &quot;usb&quot; 가 들어간 플러그인만
+Select-String -Path &#39;C:\case\out\plugins.txt&#39; -Pattern &#39;usb&#39; -Context 0,1
+
+# hive 별로 어떤 플러그인이 있는지 훑기
+Select-String -Path &#39;C:\case\out\plugins.txt&#39; -Pattern &#39;ntuser|software|system|sam&#39;</code></pre></div>
+<p>목록에는 플러그인 이름과 대상 hive, 한 줄 설명이 함께 나온다. <strong>목록에 없는 이름은 존재하지 않는다.</strong> 추측해서 넣으면 오류이거나, 더 나쁘게는 조용히 빈 출력이 나온다.</p>
+<h3 id="3단계-hive별-주요-플러그인">3단계 — hive별 주요 플러그인</h3>
+<p>아래는 실전에서 자주 쓰는 것들이다. 각자의 환경에서 <code>-l</code>로 존재를 확인한 뒤 사용한다.</p>
+<div class="table-wrap"><table><thead><tr><th>hive</th><th>플러그인</th><th>무엇이 나오나</th></tr></thead><tbody><tr><td><code>SYSTEM</code></td><td><code>timezone</code></td><td>시간대(Bias, StandardName). <strong>모든 시각 보정의 전제</strong> (<a href="./system-timezone.html">FOR-0054</a>)</td></tr><tr><td><code>SYSTEM</code></td><td><code>computername</code></td><td>컴퓨터 이름 (<a href="./computer-name.html">FOR-0073</a>)</td></tr><tr><td><code>SYSTEM</code></td><td><code>usbstor</code></td><td>연결된 USB 저장장치의 벤더/제품/시리얼과 키 시각 (<a href="./usbstor.html">FOR-0066</a>)</td></tr><tr><td><code>SYSTEM</code></td><td><code>mountdev</code></td><td><code>MountedDevices</code>. 드라이브 문자 ↔ 볼륨/장치 매핑 (<a href="./mounteddevices.html">FOR-0067</a>)</td></tr><tr><td><code>SYSTEM</code></td><td><code>services</code></td><td>서비스와 ImagePath. 악성 서비스 탐지</td></tr><tr><td><code>SOFTWARE</code></td><td><code>uninstall</code></td><td>설치된 프로그램(DisplayName, InstallDate) (<a href="./software-installed-programs.html">FOR-0055</a>)</td></tr><tr><td><code>SOFTWARE</code></td><td><code>profilelist</code></td><td>SID ↔ 프로필 폴더 매핑</td></tr><tr><td><code>SOFTWARE</code></td><td><code>run</code></td><td>머신 단위 자동실행</td></tr><tr><td><code>SOFTWARE</code></td><td><code>networklist</code></td><td>접속한 무선/유선 네트워크 이름과 최초/마지막 연결</td></tr><tr><td><code>SAM</code></td><td><code>samparse</code></td><td>로컬 계정, RID, 마지막 로그온, 로그인 횟수, 그룹 (<a href="./sam-user-accounts.html">FOR-0052</a>)</td></tr><tr><td><code>NTUSER.DAT</code></td><td><code>userassist</code></td><td>GUI로 직접 실행한 프로그램·횟수·마지막 실행 (<a href="./userassist.html">FOR-0061</a>)</td></tr><tr><td><code>NTUSER.DAT</code></td><td><code>recentdocs</code></td><td>최근 열어본 문서 (<a href="./recentdocs.html">FOR-0062</a>)</td></tr><tr><td><code>NTUSER.DAT</code></td><td><code>typedpaths</code></td><td>탐색기 주소창에 입력한 경로 (<a href="./typedpaths.html">FOR-0064</a>)</td></tr><tr><td><code>NTUSER.DAT</code></td><td><code>runmru</code></td><td>실행(Win+R) 창에 입력한 명령</td></tr><tr><td><code>UsrClass.dat</code></td><td><code>shellbags</code></td><td>탐색기로 방문한 폴더 (<a href="./shellbags.html">FOR-0068</a>)</td></tr><tr><td><code>Amcache.hve</code></td><td><code>amcache</code></td><td>실행 파일 경로·SHA-1·크기</td></tr></tbody></table></div>
+<p><strong><code>shellbags</code>는 Windows 7 이후 <code>UsrClass.dat</code>에 대고 돌려야 한다.</strong> <code>NTUSER.DAT</code>에 돌리면 빈 출력이 나오고, 그걸 &quot;흔적 없음&quot;으로 오해하는 일이 잦다(<a href="./usrclass-dat.html">FOR-0058</a>).</p>
+<p>각 hive에서 무엇을 볼지 자체가 헷갈리면 <a href="./registry-hive-map.html">FOR-0051</a>의 목적별 인덱스를, <code>NTUSER.DAT</code> 내부 키 목록은 <a href="./ntuser-dat.html">FOR-0057</a>을 먼저 본다.</p>
+<h3 id="4단계-트랜잭션-로그는-regripper가-반영하지-않는다">4단계 — 트랜잭션 로그는 RegRipper가 반영하지 않는다</h3>
+<p>RegRipper는 hive 파일을 그대로 읽는다. dirty hive라면 <code>.LOG1</code>/<code>.LOG2</code>의 미반영 변경은 <strong>보이지 않는다.</strong></p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 반드시 먼저: 폴더 안의 hive 를 전부 정리해 clean hive 생성
+rla.exe -d &#39;C:\case\hives&#39; --out &#39;C:\case\clean&#39;</code></pre></div>
+<p>dirty 여부는 base block의 primary sequence number(<code>0x04</code>)와 secondary(<code>0x08</code>)를 비교해 판정한다. 다르면 dirty다. 이 단계를 건너뛰면 &quot;마지막 실행&quot;, &quot;마지막 USB 연결&quot; 같은 답이 <strong>한 세대 이전 값으로 조용히 틀린다.</strong></p>
+<h3 id="5단계-출력을-텍스트로-받아-후처리하는-실전-패턴">5단계 — 출력을 텍스트로 받아 후처리하는 실전 패턴</h3>
+<p>플러그인 출력은 사람이 읽는 텍스트다. 파일로 받아 검색하는 것이 전제다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) hive 전체를 hive 이름별 파일로
+$hives = @{
+  &#39;SYSTEM&#39;       = &#39;C:\case\clean\SYSTEM&#39;
+  &#39;SOFTWARE&#39;     = &#39;C:\case\clean\SOFTWARE&#39;
+  &#39;SAM&#39;          = &#39;C:\case\clean\SAM&#39;
+  &#39;NTUSER&#39;       = &#39;C:\case\clean\NTUSER.DAT&#39;
+  &#39;USRCLASS&#39;     = &#39;C:\case\clean\UsrClass.dat&#39;
+}
+foreach ($k in $hives.Keys) {
+  rip.exe -r $hives[$k] -a | Out-File -Encoding utf8 &quot;C:\case\out\$k.txt&quot;
+}
+
+# 2) 키워드로 한 번에 훑기 (파일명:행번호와 함께 나온다)
+Select-String -Path &#39;C:\case\out\*.txt&#39; -Pattern &#39;SerialNumber|USBSTOR&#39; 
+
+# 3) 앞뒤 문맥까지 (플러그인 출력은 여러 줄이 한 항목이다)
+Select-String -Path &#39;C:\case\out\NTUSER.txt&#39; -Pattern &#39;Downloads|Temp|AppData&#39; -Context 1,2
+
+# 4) 의심 확장자만
+Select-String -Path &#39;C:\case\out\*.txt&#39; -Pattern &#39;\.(exe|ps1|bat|vbs|scr)\b&#39;
+
+# 5) 결과 개수만 세기
+(Select-String -Path &#39;C:\case\out\NTUSER.txt&#39; -Pattern &#39;updater\.exe&#39;).Count</code></pre></div>
+<p><code>&gt;</code> 리다이렉션은 PowerShell 5.1에서 <strong>UTF-16LE</strong>로 저장한다. WSL의 <code>grep</code>이나 다른 도구에 넘길 파일이면 위처럼 <code>Out-File -Encoding utf8</code>을 쓴다. <code>Select-String</code> 사용법은 <a href="./powershell-select-string.html">FOR-0121</a>에 정리되어 있다.</p>
+<h3 id="6단계-tln-출력으로-타임라인-만들기">6단계 — TLN 출력으로 타임라인 만들기</h3>
+<p><code>-aT</code>는 결과를 <strong>TLN(TimeLiNe) 형식</strong>의 한 줄 레코드로 낸다. 파이프로 구분된 5개 필드다.</p>
+<div class="table-wrap"><table><thead><tr><th>위치</th><th>필드</th><th>내용</th></tr></thead><tbody><tr><td>1</td><td>time</td><td><strong>Unix epoch 초(UTC)</strong></td></tr><tr><td>2</td><td>source</td><td>출처 태그(예: <code>REG</code>)</td></tr><tr><td>3</td><td>host</td><td>시스템 이름</td></tr><tr><td>4</td><td>user</td><td>사용자</td></tr><tr><td>5</td><td>description</td><td>무슨 일이 있었는지</td></tr></tbody></table></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># hive 마다 TLN 을 뽑아 한 폴더에 모은다
+rip.exe -r &#39;C:\case\clean\SYSTEM&#39;     -aT | Out-File -Encoding utf8 &#39;C:\case\tln\system.txt&#39;
+rip.exe -r &#39;C:\case\clean\SOFTWARE&#39;   -aT | Out-File -Encoding utf8 &#39;C:\case\tln\software.txt&#39;
+rip.exe -r &#39;C:\case\clean\NTUSER.DAT&#39; -aT | Out-File -Encoding utf8 &#39;C:\case\tln\ntuser.txt&#39;
+
+# 시간 역순으로 합쳐 보기
+Get-Content &#39;C:\case\tln\*.txt&#39; |
+  Where-Object { $_ -match &#39;^\d+\|&#39; } |
+  Sort-Object { [long](($_ -split &#39;\|&#39;)[0]) } -Descending |
+  Select-Object -First 40</code></pre></div>
+<p>epoch를 사람이 읽는 시각으로 바꿀 때는 KST 오프셋을 바로 적용한다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># epoch(UTC) -&gt; KST
+[datetimeoffset]::FromUnixTimeSeconds(1773729167).ToOffset([timespan]::FromHours(9))</code></pre></div>
+<p>Unix epoch와 FILETIME의 차이는 <code>11644473600</code>초다. 레지스트리 원본 값은 FILETIME이고 TLN은 epoch이므로, 두 출력의 시각이 다르게 보이면 단위를 먼저 의심한다.</p>
+<p>TLN 레코드는 EVTX·<code>$MFT</code>·Prefetch 타임라인과 같은 표에 합칠 수 있다. 여러 아티팩트를 합칠 때는 CSV로 정규화해 Timeline Explorer로 보는 편이 낫다.</p>
+<h3 id="7단계-gui-rrexe">7단계 — GUI (rr.exe)</h3>
+<p>배포판에는 GUI인 <code>rr.exe</code>가 함께 들어 있다. hive 파일과 결과를 저장할 리포트 파일을 지정하고 실행하면, 그 hive에 해당하는 플러그인을 돌려 리포트를 만든다. 옵션 조합·파이프 후처리가 필요 없을 때, 또는 CLI 사용이 부담될 때 쓴다. 세밀한 제어(플러그인 지정, TLN, 후처리)는 <code>rip.exe</code>가 낫다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p>플러그인마다 출력 형태가 다르지만 공통 요소가 있다.</p>
+<div class="table-wrap"><table><thead><tr><th>출력 요소</th><th>의미</th><th>주의</th></tr></thead><tbody><tr><td>플러그인 이름/버전 머리줄</td><td>어느 플러그인이 무엇을 읽었는지</td><td>출력이 이 줄만 있고 내용이 없으면 <strong>키가 없거나 hive가 안 맞는 것</strong></td></tr><tr><td>키 경로</td><td>플러그인이 읽은 키</td><td>결론에 근거로 그대로 인용할 수 있다</td></tr><tr><td><code>LastWrite Time</code></td><td>그 키의 마지막 변경 시각. FILETIME <strong>UTC</strong></td><td>값 단위가 아니다. 마지막 1회뿐</td></tr><tr><td>값 나열</td><td>값 이름 = 데이터</td><td>값 자체에는 시각이 없다</td></tr><tr><td>시각 뒤의 <code>Z</code></td><td>UTC 표기</td><td>KST는 +9시간</td></tr><tr><td>빈 출력</td><td>그 키가 hive에 없다</td><td><strong>&quot;흔적이 없다&quot;와 다르다.</strong> hive를 잘못 골랐을 수 있다</td></tr></tbody></table></div>
+<p>출력 문구와 컬럼 배치는 플러그인 버전에 따라 바뀌므로, 답으로 제출할 값은 RegistryExplorer로 원본 키를 한 번 더 확인하는 편이 안전하다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>여기서 얻은 값</th><th>다음 목표</th><th>무엇을 확인하나</th></tr></thead><tbody><tr><td><code>timezone</code>의 Bias</td><td>모든 시각 보정 (<a href="./system-timezone.html">FOR-0054</a>)</td><td>로컬 시각 ↔ UTC 변환</td></tr><tr><td><code>usbstor</code>의 시리얼</td><td><code>mountdev</code>, <code>NTUSER.DAT\...\MountPoints2</code></td><td>드라이브 문자와 사용자 연결</td></tr><tr><td><code>profilelist</code>의 SID</td><td>해당 <code>NTUSER.DAT</code>/<code>UsrClass.dat</code> (<a href="./ntuser-dat.html">FOR-0057</a>)</td><td>사용자별 활동</td></tr><tr><td><code>samparse</code>의 마지막 로그온</td><td>Security 4624/4625 (<a href="./event-4624-logon.html">FOR-0083</a>)</td><td>로그온 유형과 출처 IP</td></tr><tr><td><code>userassist</code>의 실행 파일</td><td>Prefetch, <code>Amcache.hve</code></td><td>실행 사실·해시</td></tr><tr><td><code>run</code>/<code>services</code>의 ImagePath</td><td><code>$MFT</code> (<a href="./mft-basics.html">FOR-0021</a>)</td><td>그 파일이 언제 생겼는지</td></tr><tr><td><code>shellbags</code>의 폴더 경로</td><td><code>$MFT</code>, LNK, Jump List</td><td>폴더 존재 여부와 그 안의 파일</td></tr><tr><td>값이 안 나온다</td><td>RegistryExplorer 트리·삭제 레코드 (<a href="./registry-explorer.html">FOR-0059</a>)</td><td>지워진 값 복구</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>플러그인 이름을 기억으로 타이핑하는 것.</strong> <code>usb</code>, <code>shellbag</code>, <code>time</code>처럼 비슷한 이름을 넣으면 오류이거나 빈 출력이다. 작업 시작할 때 <code>rip.exe -l</code>을 파일로 받아 두고 거기서 복사한다.</li><li><strong>빈 출력을 &quot;흔적 없음&quot;으로 결론내는 것.</strong> hive 종류 불일치(예: <code>shellbags</code>를 <code>NTUSER.DAT</code>에 실행), 키 부재, dirty hive 미반영 중 하나일 수 있다. 원인을 구분하기 전에 결론을 내지 않는다.</li><li><strong><code>rla</code> 없이 dirty hive를 파싱하는 것.</strong> RegRipper는 트랜잭션 로그를 반영하지 않는다. 가장 최근 변경이 빠진 결과를 정상 결과로 착각한다.</li><li><strong><code>-a</code>만 믿고 끝내는 것.</strong> <code>-a</code>는 그 hive에 매핑된 플러그인을 돌리는 것이고, 매핑에서 빠진 플러그인은 실행되지 않는다. 특정 키가 필요하면 <code>-p</code>로 직접 지정한다.</li><li><strong><code>&gt;</code>로 저장한 파일을 다른 도구에 넘기는 것.</strong> PowerShell 5.1의 리다이렉션은 UTF-16LE다. <code>Out-File -Encoding utf8</code>로 저장한다.</li><li><strong><code>LastWrite Time</code>을 값이 만들어진 시각으로 단정하는 것.</strong> 키 단위·마지막 1회다. 값 데이터 안에 자체 FILETIME이 있으면 그쪽이 정확하다.</li><li><strong>시간대 보정 누락.</strong> 출력의 <code>Z</code>는 UTC다. TLN은 Unix epoch(UTC)다. KST는 +9시간, FILETIME과 epoch의 차이는 <code>11644473600</code>초다.</li><li><strong><code>Amcache.hve</code>를 hive가 아니라고 생각해 건너뛰는 것.</strong> <code>regf</code> 파일이므로 <code>-r</code>로 그대로 먹인다.</li><li><strong>사용자 hive를 하나만 돌리는 것.</strong> 프로필마다 <code>NTUSER.DAT</code>과 <code>UsrClass.dat</code>이 따로 있다. <code>C:\Users</code> 아래를 세고 반복문으로 돌린다.</li><li><strong><code>rip.exe</code>를 플러그인 폴더가 없는 위치로 복사해 쓰는 것.</strong> 배포 폴더 구조를 유지한 채 실행한다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<p>RegRipper 결과는 항상 다른 경로로 한 번 더 확인한다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) RegRipper 로 값 확보
+rip.exe -r &#39;C:\case\clean\SYSTEM&#39; -p usbstor | Out-File -Encoding utf8 &#39;C:\case\out\usb.txt&#39;
+Select-String -Path &#39;C:\case\out\usb.txt&#39; -Pattern &#39;SerialNumber|FriendlyName&#39; -Context 0,2
+
+# 2) 같은 키를 GUI 로 눈으로 확인 (RegistryExplorer 북마크 -&gt; USBSTOR)
+
+# 3) 사용자 쪽 대응물과 대조
+rip.exe -r &#39;C:\case\clean\NTUSER.DAT&#39; -p mp2 | Select-String &#39;Volume|#&#39;
+
+# 4) 파일시스템 근거
+Import-Csv &#39;C:\case\out\mft.csv&#39; | Where-Object { $_.ParentPath -like &#39;*Removable*&#39; }</code></pre></div>
+<p>세 곳이 같은 장치·같은 시각을 가리키면 결론이 단단해진다. RegRipper와 GUI 결과가 다르면 <strong>어느 hive 파일을 먹였는지</strong>(원본 vs <code>rla</code> 적용본)를 먼저 확인한다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;압수 PC 이미지에서 뽑은 SYSTEM, SOFTWARE, NTUSER.DAT (+ 각 .LOG1/.LOG2) 가
+ 주어진다. 이 PC에 연결된 USB 저장장치의 시리얼 번호와, 그 장치가 붙은
+ 시각을 KST 로 구하세요.&quot;
+
+1. 첫 시도 (실패):
+   rip.exe -r NTUSER.DAT -p usbstor
+   -&gt; 출력이 플러그인 머리줄만 나오고 내용이 없다.
+      &quot;USB 흔적이 없다&quot;고 판단할 뻔했다.
+
+   왜 틀렸나:
+   USBSTOR 는 SYSTEM hive 의 키다(Enum\USBSTOR).
+   사용자 hive 에 없는 키를 읽으라고 했으니 빈 출력이 정상이다.
+   빈 출력은 &quot;없음&quot;이 아니라 &quot;여기가 아님&quot;일 수 있다.
+
+2. 두 번째로 틀린 접근:
+   rip.exe -r SYSTEM -p usb
+   -&gt; 플러그인을 찾을 수 없다는 오류. 이름을 추측한 탓이다.
+
+3. 피벗 1: 플러그인 이름을 목록에서 확정
+   rip.exe -l | Out-File -Encoding utf8 plugins.txt
+   Select-String -Path plugins.txt -Pattern &#39;usb&#39;
+     usbstor    SYSTEM   Get USBStor key details
+     usbdevices SYSTEM   (환경에 따라 존재)
+   -&gt; 쓸 이름은 usbstor
+
+4. 피벗 2: 로그를 먼저 반영
+   rla.exe -d hives\ --out clean\
+   (SYSTEM 의 primary 0x88 != secondary 0x8a 로 dirty 였다)
+
+5. 본 작업
+   rip.exe -r clean\SYSTEM -a | Out-File -Encoding utf8 out\system.txt
+   Select-String -Path out\system.txt -Pattern &#39;USBSTOR&#39; -Context 0,6
+
+     USBSTOR
+     Disk&amp;Ven_SanDisk&amp;Prod_Cruzer_Blade&amp;Rev_1.00 [2026-03-14 07:05:09Z]
+       S/N: 4C530001120216108095  [2026-03-14 07:05:11Z]
+         FriendlyName  : SanDisk Cruzer Blade USB Device
+
+6. 사용자 연결 확인 (pivot)
+   rip.exe -r clean\NTUSER.DAT -p mp2 | Select-String &#39;Volume|^  E&#39;
+   -&gt; E 드라이브 서브키 LastWrite 2026-03-14 07:05:11Z
+      (jhkim 프로필의 hive 이므로 &quot;누가&quot;까지 확정된다)
+
+7. 시간 보정
+   2026-03-14 07:05:11 UTC + 9h = 2026-03-14 16:05:11 KST
+
+8. 타임라인으로 정리
+   rip.exe -r clean\SYSTEM -aT | Out-File -Encoding utf8 tln\system.txt
+   Get-Content tln\*.txt | Sort-Object { [long](($_ -split &#39;\|&#39;)[0]) } -Descending |
+     Select-Object -First 20
+
+정답: S/N 4C530001120216108095 (SanDisk Cruzer Blade), 2026-03-14 16:05:11 KST</code></pre></div>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><strong><code>rip.exe -l</code>로 플러그인 이름을 확인했는가</strong> — 추측한 이름은 쓰지 않는다</li><li><strong>hive 종류가 맞는가</strong> — <code>shellbags</code>는 <code>UsrClass.dat</code>, <code>usbstor</code>는 <code>SYSTEM</code>, <code>samparse</code>는 <code>SAM</code></li><li><strong><code>rla</code>로 트랜잭션 로그를 반영했는가</strong> — dirty hive면 최신 값이 빠진다</li><li>출력이 비었는가 → 위 1~3을 순서대로 확인한 뒤에도 비어 있으면 RegistryExplorer로 트리를 직접 본다</li><li>값은 나오는데 시각이 이상한가 → FILETIME(UTC) vs TLN epoch 단위 혼동, 그리고 KST +9 보정을 확인</li><li>결과가 너무 많은가 → <code>-p</code>로 좁히고 <code>Select-String -Context</code>로 항목 단위로 읽는다</li><li>다른 도구에 넘길 파일인가 → <code>Out-File -Encoding utf8</code>로 저장했는지 확인</li><li>플러그인을 못 찾는다는 오류가 나는가 → <code>rip.exe</code>를 배포 폴더에서 실행한다</li><li>지워진 값이 필요한가 → RegRipper로는 안 된다. RegistryExplorer의 삭제 레코드로 간다</li><li>사용자가 여러 명인가 → 프로필마다 <code>NTUSER.DAT</code> + <code>UsrClass.dat</code>를 반복 실행한다</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-099 — RegRipper 3.0 저장소: <code>rip.exe</code>의 <code>-r</code>/<code>-p</code>/<code>-f</code>/<code>-l</code>/<code>-a</code>/<code>-aT</code> 옵션, 플러그인이 hive 종류별로 매핑된다는 구조, <code>plugins</code> 폴더와 프로파일, GUI(<code>rr.exe</code>)의 존재</li><li>SRC-017 — Microsoft Learn, Windows Registry hives and file locations: 각 플러그인이 대상으로 하는 hive와 루트키의 대응</li><li>SRC-004 — Eric Zimmerman 도구 문서: <code>rla</code>로 트랜잭션 로그를 반영해 clean hive를 만드는 절차, RegistryExplorer와의 역할 분담</li><li><strong>플러그인 이름과 출력 문구는 RegRipper 배포본·버전마다 다르다.</strong> 이 글의 플러그인 표와 출력 예시는 형식 이해용이며, 실제 사용 전 <code>rip.exe -l</code>로 존재를 확인할 것</li><li><code>-h</code>로 노출되는 전체 스위치 집합(목록 CSV 출력, hive 종류 추정, TLN의 host/user 지정 등)은 버전에 따라 다르므로 실제 도움말에서 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./registry-hive-map.html">
+    <span class="rel-id">FOR-0051 · Registry</span>
+    Registry hive 전체 지도: 루트키와 디스크상 파일 대응표
+  </a>
+  <a class="related-item" href="./ntuser-dat.html">
+    <span class="rel-id">FOR-0057 · Registry</span>
+    NTUSER.DAT 기본: 사용자별 hive와 포렌식 키 인덱스
+  </a>
+  <a class="related-item" href="./registry-explorer.html">
+    <span class="rel-id">FOR-0059 · Registry</span>
+    RegistryExplorer로 hive 열기: 북마크·플러그인·삭제 레코드
+  </a>
+  <a class="related-item" href="./powershell-select-string.html">
+    <span class="rel-id">FOR-0121 · 로그/Regex</span>
+    PowerShell Select-String으로 로그 검색하기 (Windows용 grep)
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./registry-explorer.html"><span class="rel-id">← FOR-0059</span>RegistryExplorer로 hive 열기: 북마크·플러그인·삭제 레코드</a>
+<a class="related-item" href="./userassist.html"><span class="rel-id">FOR-0061 →</span>UserAssist로 사용자가 직접 실행한 프로그램 찾기</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-ripexe-옵션">1단계 — rip.exe 옵션</a></li>
+<li class="toc-l3"><a href="#2단계-플러그인-이름은-반드시-먼저-확인한다">2단계 — 플러그인 이름은 반드시 먼저 확인한다</a></li>
+<li class="toc-l3"><a href="#3단계-hive별-주요-플러그인">3단계 — hive별 주요 플러그인</a></li>
+<li class="toc-l3"><a href="#4단계-트랜잭션-로그는-regripper가-반영하지-않는다">4단계 — 트랜잭션 로그는 RegRipper가 반영하지 않는다</a></li>
+<li class="toc-l3"><a href="#5단계-출력을-텍스트로-받아-후처리하는-실전-패턴">5단계 — 출력을 텍스트로 받아 후처리하는 실전 패턴</a></li>
+<li class="toc-l3"><a href="#6단계-tln-출력으로-타임라인-만들기">6단계 — TLN 출력으로 타임라인 만들기</a></li>
+<li class="toc-l3"><a href="#7단계-gui-rrexe">7단계 — GUI (rr.exe)</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Run·RunOnce와 자동실행 지속성 레지스트리 키 전수 점검 · FOR-0063 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Registry">Registry</a> / FOR-0063
+      </div>
+      <header class="article-head">
+        <h1>Run·RunOnce와 자동실행 지속성 레지스트리 키 전수 점검</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Registry</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>자동실행 지속성은 Run·RunOnce 두 키만 보면 절반을 놓친다. Policies\Explorer\Run, Winlogon의 Userinit/Shell, Windows NT\CurrentVersion\Windows의 Load/Run, Image File Execution Options의 Debugger, AppInit_DLLs, Services의 Start=2, 그리고 WOW6432Node까지 전수 표대로 훑어야 한다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>RegRipper, RegistryExplorer, RECmd, rla, FTK Imager, KAPE</td></tr>
+<tr><th>artifact</th><td><code>Run</code> · <code>RunOnce</code> · <code>Winlogon</code> · <code>Image File Execution Options</code> · <code>AppInit_DLLs</code> · <code>Services</code> · <code>TaskCache</code> · <code>Startup 폴더</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Windows\System32\config\SOFTWARE</code> · <code>C:\Windows\System32\config\SYSTEM</code> · <code>C:\Users\&lt;user&gt;\NTUSER.DAT</code> · <code>C:\Windows\System32\Tasks</code> · <code>C:\Users\&lt;user&gt;\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup</code> · <code>C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp</code></td></tr>
+<tr><th>레지스트리</th><td><code>SOFTWARE\Microsoft\Windows\CurrentVersion\Run</code> · <code>SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce</code> · <code>SOFTWARE\Microsoft\Windows\CurrentVersion\RunServices</code> · <code>SOFTWARE\Microsoft\Windows\CurrentVersion\RunServicesOnce</code> · <code>SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run</code> · <code>NTUSER.DAT\Software\Microsoft\Windows\CurrentVersion\Run</code> · <code>NTUSER.DAT\Software\Microsoft\Windows\CurrentVersion\RunOnce</code> · <code>SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run</code> · <code>SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon</code> · <code>SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows</code> · <code>SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options</code> · <code>SOFTWARE\Microsoft\Windows NT\CurrentVersion\SilentProcessExit</code> · <code>SYSTEM\CurrentControlSet\Services</code> · <code>SYSTEM\CurrentControlSet\Control\Session Manager\BootExecute</code> · <code>SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\ShellServiceObjectDelayLoad</code> · <code>SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Browser Helper Objects</code> · <code>NTUSER.DAT\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders</code> · <code>SOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tasks</code></td></tr>
+<tr><th>regex</th><td><code>(?i)(powershell|pwsh).{0,40}(-enc|-e |-ec|frombase64string)</code> · <code>(?i)(rundll32|mshta|regsvr32|wscript|cscript|msbuild)\.exe</code></td></tr>
+<tr><th>로그 필드</th><td><code>ImagePath</code> · <code>ServiceDll</code> · <code>Start</code> · <code>Userinit</code> · <code>Shell</code> · <code>Debugger</code> · <code>AppInit_DLLs</code> · <code>Load</code> · <code>LastWrite</code></td></tr>
+<tr><th>파일 형식</th><td><code>regf</code></td></tr>
+<tr><th>검색 별칭</th><td>자동실행 레지스트리 · run 키 · runonce · 부팅 시 실행 · 악성코드 지속성 · persistence 키 · 시작프로그램 레지스트리 · ifeo 하이재킹</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>자동실행 지속성은 <code>Run</code>·<code>RunOnce</code> 두 키만 보면 절반을 놓친다. <code>Policies\Explorer\Run</code>, <code>Winlogon</code>의 <code>Userinit</code>/<code>Shell</code>, <code>Windows NT\CurrentVersion\Windows</code>의 <code>Load</code>/<code>Run</code>, <code>Image File Execution Options</code>의 <code>Debugger</code>, <code>AppInit_DLLs</code>, <code>Services</code>의 <code>Start=2</code>, 그리고 <code>WOW6432Node</code>까지 <strong>전수 표대로</strong> 훑어야 한다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;재부팅 후에도 악성코드가 다시 실행되는 이유는 무엇인가&quot;</li><li>&quot;지속성(persistence)이 어디에 등록되어 있는가&quot;</li><li>&quot;그 항목이 언제 등록되었는가&quot;</li><li>&quot;정상 프로그램으로 위장한 자동실행 항목을 찾아라&quot;</li></ul>
+<p>레지스트리 자동실행은 MITRE ATT&amp;CK의 T1547.001(Registry Run Keys / Startup Folder), T1546.012(IFEO Injection), T1546.010(AppInit DLLs), T1547.004(Winlogon Helper DLL), T1543.003(Windows Service)에 대응한다. 문제 지문에 &quot;지속성&quot;, &quot;재부팅&quot;, &quot;자동으로 실행&quot;이 있으면 이 표가 답의 위치다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>첨부에 <code>SOFTWARE</code>, <code>SYSTEM</code>, <code>NTUSER.DAT</code> 세 hive가 함께 있다 → 자동실행 전수 점검 대상</li><li>지문에 &quot;재부팅&quot;, &quot;로그온할 때마다&quot;, &quot;지속성&quot;, &quot;startup&quot;</li><li>다른 artifact에서 나온 악성 실행 파일 경로가 있는데 <strong>어떻게 실행되었는지</strong>가 비어 있는 상황</li><li>값 데이터에 <code>powershell -enc</code>, <code>rundll32</code>, <code>mshta</code>, <code>regsvr32</code>, 인용 없는 <code>C:\Program Files\...</code> 경로가 보인다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">rip.exe -r &quot;C:\case\SOFTWARE&quot; -p run &gt; run_software.txt</code></pre></div>
+<p>사용자 키와 서비스까지 한 번에.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">rip.exe -r &quot;C:\case\NTUSER.DAT&quot; -p run    &gt; run_user.txt
+rip.exe -r &quot;C:\case\SOFTWARE&quot;   -p winlogon &gt; winlogon.txt
+rip.exe -r &quot;C:\case\SYSTEM&quot;     -p services &gt; services.txt</code></pre></div>
+<p>GUI라면 RegistryExplorer로 hive를 열고 아래 표의 경로를 순서대로 찍는다. 대량이면 RECmd 배치 파일로 한 번에 뽑는다.</p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-자동실행-지속성-키-전수-표">1단계 — 자동실행 지속성 키 전수 표</h3>
+<p>hive 파일명 기준으로 적었다. 실행 중 시스템의 <code>HKLM\SOFTWARE\...</code>는 <code>SOFTWARE</code> hive, <code>HKCU\Software\...</code>는 그 사용자의 <code>NTUSER.DAT</code>이다.</p>
+<div class="table-wrap"><table><thead><tr><th>위치</th><th>키 / 값</th><th>트리거</th><th>비고</th></tr></thead><tbody><tr><td>HKLM</td><td><code>SOFTWARE\Microsoft\Windows\CurrentVersion\Run</code></td><td>로그온</td><td>가장 흔한 1순위</td></tr><tr><td>HKLM</td><td><code>SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce</code></td><td>로그온 1회</td><td>실행 후 값이 삭제되므로 <strong>LastWrite만 남는 경우</strong>가 있다</td></tr><tr><td>HKLM</td><td><code>SOFTWARE\Microsoft\Windows\CurrentVersion\RunServices</code></td><td>부팅(레거시)</td><td>9x 계열 잔재. 있으면 그 자체로 의심</td></tr><tr><td>HKLM</td><td><code>SOFTWARE\Microsoft\Windows\CurrentVersion\RunServicesOnce</code></td><td>부팅 1회(레거시)</td><td>위와 동일</td></tr><tr><td>HKLM</td><td><code>SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnceEx</code></td><td>로그온 1회</td><td><code>Depend</code> 서브키로 DLL 로드 가능</td></tr><tr><td>HKCU</td><td><code>Software\Microsoft\Windows\CurrentVersion\Run</code></td><td>로그온</td><td>관리자 권한 없이 등록 가능 → 실전 최다</td></tr><tr><td>HKCU</td><td><code>Software\Microsoft\Windows\CurrentVersion\RunOnce</code></td><td>로그온 1회</td><td></td></tr><tr><td>HKLM/HKCU</td><td><code>Software\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run</code></td><td>로그온</td><td><strong>정책 경로라 시작프로그램 UI에 안 보인다.</strong> 은닉 목적</td></tr><tr><td>HKLM</td><td><code>SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon</code> → <code>Userinit</code></td><td>로그온</td><td>정상값은 <code>userinit.exe,</code> 로 끝난다. 콤마 뒤 추가 항목이 하이재킹</td></tr><tr><td>HKLM</td><td><code>...\Winlogon</code> → <code>Shell</code></td><td>로그온</td><td>정상값은 <code>explorer.exe</code>. 다른 값이면 쉘 교체</td></tr><tr><td>HKLM</td><td><code>...\Winlogon</code> → <code>Notify</code></td><td>로그온(레거시)</td><td>Vista 이전. 존재 자체가 이상 신호</td></tr><tr><td>HKLM</td><td><code>...\Winlogon</code> → <code>Taskman</code></td><td>로그온</td><td>작업 관리자 교체</td></tr><tr><td>HKLM/HKCU</td><td><code>Software\Microsoft\Windows NT\CurrentVersion\Windows</code> → <code>Load</code></td><td>로그온</td><td>원래는 거의 비어 있다</td></tr><tr><td>HKLM/HKCU</td><td><code>Software\Microsoft\Windows NT\CurrentVersion\Windows</code> → <code>Run</code></td><td>로그온</td><td>위와 동일. <code>CurrentVersion\Run</code>과 <strong>다른 키</strong>다</td></tr><tr><td>HKLM</td><td><code>SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows</code> → <code>AppInit_DLLs</code></td><td>모든 user32.dll 로드 프로세스</td><td><code>LoadAppInit_DLLs</code>=1 이어야 동작</td></tr><tr><td>HKLM</td><td><code>SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\&lt;exe&gt;</code> → <code>Debugger</code></td><td>그 exe 실행 시</td><td><strong>디버거 하이재킹.</strong> <code>sethc.exe</code>, <code>taskmgr.exe</code>, <code>notepad.exe</code> 대상이 흔함</td></tr><tr><td>HKLM</td><td><code>SOFTWARE\Microsoft\Windows NT\CurrentVersion\SilentProcessExit\&lt;exe&gt;</code> → <code>MonitorProcess</code></td><td>그 exe 종료 시</td><td>IFEO 사촌. <code>GlobalFlag</code>와 함께 본다</td></tr><tr><td>HKLM</td><td><code>SYSTEM\CurrentControlSet\Services\&lt;name&gt;</code> → <code>Start</code>, <code>ImagePath</code></td><td>부팅/요청</td><td><code>Start=2</code>가 자동 시작</td></tr><tr><td>HKLM</td><td><code>SYSTEM\CurrentControlSet\Services\&lt;name&gt;\Parameters</code> → <code>ServiceDll</code></td><td>svchost 로드</td><td><code>ImagePath</code>가 <code>svchost.exe -k ...</code>면 실체는 여기</td></tr><tr><td>HKLM</td><td><code>SYSTEM\CurrentControlSet\Control\Session Manager\BootExecute</code></td><td>커널 초기화</td><td>정상값은 <code>autocheck autochk *</code></td></tr><tr><td>HKLM</td><td><code>SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\ShellServiceObjectDelayLoad</code></td><td>Explorer 시작</td><td>CLSID로 DLL 로드</td></tr><tr><td>HKLM</td><td><code>SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Browser Helper Objects</code></td><td>IE 시작</td><td>레거시 BHO</td></tr><tr><td>HKLM</td><td><code>SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\SharedTaskScheduler</code></td><td>Explorer 시작</td><td></td></tr><tr><td>HKLM/HKCU</td><td><code>Software\Classes\*\shellex\ContextMenuHandlers</code></td><td>우클릭/쉘 확장</td><td>Shell Extension 지속성</td></tr><tr><td>HKCU</td><td><code>Software\Classes\CLSID\{...}\InProcServer32</code></td><td>COM 호출 시</td><td><strong>COM 하이재킹.</strong> HKCU가 HKLM보다 우선 조회된다</td></tr><tr><td>HKCU</td><td><code>Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders</code> → <code>Startup</code></td><td>로그온</td><td>시작 폴더 <strong>경로 자체를 바꿔</strong> 은닉</td></tr><tr><td>HKLM</td><td><code>SOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tasks</code></td><td>스케줄</td><td>작업 스케줄러의 레지스트리 측 인덱스</td></tr></tbody></table></div>
+<h3 id="2단계-wow6432node를-반드시-함께-본다">2단계 — WOW6432Node를 반드시 함께 본다</h3>
+<p>64비트 Windows에서 <strong>32비트 프로세스가 쓴</strong> <code>HKLM\SOFTWARE\...</code> 값은 실제로 <code>HKLM\SOFTWARE\WOW6432Node\...</code>에 저장된다(레지스트리 리다이렉션).</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">64비트 항목: SOFTWARE\Microsoft\Windows\CurrentVersion\Run
+32비트 항목: SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run</code></pre></div>
+<p><code>RunOnce</code>, <code>Policies\Explorer\Run</code>, <code>Image File Execution Options</code>, <code>Windows NT\CurrentVersion\Windows</code> 모두 <code>WOW6432Node</code> 대응 경로가 있다. 32비트 악성코드는 여기에만 남아 <strong>64비트 경로만 본 분석에서는 통째로 누락된다.</strong> 리다이렉션의 배경은 <a href="./software-installed-programs.html">FOR-0055</a>에서 다룬다.</p>
+<h3 id="3단계-값-데이터의-의심-신호">3단계 — 값 데이터의 의심 신호</h3>
+<p>값 이름은 아무 문자열이나 가능하므로(정상 이름 위장이 쉽다) <strong>판단은 값 데이터로 한다.</strong></p>
+<div class="table-wrap"><table><thead><tr><th>신호</th><th>예</th><th>왜 의심스러운가</th></tr></thead><tbody><tr><td>사용자/임시 경로</td><td><code>C:\Users\jhkim\AppData\Local\Temp\svchost.exe</code></td><td>정상 자동실행은 대개 <code>Program Files</code>·<code>Windows</code>에 있다</td></tr><tr><td><code>AppData</code>·<code>ProgramData</code></td><td><code>C:\ProgramData\update\run.exe</code></td><td>권한 없이 쓸 수 있는 폴더</td></tr><tr><td>시스템 파일명 위장</td><td><code>C:\Users\...\lsass.exe</code></td><td>정상 <code>lsass.exe</code>는 <code>System32</code>에만 있다</td></tr><tr><td>인용 없는 공백 경로</td><td><code>C:\Program Files\My App\app.exe</code> (따옴표 없음)</td><td>unquoted service path 하이재킹 여지</td></tr><tr><td>PowerShell 인코딩</td><td><code>powershell -nop -w hidden -enc SQBFAFgA...</code></td><td>Base64 명령. <code>-enc</code>/<code>-e</code>/<code>-ec</code> 모두 같은 축약</td></tr><tr><td>LOLBin 로더</td><td><code>rundll32.exe C:\...\a.dll,Start</code></td><td>DLL을 서명된 바이너리로 실행</td></tr><tr><td><code>mshta</code></td><td><code>mshta.exe javascript:...</code> / <code>mshta http://...</code></td><td>HTA/스크립트 실행, 원격 로드</td></tr><tr><td><code>regsvr32</code></td><td><code>regsvr32 /s /u /i:http://... scrobj.dll</code></td><td>Squiblydoo. 원격 스크립트 실행</td></tr><tr><td><code>wscript</code>/<code>cscript</code></td><td><code>wscript.exe C:\Users\...\a.vbs</code></td><td>스크립트 지속성</td></tr><tr><td>URL 직접 등장</td><td><code>http://</code>, <code>https://</code>, <code>\\1.2.3.4\share\</code></td><td>원격 페이로드 또는 UNC 실행</td></tr><tr><td>이중 확장자</td><td><code>report.pdf.exe</code></td><td>사용자 속임</td></tr><tr><td>랜덤 문자열</td><td><code>C:\Windows\Temp\a8f3d2.exe</code></td><td>드롭퍼 관례</td></tr></tbody></table></div>
+<p>정규식으로 훑을 때는 PowerShell에서 <strong>작은따옴표</strong>를 쓴다. 큰따옴표 안의 <code>$</code>는 변수로 확장된다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 자동실행 덤프 전체에서 의심 신호만 뽑기
+Select-String -Path .\run_*.txt, .\winlogon.txt, .\services.txt `
+  -Pattern &#39;(?i)(powershell|pwsh).{0,40}(-enc|-e |-ec|frombase64string)&#39;
+
+Select-String -Path .\run_*.txt -Pattern &#39;(?i)(rundll32|mshta|regsvr32|wscript|cscript|msbuild)\.exe&#39;
+
+Select-String -Path .\run_*.txt -Pattern &#39;(?i)\\(Temp|AppData|ProgramData)\\&#39;</code></pre></div>
+<h3 id="4단계-winlogon-정상값과-비교">4단계 — Winlogon 정상값과 비교</h3>
+<div class="table-wrap"><table><thead><tr><th>값</th><th>정상 데이터</th><th>하이재킹 형태</th></tr></thead><tbody><tr><td><code>Userinit</code></td><td><code>C:\Windows\system32\userinit.exe,</code></td><td><code>...userinit.exe,C:\Users\...\evil.exe</code> (콤마 뒤 추가)</td></tr><tr><td><code>Shell</code></td><td><code>explorer.exe</code></td><td><code>explorer.exe,evil.exe</code> 또는 아예 다른 exe</td></tr><tr><td><code>Taskman</code></td><td>값 자체가 없음</td><td>임의 exe 지정</td></tr><tr><td><code>Notify</code></td><td>최신 Windows에는 서브키 없음</td><td>서브키 존재 = 레거시 또는 조작</td></tr></tbody></table></div>
+<p><code>Userinit</code> 끝의 <strong>콤마 하나</strong>를 놓치기 쉽다. 정상값도 콤마로 끝나므로, 콤마 뒤에 무엇이 있는지가 판단 기준이다.</p>
+<h3 id="5단계-services에서-자동-시작만-걸러내기">5단계 — Services에서 자동 시작만 걸러내기</h3>
+<p><code>SYSTEM\CurrentControlSet\Services\&lt;name&gt;</code>의 <code>Start</code> 값이 시작 방식이다. 어느 ControlSet이 활성인지는 <a href="./system-controlset.html">FOR-0053</a>의 <code>Select</code> 키로 먼저 확인한다.</p>
+<div class="table-wrap"><table><thead><tr><th><code>Start</code></th><th>의미</th></tr></thead><tbody><tr><td><code>0</code></td><td>Boot (부트 드라이버)</td></tr><tr><td><code>1</code></td><td>System (커널 초기화)</td></tr><tr><td><code>2</code></td><td><strong>Automatic (부팅 시 자동 시작)</strong></td></tr><tr><td><code>3</code></td><td>Manual (요청 시)</td></tr><tr><td><code>4</code></td><td>Disabled</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th><code>Type</code></th><th>의미</th></tr></thead><tbody><tr><td><code>0x01</code></td><td>커널 드라이버</td></tr><tr><td><code>0x02</code></td><td>파일시스템 드라이버</td></tr><tr><td><code>0x10</code></td><td>자체 프로세스 서비스</td></tr><tr><td><code>0x20</code></td><td>공유 프로세스 서비스(svchost)</td></tr></tbody></table></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">rip.exe -r &quot;C:\case\SYSTEM&quot; -p services &gt; services.txt
+Select-String -Path .\services.txt -Pattern &#39;(?i)\\(Temp|AppData|ProgramData|Users)\\&#39;</code></pre></div>
+<p><code>ImagePath</code>가 <code>%SystemRoot%\System32\svchost.exe -k netsvcs</code>처럼 svchost 호스팅이면 실제 코드는 <code>Parameters\ServiceDll</code>에 있다. <strong><code>ImagePath</code>만 보고 정상이라고 판단하면 안 된다.</strong></p>
+<h3 id="6단계-ifeo-debugger-확인">6단계 — IFEO Debugger 확인</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\sethc.exe
+  Debugger = C:\Windows\System32\cmd.exe</code></pre></div>
+<p>원래 이 키는 디버거를 붙이기 위한 정상 기능이다. 값 <code>Debugger</code>가 있으면 <strong>그 exe를 실행할 때 지정된 프로그램이 대신 뜬다.</strong> 접근성 도구(<code>sethc.exe</code>, <code>utilman.exe</code>, <code>osk.exe</code>)나 <code>taskmgr.exe</code> 아래 <code>Debugger</code>가 있으면 백도어로 본다. <code>Image File Execution Options</code>의 대부분 서브키는 <code>GlobalFlag</code>·<code>MitigationOptions</code>만 가진 정상 항목이므로, <strong><code>Debugger</code> 값이 있는 서브키만</strong> 추린다.</p>
+<h3 id="7단계-등록-시각은-키-lastwrite로-추정">7단계 — 등록 시각은 키 LastWrite로 추정</h3>
+<p>레지스트리 값에는 개별 타임스탬프가 없다. 있는 것은 <strong>키 단위 LastWrite(FILETIME, UTC)</strong> 하나다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Software\Microsoft\Windows\CurrentVersion\Run
+LastWrite Time: 2026-03-14 07:15:44Z
+  OneDrive        = &quot;C:\Program Files\Microsoft OneDrive\OneDrive.exe&quot; /background
+  SecurityUpdate  = C:\Users\jhkim\AppData\Local\Temp\svcupd.exe</code></pre></div>
+<p>LastWrite <code>2026-03-14 07:15:44Z</code>는 <strong>이 키에 마지막으로 가해진 변경</strong>의 시각이다. 값이 하나만 수상하면 그 값의 등록 시각으로 볼 여지가 크지만, 여러 값이 있으면 어느 값이 그때 바뀐 것인지는 레지스트리만으로 알 수 없다. FILETIME은 1601-01-01 UTC 기준 100ns이고 Unix epoch와의 차이는 <code>11644473600</code>초, KST는 +9시간이다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>해석</th><th>주의</th></tr></thead><tbody><tr><td>값 이름</td><td>표시용 라벨. 아무 문자열이나 가능</td><td><code>Windows Update</code>처럼 정상 위장이 쉽다. 판단 근거로 쓰지 않는다</td></tr><tr><td>값 데이터</td><td>실제 실행되는 명령행</td><td>인자 포함. 여기가 핵심</td></tr><tr><td><code>Userinit</code></td><td>로그온 시 실행 체인</td><td>콤마 뒤 추가 항목 확인</td></tr><tr><td><code>Shell</code></td><td>사용자 쉘</td><td><code>explorer.exe</code> 외의 값은 즉시 의심</td></tr><tr><td><code>Debugger</code> (IFEO)</td><td>대상 exe 대신 실행될 프로그램</td><td>존재 자체가 강한 신호</td></tr><tr><td><code>AppInit_DLLs</code></td><td>전역 로드 DLL 목록</td><td><code>LoadAppInit_DLLs</code>가 0이면 미동작</td></tr><tr><td><code>Start</code> (Services)</td><td>시작 방식</td><td><code>2</code>가 자동</td></tr><tr><td><code>ImagePath</code></td><td>서비스 실행 파일</td><td>svchost면 <code>ServiceDll</code>을 봐야 한다</td></tr><tr><td>키 <code>LastWrite</code></td><td>마지막 변경 시각(UTC)</td><td>값별 시각은 없다</td></tr></tbody></table></div>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>얻은 정보</th><th>다음 목표</th><th>무엇을 확인하나</th></tr></thead><tbody><tr><td>자동실행 실행 파일 경로</td><td><code>$MFT</code> (<a href="./mft-basics.html">FOR-0021</a>)</td><td>파일 생성 시각, 현재 존재 여부, timestomp 흔적</td></tr><tr><td>실행 파일명</td><td>Prefetch (<code>C:\Windows\Prefetch</code>)</td><td>실제로 실행됐는가, 몇 번, 언제</td></tr><tr><td>실행 파일명</td><td>Amcache (<code>Amcache.hve</code>)</td><td>SHA-1 해시, 최초 등록 시각</td></tr><tr><td>키 LastWrite 시각</td><td>EVTX Security 4688 (<a href="./event-4688-process-creation.html">FOR-0088</a>)</td><td>그 시각 전후의 프로세스 생성과 명령행</td></tr><tr><td>서비스 이름</td><td>System 로그 7045 (<a href="./event-7045-service-install.html">FOR-0090</a>)</td><td>설치 시각과 실행 파일</td></tr><tr><td><code>powershell -enc</code> 값</td><td>Base64 디코드 → PowerShell 4104 (<a href="./powershell-4104-scriptblock.html">FOR-0097</a>)</td><td>실제 스크립트 본문</td></tr><tr><td>값 데이터의 URL/UNC</td><td>PCAP·프록시 로그·DNS 캐시</td><td>페이로드 다운로드 통신</td></tr><tr><td>사용자가 등록했는가</td><td>UserAssist (<a href="./userassist.html">FOR-0061</a>)</td><td>등록 도구를 사람이 실행했는지</td></tr><tr><td>레지스트리 밖 지속성</td><td><code>C:\Windows\System32\Tasks\*</code>, 시작 폴더</td><td>XML 작업 정의, LNK</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>Run</code>과 <code>RunOnce</code>만 보고 끝낸다.</strong> 실전에서 가장 많이 놓치는 것이 <code>Policies\Explorer\Run</code>과 <code>Winlogon\Userinit</code>이다. 정책 경로는 시작프로그램 UI에도 안 나온다 → 위 전수 표를 순서대로 다 찍는다.</li><li><strong><code>WOW6432Node</code>를 건너뛴다.</strong> 32비트 악성코드의 자동실행은 리다이렉션되어 여기에만 있다 → 모든 HKLM 경로에 대해 <code>WOW6432Node</code> 대응 경로를 함께 본다.</li><li><strong>값 이름으로 정상 여부를 판단한다.</strong> 값 이름은 공격자가 자유롭게 정한다. <code>Adobe Updater</code>라는 이름으로 <code>Temp\a.exe</code>를 등록할 수 있다 → 판단은 <strong>값 데이터</strong>로 한다.</li><li><strong><code>ImagePath</code>만 보고 서비스를 정상 처리한다.</strong> <code>svchost.exe -k &lt;group&gt;</code>은 껍데기다. 실제 코드는 <code>Parameters\ServiceDll</code>이다 → svchost 서비스는 반드시 <code>ServiceDll</code>까지 확인한다.</li><li><strong><code>Image File Execution Options</code> 서브키가 많아서 포기한다.</strong> 대부분은 <code>GlobalFlag</code>만 있는 정상 항목이다 → <code>Debugger</code> 값이 존재하는 서브키만 추리면 몇 개로 줄어든다.</li><li><strong><code>RunOnce</code>가 비어 있으니 없었다고 결론 낸다.</strong> <code>RunOnce</code> 값은 실행 후 삭제되는 것이 정상 동작이다. <strong>비어 있어도 키 LastWrite가 최근이면 무언가 실행되고 지워진 것</strong>이다 → LastWrite와 <code>$UsnJrnl</code>·hive 슬랙을 함께 본다.</li><li><strong>키 LastWrite를 &quot;그 값의 등록 시각&quot;으로 단정한다.</strong> 값이 여러 개면 어느 값의 변경인지 알 수 없다 → 파일 생성 시각(<code>$MFT</code>)·Prefetch·EVTX로 좁힌다.</li><li><strong><code>Userinit</code>의 콤마를 놓친다.</strong> 정상값도 <code>userinit.exe,</code>로 끝난다. 콤마 자체가 이상 신호가 아니라 <strong>콤마 뒤의 내용</strong>이 신호다.</li><li><strong><code>AppInit_DLLs</code>에 값이 있으면 무조건 실행됐다고 본다.</strong> <code>LoadAppInit_DLLs</code>가 <code>0</code>이거나 Secure Boot 환경이면 로드되지 않는다 → 두 값을 같이 읽는다.</li><li><strong>레지스트리만 본다.</strong> 작업 스케줄러(<code>C:\Windows\System32\Tasks</code>의 XML), 시작 폴더 LNK, WMI 이벤트 구독은 레지스트리 Run 키에 없다 → 아래 절차를 함께 돌린다.</li><li><strong><code>ControlSet001</code>을 무조건 현재로 가정한다.</strong> 활성 ControlSet은 <code>SYSTEM\Select</code>의 <code>Current</code> 값이 정한다 → 먼저 확인한다.</li><li><strong>시간대를 안 맞춘다.</strong> 키 LastWrite는 UTC다. 문제가 KST를 요구하면 +9시간.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) 레지스트리 자동실행 — SOFTWARE / NTUSER.DAT / SYSTEM 세 hive 전부
+rip.exe -r &quot;C:\case\SOFTWARE&quot;   -p run       &gt; run_software.txt
+rip.exe -r &quot;C:\case\NTUSER.DAT&quot; -p run       &gt; run_user.txt
+rip.exe -r &quot;C:\case\SOFTWARE&quot;   -p winlogon  &gt; winlogon.txt
+rip.exe -r &quot;C:\case\SYSTEM&quot;     -p services  &gt; services.txt
+
+# 2) 레지스트리 밖 지속성 — 작업 스케줄러 XML 과 시작 폴더
+Get-ChildItem -Recurse &#39;C:\case\C\Windows\System32\Tasks&#39; -File |
+  Select-String -Pattern &#39;(?i)(Temp|AppData|ProgramData|powershell|rundll32|mshta)&#39;
+Get-ChildItem -Recurse &#39;C:\case\C\Users\*\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup&#39;
+Get-ChildItem -Recurse &#39;C:\case\C\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp&#39;
+
+# 3) 실행 사실 — Prefetch
+PECmd.exe -d &quot;C:\case\C\Windows\Prefetch&quot; --csv &quot;C:\case\out&quot;
+
+# 4) 파일이 언제 생겼나 (NTFS 메타파일 경로는 반드시 작은따옴표)
+MFTECmd.exe -f &#39;C:\case\$MFT&#39; --csv &#39;C:\case\out&#39; --csvf mft.csv</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>조합 결과</th><th>해석</th></tr></thead><tbody><tr><td>Run 키 O, Prefetch O, <code>$MFT</code> O</td><td>등록·실행·파일 모두 확인. 결론 확정</td></tr><tr><td>Run 키 O, Prefetch X</td><td>등록만 되고 아직 실행되지 않았거나 Prefetch가 삭제·비활성</td></tr><tr><td>Run 키 X, Prefetch O</td><td>지속성이 스케줄러·서비스·시작 폴더 쪽이다</td></tr><tr><td>Run 키 값 삭제, LastWrite만 최근</td><td><code>RunOnce</code> 실행 후 자동 삭제 또는 반포렌식 정리</td></tr><tr><td>여러 키에 같은 경로</td><td>다중 지속성. 하나만 지워도 살아난다</td></tr></tbody></table></div>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;재부팅 후에도 다시 실행되는 악성 프로그램의 실행 경로와, 그 지속성이
+ 등록된 레지스트리 키를 답하세요.
+ 첨부: SOFTWARE, SYSTEM, NTUSER.DAT (+ .LOG1/.LOG2), Prefetch 폴더&quot;
+
+1. 첫 시도 (실패)
+   rip.exe -r SOFTWARE -p run &gt; r.txt
+   rip.exe -r NTUSER.DAT -p run &gt;&gt; r.txt
+
+   HKLM\...\CurrentVersion\Run
+     SecurityHealth = %windir%\system32\SecurityHealthSystray.exe
+   HKCU\...\CurrentVersion\Run
+     OneDrive = &quot;C:\Users\jhkim\AppData\Local\Microsoft\OneDrive\OneDrive.exe&quot; /background
+
+   -&gt; 전부 정상. &quot;지속성 없음&quot; 이라고 결론.
+
+   왜 틀렸는가:
+   Run/RunOnce 두 키만 봤다. 그리고 64비트 경로만 봤다.
+   Prefetch 에는 명백히 낯선 실행 파일이 있으므로 결론이 모순이다.
+
+2. 모순 확인
+   PECmd.exe -d Prefetch\ --csv out\
+   -&gt; SVCUPD.EXE-3F2A91C4.pf  RunCount 6  LastRun 2026-03-14 07:16:02
+      -&gt; svcupd.exe 는 정상 Windows 구성요소가 아니다. 반드시 어딘가에서 뜬다.
+
+3. 피벗 1 — WOW6432Node 확인
+   RegistryExplorer 로 SOFTWARE hive 를 열고
+   SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run 확인
+   -&gt; 값 없음. 여기도 아니다.
+
+4. 피벗 2 — 전수 표를 위에서부터 찍는다
+   SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run
+   LastWrite 2026-03-14 07:15:44Z
+     SecurityUpdate = C:\Users\jhkim\AppData\Local\Temp\svcupd.exe
+
+   -&gt; 정책 경로였다. 시작프로그램 UI 와 -p run 플러그인 출력에
+      안 잡히는 위치라서 1단계에서 놓쳤다.
+
+5. 두 번째 지속성도 있는지 확인 (다중 지속성 가정)
+   SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon
+     Userinit = C:\Windows\system32\userinit.exe,C:\Users\jhkim\AppData\Local\Temp\svcupd.exe
+   -&gt; 콤마 뒤에 같은 파일. 지속성이 두 곳에 걸려 있다.
+
+   SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options
+     Debugger 값을 가진 서브키 없음 -&gt; IFEO 는 사용 안 함
+
+6. 실행 파일 확인
+   MFTECmd.exe -f &#39;C:\case\$MFT&#39; --csv &#39;C:\case\out&#39; --csvf mft.csv
+   Import-Csv C:\case\out\mft.csv |
+     Where-Object { $_.FileName -eq &#39;svcupd.exe&#39; }
+   -&gt; Created0x10 2026-03-14 07:14:58   (Run 키 LastWrite 07:15:44 보다 46초 앞)
+      파일 생성 -&gt; 지속성 등록 순서가 논리적으로 맞는다.
+
+7. 시간대 변환
+   07:15:44Z (UTC) + 9h = 2026-03-14 16:15:44 KST
+
+정답:
+  실행 경로  C:\Users\jhkim\AppData\Local\Temp\svcupd.exe
+  지속성 키  HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run
+             (+ Winlogon\Userinit 하이재킹 병행)</code></pre></div>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><strong>전수 표를 위에서 아래로 다 찍었는가</strong> — <code>Run</code>/<code>RunOnce</code>에서 멈추지 않았는가</li><li><strong><code>WOW6432Node</code> 대응 경로를 봤는가</strong></li><li><strong><code>Winlogon</code>의 <code>Userinit</code>·<code>Shell</code>·<code>Taskman</code>을 봤는가</strong> — 콤마 뒤를 확인했는가</li><li><strong><code>Windows NT\CurrentVersion\Windows</code>의 <code>Load</code>/<code>Run</code>을 봤는가</strong> — <code>CurrentVersion\Run</code>과 다른 키다</li><li><strong><code>Image File Execution Options</code>에서 <code>Debugger</code> 값이 있는 서브키만 추렸는가</strong></li><li><strong><code>Services</code>에서 <code>Start=2</code>를 걸렀는가. svchost면 <code>ServiceDll</code>까지 봤는가</strong></li><li><strong>활성 ControlSet을 <code>SYSTEM\Select</code>로 확인했는가</strong></li><li>레지스트리에서 안 나온다 → <code>C:\Windows\System32\Tasks</code> XML → 시작 폴더 LNK → WMI 구독 → <code>User Shell Folders\Startup</code> 리다이렉션</li><li>값이 지워진 흔적이 의심된다 → <code>RunOnce</code> 키 LastWrite, hive 슬랙, <code>$UsnJrnl</code>의 hive 변경 기록</li><li>여러 사용자 → 모든 프로필의 <code>NTUSER.DAT</code>. hive 위치는 <a href="./registry-hive-map.html">FOR-0051</a></li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-017 — Microsoft Learn, Windows Registry hives and file locations: hive 파일과 <code>HKLM</code>/<code>HKCU</code> 매핑, <code>SOFTWARE</code>·<code>SYSTEM</code>·<code>NTUSER.DAT</code>의 위치</li><li>SRC-086 — MITRE ATT&amp;CK Enterprise Techniques: T1547.001(Registry Run Keys / Startup Folder), T1546.012(IFEO Injection), T1546.010(AppInit DLLs), T1547.004(Winlogon Helper DLL), T1543.003(Windows Service), T1546.015(COM Hijacking)의 지속성 위치 분류</li><li>SRC-099 — RegRipper 3.0 repository: <code>run</code>, <code>winlogon</code>, <code>services</code> 계열 플러그인과 <code>rip.exe</code> 옵션</li><li>플러그인 이름은 배포 버전에 따라 다르므로 <code>rip.exe -l</code>로 실제 목록을 확인할 것</li><li><code>AppInit_DLLs</code>의 실제 로드 여부는 <code>LoadAppInit_DLLs</code> 값과 Secure Boot 설정에 따라 달라진다. 환경에서 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./registry-hive-map.html">
+    <span class="rel-id">FOR-0051 · Registry</span>
+    Registry hive 전체 지도: 루트키와 디스크상 파일 대응표
+  </a>
+  <a class="related-item" href="./system-controlset.html">
+    <span class="rel-id">FOR-0053 · Registry</span>
+    SYSTEM hive ControlSet 구조와 Select 키로 활성 세트 판정
+  </a>
+  <a class="related-item" href="./software-installed-programs.html">
+    <span class="rel-id">FOR-0055 · Registry</span>
+    SOFTWARE hive로 설치 프로그램·OS 버전·ProfileList 확인
+  </a>
+  <a class="related-item" href="./userassist.html">
+    <span class="rel-id">FOR-0061 · Registry</span>
+    UserAssist로 사용자가 직접 실행한 프로그램 찾기
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./recentdocs.html"><span class="rel-id">← FOR-0062</span>RecentDocs로 최근 열어본 문서와 확장자별 MRU 순서 확인</a>
+<a class="related-item" href="./typedpaths.html"><span class="rel-id">FOR-0064 →</span>TypedPaths로 탐색기 주소창에 직접 입력한 경로 찾기</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-자동실행-지속성-키-전수-표">1단계 — 자동실행 지속성 키 전수 표</a></li>
+<li class="toc-l3"><a href="#2단계-wow6432node를-반드시-함께-본다">2단계 — WOW6432Node를 반드시 함께 본다</a></li>
+<li class="toc-l3"><a href="#3단계-값-데이터의-의심-신호">3단계 — 값 데이터의 의심 신호</a></li>
+<li class="toc-l3"><a href="#4단계-winlogon-정상값과-비교">4단계 — Winlogon 정상값과 비교</a></li>
+<li class="toc-l3"><a href="#5단계-services에서-자동-시작만-걸러내기">5단계 — Services에서 자동 시작만 걸러내기</a></li>
+<li class="toc-l3"><a href="#6단계-ifeo-debugger-확인">6단계 — IFEO Debugger 확인</a></li>
+<li class="toc-l3"><a href="#7단계-등록-시각은-키-lastwrite로-추정">7단계 — 등록 시각은 키 LastWrite로 추정</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

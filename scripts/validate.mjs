@@ -255,7 +255,7 @@ function checkDist(articles) {
   }
 
   // Required runtime assets.
-  for (const f of ['styles.css', 'search-core.js', 'app.js', 'search-index.js']) {
+  for (const f of ['styles.css', 'search-core.js', 'app.js', 'search-index.js', 'search-body.js']) {
     if (!fs.existsSync(path.join(DIST, 'assets', f))) err(`dist/assets/${f} missing`);
   }
 

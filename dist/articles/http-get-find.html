@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>pcap에서 HTTP GET 요청 분석: 쿼리 명령·다운로드 파일·User-Agent 도구 식별 · FOR-0157 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Network%2FPCAP">Network/PCAP</a> / FOR-0157
+      </div>
+      <header class="article-head">
+        <h1>pcap에서 HTTP GET 요청 분석: 쿼리 명령·다운로드 파일·User-Agent 도구 식별</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Network/PCAP</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>GET은 모든 정보가 요청 라인에 노출된 메서드다. http.request.method == &quot;GET&quot;으로 좁힌 뒤 URI의 쿼리 문자열(명령·경로순회·SQL), 확장자(다운로드 파일), http.user_agent(도구 정체), 응답 코드·크기(성공 여부) 네 축으로 읽으면 본문을 볼 필요가 없다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Wireshark, tshark</td></tr>
+<tr><th>artifact</th><td><code>pcap</code> · <code>pcapng</code> · <code>HTTP request line</code> · <code>User-Agent</code></td></tr>
+<tr><th>프로토콜</th><td>HTTP, TCP</td></tr>
+<tr><th>Wireshark 필터</th><td><code>http.request.method == &quot;GET&quot;</code> · <code>http.request.uri contains &quot;cmd=&quot;</code> · <code>http.request.uri contains &quot;.php?&quot;</code> · <code>http.request.uri matches &quot;\\.(zip|exe|dll|ps1|7z|rar)($|\\?)&quot;</code> · <code>http.user_agent contains &quot;curl&quot;</code> · <code>http.user_agent contains &quot;sqlmap&quot;</code> · <code>http.referer</code> · <code>!http.referer &amp;&amp; http.request.method == &quot;GET&quot;</code> · <code>http.response.code == 200 &amp;&amp; http.content_length &gt; 100000</code></td></tr>
+<tr><th>tshark field</th><td><code>http.request.method</code> · <code>http.request.uri</code> · <code>http.request.full_uri</code> · <code>http.host</code> · <code>http.user_agent</code> · <code>http.referer</code> · <code>http.response.code</code> · <code>http.content_length</code> · <code>http.content_type</code> · <code>http.request_in</code> · <code>http.response_for.uri</code> · <code>tcp.stream</code></td></tr>
+<tr><th>regex</th><td><code>(?i)[?&amp;](cmd|exec|command|shell|c)=([^&amp;\s]+)</code> · <code>(?i)(\.\./|%2e%2e%2f|%252e%252e%252f)</code> · <code>(?i)(union(\s|%20|/\*)+select|information_schema|or(\s|%20)+1=1|sleep\()</code></td></tr>
+<tr><th>파일 형식</th><td><code>pcap</code> · <code>pcapng</code></td></tr>
+<tr><th>검색 별칭</th><td>http get 찾기 · get 요청 보기 · 다운로드한 파일 찾기 · 웹셸 명령 찾기 · user-agent 확인 · 쿼리스트링 보기 · url 파라미터 찾기</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>GET은 <strong>모든 정보가 요청 라인에 노출된 메서드</strong>다. <code>http.request.method == &quot;GET&quot;</code>으로 좁힌 뒤 URI의 쿼리 문자열(명령·경로순회·SQL), 확장자(다운로드 파일), <code>http.user_agent</code>(도구 정체), 응답 코드·크기(성공 여부) 네 축으로 읽으면 본문을 볼 필요가 없다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;공격자가 다운로드한 파일 이름을 구하라&quot;</li><li>&quot;웹셸에 어떤 명령을 실행했는가&quot; — 웹셸 명령은 대부분 GET 쿼리로 온다</li><li>&quot;스캐닝에 사용된 도구는 무엇인가&quot;</li><li>&quot;어떤 경로를 탐색했는가 / 어떤 파일 목록을 시도했는가&quot;</li><li>&quot;사용자가 어느 페이지를 거쳐 이 페이지에 도달했는가&quot; (Referer)</li><li>&quot;SQL Injection 시도 문자열을 구하라&quot;</li></ul>
+<p>POST는 본문을 꺼내는 단계가 필요하지만(<a href="./http-post-find.html">FOR-0158</a>), <strong>GET은 필터 한 줄과 컬럼 설정만으로 끝난다.</strong> 그래서 항상 GET을 먼저 본다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li><code>Info</code> 컬럼에 <code>GET /uploads/x.php?cmd=id HTTP/1.1</code> 형태로 <strong>명령이 그대로 보인다</strong></li><li>Protocol Hierarchy에 HTTP가 있고 <code>Media Type</code> 또는 <code>JPEG File Interchange Format</code> 같은 하위 항목 = 파일 다운로드가 있었다</li><li>지문의 &quot;다운로드&quot;, &quot;실행&quot;, &quot;조회&quot;, &quot;탐색&quot;, &quot;스캔&quot;, &quot;접속&quot; 같은 표현</li><li>Conversations에서 <strong>서버→클라이언트 방향</strong> 바이트가 큰 대화 = GET 다운로드</li><li>같은 IP에서 짧은 시간에 수백 개의 다른 URI 요청 = 디렉터리 브루트포스</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">http.request.method == &quot;GET&quot;</code></pre></div>
+<p>컬럼 네 개를 올리면 그 자리에서 답이 보인다. 필드 우클릭 → <code>Apply as Column</code>:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">http.host  /  http.request.uri  /  http.user_agent  /  http.response.code</code></pre></div>
+<p>의심스러운 쿼리만 즉시 훑기:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">http.request.uri contains &quot;cmd=&quot; || http.request.uri contains &quot;../&quot; || http.request.uri contains &quot;%2e%2e&quot;</code></pre></div>
+<p>CLI 한 줄:</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;http.request.method == &quot;GET&quot;&#39; \
+  -T fields -e frame.number -e http.host -e http.request.uri -e http.user_agent -E header=y</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-get-전체를-표로-확보">1단계 — GET 전체를 표로 확보</h3>
+<p>눈으로 훑는 것보다 표로 뽑아 정렬하는 것이 항상 빠르다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;http.request.method == &quot;GET&quot;&#39; \
+  -T fields -e frame.number -e tcp.stream -e ip.src -e http.host \
+            -e http.request.uri -e http.user_agent -e http.referer \
+  -E header=y -E separator=&#39;|&#39;</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">frame.number|tcp.stream|ip.src|http.host|http.request.uri|http.user_agent|http.referer
+221|3|10.0.0.15|shop.example.com|/|Mozilla/5.0 (Windows NT 10.0; Win64; x64)|
+238|3|10.0.0.15|shop.example.com|/css/main.css|Mozilla/5.0 (Windows NT 10.0; Win64; x64)|http://shop.example.com/
+1902|17|198.51.100.9|shop.example.com|/.git/config|Mozilla/5.00 (Nikto/2.1.6)|
+2211|21|198.51.100.9|shop.example.com|/uploads/av4tar.php?cmd=id|curl/8.4.0|
+2455|21|198.51.100.9|shop.example.com|/backup/db_2026.zip|curl/8.4.0|</code></pre></div>
+<p><strong>정적 리소스가 목록을 채운다.</strong> <code>.css</code> <code>.js</code> <code>.png</code> <code>.woff</code>를 걸러내야 본질이 보인다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">http.request.method == &quot;GET&quot; &amp;&amp; !(http.request.uri matches &quot;\\.(css|js|png|jpe?g|gif|svg|ico|woff2?|ttf|map)($|\\?)&quot;)</code></pre></div>
+<p><code>matches</code>는 정규식이며 <strong>기본적으로 대소문자를 구분하지 않는다.</strong> <code>.PNG</code>도 함께 걸러진다.</p>
+<h3 id="2단계-쿼리-문자열-명령과-공격-문자열이-여기-있다">2단계 — 쿼리 문자열: 명령과 공격 문자열이 여기 있다</h3>
+<p>GET 쿼리는 URL 인코딩된 상태로 그대로 보인다. 유형별 필터:</p>
+<div class="table-wrap"><table><thead><tr><th>유형</th><th>필터</th><th>실제로 보게 되는 값</th></tr></thead><tbody><tr><td>웹셸 명령 실행</td><td><code>http.request.uri matches &quot;[?&amp;](cmd|exec|command|shell|c)=&quot;</code></td><td><code>?cmd=whoami</code>, <code>?c=cat%20/etc/passwd</code></td></tr><tr><td>파일 읽기(LFI)</td><td><code>http.request.uri matches &quot;[?&amp;](file|page|path|include|template|doc)=&quot;</code></td><td><code>?file=../../etc/passwd</code></td></tr><tr><td>경로 순회</td><td><code>http.request.uri contains &quot;../&quot; || http.request.uri contains &quot;%2e%2e&quot;</code></td><td><code>/download?f=..%2f..%2fetc%2fshadow</code></td></tr><tr><td>SQL Injection</td><td><code>http.request.uri matches &quot;(union.{0,10}select|information_schema|or.{0,5}1=1|sleep\\()&quot;</code></td><td><code>?id=1%27%20UNION%20SELECT%201,2,3--</code></td></tr><tr><td>자격증명 노출</td><td><code>http.request.uri matches &quot;[?&amp;](user|username|pass|passwd|password|pw|token|key|api_key)=&quot;</code></td><td><code>?username=admin&amp;password=1234</code></td></tr><tr><td>원격 파일 포함(RFI)</td><td><code>http.request.uri matches &quot;[?&amp;][a-z]+=https?%3a&quot;</code></td><td><code>?page=http%3a%2f%2fevil.tld%2fs.txt</code></td></tr><tr><td>명령 연결 문자</td><td><code>http.request.uri matches &quot;(%3b|%7c|%26%26|</code>)&quot;`</td><td><code>?ip=127.0.0.1%3bid</code></td></tr></tbody></table></div>
+<p><strong>GET에 자격증명이 실렸다면 그 자체가 취약점이고, 동시에 문제의 정답인 경우가 많다.</strong> POST를 뒤지기 전에 GET 쿼리를 먼저 훑는다.</p>
+<p>쿼리 부분만 따로 보는 필드가 버전에 따라 존재한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># http.request.uri.query 가 있는 버전이라면 쿼리만 뽑을 수 있다
+tshark -r capture.pcapng -Y &#39;http.request.method == &quot;GET&quot; &amp;&amp; http.request.uri contains &quot;?&quot;&#39; \
+  -T fields -e frame.number -e http.request.uri.query</code></pre></div>
+<p>없으면 <code>http.request.uri</code>를 그대로 받아 <code>?</code> 뒤를 자른다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;http.request.method == &quot;GET&quot;&#39; -T fields -e http.request.uri |
+  grep &#39;?&#39; | sed &#39;s/^[^?]*?//&#39; | tr &#39;&amp;&#39; &#39;\n&#39; | sort | uniq -c | sort -nr | head -30</code></pre></div>
+<p>파라미터 이름과 값의 빈도표가 나온다. <strong>한 번만 등장한 파라미터가 공격 문자열이다.</strong></p>
+<p>URL 디코딩을 잊지 않는다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">python3 -c &quot;import urllib.parse,sys; print(urllib.parse.unquote_plus(sys.argv[1]))&quot; \
+  &#39;cat%20/etc/passwd&#39;</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">[System.Uri]::UnescapeDataString(&#39;cat%20/etc/passwd&#39;)</code></pre></div>
+<h3 id="3단계-다운로드-파일-확장자로-찾는다">3단계 — 다운로드 파일: 확장자로 찾는다</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">http.request.uri matches &quot;\\.(zip|rar|7z|tar|gz|exe|dll|msi|ps1|bat|vbs|jar|apk|pdf|docx?|xlsx?|sql|bak|db|pcap|txt|key|pem)($|\\?)&quot;</code></pre></div>
+<p>한 줄로 후보를 모두 잡는다. 표로 뽑을 때는 응답까지 같이 본다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng \
+  -Y &#39;http.request.method == &quot;GET&quot; &amp;&amp; http.request.uri matches &quot;\\.(zip|exe|dll|ps1|7z|rar|sql|bak)($|\\?)&quot;&#39; \
+  -T fields -e frame.number -e http.host -e http.request.uri -e http.user_agent -E header=y</code></pre></div>
+<p>응답 측에서 파일 다운로드를 잡는 방법도 있다. 요청 확장자가 위장되어 있을 때 이쪽이 더 정확하다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">http.response.code == 200 &amp;&amp; http.content_type contains &quot;application/octet-stream&quot;
+http.response.code == 200 &amp;&amp; http.content_length &gt; 100000
+http.response.code == 200 &amp;&amp; http.header contains &quot;attachment&quot;</code></pre></div>
+<p>마지막 필터의 <code>http.header</code>는 버전에 따라 없을 수 있다. 대신 <code>http.file_data contains &quot;attachment&quot;</code>가 아니라 <strong>Follow HTTP Stream으로 <code>Content-Disposition</code> 헤더를 눈으로 확인</strong>하는 것이 확실하다.</p>
+<p>실제 파일을 얻는 것은 Export Objects의 몫이다 (<a href="./export-objects-http.html">FOR-0165</a>).</p>
+<h3 id="4단계-user-agent-도구를-특정한다">4단계 — User-Agent: 도구를 특정한다</h3>
+<p><code>http.user_agent</code> 하나로 &quot;사람이 브라우저로 했는가 / 스크립트가 했는가&quot;가 갈린다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;http.request&#39; -T fields -e http.user_agent |
+  sort | uniq -c | sort -nr</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">    412 Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36
+     88 Mozilla/5.00 (Nikto/2.1.6) (Evasions:None) (Test:map_codes)
+     31 curl/8.4.0
+     14 sqlmap/1.7#stable (https://sqlmap.org)
+      6 Microsoft-CryptoAPI/10.0
+      3 </code></pre></div>
+<p>식별표 — 문자열의 <strong>고정 부분</strong>만 신뢰한다. 버전 숫자는 환경마다 다르다.</p>
+<div class="table-wrap"><table><thead><tr><th>User-Agent에 들어 있는 문자열</th><th>클라이언트</th><th>포렌식 해석</th></tr></thead><tbody><tr><td><code>curl/</code></td><td>curl</td><td>스크립트/수동 CLI. 다운로드·웹셸 호출</td></tr><tr><td><code>Wget/</code></td><td>wget</td><td>리눅스 측 다운로드</td></tr><tr><td><code>python-requests/</code></td><td>Python requests</td><td>자동화 스크립트, C2 비컨</td></tr><tr><td><code>python-urllib</code> / <code>Python-urllib/</code></td><td>Python 표준 라이브러리</td><td>같음</td></tr><tr><td><code>Go-http-client/</code></td><td>Go 프로그램</td><td>최근 멀웨어/툴에서 흔하다</td></tr><tr><td><code>sqlmap/</code></td><td>sqlmap</td><td><strong>SQL Injection 자동화. 그 자체가 공격 증거</strong></td></tr><tr><td><code>Nikto/</code></td><td>Nikto</td><td>웹 취약점 스캐너. 404 급증과 함께 나타난다</td></tr><tr><td><code>Nmap Scripting Engine</code></td><td>Nmap NSE (<code>http-*</code> 스크립트)</td><td>포트/웹 스캔</td></tr><tr><td><code>WindowsPowerShell/</code> 또는 <code>PowerShell/</code></td><td><code>Invoke-WebRequest</code> / <code>Invoke-RestMethod</code></td><td><strong>Windows 측 파일 다운로드.</strong> EVTX 4104와 대조</td></tr><tr><td><code>Microsoft-CryptoAPI/</code></td><td><code>certutil -urlcache -f &lt;url&gt;</code> 계열</td><td>LOLBin 다운로드</td></tr><tr><td><code>Microsoft BITS/</code></td><td>BITS 전송(<code>bitsadmin</code>, <code>Start-BitsTransfer</code>)</td><td>백그라운드 다운로드. 은닉 목적</td></tr><tr><td><code>Java/</code></td><td>Java 런타임</td><td>취약 앱/익스플로잇 페이로드</td></tr><tr><td><code>libwww-perl</code> / <code>LWP::</code></td><td>Perl 스크립트</td><td>오래된 자동화</td></tr><tr><td>(빈 값)</td><td>UA 헤더 없음</td><td>직접 소켓으로 만든 요청. <strong>거의 항상 도구다</strong></td></tr><tr><td><code>Mozilla/5.0 ... Chrome/... Safari/...</code></td><td>실제 브라우저</td><td>정상 사용자 후보</td></tr></tbody></table></div>
+<p>UA가 비어 있는 요청은 이렇게 잡는다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">http.request &amp;&amp; !http.user_agent</code></pre></div>
+<p><strong>UA는 위조 가능하다.</strong> <code>curl -A &quot;Mozilla/5.0&quot;</code>이면 브라우저처럼 보인다. 그래서 UA만으로 결론짓지 않고 아래 두 가지와 교차한다.</p>
+<div class="table-wrap"><table><thead><tr><th>위조 판정 근거</th><th>왜</th></tr></thead><tbody><tr><td>정적 리소스를 안 가져간다</td><td>브라우저는 HTML을 받으면 <code>.css</code>/<code>.js</code>/이미지를 반드시 뒤따라 요청한다. HTML만 받고 끝나면 스크립트다</td></tr><tr><td><code>Referer</code>가 전혀 없다</td><td>브라우저 내 링크 이동에는 Referer가 붙는다</td></tr><tr><td>요청 간격이 기계적으로 일정하다</td><td><code>http.time</code>이나 프레임 시각의 간격이 초 단위로 균일하면 스크립트</td></tr><tr><td><code>Accept-Language</code>/<code>Accept-Encoding</code> 헤더가 없다</td><td>브라우저는 항상 보낸다</td></tr></tbody></table></div>
+<h3 id="5단계-referer-유입-경로를-잇는다">5단계 — Referer: 유입 경로를 잇는다</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;http.request.method == &quot;GET&quot; &amp;&amp; http.referer&#39; \
+  -T fields -e http.referer -e http.request.uri -E header=y | sort -u | head -30</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>관찰</th><th>해석</th></tr></thead><tbody><tr><td><code>Referer</code>가 같은 사이트 페이지</td><td>정상 내부 링크 이동</td></tr><tr><td><code>Referer</code>가 검색엔진</td><td>외부 유입</td></tr><tr><td><code>Referer</code>가 외부 낯선 도메인</td><td>피싱/악성 리다이렉트 유입 지점</td></tr><tr><td><strong><code>Referer</code>가 아예 없다</strong></td><td>주소창 직접 입력, 북마크, 또는 <strong>스크립트</strong></td></tr><tr><td><code>Referer</code>에 세션 토큰/비밀번호</td><td>토큰 유출 취약점. 그 값이 답인 문제가 있다</td></tr></tbody></table></div>
+<p>Referer가 없는 GET만 보는 필터:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">http.request.method == &quot;GET&quot; &amp;&amp; !http.referer &amp;&amp; !(http.request.uri matches &quot;\\.(css|js|png|ico)$&quot;)</code></pre></div>
+<h3 id="6단계-응답과-짝지어-성공-판정">6단계 — 응답과 짝지어 성공 판정</h3>
+<p>GET을 찾았어도 <strong>그 요청이 성공했는지는 응답이 말한다.</strong> 요청만 보고 답을 제출하는 것이 가장 흔한 실수다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;http.response&#39; \
+  -T fields -e frame.number -e http.request_in -e http.response.code \
+            -e http.content_length -e http.response_for.uri -E header=y</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">frame.number  http.request_in  http.response.code  http.content_length  http.response_for.uri
+1908          1902             404                 291                  http://shop.example.com/.git/config
+2218          2211             200                 34                   http://shop.example.com/uploads/av4tar.php?cmd=id
+2470          2455             200                 4194304              http://shop.example.com/backup/db_2026.zip</code></pre></div>
+<ul><li><code>404 / 291바이트</code> = 실패. 존재하지 않는 경로</li><li><code>200 / 34바이트</code> = 웹셸이 명령 출력을 돌려줬다. <strong>실행 성공</strong></li><li><code>200 / 4194304바이트</code> = 4 MB 파일이 실제로 나갔다. <strong>유출 확정</strong></li></ul>
+<p><code>http.response_for.uri</code> 컬럼이 요청/응답을 손으로 맞추는 수고를 없앤다. 자세한 코드 해석은 <a href="./http-status-analysis.html">FOR-0161</a>.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>의미</th><th>GET 분석에서의 쓸모</th></tr></thead><tbody><tr><td><code>http.request.method</code></td><td><code>GET</code></td><td>문자열. 큰따옴표와 대문자 필수</td></tr><tr><td><code>http.request.uri</code></td><td>경로+쿼리</td><td><strong>본문 없는 GET에서는 이것이 전부다</strong></td></tr><tr><td><code>http.request.full_uri</code></td><td>스킴+호스트+경로+쿼리</td><td>보고서에 그대로 붙일 값</td></tr><tr><td><code>http.host</code></td><td>Host 헤더</td><td>가상 호스트 구분 (<a href="./http-host-filter.html">FOR-0160</a>)</td></tr><tr><td><code>http.user_agent</code></td><td>클라이언트 문자열</td><td>도구 식별. <strong>위조 가능</strong></td></tr><tr><td><code>http.referer</code></td><td>유입 경로</td><td>없으면 스크립트 의심</td></tr><tr><td><code>http.request.version</code></td><td><code>HTTP/1.1</code> / <code>HTTP/1.0</code></td><td><code>HTTP/1.0</code> 단독은 구식 스크립트 신호</td></tr><tr><td><code>http.response.code</code></td><td>응답 코드</td><td>성공/실패 판정</td></tr><tr><td><code>http.content_length</code></td><td>응답 본문 크기</td><td><strong>유출량. 0이면 출력 없음</strong></td></tr><tr><td><code>http.content_type</code></td><td>응답 MIME</td><td><code>application/octet-stream</code> = 파일</td></tr><tr><td><code>http.request_in</code></td><td>응답에 붙는 요청 프레임 번호</td><td>짝짓기</td></tr><tr><td><code>http.response_for.uri</code></td><td>응답에 붙는 요청 URI</td><td>짝짓기</td></tr><tr><td><code>tcp.stream</code></td><td>연결 인덱스</td><td>Follow로 직행 (<a href="./tcp-stream-filter.html">FOR-0164</a>)</td></tr></tbody></table></div>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>GET에서 얻은 것</th><th>다음 목표</th><th>확인할 것</th></tr></thead><tbody><tr><td>다운로드 파일명</td><td>Export Objects (<a href="./export-objects-http.html">FOR-0165</a>)</td><td>실제 바이트와 해시</td></tr><tr><td>다운로드 파일명</td><td><code>$MFT</code> (<a href="./mft-basics.html">FOR-0021</a>)</td><td>디스크에 저장된 시각과 경로</td></tr><tr><td>다운로드 파일명</td><td>브라우저 다운로드 기록 (<a href="./chrome-history.html">FOR-0191</a>)</td><td>사용자가 직접 받았는가</td></tr><tr><td><code>?cmd=</code> 명령 문자열</td><td>EVTX 4688 (<a href="./event-4688-process-creation.html">FOR-0088</a>), PowerShell 4104 (<a href="./powershell-4104-scriptblock.html">FOR-0097</a>)</td><td>서버에서 실제 실행됐는가</td></tr><tr><td>웹셸 URI</td><td>그 URI로의 POST (<a href="./http-post-find.html">FOR-0158</a>)</td><td>업로드 시점</td></tr><tr><td>User-Agent</td><td>같은 UA의 모든 요청</td><td>그 도구의 활동 전체</td></tr><tr><td>공격자 IP</td><td><code>ip.addr == &lt;IP&gt;</code></td><td>스캔→침입→유출 흐름</td></tr><tr><td>404가 몰린 URI 목록</td><td>스캐너 지문</td><td>사용한 도구/워드리스트</td></tr><tr><td>Referer 도메인</td><td>DNS 질의, 접속 도메인 목록 (<a href="./http-host-filter.html">FOR-0160</a>)</td><td>유입 경로 재구성</td></tr><tr><td>응답 크기</td><td><code>Statistics &gt; Conversations</code></td><td>총 유출량</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>http.request.method == GET</code> 처럼 따옴표를 빼는 것.</strong> 문법 오류로 필터가 빨갛게 되거나 엉뚱하게 해석된다. <code>&quot;GET&quot;</code>으로, 대문자로 쓴다.</li><li><strong><code>http.request.uri contains &quot;../&quot;</code> 만 믿는 것.</strong> 실제 공격은 <code>..%2f</code>, <code>%2e%2e/</code>, <code>..%252f</code>(이중 인코딩)로 온다. URI 필드에는 <strong>인코딩된 원문이 들어 있어</strong> 디코딩된 문자열로는 안 걸린다. <code>matches &quot;(\\.\\./|%2e%2e|%252e)&quot;</code>로 함께 잡는다.</li><li><strong>정적 리소스를 걸러내지 않는 것.</strong> <code>.css</code>/<code>.js</code>/이미지가 요청의 80%를 차지해 실제 공격 요청이 묻힌다. 1단계의 제외 필터를 먼저 적용한다.</li><li><strong>요청만 보고 성공했다고 판단하는 것.</strong> <code>?cmd=</code> 요청이 있어도 응답이 404/403이면 실행되지 않았다. 응답 코드와 <code>http.content_length</code>를 반드시 확인한다.</li><li><strong>User-Agent를 신원으로 믿는 것.</strong> 위조가 자유롭다. 정적 리소스 후속 요청 유무, Referer 유무, 요청 간격으로 교차검증한다.</li><li><strong><code>http.user_agent contains &quot;Mozilla&quot;</code>로 브라우저를 판정하는 것.</strong> Nikto·Nmap NSE 등 다수 스캐너의 UA도 <code>Mozilla</code>로 시작한다. 문자열 전체를 봐야 한다.</li><li><strong>HEAD/OPTIONS를 놓치는 것.</strong> 스캐너는 <code>HEAD</code>로 존재만 확인하고 <code>OPTIONS</code>로 허용 메서드를 캐낸다. <code>http.request.method in {&quot;HEAD&quot; &quot;OPTIONS&quot; &quot;PUT&quot; &quot;DELETE&quot; &quot;TRACE&quot;}</code>도 한 번 돌린다.</li><li><strong>GET에 자격증명이 없다고 가정하는 것.</strong> 잘못 만든 앱은 <code>?password=</code>를 GET으로 보낸다. POST만 뒤지면 놓친다.</li><li><strong>캐시된 요청을 성공으로 세는 것.</strong> <code>304 Not Modified</code>는 본문이 전송되지 않았다. 다운로드 성공이 아니다.</li><li><strong>HTTPS 요청을 GET 필터로 찾는 것.</strong> TLS 안의 GET은 <code>http</code> 필터에 안 걸린다. SNI(<code>tls.handshake.extensions_server_name</code>)까지가 한계다.</li><li><strong>URL 디코딩을 건너뛰고 답을 제출하는 것.</strong> <code>cat%20/etc/passwd</code>는 <code>cat /etc/passwd</code>다. <code>%20</code>은 공백, 쿼리 문맥의 <code>+</code>도 공백이다.</li><li><strong>시간을 상대 초로 두고 다른 로그와 대조하는 것.</strong> <code>View &gt; Time Display Format &gt; UTC Date and Time of Day</code>로 먼저 바꾼다. KST는 UTC+9이므로 <code>07:22:41 UTC</code> = <code>16:22:41 KST</code>다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) GET 요청 개수
+tshark -r capture.pcapng -Y &#39;http.request.method == &quot;GET&quot;&#39; | wc -l
+
+# 2) 요청된 URI 빈도표 — 반복 = 정상, 1회 = 특이
+tshark -r capture.pcapng -Y &#39;http.request.method == &quot;GET&quot;&#39; -T fields -e http.request.uri |
+  sort | uniq -c | sort -nr | head -30
+
+# 3) User-Agent 빈도표 — 종류가 곧 클라이언트 수
+tshark -r capture.pcapng -Y &#39;http.request&#39; -T fields -e http.user_agent |
+  sort | uniq -c | sort -nr
+
+# 4) 응답 코드 분포 — 404 급증 = 스캔
+tshark -r capture.pcapng -Y &#39;http.response&#39; -T fields -e http.response.code |
+  sort | uniq -c | sort -nr
+
+# 5) 파서를 우회한 확인 — Wireshark가 놓친 GET 라인까지
+strings -n 8 capture.pcapng | grep -E &#39;^GET /&#39; | sort -u | head -30
+
+# 6) 서버 로그와 대조 (있다면) — URI·UA·상태 코드가 동일하게 남는다
+grep -E &#39;&quot;GET /(uploads|backup)&#39; access.log</code></pre></div>
+<p>2)와 5)의 결과가 다르면 Wireshark가 일부 요청을 HTTP로 인식하지 못한 것이다. 비표준 포트(<code>Decode As</code>)나 잘린 캡처를 의심한다. 서버 로그가 함께 주어졌다면 6)이 최종 근거다 (<a href="./powershell-select-string.html">FOR-0121</a>).</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;침해된 웹서버에서 공격자가 유출한 파일 이름과, 유출에 사용한 도구를 구하세요.&quot;
+첨부: exfil.pcapng (12,904 packets, 9 MB)
+
+1. 첫 시도 (실패):
+   File &gt; Export Objects &gt; HTTP 를 열어 큰 파일을 찾으려 했다.
+   목록에 .zip 이 없고 .css/.js/.png 만 수백 개 나왔다.
+   원인: 유출 응답이 Transfer-Encoding: chunked 로 왔고,
+        Wireshark 가 이 응답을 객체 목록에 올리지 못한 상태였다.
+   -&gt; Export Objects 를 근거로 &quot;파일 전송이 없다&quot;고 결론내면 오답이다.
+
+2. 접근 변경 — 요청 측에서 확장자로 찾는다
+   필터:
+     http.request.method == &quot;GET&quot; &amp;&amp;
+     http.request.uri matches &quot;\\.(zip|rar|7z|tar|gz|sql|bak|db)($|\\?)&quot;
+
+   frame  host              uri                        user_agent
+   2455   shop.example.com  /backup/db_2026.zip        curl/8.4.0
+   2601   shop.example.com  /backup/db_2026.zip.md5    curl/8.4.0
+
+   -&gt; 후보 확보. 하지만 요청이 있었다는 사실만으로는 유출 확정이 아니다.
+
+3. 응답을 짝지어 성공 판정
+   tshark -r exfil.pcapng -Y &#39;http.response&#39; \
+     -T fields -e http.request_in -e http.response.code \
+               -e http.content_length -e http.transfer_encoding \
+               -e http.response_for.uri -E header=y | grep db_2026
+
+   2455  200  (빈칸)  chunked  http://shop.example.com/backup/db_2026.zip
+   2601  200  32              http://shop.example.com/backup/db_2026.zip.md5
+
+   -&gt; content_length 가 비어 있는 이유가 1단계 실패의 원인이었다(chunked).
+      크기는 Statistics &gt; Conversations 에서 확인한다.
+
+4. 실제 전송량 확인
+   필터: tcp.stream eq 21   (frame 2455 의 스트림)
+   Statistics &gt; Conversations &gt; TCP -&gt; 그 행의 Bytes = 4,201,880
+
+   -&gt; 4 MB 가 실제로 나갔다. 유출 확정.
+
+5. 도구 식별 — User-Agent 전수 조사
+   tshark -r exfil.pcapng -Y &#39;http.request&#39; -T fields -e http.user_agent |
+     sort | uniq -c | sort -nr
+
+      412 Mozilla/5.0 (Windows NT 10.0; Win64; x64) ... Chrome/122.0.0.0 ...
+       88 Mozilla/5.00 (Nikto/2.1.6) (Evasions:None) (Test:map_codes)
+       31 curl/8.4.0
+       14 sqlmap/1.7#stable (https://sqlmap.org)
+
+   -&gt; 유출 요청(frame 2455)의 UA 는 curl/8.4.0.
+      Nikto 는 정찰, sqlmap 은 침입 단계의 도구였다.
+
+6. 공격 흐름 재구성 — 같은 IP 로 전체를 본다
+   필터: ip.addr == 198.51.100.9 &amp;&amp; http.request
+
+   시각(UTC)      uri                              ua
+   07:11:03~07:14  /.git/config, /admin, /phpmyadmin ...  Nikto/2.1.6   (404 88건)
+   07:19:22~07:21  /product.php?id=1&#39;+UNION+SELECT... sqlmap/1.7        (200)
+   07:22:41        /uploads/av4tar.php?cmd=id         curl/8.4.0        (200, 34B)
+   07:24:10        /backup/db_2026.zip                curl/8.4.0        (200, 4 MB)
+
+   KST 로는 16:11 ~ 16:24.
+
+7. 교차검증 — 파서 우회
+   strings -n 8 exfil.pcapng | grep -E &#39;^GET /backup&#39;
+   GET /backup/db_2026.zip HTTP/1.1
+   -&gt; 요청 라인이 원문에도 존재. Wireshark 파싱 결과와 일치.
+
+정답: db_2026.zip / curl (정찰 Nikto, SQLi sqlmap)</code></pre></div>
+<p>1단계의 실패가 핵심이다. <strong>Export Objects의 부재는 파일 부재의 증거가 아니다.</strong> chunked 응답은 목록에서 빠질 수 있고, 그때는 요청 측 URI 확장자와 <code>Statistics &gt; Conversations</code>의 실제 바이트가 진실을 말한다. 그리고 <code>curl</code> 하나로 끝내지 않고 UA 빈도표를 전수 조사한 덕분에 정찰-침입-유출 3단 흐름이 드러났다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>http.request.method == &quot;GET&quot;</code> 에 <strong>따옴표와 대문자</strong>를 썼는가</li><li><code>.css</code>/<code>.js</code>/이미지를 제외 필터로 걸러냈는가 — 안 하면 노이즈에 묻힌다</li><li><code>http.host</code> <code>http.request.uri</code> <code>http.user_agent</code> <code>http.response.code</code>를 <strong>컬럼으로 올렸는가</strong></li><li>쿼리 문자열을 URL 디코딩했는가 — <code>%20</code>, <code>+</code>, <code>%2f</code>, 이중 인코딩(<code>%252e</code>)</li><li><code>contains &quot;../&quot;</code> 가 0건이면 <code>matches &quot;(%2e%2e|%252e)&quot;</code> 로 다시 시도했는가</li><li>확장자 필터(<code>matches &quot;\\.(zip|exe|ps1)($|\\?)&quot;</code>)를 돌렸는가</li><li><strong>응답 코드와 <code>http.content_length</code>로 성공 판정</strong>을 했는가</li><li><code>http.user_agent</code> 빈도표를 전수로 뽑았는가 — UA 종류 수 = 클라이언트 종류 수</li><li>UA가 <strong>빈 요청</strong>(<code>http.request &amp;&amp; !http.user_agent</code>)을 확인했는가</li><li><code>HEAD</code> / <code>OPTIONS</code> / <code>PUT</code> 도 확인했는가</li><li>Referer가 없는 GET을 따로 봤는가 — 스크립트 신호</li><li>Export Objects가 비었다면 chunked·비표준 포트·잘린 캡처를 확인했는가 (<a href="./export-objects-http.html">FOR-0165</a>)</li><li>시간을 UTC 절대시각으로 바꿨는가 (KST = UTC+9)</li><li>TLS뿐이면 SNI로 전환했는가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-002 — Wireshark Display Filter Reference: <code>http.request.method</code>, <code>http.request.uri</code>, <code>http.user_agent</code>, <code>http.referer</code>, <code>http.request_in</code>, <code>http.response_for.uri</code> 필드 이름과 자료형, <code>contains</code> / <code>matches</code> 연산자 동작</li><li>SRC-064 — RFC 9110 HTTP Semantics: GET/HEAD/OPTIONS 메서드 정의, <code>Referer</code> / <code>User-Agent</code> / <code>Content-Disposition</code> 헤더, <code>304 Not Modified</code> 의미</li><li>SRC-010 — tshark man page: <code>-Y</code>, <code>-T fields</code>, <code>-e</code>, <code>-E header=y</code>, <code>-E separator=</code></li><li>User-Agent 문자열의 버전 숫자(<code>curl/8.4.0</code>, <code>Nikto/2.1.6</code>, <code>Microsoft-CryptoAPI/10.0</code> 등)는 환경마다 다르다. <strong>고정 부분(도구 이름)만 판정 근거로 쓸 것</strong></li><li><code>http.request.uri.query</code>, <code>http.header</code> 처럼 버전에 따라 없을 수 있는 필드는 필터 입력창 색으로 존재를 확인할 것</li><li>메뉴 경로(<code>Apply as Column</code>, <code>View &gt; Time Display Format</code>)는 Wireshark 버전에 따라 다를 수 있으므로 실제 화면에서 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./http-request-basics.html">
+    <span class="rel-id">FOR-0156 · Network/PCAP</span>
+    Wireshark HTTP 필터 필드 레퍼런스: http.request부터 http.request_in까지
+  </a>
+  <a class="related-item" href="./http-post-find.html">
+    <span class="rel-id">FOR-0158 · Network/PCAP</span>
+    pcap에서 HTTP POST 찾아 본문·자격증명·업로드 파일 뽑기
+  </a>
+  <a class="related-item" href="./http-request-uri-filter.html">
+    <span class="rel-id">FOR-0159 · Network/PCAP</span>
+    http.request.uri 필터 실전: == / contains / matches 와 퍼센트 인코딩 함정
+  </a>
+  <a class="related-item" href="./wireshark-30sec-triage.html">
+    <span class="rel-id">FOR-0146 · Network/PCAP</span>
+    Wireshark 30초 트리아지: pcap을 받고 처음 할 다섯 가지
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./http-request-basics.html"><span class="rel-id">← FOR-0156</span>Wireshark HTTP 필터 필드 레퍼런스: http.request부터 http.request_in까지</a>
+<a class="related-item" href="./http-post-find.html"><span class="rel-id">FOR-0158 →</span>pcap에서 HTTP POST 찾아 본문·자격증명·업로드 파일 뽑기</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-get-전체를-표로-확보">1단계 — GET 전체를 표로 확보</a></li>
+<li class="toc-l3"><a href="#2단계-쿼리-문자열-명령과-공격-문자열이-여기-있다">2단계 — 쿼리 문자열: 명령과 공격 문자열이 여기 있다</a></li>
+<li class="toc-l3"><a href="#3단계-다운로드-파일-확장자로-찾는다">3단계 — 다운로드 파일: 확장자로 찾는다</a></li>
+<li class="toc-l3"><a href="#4단계-user-agent-도구를-특정한다">4단계 — User-Agent: 도구를 특정한다</a></li>
+<li class="toc-l3"><a href="#5단계-referer-유입-경로를-잇는다">5단계 — Referer: 유입 경로를 잇는다</a></li>
+<li class="toc-l3"><a href="#6단계-응답과-짝지어-성공-판정">6단계 — 응답과 짝지어 성공 판정</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

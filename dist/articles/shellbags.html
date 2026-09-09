@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>ShellBags로 삭제된 폴더 이름과 USB 경로 복원하기 · FOR-0068 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Registry">Registry</a> / FOR-0068
+      </div>
+      <header class="article-head">
+        <h1>ShellBags로 삭제된 폴더 이름과 USB 경로 복원하기</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Registry</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>ShellBags는 탐색기가 폴더별 뷰 설정을 저장하려고 만든 부산물이지만, 그 부산물인 BagMRU 트리에 이미 삭제되거나 언마운트된 폴더·USB·네트워크 경로의 이름이 그대로 남아 있으므로, 디스크에 흔적이 없는 폴더 계층을 복원하는 거의 유일한 수단이다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>ShellBags Explorer, SBECmd, RegistryExplorer, RegRipper, rla, FTK Imager, KAPE, Timeline Explorer</td></tr>
+<tr><th>artifact</th><td><code>ShellBags</code> · <code>BagMRU</code> · <code>Bags</code> · <code>NodeSlot</code> · <code>NodeSlots</code> · <code>MRUListEx</code> · <code>UsrClass.dat</code> · <code>shell item</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Users\&lt;user&gt;\AppData\Local\Microsoft\Windows\UsrClass.dat</code> · <code>C:\Users\&lt;user&gt;\AppData\Local\Microsoft\Windows\UsrClass.dat.LOG1</code> · <code>C:\Users\&lt;user&gt;\NTUSER.DAT</code></td></tr>
+<tr><th>레지스트리</th><td><code>UsrClass.dat\Local Settings\Software\Microsoft\Windows\Shell\BagMRU</code> · <code>UsrClass.dat\Local Settings\Software\Microsoft\Windows\Shell\Bags</code> · <code>HKCU\Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\BagMRU</code> · <code>HKCU\Software\Microsoft\Windows\Shell\BagMRU</code> · <code>HKCU\Software\Microsoft\Windows\Shell\Bags</code> · <code>HKCU\Software\Microsoft\Windows\ShellNoRoam\BagMRU</code></td></tr>
+<tr><th>로그 필드</th><td><code>AbsolutePath</code> · <code>ShellType</code> · <code>NodeSlot</code> · <code>MRUPosition</code> · <code>LastWriteTime</code> · <code>CreatedOn</code> · <code>ModifiedOn</code> · <code>AccessedOn</code> · <code>MFTEntry</code> · <code>MFTSequenceNumber</code> · <code>HasExplored</code></td></tr>
+<tr><th>파일 형식</th><td><code>regf</code></td></tr>
+<tr><th>검색 별칭</th><td>쉘백 · shellbag · 폴더 열어본 기록 · 삭제된 폴더 이름 찾기 · usb 폴더 구조 · 탐색기로 뭘 봤나 · bagmru</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>ShellBags는 탐색기가 폴더별 뷰 설정을 저장하려고 만든 부산물이지만, 그 부산물인 <code>BagMRU</code> 트리에 <strong>이미 삭제되거나 언마운트된 폴더·USB·네트워크 경로의 이름이 그대로 남아</strong> 있으므로, 디스크에 흔적이 없는 폴더 계층을 복원하는 거의 유일한 수단이다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;삭제된 폴더의 이름을 구하시오&quot; — 디스크에서 폴더가 사라졌는데 이름을 알아야 한다</li><li>&quot;USB 안에 어떤 폴더가 있었는가&quot; — USB 이미지가 없고 PC 이미지만 있다</li><li>&quot;피의자가 접근한 네트워크 공유 경로는?&quot; — <code>\\10.10.20.5\share\...</code></li><li>&quot;이 폴더를 사용자가 실제로 열어 봤는가&quot; — 자동 생성 파일과 사람의 탐색을 구분해야 한다</li><li>압축 파일 안의 폴더, ZIP 내부 탐색 흔적</li></ul>
+<p><code>$MFT</code>가 &quot;그 폴더가 이 볼륨에 있었다&quot;를 말해 준다면, ShellBags는 <strong>&quot;그 폴더를 이 사용자가 탐색기로 열었다&quot;</strong>를 말해 준다. 볼륨 자체가 없어졌을 때도 남는 것이 결정적 차이다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>첨부에 <code>UsrClass.dat</code>이 있다 → ShellBags는 무조건 확인 대상</li><li>지문에 &quot;폴더&quot;, &quot;경로&quot;, &quot;디렉터리 구조&quot;, &quot;어디에 저장했나&quot;가 나온다</li><li><code>USBSTOR</code>에서 장치는 찾았는데 <strong>그 안의 내용</strong>을 물어본다</li><li>레지스트리 트리에 <code>0</code>, <code>1</code>, <code>2</code>, <code>3</code> 같은 숫자 이름 서브키가 계층으로 늘어서 있고 값이 전부 이진이다 → <code>BagMRU</code>다</li><li><code>$MFT</code>·<code>$UsnJrnl</code>에 폴더 이름이 전혀 없는데 문제는 폴더 이름을 요구한다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">rip.exe -r &quot;C:\case\UsrClass.dat&quot; -p shellbags &gt; shellbags.txt</code></pre></div>
+<p>GUI라면 ShellBags Explorer에 <code>UsrClass.dat</code>을 올리는 것이 가장 빠르다. 트리 좌측이 복원된 폴더 계층이고, 우측 그리드가 항목별 시각이다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">ShellBags Explorer -&gt; File -&gt; Load offline hive -&gt; UsrClass.dat
+SBECmd.exe -d C:\case\hives --csv C:\case\out</code></pre></div>
+<p>RegistryExplorer로 열 때의 경로는 다음 하나다. <strong><code>NTUSER.DAT</code>이 아니다.</strong></p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">UsrClass.dat\Local Settings\Software\Microsoft\Windows\Shell\BagMRU</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-hive-확보와-로그-반영">1단계 — hive 확보와 로그 반영</h3>
+<p><code>UsrClass.dat</code>은 사용자가 로그온 중이면 잠겨 있고, 최신 변경이 <code>.LOG1</code>/<code>.LOG2</code>에만 있을 수 있다. <strong>폴더를 하나 여는 것만으로 갱신되는 키</strong>라서 트랜잭션 로그 미반영의 영향이 특히 크다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># UsrClass.dat, UsrClass.dat.LOG1, UsrClass.dat.LOG2 를 같은 폴더에 꺼낸 뒤
+rla.exe -f &quot;C:\case\UsrClass.dat&quot; --out &quot;C:\case\clean&quot;</code></pre></div>
+<p>추출 경로는 사용자마다 다르다. <strong><code>C:\Users</code> 아래 모든 프로필에서 꺼낸다.</strong></p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">C:\Users\&lt;user&gt;\AppData\Local\Microsoft\Windows\UsrClass.dat
+C:\Users\&lt;user&gt;\NTUSER.DAT                 (보조 BagMRU)</code></pre></div>
+<h3 id="2단계-두-개의-bagmru-위치">2단계 — 두 개의 BagMRU 위치</h3>
+<div class="table-wrap"><table><thead><tr><th>hive</th><th>키 경로</th><th>무엇이 들어 있나</th></tr></thead><tbody><tr><td><code>UsrClass.dat</code></td><td><code>Local Settings\Software\Microsoft\Windows\Shell\BagMRU</code></td><td><strong>주 트리.</strong> 로컬 폴더·USB·네트워크·ZIP 내부까지 대부분 여기</td></tr><tr><td><code>UsrClass.dat</code></td><td><code>Local Settings\Software\Microsoft\Windows\Shell\Bags</code></td><td><code>NodeSlot</code>이 가리키는 뷰 설정 저장소</td></tr><tr><td><code>UsrClass.dat</code></td><td><code>Wow6432Node\Local Settings\Software\Microsoft\Windows\Shell\BagMRU</code></td><td>32비트 컨텍스트용. 환경에 따라 존재. 놓치기 쉽다</td></tr><tr><td><code>NTUSER.DAT</code></td><td><code>Software\Microsoft\Windows\Shell\BagMRU</code>, <code>...\Bags</code></td><td>데스크톱 등 일부 항목. 주 트리보다 훨씬 작지만 <strong>여기만 남은 항목이 있을 수 있다</strong></td></tr><tr><td><code>NTUSER.DAT</code></td><td><code>Software\Microsoft\Windows\ShellNoRoam\BagMRU</code></td><td>XP 계열 레거시 위치</td></tr></tbody></table></div>
+<p><strong>네 위치를 모두 파싱한다.</strong> ShellBags Explorer/SBECmd에 <code>UsrClass.dat</code>과 <code>NTUSER.DAT</code>을 함께 주면 한 번에 처리한다.</p>
+<h3 id="3단계-bagmru-트리-구조">3단계 — BagMRU 트리 구조</h3>
+<p><code>BagMRU</code>는 <strong>폴더 계층을 그대로 옮긴 트리</strong>다. 루트가 데스크톱이고, 그 아래 숫자 서브키가 한 단계씩 내려간다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">BagMRU                          &lt;- 데스크톱 (루트)
+ ├ NodeSlot     = 1
+ ├ NodeSlots    = (REG_BINARY)  &lt;- 어느 Bags 슬롯이 사용 중인지
+ ├ MRUListEx    = (REG_BINARY)  &lt;- 자식 0,1,2.. 를 최근 사용 순으로 나열
+ ├ 0            = (REG_BINARY)  &lt;- 자식 키 &quot;0&quot; 에 해당하는 shell item 바이트
+ ├ 1            = (REG_BINARY)
+ ├ 0\           &lt;- 서브키. 여기 안의 값 이름도 다시 0,1,2..
+ │   ├ NodeSlot  = 12
+ │   ├ MRUListEx
+ │   ├ 0         = (REG_BINARY)
+ │   └ 0\ ...
+ └ 1\ ...</code></pre></div>
+<p>핵심 규칙 3개다.</p>
+<div class="table-wrap"><table><thead><tr><th>규칙</th><th>내용</th></tr></thead><tbody><tr><td>이름</td><td>서브키 <code>N</code>의 <strong>이름 문자열이 정보가 아니다.</strong> 그 폴더 이름은 <strong>부모 키의 값 <code>N</code></strong> 에 든 shell item 바이트 안에 있다</td></tr><tr><td>순서</td><td><code>MRUListEx</code>는 4바이트 리틀엔디언 인덱스를 최근 사용 순으로 나열하고 <code>FF FF FF FF</code>로 끝난다. <strong>첫 인덱스가 가장 최근에 접근한 자식</strong></td></tr><tr><td>뷰 설정</td><td><code>NodeSlot</code> 값이 <code>Bags\&lt;NodeSlot&gt;\Shell</code> 을 가리킨다. 그 아래에 <code>ItemPos...</code>, <code>Mode</code>, <code>IconSize</code>, <code>ColInfo</code> 등 창 설정이 있다</td></tr></tbody></table></div>
+<p><code>Bags\&lt;N&gt;\Shell</code> 아래에 <code>ItemPos1920x1080(1)</code> 같은 값이 있으면 <strong>그 해상도의 창에서 아이콘을 직접 배치했다는 뜻</strong>이므로, 단순 통과가 아니라 사람이 그 폴더를 붙잡고 작업한 근거가 된다.</p>
+<h3 id="4단계-shell-item-안에-무엇이-들어-있나">4단계 — shell item 안에 무엇이 들어 있나</h3>
+<p>각 이진 값은 <code>ITEMIDLIST</code>의 한 조각(shell item)이다. 첫 2바이트가 크기, 그다음 1바이트가 <strong>class type</strong>이고, 그 값으로 항목 종류가 갈린다.</p>
+<div class="table-wrap"><table><thead><tr><th>class type</th><th>항목 종류</th><th>파서가 붙이는 이름</th></tr></thead><tbody><tr><td><code>0x1F</code></td><td>루트 폴더 (Known Folder GUID)</td><td><code>Root folder</code> — 내 PC, 네트워크, 휴지통 등</td></tr><tr><td><code>0x2X</code></td><td>볼륨</td><td><code>Volume</code> — <code>C:\</code>, <code>E:\</code> 같은 드라이브</td></tr><tr><td><code>0x31</code></td><td><strong>디렉터리</strong></td><td><code>Directory</code> — 가장 중요한 종류</td></tr><tr><td><code>0x32</code></td><td>파일</td><td><code>File entry</code></td></tr><tr><td><code>0x4X</code></td><td>네트워크 위치</td><td><code>Network location</code> — <code>\\host\share</code></td></tr><tr><td><code>0x61</code></td><td>URI</td><td>FTP/HTTP 등</td></tr><tr><td><code>0x71</code></td><td>제어판</td><td><code>Control Panel</code></td></tr></tbody></table></div>
+<p><code>0x31</code> 디렉터리 항목 안에는 최소한 다음이 들어 있다.</p>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>내용</th><th>주의</th></tr></thead><tbody><tr><td>짧은 이름(8.3)</td><td><code>PROJEC~1</code> 형태</td><td>긴 이름은 확장 블록에 따로 있다</td></tr><tr><td>수정 시각</td><td><strong>DOS date/time</strong></td><td>2초 단위, <strong>로컬 시각</strong>. UTC가 아니다</td></tr><tr><td>파일 속성</td><td><code>FILE_ATTRIBUTE_DIRECTORY</code> 등</td><td>폴더/파일 판정</td></tr><tr><td>확장 블록 <code>0xBEEF0004</code></td><td>긴 이름(UTF-16LE), 생성·접근 DOS 시각</td><td>버전에 따라 필드가 늘어난다</td></tr><tr><td>확장 블록의 파일 참조</td><td><strong>MFT 엔트리 번호 + 시퀀스 번호</strong></td><td>확장 블록 버전이 충분히 높을 때만 존재</td></tr></tbody></table></div>
+<p><strong>MFT 엔트리 번호가 들어 있는 것이 ShellBags의 숨은 무기다.</strong> 폴더 이름이 아니라 번호로 <code>$MFT</code>를 조회하면 이름이 바뀌었거나 삭제된 엔트리도 특정된다 (<a href="./mft-basics.html">FOR-0021</a>).</p>
+<p>바이트 오프셋 단위의 수동 파싱은 확장 블록 버전마다 필드 위치가 달라진다. <strong>오프셋을 세지 말고 파서 출력을 쓴다</strong> — 이 글은 필드의 존재와 의미까지만 단정한다.</p>
+<h3 id="5단계-파서로-뽑아-표로-읽는다">5단계 — 파서로 뽑아 표로 읽는다</h3>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 폴더에 UsrClass.dat / NTUSER.DAT 을 모아 놓고 일괄 처리
+SBECmd.exe -d &quot;C:\case\clean&quot; --csv &quot;C:\case\out&quot;</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 키트 안 도구만으로 갈 때
+rip.exe -r &quot;C:\case\clean\UsrClass.dat&quot; -p shellbags &gt; shellbags.txt</code></pre></div>
+<p>RegRipper 출력 예시다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Shellbags
+Local Settings\Software\Microsoft\Windows\Shell\BagMRU
+
+2026-04-08 14:02:11Z  Desktop\My Computer\E:\  [Volume]
+2026-04-08 14:02:19Z  Desktop\My Computer\E:\proj_backup  [Directory]
+2026-04-08 14:03:44Z  Desktop\My Computer\E:\proj_backup\2026_price  [Directory]
+2026-04-08 14:11:02Z  Desktop\Network\10.10.20.5\design  [Network]
+2026-03-30 21:40:55Z  Desktop\My Computer\C:\Users\hjlee\Documents\salary  [Directory]</code></pre></div>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p>SBECmd/ShellBags Explorer의 주요 컬럼이다.</p>
+<div class="table-wrap"><table><thead><tr><th>컬럼</th><th>의미</th><th>어떻게 쓰나</th></tr></thead><tbody><tr><td><code>AbsolutePath</code></td><td>트리를 거슬러 재구성한 전체 경로</td><td><strong>답으로 그대로 쓰는 값.</strong> 삭제된 폴더 이름이 여기 나온다</td></tr><tr><td><code>ShellType</code></td><td>shell item class type의 이름</td><td><code>Directory</code>/<code>Volume</code>/<code>Network</code>를 구분해 USB·공유 판정</td></tr><tr><td><code>Value</code></td><td>그 단계의 항목 이름</td><td>마지막 구성요소</td></tr><tr><td><code>NodeSlot</code></td><td><code>Bags\&lt;N&gt;</code> 슬롯 번호</td><td>뷰 설정이 실제로 저장됐는가 = 창을 열었는가의 보조 근거</td></tr><tr><td><code>MRUPosition</code></td><td><code>MRUListEx</code> 안의 위치</td><td><code>0</code>이면 그 부모에서 <strong>가장 최근에 접근한 자식</strong></td></tr><tr><td><code>LastWriteTime</code></td><td>그 <code>BagMRU</code> 키의 LastWrite (FILETIME, <strong>UTC</strong>)</td><td>사실상 &quot;이 폴더에 마지막으로 무언가 일어난 시각&quot;</td></tr><tr><td><code>CreatedOn</code> / <code>ModifiedOn</code> / <code>AccessedOn</code></td><td>shell item 안에 박힌 <strong>대상 폴더의</strong> DOS 시각</td><td><strong>로컬 시각, 2초 단위.</strong> 기록된 시점의 스냅숏이다</td></tr><tr><td><code>MFTEntry</code> / <code>MFTSequenceNumber</code></td><td>확장 블록의 파일 참조</td><td><code>$MFT</code> 조회 키. 비어 있는 행도 많다</td></tr><tr><td><code>HasExplored</code></td><td>뷰 설정까지 만들어졌는가</td><td>참이면 실제로 창으로 열어 봤다는 쪽에 무게</td></tr><tr><td><code>FirstInteracted</code> / <code>LastInteracted</code></td><td>파서가 유도한 상호작용 시각</td><td>항목 종류에 따라 비어 있다. 근거로 쓸 때 원본 필드를 함께 제시</td></tr></tbody></table></div>
+<h3 id="두-종류의-시각을-절대-섞지-않는다">두 종류의 시각을 절대 섞지 않는다</h3>
+<div class="table-wrap"><table><thead><tr><th>시각</th><th>단위/기준</th><th>무엇의 시각인가</th></tr></thead><tbody><tr><td><code>LastWriteTime</code></td><td>FILETIME, 1601-01-01 UTC 기준 100ns → <strong>UTC</strong></td><td><strong>레지스트리 키</strong>가 갱신된 시각 ≈ 사용자가 탐색한 시각</td></tr><tr><td><code>CreatedOn</code>/<code>ModifiedOn</code>/<code>AccessedOn</code></td><td>DOS date/time, 2초 단위 → <strong>로컬 시각</strong></td><td><strong>대상 폴더 자체</strong>의 타임스탬프. 탐색 시각이 아니다</td></tr></tbody></table></div>
+<p><code>LastWriteTime</code>을 KST로 답하려면 +9시간 한다. 반대로 <code>ModifiedOn</code>은 이미 그 PC의 로컬 시각이므로 <strong>더하면 안 된다.</strong> 시간대 기준은 <code>SYSTEM\ControlSet001\Control\TimeZoneInformation</code>으로 먼저 확정한다 (<a href="./system-timezone.html">FOR-0054</a>).</p>
+<p>이 두 시각의 조합이 강력하다. <strong><code>ModifiedOn</code>은 &quot;탐색 당시 그 폴더의 수정 시각&quot;의 스냅숏</strong>이므로, 현재 <code>$MFT</code>의 값과 다르면 그 사이에 폴더가 변경됐거나 타임스탬프가 조작된 것이다 (<a href="./timestomp-detection.html">FOR-0038</a>).</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>ShellBags에서 얻은 것</th><th>다음에 열 것</th><th>무엇을 확인하나</th></tr></thead><tbody><tr><td><code>E:\</code> 같은 이동식 볼륨 경로</td><td><code>SYSTEM\ControlSet001\Enum\USBSTOR</code>, <code>SYSTEM\MountedDevices</code></td><td>그 드라이브 문자가 어느 USB였는지, 연결 시각</td></tr><tr><td>볼륨 GUID / 드라이브 문자</td><td><code>NTUSER.DAT\...\Explorer\MountPoints2</code></td><td>그 사용자가 실제로 마운트했는가</td></tr><tr><td><code>\\host\share</code> 경로</td><td><code>MountPoints2</code>의 <code>##host#share</code>, 4624 Logon Type 3</td><td>원격 접근 사실과 계정</td></tr><tr><td><code>MFTEntry</code> 번호</td><td><code>$MFT</code> (<a href="./mft-basics.html">FOR-0021</a>)</td><td>현재 이름·삭제 여부·MACB</td></tr><tr><td>폴더 이름</td><td><code>RecentDocs</code>, LNK, Jump List</td><td>그 폴더 <strong>안의 파일</strong>을 열었는가</td></tr><tr><td>탐색 시각</td><td><code>UserAssist</code> (<a href="./userassist.html">FOR-0061</a>), BAM</td><td>같은 시각대에 어떤 프로그램을 실행했는가</td></tr><tr><td>사용자별 <code>UsrClass.dat</code></td><td><code>SOFTWARE\...\ProfileList</code></td><td>어느 SID의 활동인가</td></tr><tr><td>ZIP 내부 경로 항목</td><td><code>$MFT</code>의 그 압축 파일, 브라우저 다운로드</td><td>압축 파일의 출처</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>NTUSER.DAT</code>에서 <code>BagMRU</code>를 찾고 &quot;없다&quot;고 결론 내는 것</strong> → Windows 7 이후 주 트리는 <code>UsrClass.dat</code>에 있다 → <code>AppData\Local\Microsoft\Windows\UsrClass.dat</code>을 꺼낸다. <code>NTUSER.DAT</code> 쪽은 보조로만 본다.</li><li><strong>파서 없이 트리를 손으로 읽는 것</strong> → 서브키 이름은 <code>0</code>, <code>1</code>, <code>2</code>뿐이고 폴더 이름은 부모 키의 이진 값 안에 있다. 확장 블록 버전에 따라 필드 위치가 달라 손으로는 사실상 해석 불가다 → ShellBags Explorer/SBECmd, RegistryExplorer 플러그인, RegRipper <code>shellbags</code> 중 하나를 반드시 쓴다.</li><li><strong>ShellBags를 파일 접근 증거로 쓰는 것</strong> → ShellBags는 <strong>폴더</strong>를 탐색기 창으로 열었다는 증거다. 그 안의 파일을 읽었다는 뜻이 아니다 → 파일 접근은 <code>RecentDocs</code>·LNK·Jump List·<code>$MFT</code>의 <code>$SI</code> accessed로 간다.</li><li><strong>키 <code>LastWrite</code>를 &quot;이 폴더를 방문한 시각&quot;으로 단정하는 것</strong> → 자식이 추가되거나 <code>MRUListEx</code>가 재배열될 때도 갱신된다. 부모 키는 자식 폴더 하나를 새로 열 때마다 갱신된다 → &quot;그 시각에 이 계층에서 무언가 있었다&quot;까지만 주장하고, 자식 항목의 시각과 함께 제시한다.</li><li><strong><code>ModifiedOn</code>에 +9시간을 더하는 것</strong> → shell item의 DOS date/time은 이미 로컬 시각이다. FILETIME인 <code>LastWriteTime</code>에만 보정한다 → 컬럼별로 기준을 확인하고 표에 단위를 명시한다.</li><li><strong>항목이 있으면 사람이 열었다고 단정하는 것</strong> → 설치 프로그램, 저장/열기 대화상자, 일부 셸 확장이 항목을 만들 수 있다 → <code>NodeSlot</code>/<code>HasExplored</code>/<code>Bags</code>의 <code>ItemPos</code> 존재 여부로 &quot;창을 실제로 열었는가&quot;를 보강하고, <code>UserAssist</code>·<code>RecentDocs</code>와 교차한다.</li><li><strong>항목이 없으면 방문하지 않았다고 단정하는 것</strong> → 탐색기가 아닌 프로그램(콘솔 <code>cd</code>, 스크립트, 애플리케이션 자체 파일 대화상자 일부)으로 접근하면 남지 않는다. 사용자가 <code>Bags</code>/<code>BagMRU</code>를 삭제했을 수도 있다 → 부재는 반증이 아니다. <code>$UsnJrnl</code>·LNK로 보완한다.</li><li><strong>사용자 한 명만 보는 것</strong> → ShellBags는 프로필별이다 → <code>C:\Users</code> 아래 모든 <code>UsrClass.dat</code>을 센 뒤 시작한다 (<a href="./registry-hive-map.html">FOR-0051</a>).</li><li><strong><code>rla</code>를 건너뛰는 것</strong> → 폴더를 열 때마다 갱신되는 키라 마지막 탐색이 <code>.LOG1</code>에만 있을 수 있다 → 반드시 반영 후 파싱한다.</li><li><strong><code>Wow6432Node</code> 아래 사본을 빼먹는 것</strong> → 32비트 컨텍스트의 탐색 흔적이 그쪽에만 남는 경우가 있다 → 파서에 hive 전체를 주고 결과 개수를 비교한다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<p>같은 &quot;이 폴더를 열었다&quot;를 최소 두 곳에서 확인한다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) ShellBags — 경로 자체
+Select-String -Path &quot;C:\case\out\*_UsrClass.csv&quot; -Pattern &#39;proj_backup&#39;</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 2) MountPoints2 — 그 드라이브를 이 사용자가 마운트했는가
+rip.exe -r &quot;C:\case\clean\NTUSER.DAT&quot; -p mp2</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 3) USBSTOR — 드라이브 문자의 실체와 연결 시각
+rip.exe -r &quot;C:\case\clean\SYSTEM&quot; -p usbstor</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 4) RecentDocs / LNK — 그 폴더 안의 파일을 실제로 열었는가
+rip.exe -r &quot;C:\case\clean\NTUSER.DAT&quot; -p recentdocs</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>조합</th><th>해석</th></tr></thead><tbody><tr><td>ShellBags + <code>MountPoints2</code> + <code>USBSTOR</code> 일치</td><td>그 사용자가 그 USB를 꽂고 그 폴더를 열었다 — 결론 확정</td></tr><tr><td>ShellBags에만 있고 <code>USBSTOR</code>에 장치 없음</td><td>다른 PC에서 로밍된 프로필이거나 네트워크/가상 경로. <code>ShellType</code> 재확인</td></tr><tr><td>ShellBags에는 있고 <code>$MFT</code>에 폴더 없음</td><td><strong>삭제된 폴더.</strong> ShellBags가 이름의 유일한 근거가 된다</td></tr><tr><td>ShellBags 시각과 <code>$UsnJrnl</code> 폴더 생성 시각이 어긋남</td><td>폴더가 나중에 다시 만들어졌거나 시스템 시각 조작</td></tr></tbody></table></div>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;사용자 hjlee가 외부 저장장치로 옮긴 자료의 폴더 이름과 그 시각(KST)을 구하시오.
+ USB 이미지는 확보되지 않았다.
+ 첨부: SYSTEM, SOFTWARE, SAM, NTUSER.DAT(+LOG1/2), UsrClass.dat(+LOG1/2)&quot;
+
+1. 첫 시도 (실패):
+   RegistryExplorer 로 NTUSER.DAT 을 열고
+   NTUSER.DAT\Software\Microsoft\Windows\Shell\BagMRU 로 이동
+   -&gt; 서브키가 2개뿐이고 전부 Desktop 관련. USB 경로가 없다.
+      &quot;이 사용자는 USB 폴더를 열지 않았다&quot;고 결론 낼 뻔했다.
+
+   왜 틀렸나:
+   Windows 7 이후 ShellBags 의 주 트리는 UsrClass.dat 에 있다.
+   NTUSER.DAT 쪽은 데스크톱 등 일부 항목만 담은 보조 트리다.
+
+2. 접근 변경 — UsrClass.dat + 로그 반영
+   rla.exe -f UsrClass.dat --out clean\
+   SBECmd.exe -d clean\ --csv out\
+
+   AbsolutePath                                      ShellType  MRUPosition  LastWriteTime
+   Desktop\My Computer\E:\                           Volume     0            2026-04-08 14:02:11Z
+   Desktop\My Computer\E:\proj_backup                Directory  0            2026-04-08 14:02:19Z
+   Desktop\My Computer\E:\proj_backup\2026_price     Directory  0            2026-04-08 14:03:44Z
+   Desktop\My Computer\C:\Users\hjlee\Documents\salary  Directory 1          2026-03-30 21:40:55Z
+
+3. 두 번째로 틀린 판단:
+   &quot;E: 는 D 다음 드라이브니까 두 번째 파티션&quot;이라고 가정했다.
+   -&gt; MountedDevices 를 보니 \DosDevices\E: 의 이진 값이
+      \??\USBSTOR#Disk&amp;Ven_SanDisk&amp;Prod_Cruzer_Blade&amp;Rev_1.00#4C530001231205117495&amp;0#{...}
+      = 이동식 USB 였다. 파티션이 아니다.
+      드라이브 문자는 추측하지 않고 MountedDevices 로 확인한다.
+
+4. 사용자 특정
+   SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList
+     S-1-5-21-3623811015-3361044348-30300820-1002 -&gt; C:\Users\hjlee
+   UsrClass.dat 을 꺼낸 프로필이 hjlee 이므로 활동 주체 확정.
+
+5. 시간대 보정
+   SYSTEM\ControlSet001\Control\TimeZoneInformation
+     TimeZoneKeyName = Korea Standard Time,  ActiveTimeBias = 0xFFFFFDE4 (= -540분)
+   LastWriteTime 은 FILETIME(UTC) 이므로 +9h
+     2026-04-08 14:03:44Z -&gt; 2026-04-08 23:03:44 KST
+
+   주의: 같은 행의 ModifiedOn 은 DOS date/time = 이미 로컬 시각이므로 더하지 않는다.
+
+6. 교차검증
+   rip.exe -r clean\NTUSER.DAT -p mp2
+     -&gt; {6ac1... } 및 E 항목 존재 = hjlee 세션에서 마운트됨
+   rip.exe -r clean\SYSTEM -p usbstor
+     -&gt; Cruzer Blade, LastArrival 2026-04-08 14:01:58Z (= 23:01:58 KST)
+   USB 연결 13초 뒤 E:\ 탐색, 21초 뒤 proj_backup 진입 — 순서가 자연스럽다.
+
+7. $MFT 대조
+   E: 는 이미지가 없으므로 확인 불가.
+   C:\Users\hjlee\Documents\salary 는 $MFT 에 없다 -&gt; 삭제된 폴더.
+   ShellBags 가 그 이름의 유일한 근거다.
+
+정답:
+  E:\proj_backup\2026_price — 2026-04-08 23:03:44 KST 탐색
+  (원본 폴더 C:\Users\hjlee\Documents\salary 는 삭제됨, ShellBags 에만 이름이 남음)</code></pre></div>
+<p>1단계와 3단계가 이 글의 요점이다. <strong>hive를 잘못 골라 &quot;흔적 없음&quot;으로 결론 내는 것, 드라이브 문자를 추측하는 것</strong>이 ShellBags 문제의 대표적 두 오답이다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>UsrClass.dat</code>을 열었는가 — <code>NTUSER.DAT</code>만 봤다면 그것이 원인이다</li><li><code>rla</code>로 <code>.LOG1</code>/<code>.LOG2</code>를 반영했는가</li><li><code>NTUSER.DAT</code>의 <code>Shell\BagMRU</code>, <code>ShellNoRoam\BagMRU</code>, <code>Wow6432Node</code> 사본까지 봤는가</li><li><code>C:\Users</code> 아래 <strong>모든</strong> 프로필의 <code>UsrClass.dat</code>을 처리했는가</li><li><code>ShellType</code>을 확인했는가 — <code>Volume</code>/<code>Network</code>/<code>Directory</code>에 따라 pivot 대상이 다르다</li><li>드라이브 문자를 <code>MountedDevices</code>로 실체 확인했는가 — 추측 금지</li><li><code>LastWriteTime</code>(UTC)과 <code>ModifiedOn</code>(로컬)을 섞지 않았는가</li><li><code>MFTEntry</code>가 있는 행을 <code>$MFT</code>로 조회했는가 — 이름이 바뀐 폴더도 특정된다</li><li>항목이 하나도 없다면 → 탐색기가 아닌 경로로 접근했을 가능성. <code>$UsnJrnl</code>·LNK·Jump List·콘솔 히스토리로 전환</li><li>파서 결과가 비었다면 → hive를 잘못 지정했거나 플러그인 이름이 틀렸다. <code>rip.exe -l</code>로 플러그인 이름을 확인한다</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-017 — Microsoft Learn, Windows Registry hives and file locations: <code>UsrClass.dat</code>이 <code>HKCU\Software\Classes</code>로 마운트된다는 점, 사용자 hive의 위치</li><li>SRC-004 — Eric Zimmerman 문서: ShellBags Explorer/SBECmd의 출력 컬럼, RegistryExplorer의 ShellBags 플러그인, <code>rla</code>의 트랜잭션 로그 반영</li><li>SRC-100 — Microsoft Learn, Known Folder GUIDs: <code>0x1F</code> 루트 폴더 항목의 GUID가 어떤 폴더에 대응하는지 대조표</li><li>shell item(<code>ITEMIDLIST</code>)의 <strong>바이트 오프셋과 확장 블록(<code>0xBEEF0004</code>) 내부 필드 위치는 확장 블록 버전마다 다르므로 이 글은 필드의 존재와 의미까지만 단정하고 오프셋은 파서에 맡긴다.</strong> 수동 파싱이 필요하면 libyal의 shell item 포맷 문서를 참조할 것 (현재 <code>research/sources.json</code>에 미등록)</li><li>SBECmd/ShellBags Explorer의 컬럼명(<code>HasExplored</code>, <code>FirstInteracted</code> 등)과 RegRipper 플러그인 출력 형식은 도구 버전에 따라 다를 수 있으므로 실제 화면에서 확인할 것</li><li><code>Wow6432Node</code> 아래 <code>BagMRU</code> 사본의 존재 여부는 환경에 따라 다르므로 실제 hive에서 확인할 것</li><li>mini walkthrough의 시각·SID·시리얼은 설명을 위한 예시 값이다</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./usrclass-dat.html">
+    <span class="rel-id">FOR-0058 · Registry</span>
+    UsrClass.dat 기본: ShellBags가 사는 hive와 HKCU\Software\Classes
+  </a>
+  <a class="related-item" href="./recentdocs.html">
+    <span class="rel-id">FOR-0062 · Registry</span>
+    RecentDocs로 최근 열어본 문서와 확장자별 MRU 순서 확인
+  </a>
+  <a class="related-item" href="./usbstor.html">
+    <span class="rel-id">FOR-0066 · Registry</span>
+    USBSTOR 키로 연결된 USB 저장장치와 시리얼 번호 찾기
+  </a>
+  <a class="related-item" href="./registry-hive-map.html">
+    <span class="rel-id">FOR-0051 · Registry</span>
+    Registry hive 전체 지도: 루트키와 디스크상 파일 대응표
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./mounteddevices.html"><span class="rel-id">← FOR-0067</span>MountedDevices로 드라이브 문자와 볼륨을 매핑하기</a>
+<a class="related-item" href="./muicache.html"><span class="rel-id">FOR-0069 →</span>MUICache로 실행된 프로그램의 경로와 FileDescription 확인</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-hive-확보와-로그-반영">1단계 — hive 확보와 로그 반영</a></li>
+<li class="toc-l3"><a href="#2단계-두-개의-bagmru-위치">2단계 — 두 개의 BagMRU 위치</a></li>
+<li class="toc-l3"><a href="#3단계-bagmru-트리-구조">3단계 — BagMRU 트리 구조</a></li>
+<li class="toc-l3"><a href="#4단계-shell-item-안에-무엇이-들어-있나">4단계 — shell item 안에 무엇이 들어 있나</a></li>
+<li class="toc-l3"><a href="#5단계-파서로-뽑아-표로-읽는다">5단계 — 파서로 뽑아 표로 읽는다</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l3"><a href="#두-종류의-시각을-절대-섞지-않는다">두 종류의 시각을 절대 섞지 않는다</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Registry LastWrite 시각을 믿으면 안 되는 7가지 경우 · FOR-0077 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Registry">Registry</a> / FOR-0077
+      </div>
+      <header class="article-head">
+        <h1>Registry LastWrite 시각을 믿으면 안 되는 7가지 경우</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Registry</span>
+      <span class="badge badge-type">트러블슈팅</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>레지스트리 LastWrite는 키 단위 시각이고 값 단위 시각은 존재하지 않는다 — 값 10개인 키에서 어느 값이 언제 바뀌었는지 알 수 없으므로, 시각을 근거로 쓸 때는 값 데이터 안에 자체 FILETIME을 담은 키(UserAssist 0x3C, BAM 앞 8바이트, TypedURLsTime, NetworkList)를 우선한다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>RegistryExplorer, RegRipper, rla, DCode, Timeline Explorer, HxD</td></tr>
+<tr><th>artifact</th><td><code>LastWrite</code> · <code>nk record</code> · <code>vk record</code> · <code>MRUListEx</code> · <code>트랜잭션 로그</code> · <code>regf</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Windows\System32\config\SYSTEM</code> · <code>C:\Windows\System32\config\SOFTWARE</code> · <code>C:\Users\&lt;user&gt;\NTUSER.DAT</code> · <code>C:\Users\&lt;user&gt;\NTUSER.DAT.LOG1</code></td></tr>
+<tr><th>레지스트리</th><td><code>NTUSER.DAT\Software\Microsoft\Windows\CurrentVersion\Explorer\UserAssist</code> · <code>SYSTEM\ControlSet001\Services\bam\State\UserSettings</code> · <code>NTUSER.DAT\Software\Microsoft\Internet Explorer\TypedURLsTime</code> · <code>SOFTWARE\Microsoft\Windows NT\CurrentVersion\NetworkList\Profiles</code> · <code>SAM\Domains\Account\Users</code></td></tr>
+<tr><th>로그 필드</th><td><code>LastWrite</code> · <code>primary sequence number</code> · <code>secondary sequence number</code> · <code>MRUListEx</code> · <code>Last Executed</code></td></tr>
+<tr><th>파일 형식</th><td><code>regf</code></td></tr>
+<tr><th>검색 별칭</th><td>lastwrite 신뢰 · 레지스트리 시각 이상 · 키 시각 안 맞음 · 레지스트리 시간 틀림 · 값 시각 어디 · mru 시각</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>레지스트리 LastWrite는 <strong>키 단위 시각이고 값 단위 시각은 존재하지 않는다</strong> — 값 10개인 키에서 어느 값이 언제 바뀌었는지 알 수 없으므로, 시각을 근거로 쓸 때는 값 데이터 안에 자체 FILETIME을 담은 키(UserAssist <code>0x3C</code>, BAM 앞 8바이트, <code>TypedURLsTime</code>, NetworkList)를 우선한다.</p>
+<h2 id="증상">증상</h2>
+<ul><li>레지스트리 LastWrite로 &quot;이 프로그램을 이때 실행했다&quot;고 결론 냈는데 Prefetch·EVTX와 몇 시간에서 며칠까지 어긋난다</li><li>한 키의 LastWrite가 그 키에 있는 값 여러 개 중 무엇의 시각인지 설명할 수 없다</li><li><code>RecentDocs</code>·<code>TypedPaths</code> 같은 MRU 키의 시각이 <strong>하나뿐</strong>인데 문제는 항목별 시각을 요구한다</li><li>수십 개 키의 LastWrite가 <strong>초 단위로 동일</strong>하다</li><li>LastWrite가 OS 설치 시각이나 마지막 부팅 시각과 같다</li><li>LastWrite가 사건 시각보다 훨씬 <strong>과거</strong>다 (최신 변경이 보이지 않는다)</li><li>같은 키인데 도구마다 다른 시각을 보여 준다</li></ul>
+<h2 id="가장-가능성-높은-원인">가장 가능성 높은 원인</h2>
+<p><strong>확률 높은 순.</strong> 위에서부터 배제하면 대부분 3번 안에 끝난다.</p>
+<div class="table-wrap"><table><thead><tr><th>순위</th><th>원인</th><th>어떤 증상으로 보이나</th><th>결정적 판별점</th></tr></thead><tbody><tr><td>1</td><td><strong>LastWrite는 키 단위이고 값 단위 시각은 없다</strong></td><td>&quot;어느 값의 시각인지&quot; 답할 수 없다</td><td>그 키의 값 개수가 2개 이상이다</td></tr><tr><td>2</td><td><strong>값 하나만 바뀌어도 키 전체 시각이 갱신된다</strong></td><td>관심 없는 값 때문에 시각이 최신이다</td><td>키 안에 자주 바뀌는 값(카운터·플래그)이 섞여 있다</td></tr><tr><td>3</td><td><strong>MRU 키는 항목 추가마다 갱신된다</strong></td><td>시각이 1개뿐이고 최신 항목만 설명된다</td><td>키에 <code>MRUListEx</code>나 <code>MRUList</code>가 있다</td></tr><tr><td>4</td><td><strong>하이브 로드/언로드, 무관한 값 변경으로 갱신</strong></td><td>로그온·로그오프·종료 시각과 일치한다</td><td>시각이 부팅/로그온/종료 시각과 같다</td></tr><tr><td>5</td><td><strong>트랜잭션 로그 미반영</strong></td><td>LastWrite가 과거이고 최신 항목이 없다</td><td>헤더의 primary ≠ secondary sequence number (dirty)</td></tr><tr><td>6</td><td><strong>정책 적용·업데이트로 일괄 갱신</strong></td><td>수십~수백 키가 동일 시각</td><td>같은 시각을 가진 키가 무리를 이룬다</td></tr><tr><td>7</td><td><strong>시스템 시각 자체가 조작됨</strong></td><td>순서가 역전되거나 미래 시각이 나온다</td><td>다른 artifact와 <strong>일관되게</strong> 어긋난다</td></tr></tbody></table></div>
+<p><strong>1·2·3은 구조적 한계</strong>여서 없앨 수 없고, <strong>4·5·6은 확인해서 배제</strong>할 수 있으며, <strong>7은 별도 조사 대상</strong>이다.</p>
+<h2 id="1차-확인">1차 확인</h2>
+<h3 id="①-그-키의-값이-몇-개인지-센다-원인-12">① 그 키의 값이 몇 개인지 센다 (원인 1·2)</h3>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">reg query &quot;HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs\.xlsx&quot;</code></pre></div>
+<p>오프라인 hive라면 RegistryExplorer로 키를 선택하고 <strong>우측 상단 값 목록의 개수</strong>를 센다.</p>
+<div class="table-wrap"><table><thead><tr><th>관측</th><th>판정</th><th>어떻게 쓰나</th></tr></thead><tbody><tr><td>값이 1개</td><td>LastWrite ≈ 그 값의 시각</td><td>시각 근거로 쓸 수 있다. 예: <code>USBSTOR</code> 인스턴스 키</td></tr><tr><td>값이 2개 이상</td><td><strong>어느 값의 시각인지 알 수 없다</strong></td><td>&quot;그 키에서 마지막으로 어떤 변경이 있었다&quot;까지만 주장</td></tr><tr><td>값 데이터에 자체 FILETIME이 있다</td><td><strong>그쪽을 쓴다</strong></td><td>아래 &quot;다른 방법&quot; 표 참조</td></tr></tbody></table></div>
+<p>레지스트리 포맷에서 시각은 키 레코드(<code>nk</code>)에만 있고 값 레코드(<code>vk</code>)에는 필드 자체가 없다. <strong>도구가 값 시각을 보여 주지 않는 것은 도구의 한계가 아니라 포맷의 사실이다.</strong></p>
+<h3 id="②-mrulistex가-있는지-본다-원인-3">② <code>MRUListEx</code>가 있는지 본다 (원인 3)</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">NTUSER.DAT\Software\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs\.xlsx
+  MRUListEx = 03 00 00 00  01 00 00 00  00 00 00 00  FF FF FF FF
+  0 = (항목)   1 = (항목)   3 = (항목)
+  LastWrite  2026-04-09 08:11:03Z</code></pre></div>
+<p><code>MRUListEx</code>의 첫 4바이트 인덱스가 <strong>가장 최근 항목</strong>이다. 그러므로 이 키의 LastWrite는 <strong><code>MRUListEx</code>의 첫 항목이 추가된 시각</strong>이라고만 말할 수 있다. 나머지 항목의 시각은 이 키에 없다.</p>
+<div class="table-wrap"><table><thead><tr><th>요구</th><th>가능한가</th><th>대안</th></tr></thead><tbody><tr><td>가장 최근 항목의 시각</td><td><strong>가능</strong></td><td>키 LastWrite</td></tr><tr><td>2번째·3번째 항목의 시각</td><td>불가</td><td>LNK/Jump List의 대상 파일 MACB, <code>$MFT</code>, <code>$UsnJrnl</code></td></tr><tr><td>항목의 추가 순서</td><td><strong>가능</strong></td><td><code>MRUListEx</code> 순서</td></tr></tbody></table></div>
+<h3 id="③-hive가-dirty인지-본다-원인-5">③ hive가 dirty인지 본다 (원인 5)</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">xxd -l 16 SYSTEM</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">00000000: 7265 6766 2900 0000 2800 0000 ....
+                    ^primary=0x29   ^secondary=0x28   -&gt; 다르다 = dirty</code></pre></div>
+<p>primary(<code>0x04</code>)와 secondary(<code>0x08</code>)가 다르면 최신 변경이 <code>.LOG1</code>/<code>.LOG2</code>에만 있다. 반영하지 않으면 <strong>LastWrite가 과거로 보인다.</strong></p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># config 폴더 전체를 한 번에 반영
+rla.exe -d &quot;C:\case\config&quot; --out &quot;C:\case\clean&quot;</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 사용자 hive 개별 반영
+rla.exe -f &quot;C:\case\NTUSER.DAT&quot; --out &quot;C:\case\clean&quot;</code></pre></div>
+<p>반영 전후의 같은 키 LastWrite를 비교한다. <strong>값이 달라지면 그 차이가 곧 놓칠 뻔한 활동이다.</strong></p>
+<h3 id="④-일괄-갱신인지-본다-원인-6">④ 일괄 갱신인지 본다 (원인 6)</h3>
+<p>같은 시각을 가진 키가 몇 개인지 세는 것이 판별법이다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># RegRipper 전체 플러그인 출력에서 LastWrite 시각의 빈도를 센다
+rip.exe -r &quot;C:\case\clean\SOFTWARE&quot; -a &gt; software_all.txt
+Select-String -Path software_all.txt -Pattern &#39;\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}&#39; |
+  ForEach-Object { $_.Matches.Value } | Group-Object |
+  Where-Object { $_.Count -gt 3 } | Sort-Object Count -Descending</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>관측</th><th>해석</th></tr></thead><tbody><tr><td>한 시각에 키 수십 개</td><td>정책 적용·Windows 업데이트·프로그램 설치. <strong>개별 행위의 시각이 아니다</strong></td></tr><tr><td>한 시각에 키 2~3개</td><td>같은 프로그램이 관련 키를 함께 쓴 것. 정상</td></tr><tr><td>시각이 전부 흩어져 있다</td><td>일괄 갱신 아님. 개별 해석 가능</td></tr><tr><td>시각이 부팅/로그온/종료 시각과 같다</td><td>원인 4. hive 로드/언로드에 따른 갱신</td></tr></tbody></table></div>
+<h2 id="2차-확인">2차 확인</h2>
+<h3 id="⑤-다른-artifact와-방향을-대조한다-원인-7-판별">⑤ 다른 artifact와 방향을 대조한다 (원인 7 판별)</h3>
+<p>시스템 시각 조작은 <strong>레지스트리 하나만 어긋나는 것이 아니라 그 시각 이후의 모든 기록이 함께 어긋난다.</strong></p>
+<div class="table-wrap"><table><thead><tr><th>대조 대상</th><th>무엇을 보나</th><th>조작 신호</th></tr></thead><tbody><tr><td><code>$MFT</code>·<code>$UsnJrnl</code></td><td>hive 파일 자체의 수정 시각과 USN 번호</td><td>USN 번호는 증가하는데 시각이 역행한다</td></tr><tr><td>EVTX</td><td>시각 변경 감사 이벤트, <code>EventRecordID</code> 순서</td><td>레코드 번호는 증가하는데 시각이 역행한다 (<a href="./event-record-id-tracking.html">FOR-0103</a>)</td></tr><tr><td>Prefetch</td><td>실행 시각</td><td>레지스트리와 일정한 오프셋만큼 차이난다</td></tr><tr><td>브라우저 히스토리</td><td>방문 시각</td><td>같은 방향으로 어긋난다</td></tr></tbody></table></div>
+<p><strong>단조 증가하는 카운터(USN, <code>EventRecordID</code>)와 시각의 순서가 어긋나면 시각 조작이다.</strong> 레지스트리만 어긋나면 원인 1~6이다.</p>
+<h3 id="⑥-값-데이터-안의-시각으로-갈아탄다">⑥ 값 데이터 안의 시각으로 갈아탄다</h3>
+<p>이것이 이 글의 결론이다. <strong>키 LastWrite보다 값 안의 FILETIME이 항상 우선한다.</strong></p>
+<div class="table-wrap"><table><thead><tr><th>키</th><th>값 안의 시각</th><th>형식 / 위치</th></tr></thead><tbody><tr><td><code>...\Explorer\UserAssist\{GUID}\Count</code></td><td><strong>Last Executed</strong></td><td>값 데이터 오프셋 <code>0x3C</code>의 8바이트 FILETIME (Win7 이후, 전체 72바이트) (<a href="./userassist.html">FOR-0061</a>)</td></tr><tr><td><code>SYSTEM\ControlSet001\Services\bam\State\UserSettings\&lt;SID&gt;</code></td><td><strong>마지막 실행 시각</strong></td><td>각 값 데이터 <strong>앞 8바이트</strong> FILETIME (<a href="./bam-dam.html">FOR-0071</a>)</td></tr><tr><td><code>...\Internet Explorer\TypedURLsTime</code></td><td>URL 입력 시각</td><td><code>url1</code>, <code>url2</code>... 각각 8바이트 FILETIME (<a href="./typedurls.html">FOR-0065</a>)</td></tr><tr><td><code>SOFTWARE\Microsoft\Windows NT\CurrentVersion\NetworkList\Profiles\{GUID}</code></td><td><code>DateCreated</code> / <code>DateLastConnected</code></td><td>16바이트 SYSTEMTIME (연·월·요일·일·시·분·초·밀리초 각 2바이트) (<a href="./networklist.html">FOR-0072</a>)</td></tr><tr><td><code>SAM\Domains\Account\Users\&lt;RID&gt;</code></td><td>마지막 로그온·비밀번호 변경 등</td><td><code>F</code> 값 안의 FILETIME들 (<a href="./sam-user-accounts.html">FOR-0052</a>)</td></tr><tr><td><code>SOFTWARE\...\ProfileList\&lt;SID&gt;</code></td><td>프로필 로드/언로드 시각</td><td><code>...TimeHigh</code>/<code>...TimeLow</code> 두 DWORD를 합쳐 FILETIME (버전에 따라 존재) (<a href="./sid-user-mapping.html">FOR-0074</a>)</td></tr><tr><td><code>SYSTEM\ControlSet001\Enum\USBSTOR\...\Properties\{83da6326-97a6-4088-9453-a1923f573b29}</code></td><td>최초 설치·마지막 연결·마지막 제거</td><td>하위 <code>0064</code>/<code>0065</code>/<code>0066</code>/<code>0067</code> 키의 값에 FILETIME (<a href="./usbstor.html">FOR-0066</a>)</td></tr><tr><td><code>SOFTWARE\Microsoft\Windows NT\CurrentVersion</code></td><td><code>InstallDate</code></td><td>Unix epoch 초 (DWORD)</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>시각 종류</th><th>기준</th><th>KST 보정</th></tr></thead><tbody><tr><td>FILETIME</td><td>1601-01-01 UTC 기준 100ns</td><td><strong>UTC → +9시간</strong></td></tr><tr><td>Unix epoch</td><td>1970-01-01 UTC 기준 초</td><td><strong>UTC → +9시간</strong>. FILETIME과 <code>11644473600</code>초 차이</td></tr><tr><td>SYSTEMTIME (NetworkList)</td><td>구조체에 연·월·일·시·분·초가 그대로</td><td><strong>로컬 시각으로 기록되는 것이 통상</strong>이므로 무조건 더하지 않고 다른 artifact와 대조해 확정</td></tr><tr><td>DOS date/time (shell item)</td><td>2초 단위</td><td><strong>로컬 시각.</strong> 더하지 않는다 (<a href="./shellbags.html">FOR-0068</a>)</td></tr></tbody></table></div>
+<p><strong>같은 표에 UTC와 로컬 시각을 섞어 쓰면 9시간짜리 오답이 나온다.</strong> 컬럼마다 기준을 적는다 (<a href="./system-timezone.html">FOR-0054</a>).</p>
+<h2 id="다른-방법">다른 방법</h2>
+<p>키 LastWrite로 답할 수 없을 때의 우회로다.</p>
+<div class="table-wrap"><table><thead><tr><th>원래 알고 싶던 것</th><th>LastWrite 대신 볼 것</th></tr></thead><tbody><tr><td>이 값이 언제 만들어졌나</td><td>값 안의 FILETIME → 없으면 트랜잭션 로그(<code>.LOG1</code>)의 해당 레코드 → <code>$UsnJrnl</code>의 hive 파일 변경 시각</td></tr><tr><td>이 키가 언제 삭제됐나</td><td>부모 키 LastWrite + <code>$UsnJrnl</code>의 hive 변경 (<a href="./registry-deleted-keys.html">FOR-0078</a>)</td></tr><tr><td>MRU 2번째 항목의 시각</td><td>LNK·Jump List의 대상 MACB, <code>$MFT</code>, <code>$UsnJrnl</code></td></tr><tr><td>프로그램 실행 시각</td><td>Prefetch·4688·BAM (<a href="./recent-execution-crosscheck.html">FOR-0076</a>)</td></tr><tr><td>USB 연결 시각</td><td><code>USBSTOR</code>의 <code>0066</code>/<code>0067</code>, <code>setupapi.dev.log</code>, EVTX</td></tr><tr><td>과거 시점의 값</td><td>볼륨 섀도 카피의 hive, <code>RegBack</code>, 메모리 덤프의 hive</td></tr><tr><td>값 변경 이력</td><td>감사 정책이 켜져 있었다면 4657, Sysmon 12/13/14</td></tr></tbody></table></div>
+<p>시각 조작이 확인되면 <strong>모든 시각을 상대 순서로만 다룬다.</strong> 절대 시각 대신 &quot;A가 B보다 먼저&quot;만 주장하고, 단조 증가 카운터(USN, <code>EventRecordID</code>)로 순서를 세운다.</p>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>키 LastWrite를 &quot;값이 생성된 시각&quot;으로 쓰는 것</strong> → 키 단위 시각이고 값이 여러 개면 어느 것인지 알 수 없다 → 값 개수를 세고, 2개 이상이면 결론을 약화하거나 값 안의 FILETIME으로 갈아탄다.</li><li><strong>MRU 키의 LastWrite를 모든 항목의 시각으로 쓰는 것</strong> → 최신 항목이 추가된 시각 하나뿐이다 → 나머지 항목은 순서만 주장하고 시각은 다른 artifact에서 가져온다.</li><li><strong><code>rla</code> 없이 파싱하는 것</strong> → dirty hive의 최신 변경이 로그에만 있어 LastWrite가 과거로 보인다 → 반영 전후를 비교한다.</li><li><strong>하위 키가 바뀌면 부모 LastWrite도 갱신된다고 가정하는 것</strong> → 손자 키의 값 변경은 조상 키 시각을 건드리지 않는다 → 관심 있는 키 자체의 시각을 본다.</li><li><strong>동일 시각을 가진 키 무리를 개별 행위로 해석하는 것</strong> → 정책 적용·업데이트·설치가 일괄 갱신한다 → 같은 시각의 키 개수를 세어 일괄 갱신을 먼저 배제한다.</li><li><strong>LastWrite를 로컬 시각으로 읽는 것</strong> → FILETIME이므로 항상 UTC다 → KST는 +9시간. NetworkList의 SYSTEMTIME과 shell item의 DOS 시각은 반대로 더하지 않는다.</li><li><strong>도구가 다른 시각을 보여 줄 때 한쪽을 임의로 믿는 것</strong> → 한쪽은 로그 반영 후, 다른 쪽은 반영 전 hive를 읽고 있을 수 있다 → 같은 파일(반영 후 hive)로 두 도구를 다시 돌린다.</li><li><strong>시각 조작 가능성을 검토하지 않는 것</strong> → 조작이 있으면 모든 절대 시각이 무효다 → USN·<code>EventRecordID</code> 같은 단조 카운터와 순서를 대조한다.</li><li><strong>&quot;LastWrite가 사건 시각과 같다&quot;를 인과로 읽는 것</strong> → 로그온·종료 때 hive가 일괄 갱신될 수 있다 → 부팅/로그온/종료 시각 목록과 대조해 배제한다.</li><li><strong>hive 헤더의 시각(<code>0x0C</code>)을 키 시각으로 혼동하는 것</strong> → 그것은 hive가 마지막으로 정리된 시각이다 → 키 시각과 별개로 취급한다 (<a href="./registry-hive-map.html">FOR-0051</a>).</li></ul>
+<h2 id="실제-예시">실제 예시</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;USB 연결 시각을 근거로 자료 반출 시점을 특정하시오.
+ 첨부: SYSTEM(+LOG1/2), SOFTWARE, NTUSER.DAT(+LOG1/2), Prefetch, Security.evtx&quot;
+
+1. 첫 시도 (실패):
+   RegistryExplorer 로 SYSTEM 을 열고
+   ControlSet001\Enum\USBSTOR\Disk&amp;Ven_SanDisk&amp;Prod_Cruzer_Blade&amp;Rev_1.00\
+     4C530001231205117495&amp;0
+   -&gt; 키 LastWrite 2026-03-02 01:44:07Z
+   &quot;2026-03-02 10:44 KST 에 USB 를 꽂았다&quot;고 답을 적었다.
+
+   그런데 Prefetch 와 4624 로그온 기록은 2026-04-08 저녁에 몰려 있고,
+   그날 USB 관련 활동이 분명히 있었다. 한 달 넘게 어긋난다.
+
+2. 원인 후보 배제 — 순서대로
+   (원인 1·2) 그 인스턴스 키의 값 개수를 센다
+     -&gt; 값이 여러 개(FriendlyName, ContainerID, Capabilities 등).
+        어느 값 때문에 갱신된 시각인지 알 수 없다. 이미 근거가 약하다.
+
+   (원인 5) hive 가 dirty 인지 확인
+     xxd -l 16 SYSTEM
+     00000000: 7265 6766 3f01 0000 3e01 0000 ....
+     primary 0x13f != secondary 0x13e  -&gt; dirty 다.
+
+3. 접근 변경 — 트랜잭션 로그 반영 후 재확인
+   rla.exe -d config\ --out clean\
+   clean\SYSTEM 의 같은 키 LastWrite -&gt; 2026-04-08 14:01:58Z
+   =&gt; 원인 5 였다. 반영 전 값은 한 달 전 상태였다.
+
+4. 두 번째로 틀린 판단:
+   &quot;반영했으니 이제 LastWrite 가 연결 시각&quot;이라고 결론 낼 뻔했다.
+   -&gt; 여전히 원인 1·2 가 살아 있다. 값이 여러 개인 키의 시각이다.
+      값 안에 자체 FILETIME 이 있는 곳으로 갈아탄다:
+
+      ...\4C530001231205117495&amp;0\Properties\
+        {83da6326-97a6-4088-9453-a1923f573b29}\0066   -&gt; 마지막 연결(Arrival)
+        {83da6326-97a6-4088-9453-a1923f573b29}\0067   -&gt; 마지막 제거(Removal)
+      0066 = 2026-04-08 14:01:58Z
+      0067 = 2026-04-08 14:52:33Z
+   =&gt; 연결과 제거 시각이 각각 확보됐다. 키 LastWrite 가 아니라 값이 근거다.
+
+5. 일괄 갱신 배제 (원인 6)
+   같은 시각(14:01:58Z)을 가진 키가 몇 개인지 센다 -&gt; 3개(USBSTOR 인스턴스,
+   DeviceClasses, MountedDevices 관련). 장치 연결 하나가 만든 무리로 설명된다.
+   정책 일괄 갱신이 아니다.
+
+6. 시각 조작 배제 (원인 7)
+   Security.evtx 의 EventRecordID 는 단조 증가하고 시각도 증가한다.
+   $UsnJrnl 의 USN 번호와 시각도 순서가 일치한다. 조작 신호 없음.
+
+7. 교차검증
+   Prefetch: EXPLORER.EXE 참조 목록에 E:\ 경로 등장
+   4624:     2026-04-08 13:58:02Z 로컬 로그온 (연결 4분 전)
+   ShellBags: E:\proj_backup 2026-04-08 14:02:19Z
+   -&gt; 연결 21초 뒤 폴더 탐색. 순서가 자연스럽다.
+
+8. 시간대 보정 (마지막에 한 번)
+   SYSTEM\ControlSet001\Control\TimeZoneInformation
+     TimeZoneKeyName = Korea Standard Time, ActiveTimeBias = -540분
+   2026-04-08 14:01:58Z -&gt; 2026-04-08 23:01:58 KST
+   2026-04-08 14:52:33Z -&gt; 2026-04-08 23:52:33 KST
+
+정답:
+  USB 연결 2026-04-08 23:01:58 KST / 제거 23:52:33 KST
+  근거는 인스턴스 키의 LastWrite 가 아니라 Properties 하위 값의 FILETIME.
+  최초 답(2026-03-02)은 트랜잭션 로그 미반영 hive 를 읽은 결과였다.</code></pre></div>
+<p>2단계와 4단계가 이 글의 요점이다. <strong><code>rla</code>를 돌리면 끝난다고 생각하는 것이 두 번째 함정이다</strong> — 로그를 반영해도 &quot;키 단위 시각&quot;이라는 한계는 그대로 남는다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li>그 키의 <strong>값 개수</strong>를 셌는가 — 2개 이상이면 시각의 귀속이 불가능하다</li><li>값 데이터 안에 자체 FILETIME이 있는 키인가 — UserAssist <code>0x3C</code>, BAM 앞 8바이트, <code>TypedURLsTime</code>, NetworkList, <code>USBSTOR</code> Properties</li><li><code>rla</code>로 <code>.LOG1</code>/<code>.LOG2</code>를 반영했는가 — 반영 전후 시각을 비교했는가</li><li>hive 헤더의 primary/secondary sequence number가 같은가</li><li><code>MRUListEx</code>가 있는 키인가 — 그렇다면 시각은 최신 항목 것 하나뿐이다</li><li>같은 시각을 가진 키가 몇 개인가 — 일괄 갱신 배제</li><li>그 시각이 부팅·로그온·종료 시각과 같지 않은가</li><li>다른 artifact와 <strong>일관되게</strong> 어긋나는가 — 그렇다면 시각 조작을 의심한다</li><li>USN·<code>EventRecordID</code> 같은 단조 카운터로 순서를 확인했는가</li><li>FILETIME(UTC)과 SYSTEMTIME·DOS 시각(로컬)을 섞지 않았는가</li><li>그래도 시각이 필요하면 → VSS의 과거 hive, <code>RegBack</code>, 메모리 덤프, 4657/Sysmon 13</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-027 — Libyal libregf, REGF 포맷 문서: <strong>키 레코드(<code>nk</code>)에만 마지막 쓰기 시각 필드가 있고 값 레코드(<code>vk</code>)에는 시각 필드가 존재하지 않는다는 점</strong>, base block의 primary/secondary sequence number로 dirty 판정, 트랜잭션 로그의 역할</li><li>SRC-014 — Microsoft Learn, File Times: FILETIME이 1601-01-01 UTC 기준 100ns 단위라는 점과 UTC 기준이라는 점, Unix epoch와의 <code>11644473600</code>초 차이</li><li>SRC-017 — Microsoft Learn, Windows Registry hives and file locations: hive 로드/언로드 구조와 각 키의 위치</li><li><strong>NetworkList의 <code>DateCreated</code>/<code>DateLastConnected</code>는 16바이트 SYSTEMTIME 구조체이며 로컬 시각으로 기록되는 것이 통상이지만, 이 글은 그 기준을 단정하지 않는다.</strong> 실제 사건에서는 다른 artifact와 대조해 UTC/로컬을 확정할 것</li><li><strong><code>USBSTOR</code> 하위 <code>Properties\{83da6326-97a6-4088-9453-a1923f573b29}</code> 아래 <code>0064</code>/<code>0065</code>/<code>0066</code>/<code>0067</code>의 의미(최초 설치·설치·마지막 연결·마지막 제거)는 Windows 버전에 따라 존재 여부와 대응이 달라질 수 있으므로 실제 hive에서 확인할 것.</strong> 값 자체는 FILETIME이다</li><li><code>ProfileList</code>의 로드/언로드 시각 값은 OS 버전에 따라 없을 수 있다</li><li>실제 예시의 시각·시리얼·시퀀스 번호는 설명을 위한 예시 값이다</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./registry-hive-map.html">
+    <span class="rel-id">FOR-0051 · Registry</span>
+    Registry hive 전체 지도: 루트키와 디스크상 파일 대응표
+  </a>
+  <a class="related-item" href="./system-timezone.html">
+    <span class="rel-id">FOR-0054 · Registry</span>
+    SYSTEM hive 시간대(TimeZoneInformation)와 UTC/KST 보정
+  </a>
+  <a class="related-item" href="./registry-deleted-keys.html">
+    <span class="rel-id">FOR-0078 · Registry</span>
+    있어야 할 레지스트리 키가 없을 때: 삭제된 키 복구 6가지 접근
+  </a>
+  <a class="related-item" href="./recent-execution-crosscheck.html">
+    <span class="rel-id">FOR-0076 · Registry</span>
+    프로그램 실행 흔적 교차검증: 12개 증거원 비교표
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./recent-execution-crosscheck.html"><span class="rel-id">← FOR-0076</span>프로그램 실행 흔적 교차검증: 12개 증거원 비교표</a>
+<a class="related-item" href="./registry-deleted-keys.html"><span class="rel-id">FOR-0078 →</span>있어야 할 레지스트리 키가 없을 때: 삭제된 키 복구 6가지 접근</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#증상">증상</a></li>
+<li class="toc-l2"><a href="#가장-가능성-높은-원인">가장 가능성 높은 원인</a></li>
+<li class="toc-l2"><a href="#1차-확인">1차 확인</a></li>
+<li class="toc-l3"><a href="#①-그-키의-값이-몇-개인지-센다-원인-12">① 그 키의 값이 몇 개인지 센다 (원인 1·2)</a></li>
+<li class="toc-l3"><a href="#②-mrulistex가-있는지-본다-원인-3">② `MRUListEx`가 있는지 본다 (원인 3)</a></li>
+<li class="toc-l3"><a href="#③-hive가-dirty인지-본다-원인-5">③ hive가 dirty인지 본다 (원인 5)</a></li>
+<li class="toc-l3"><a href="#④-일괄-갱신인지-본다-원인-6">④ 일괄 갱신인지 본다 (원인 6)</a></li>
+<li class="toc-l2"><a href="#2차-확인">2차 확인</a></li>
+<li class="toc-l3"><a href="#⑤-다른-artifact와-방향을-대조한다-원인-7-판별">⑤ 다른 artifact와 방향을 대조한다 (원인 7 판별)</a></li>
+<li class="toc-l3"><a href="#⑥-값-데이터-안의-시각으로-갈아탄다">⑥ 값 데이터 안의 시각으로 갈아탄다</a></li>
+<li class="toc-l2"><a href="#다른-방법">다른 방법</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#실제-예시">실제 예시</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

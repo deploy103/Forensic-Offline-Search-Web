@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>FTP 명령과 파일 전송 추적: ftp.request.command로 STOR/RETR 잡기 · FOR-0166 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Network%2FPCAP">Network/PCAP</a> / FOR-0166
+      </div>
+      <header class="article-head">
+        <h1>FTP 명령과 파일 전송 추적: ftp.request.command로 STOR/RETR 잡기</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Network/PCAP</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>FTP는 제어 채널(ftp, 21번)과 데이터 채널(ftp-data)이 분리된 프로토콜이므로, 먼저 ftp 필터로 ftp.request.command의 USER/PASS/STOR/RETR 흐름을 읽어 &quot;누가 무엇을 주고받았는가&quot;를 확정하고, 그 다음에 데이터 채널을 찾아 파일 본문을 꺼낸다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Wireshark, tshark, HxD, file, strings</td></tr>
+<tr><th>artifact</th><td><code>pcap</code> · <code>pcapng</code> · <code>ftp-data</code></td></tr>
+<tr><th>프로토콜</th><td>FTP, FTP-DATA, TCP</td></tr>
+<tr><th>Wireshark 필터</th><td><code>ftp || ftp-data</code> · <code>ftp.request.command == &quot;STOR&quot; || ftp.request.command == &quot;RETR&quot;</code> · <code>ftp.request.command == &quot;USER&quot; || ftp.request.command == &quot;PASS&quot;</code> · <code>ftp.response.code == 230</code> · <code>ftp.response.code == 530</code> · <code>ftp.response.code == 227</code> · <code>ftp.response.code == 226</code> · <code>ftp-data</code> · <code>ftp.request.command == &quot;DELE&quot;</code></td></tr>
+<tr><th>tshark field</th><td><code>ftp.request.command</code> · <code>ftp.request.arg</code> · <code>ftp.response.code</code> · <code>ftp.response.arg</code> · <code>ftp.passive.ip</code> · <code>ftp.passive.port</code> · <code>ftp.active.cip</code> · <code>ftp.active.port</code> · <code>ftp-data.setup-frame</code> · <code>ftp-data.command</code> · <code>ftp.command-response.bytes</code></td></tr>
+<tr><th>파일 형식</th><td><code>pcap</code> · <code>pcapng</code></td></tr>
+<tr><th>검색 별칭</th><td>ftp 필터 · ftp 파일 전송 · ftp 아이디 비밀번호 · ftp 업로드 찾기 · ftp 다운로드 찾기 · 패시브 모드 포트 · ftp-data 안 잡힘</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>FTP는 <strong>제어 채널(<code>ftp</code>, 21번)과 데이터 채널(<code>ftp-data</code>)이 분리된 프로토콜</strong>이므로, 먼저 <code>ftp</code> 필터로 <code>ftp.request.command</code>의 <code>USER</code>/<code>PASS</code>/<code>STOR</code>/<code>RETR</code> 흐름을 읽어 &quot;누가 무엇을 주고받았는가&quot;를 확정하고, 그 다음에 데이터 채널을 찾아 파일 본문을 꺼낸다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;유출된 파일 이름&quot;, &quot;업로드된 웹셸&quot;, &quot;가져간 자료&quot;를 찾아야 하는 문제</li><li>Protocol Hierarchy에 <code>File Transfer Protocol</code> 또는 <code>FTP Data</code>가 보이는 pcap</li><li>&quot;계정과 비밀번호를 구하라&quot;는 자격증명 문제 — FTP는 <strong>전부 평문</strong>이다</li><li>증거 인멸(<code>DELE</code>)이나 파일명 위장(<code>RNFR</code>/<code>RNTO</code>) 흔적을 찾는 문제</li></ul>
+<p>FTP 문제는 대개 두 단계다. <strong>제어 채널에서 파일명을 얻고, 데이터 채널에서 파일을 얻는다.</strong> 한쪽만 보면 반쪽이다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li><strong><code>Info</code> 컬럼에 대문자 4글자 명령</strong> — <code>USER</code>, <code>RETR</code>, <code>STOR</code>가 그냥 보인다</li><li><strong>포트 21과 포트 20</strong> — 21은 제어, 20은 액티브 모드의 서버측 데이터 포트</li><li><strong>Protocol Hierarchy의 <code>FTP Data</code> 바이트 수</strong> — 여기가 크면 실제 파일이 흘렀다</li><li><strong><code>Protocol</code> 컬럼이 <code>TCP</code>뿐인 큰 대화</strong> — 패시브 모드 데이터 채널이 미인식된 상태다</li><li><strong>220 배너 문자열</strong> — <code>220 (vsFTPd 3.0.3)</code> 처럼 서버 소프트웨어와 버전이 노출된다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">ftp.request.command == &quot;STOR&quot; || ftp.request.command == &quot;RETR&quot;</code></pre></div>
+<p>이 한 줄이 &quot;무슨 파일이 오갔는가&quot;를 즉시 답한다. 이어서 세 줄만 더 본다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">ftp.request.command == &quot;USER&quot; || ftp.request.command == &quot;PASS&quot;
+ftp.response.code == 227 || ftp.response.code == 200
+ftp.response.code == 226</code></pre></div>
+<p>순서대로 <strong>자격증명 → 데이터 채널 포트 → 전송 완료 여부</strong>다.</p>
+<p>CLI로 제어 채널 전체를 한 표에:</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;ftp.request&#39; \
+  -T fields -e frame.number -e ip.src -e ftp.request.command -e ftp.request.arg -E header=y</code></pre></div>
+<p>파일 추출:</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng --export-objects ftp-data,out_ftp/ &amp;&amp; file out_ftp/*</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-제어-채널-전문-읽기">1단계 — 제어 채널 전문 읽기</h3>
+<p><code>ftp</code> 필터를 걸고 아무 패킷에서 <code>Follow &gt; TCP Stream</code>을 하면 세션 전체가 대화 형태로 보인다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">220 (vsFTPd 3.0.3)
+USER backup_svc
+331 Please specify the password.
+PASS Wint3r!2026
+230 Login successful.
+SYST
+215 UNIX Type: L8
+PWD
+257 &quot;/home/backup_svc&quot; is the current directory
+TYPE I
+200 Switching to Binary mode.
+PASV
+227 Entering Passive Mode (203,0,113,77,195,80).
+LIST
+150 Here comes the directory listing.
+226 Directory send OK.
+CWD /home/backup_svc/reports
+250 Directory successfully changed.
+SIZE internal_report.pdf
+213 2317540
+MDTM internal_report.pdf
+213 20260314071502
+PASV
+227 Entering Passive Mode (203,0,113,77,195,81).
+RETR internal_report.pdf
+150 Opening BINARY mode data connection for internal_report.pdf (2317540 bytes).
+226 Transfer complete.
+STOR notes.txt
+150 Ok to send data.
+226 Transfer complete.
+DELE audit_trail.log
+250 Delete operation successful.
+QUIT
+221 Goodbye.</code></pre></div>
+<p>이 한 화면에 계정, 비밀번호, 작업 디렉터리, 전송 모드, 데이터 포트, 가져간 파일, 올린 파일, 지운 파일이 전부 있다.</p>
+<h3 id="2단계-명령별-포렌식-의미">2단계 — 명령별 포렌식 의미</h3>
+<div class="table-wrap"><table><thead><tr><th>명령</th><th>의미</th><th>포렌식 해석</th></tr></thead><tbody><tr><td><code>USER</code></td><td>로그인 계정</td><td><strong>평문 계정명.</strong> 다른 로그의 사용자와 대조</td></tr><tr><td><code>PASS</code></td><td>비밀번호</td><td><strong>평문 비밀번호.</strong> 재사용 여부가 다음 단서</td></tr><tr><td><code>PWD</code></td><td>현재 디렉터리 조회</td><td>257 응답에 절대 경로 → 서버 디렉터리 구조</td></tr><tr><td><code>CWD</code></td><td>디렉터리 이동</td><td>공격자가 관심 있던 경로. 이동 순서가 정찰 동선</td></tr><tr><td><code>LIST</code></td><td>상세 목록 (<code>ls -l</code> 형식)</td><td>데이터 채널로 전송된다. 파일명+크기+시각 전체를 얻는다</td></tr><tr><td><code>NLST</code></td><td>이름만 목록</td><td>스크립트가 쓰는 형태. 자동화 도구 신호</td></tr><tr><td><code>TYPE A</code> / <code>TYPE I</code></td><td>ASCII / Binary 모드</td><td><strong><code>TYPE I</code>는 실행 파일·압축·이미지 전송 신호</strong></td></tr><tr><td><code>PASV</code></td><td>패시브 모드 요청</td><td>227 응답이 데이터 채널 IP/포트를 알려준다</td></tr><tr><td><code>PORT</code></td><td>액티브 모드 통보</td><td>클라이언트가 자기 수신 포트를 서버에 알린다</td></tr><tr><td><code>EPSV</code> / <code>EPRT</code></td><td>확장 패시브/액티브</td><td>229 응답 형식이 <code>(|||50001|)</code>. IPv6 대응</td></tr><tr><td><code>STOR</code></td><td><strong>업로드</strong> (클라이언트 → 서버)</td><td>웹셸·백도어 심기, 도구 반입</td></tr><tr><td><code>RETR</code></td><td><strong>다운로드</strong> (서버 → 클라이언트)</td><td>자료 반출. 유출 문제의 정답이 여기</td></tr><tr><td><code>APPE</code></td><td>이어붙이기</td><td>분할 업로드. 파일을 여러 번 쪼개 올린 흔적</td></tr><tr><td><code>DELE</code></td><td>파일 삭제</td><td><strong>증거 인멸.</strong> 지운 파일명이 그대로 남는다</td></tr><tr><td><code>RNFR</code> / <code>RNTO</code></td><td>이름 변경 전 / 후</td><td>위장. <code>shell.php</code> → <code>image.jpg</code> 같은 쌍</td></tr><tr><td><code>MKD</code> / <code>RMD</code></td><td>디렉터리 생성 / 삭제</td><td>작업 디렉터리 준비·정리</td></tr><tr><td><code>SIZE</code></td><td>파일 크기 조회</td><td>213 응답의 바이트 수. 추출물 크기 검증에 쓴다</td></tr><tr><td><code>MDTM</code></td><td>수정 시각 조회</td><td>213 응답이 <code>YYYYMMDDhhmmss</code> <strong>UTC</strong>. KST는 +9시간</td></tr><tr><td><code>SITE</code></td><td>서버별 확장</td><td><code>SITE CHMOD 755</code> = 업로드한 파일에 실행권한 부여</td></tr><tr><td><code>QUIT</code></td><td>세션 종료</td><td>세션 경계. 여러 세션을 구분하는 기준</td></tr></tbody></table></div>
+<p><code>STOR</code>과 <code>RETR</code>의 방향을 헷갈리면 문제를 반대로 답한다. <strong><code>STOR</code> = store to server = 올림, <code>RETR</code> = retrieve = 가져감.</strong></p>
+<h3 id="3단계-응답-코드로-성공실패-판정">3단계 — 응답 코드로 성공/실패 판정</h3>
+<div class="table-wrap"><table><thead><tr><th>코드</th><th>텍스트</th><th>판정</th></tr></thead><tbody><tr><td><code>220</code></td><td>Service ready</td><td>세션 시작. 배너에 서버 SW/버전</td></tr><tr><td><code>331</code></td><td>Need password</td><td><code>USER</code>는 접수됨. 계정이 존재할 가능성</td></tr><tr><td><code>230</code></td><td>User logged in</td><td><strong>인증 성공</strong></td></tr><tr><td><code>530</code></td><td>Not logged in</td><td><strong>인증 실패.</strong> 연속 530 = 무차별 대입</td></tr><tr><td><code>200</code></td><td>Command okay</td><td><code>TYPE</code>/<code>PORT</code> 수락</td></tr><tr><td><code>227</code></td><td>Entering Passive Mode</td><td>괄호 안 6개 숫자 = 데이터 채널 IP+포트</td></tr><tr><td><code>229</code></td><td>Extended Passive Mode</td><td>괄호 안 포트만</td></tr><tr><td><code>150</code></td><td>About to open data connection</td><td>전송 시작</td></tr><tr><td><code>125</code></td><td>Data connection already open</td><td>전송 시작(채널 재사용)</td></tr><tr><td><code>226</code></td><td>Transfer complete</td><td><strong>전송 완료.</strong> 추출물이 온전하다</td></tr><tr><td><code>425</code></td><td>Can&#39;t open data connection</td><td>데이터 채널 실패 → 파일이 없다</td></tr><tr><td><code>426</code></td><td>Transfer aborted</td><td><strong>중단.</strong> 추출물이 잘려 있다</td></tr><tr><td><code>213</code></td><td>File status</td><td><code>SIZE</code>/<code>MDTM</code> 응답값</td></tr><tr><td><code>250</code></td><td>File action okay</td><td><code>CWD</code>/<code>DELE</code>/<code>RNTO</code> 성공</td></tr><tr><td><code>257</code></td><td>Pathname created</td><td><code>PWD</code>/<code>MKD</code> 응답의 경로</td></tr><tr><td><code>550</code></td><td>Action not taken</td><td>파일 없음 또는 권한 없음. 정찰 실패 흔적</td></tr><tr><td><code>553</code></td><td>Filename not allowed</td><td>업로드 차단. 확장자 필터 우회 시도의 증거</td></tr></tbody></table></div>
+<p><code>RETR</code> 뒤에 <code>226</code>이 없고 <code>426</code>만 있으면 <strong>추출한 파일은 잘린 파일이다.</strong> <code>file</code>이 형식을 못 알아보는 원인이 대개 여기다.</p>
+<h3 id="4단계-데이터-채널-포트를-직접-계산한다">4단계 — 데이터 채널 포트를 직접 계산한다</h3>
+<p>FTP는 데이터 채널 포트를 제어 채널 안에서 텍스트로 협상한다. 그 숫자를 손으로 계산할 수 있어야 한다.</p>
+<div class="table-wrap"><table><thead><tr><th>모드</th><th>누가 연다</th><th>협상 메시지</th><th>포트 계산</th></tr></thead><tbody><tr><td>Active</td><td><strong>서버 → 클라이언트</strong></td><td><code>PORT h1,h2,h3,h4,p1,p2</code></td><td>클라이언트 포트 = <code>p1 * 256 + p2</code>. 서버측 출발 포트는 보통 20</td></tr><tr><td>Passive</td><td><strong>클라이언트 → 서버</strong></td><td><code>227 ... (h1,h2,h3,h4,p1,p2)</code></td><td>서버 포트 = <code>p1 * 256 + p2</code></td></tr><tr><td>Extended Passive</td><td>클라이언트 → 서버</td><td><code>229 ... (|||port|)</code></td><td>괄호 안 값이 그대로 포트</td></tr></tbody></table></div>
+<p>계산 예시:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">227 Entering Passive Mode (203,0,113,77,195,80)
+  IP   = 203.0.113.77
+  Port = 195 * 256 + 80 = 49920 + 80 = 50000
+  -&gt; 데이터 채널 필터: tcp.port == 50000
+
+PORT 10,0,0,15,194,208
+  IP   = 10.0.0.15
+  Port = 194 * 256 + 208 = 49664 + 208 = 49872
+  -&gt; 데이터 채널 필터: tcp.port == 49872</code></pre></div>
+<p>Wireshark가 이 숫자를 대신 파싱해 준 필드가 있다. 계산이 귀찮으면 이것을 쓴다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;ftp.response.code == 227&#39; \
+  -T fields -e frame.number -e ftp.passive.ip -e ftp.passive.port
+tshark -r capture.pcapng -Y &#39;ftp.request.command == &quot;PORT&quot;&#39; \
+  -T fields -e frame.number -e ftp.active.cip -e ftp.active.port</code></pre></div>
+<p><strong>왜 이것이 중요한가</strong>: 액티브 모드는 서버가 20번에서 나가므로 포트가 고정되어 Wireshark가 쉽게 <code>FTP-DATA</code>로 인식한다. 패시브 모드는 매 전송마다 임의의 고포트가 쓰이므로, Wireshark가 <code>227</code> 응답을 <strong>실제로 캡처에서 봤을 때만</strong> 그 TCP 연결을 <code>ftp-data</code>로 승격한다.</p>
+<h3 id="5단계-export-objects가-비었을-때의-우회">5단계 — Export Objects가 비었을 때의 우회</h3>
+<p><code>File &gt; Export Objects &gt; FTP-DATA</code>가 비는 조건과 대응:</p>
+<div class="table-wrap"><table><thead><tr><th>원인</th><th>확인 방법</th><th>대응</th></tr></thead><tbody><tr><td><code>227</code>/<code>PORT</code> 응답이 캡처에 없다 (세션 중간부터 캡처)</td><td><code>ftp.response.code == 227</code> 결과가 0건</td><td>Conversations에서 바이트 큰 대화 → Follow &gt; Raw</td></tr><tr><td>NAT/프록시가 <code>227</code>의 IP를 다시 써서 실제 연결과 불일치</td><td><code>ftp.passive.ip</code>와 실제 <code>ip.dst</code>가 다르다</td><td>같음. Decode As로 강제</td></tr><tr><td>데이터 채널만 필터링되어 빠졌다</td><td>Conversations에 해당 포트 대화가 없다</td><td>파일 본문이 캡처에 없다. 파일명까지가 답이다</td></tr><tr><td><code>FTPS</code>(FTP over TLS)</td><td><code>AUTH TLS</code> 명령과 <code>234</code> 응답이 보인다</td><td>본문 복원 불가. 파일명·크기만 확보</td></tr><tr><td><code>226</code>이 아니라 <code>426</code>으로 끝났다</td><td>응답 코드 확인</td><td>잘린 파일. 그대로 제출하지 않는다</td></tr></tbody></table></div>
+<p>우회 절차 (항상 통한다):</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1. Statistics &gt; Conversations &gt; TCP, Bytes 내림차순
+2. 21번이 아닌 포트의 큰 대화를 고른다 (Stream ID 확인)
+3. 그 행 우클릭 &gt; Apply as Filter &gt; Selected &gt; A &lt;-&gt; B
+4. 패킷 우클릭 &gt; Follow &gt; TCP Stream
+5. Show data as = Raw &gt; Save as &gt; extracted.bin</code></pre></div>
+<p>Decode As로 강제하는 방법도 있다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">데이터 채널 패킷 우클릭 &gt; Decode As...
+  Field = TCP port, Value = 50000, Current = FTP-DATA
+-&gt; 이후 Export Objects &gt; FTP-DATA 에 나타난다</code></pre></div>
+<p>추출 뒤에는 반드시 헤더를 확인한다 (<a href="./30sec-triage.html">FOR-0001</a>).</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">file extracted.bin
+ls -l extracted.bin        # 213 SIZE 응답의 바이트 수와 일치하는지
+strings -n 6 extracted.bin | head -30</code></pre></div>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>내용</th><th>활용</th></tr></thead><tbody><tr><td><code>ftp.request.command</code></td><td>4글자 명령 (<code>USER</code>, <code>RETR</code> …)</td><td>대문자 문자열로 정확히 비교한다</td></tr><tr><td><code>ftp.request.arg</code></td><td>명령의 인자</td><td>파일명, 계정명, <strong>비밀번호</strong>가 여기</td></tr><tr><td><code>ftp.response.code</code></td><td>3자리 정수</td><td>정수 비교 (<code>== 226</code>). 따옴표를 붙이지 않는다</td></tr><tr><td><code>ftp.response.arg</code></td><td>응답 텍스트</td><td>배너, 경로, 바이트 수, 패시브 포트 원문</td></tr><tr><td><code>ftp.passive.ip</code> / <code>ftp.passive.port</code></td><td><code>227</code>을 파싱한 값</td><td>데이터 채널 필터를 자동 생성</td></tr><tr><td><code>ftp.active.cip</code> / <code>ftp.active.port</code></td><td><code>PORT</code>를 파싱한 값</td><td>액티브 모드 클라이언트 수신 포트</td></tr><tr><td><code>ftp.current-working-directory</code></td><td>추적된 CWD</td><td><code>CWD</code> 누적 결과. 파일의 절대 경로 복원</td></tr><tr><td><code>ftp-data.setup-frame</code></td><td>이 데이터 채널을 만든 제어 프레임 번호</td><td><strong>데이터 ↔ 명령 연결의 핵심</strong></td></tr><tr><td><code>ftp-data.command</code></td><td>이 데이터 채널에 대응하는 명령</td><td>어느 <code>RETR</code>의 본문인지 확정</td></tr><tr><td><code>ftp.command-response.bytes</code></td><td>명령-응답 사이 전송 바이트</td><td>실제 전송량 검증</td></tr></tbody></table></div>
+<p><code>ftp-data.setup-frame</code>이 채워져 있으면 Wireshark가 채널 연결에 성공했다는 뜻이고, 비어 있으면 4단계의 수동 계산으로 가야 한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 데이터 채널과 원본 명령을 한 줄로 묶어 본다
+tshark -r capture.pcapng -Y &#39;ftp-data&#39; \
+  -T fields -e tcp.stream -e ftp-data.setup-frame -e ftp-data.command | sort -u</code></pre></div>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>FTP에서 얻은 값</th><th>다음에 볼 것</th></tr></thead><tbody><tr><td><code>USER</code> 계정명</td><td>EVTX 4624/4625의 <code>TargetUserName</code> (<a href="./event-4624-logon.html">FOR-0083</a>) — 같은 계정이 OS 로그온에도 쓰였나</td></tr><tr><td><code>PASS</code> 비밀번호</td><td>다른 프로토콜(SMTP AUTH, HTTP Basic)에서 재사용됐는지 검색</td></tr><tr><td><code>RETR</code> 파일명</td><td>클라이언트 디스크의 <code>$MFT</code> (<a href="./mft-basics.html">FOR-0021</a>) — 실제로 저장됐는지</td></tr><tr><td><code>STOR</code> 파일명</td><td>서버 웹루트, 그 파일을 실행한 프로세스 (<a href="./event-4688-process-creation.html">FOR-0088</a>)</td></tr><tr><td><code>DELE</code> 파일명</td><td>서버측 <code>$UsnJrnl</code>, 백업본 — 지워진 원본 복구</td></tr><tr><td>데이터 채널 포트</td><td>Sysmon Event 3 (<a href="./sysmon-event-3-network-connect.html">FOR-0100</a>) — 어느 프로세스가 열었나</td></tr><tr><td><code>MDTM</code> 시각 (UTC)</td><td>그 시각 ±5분의 전체 artifact. KST 변환 후 대조</td></tr><tr><td>추출한 바이너리</td><td>해시 → Amcache/Prefetch, <code>file</code>/<code>binwalk</code></td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>STOR</code>과 <code>RETR</code>을 반대로 읽는 것.</strong> 지문의 &quot;유출&quot;은 <code>RETR</code>(서버에서 가져감), &quot;심었다&quot;는 <code>STOR</code>(서버로 올림)이다. 방향을 뒤집으면 답이 정반대가 된다. 명령의 어원(store / retrieve)으로 외운다.</li><li><strong><code>ftp</code> 필터만 걸고 파일이 없다고 결론내는 것.</strong> <code>ftp</code>는 제어 채널 21번만 잡는다. 파일 본문은 <code>ftp-data</code>에 있다. 항상 <code>ftp || ftp-data</code>로 본다.</li><li><strong><code>ftp.response.code</code>에 따옴표를 붙이는 것.</strong> 정수 필드다. <code>ftp.response.code == &quot;226&quot;</code>은 원하는 대로 동작하지 않는다. <code>== 226</code>으로 쓴다.</li><li><strong><code>ftp.request.command</code>를 소문자로 비교하는 것.</strong> 와이어에는 대문자로 흐른다. <code>== &quot;retr&quot;</code>은 매칭되지 않는다. 대소문자를 모르면 <code>ftp.request.command contains &quot;ETR&quot;</code> 같은 부분 매칭을 쓰지 않고, 우선 전체 목록을 뽑아 실제 값을 확인한다.</li><li><strong><code>226</code>을 확인하지 않고 추출물을 제출하는 것.</strong> <code>426</code>으로 끝난 전송은 잘린 파일이다. <code>SIZE</code>의 213 응답 바이트 수와 추출 파일 크기를 비교하면 즉시 드러난다.</li><li><strong>패시브 포트를 <code>p1 * 256 + p2</code>로 계산하지 않는 것.</strong> <code>(203,0,113,77,195,80)</code>의 포트는 195나 80이 아니라 50000이다. 앞 4개는 IP, 뒤 2개가 포트의 상위/하위 바이트다.</li><li><strong>Export Objects &gt; FTP-DATA가 비면 파일이 없다고 판단하는 것.</strong> 패시브 모드에서 <code>227</code> 응답이 캡처에 없으면 Wireshark는 그 연결을 일반 TCP로 둔다. Conversations의 바이트 크기가 진실이다.</li><li><strong><code>TYPE A</code>로 전송된 바이너리를 그대로 쓰는 것.</strong> ASCII 모드는 줄바꿈을 변환하므로 바이너리가 손상된다. <code>TYPE I</code>가 아닌 전송에서 나온 실행 파일은 해시가 원본과 다를 수 있다.</li><li><strong><code>MDTM</code> 응답 시각을 로컬 시각으로 읽는 것.</strong> <code>213 20260314071502</code>는 <strong>UTC</strong>다. KST 표기는 <code>2026-03-14 16:15:02</code>다.</li><li><strong>여러 세션을 하나로 뭉쳐 읽는 것.</strong> <code>QUIT</code>/<code>221</code> 이후에 다시 <code>USER</code>가 나오면 별개 세션이다. <code>tcp.stream</code> 값으로 나눠서 읽는다.</li><li><strong>21번 포트만 FTP라고 가정하는 것.</strong> 2121, 8021 등에서 돌리면 <code>Protocol</code> 컬럼이 <code>TCP</code>로만 보인다. <code>Decode As &gt; FTP</code>로 강제한다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) 제어 채널 전체를 시간순 표로
+tshark -r capture.pcapng -Y &#39;ftp&#39; \
+  -T fields -e frame.number -e frame.time -e ip.src -e ip.dst \
+  -e ftp.request.command -e ftp.request.arg -e ftp.response.code -e ftp.response.arg -E header=y
+
+# 2) 자격증명만
+tshark -r capture.pcapng -Y &#39;ftp.request.command in {&quot;USER&quot;,&quot;PASS&quot;}&#39; \
+  -T fields -e tcp.stream -e ip.src -e ftp.request.command -e ftp.request.arg
+
+# 3) 전송된 파일명만 (업로드/다운로드 구분)
+tshark -r capture.pcapng -Y &#39;ftp.request.command in {&quot;STOR&quot;,&quot;RETR&quot;,&quot;APPE&quot;,&quot;DELE&quot;}&#39; \
+  -T fields -e frame.number -e ftp.request.command -e ftp.request.arg
+
+# 4) 인증 결과 집계 — 530이 많으면 무차별 대입
+tshark -r capture.pcapng -Y &#39;ftp.response.code in {230,530}&#39; \
+  -T fields -e ftp.response.code | sort | uniq -c
+
+# 5) 데이터 채널 후보 찾기 (21번 제외한 큰 대화)
+tshark -r capture.pcapng -q -z conv,tcp | sort -k5 -n -r | head -10
+
+# 6) 파일 일괄 추출 후 형식 확인
+tshark -r capture.pcapng --export-objects ftp-data,out_ftp/
+ls -l out_ftp/ &amp;&amp; file out_ftp/*
+
+# 7) 파서를 우회한 최후 확인
+strings -n 6 capture.pcapng | grep -Ei &#39;^(USER|PASS|RETR|STOR|DELE|CWD) &#39;</code></pre></div>
+<p><code>ftp.request.command in {&quot;USER&quot;,&quot;PASS&quot;}</code> 의 집합 문법은 <code>==</code> 를 여러 번 쓰는 것보다 짧고 오타가 적다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;공격자가 FTP 서버에 접속해 자료를 가져가고 흔적을 지웠다.
+ 가져간 파일 안의 flag 와, 공격자가 삭제한 파일 이름을 답하시오.&quot;
+첨부: ftp_case.pcapng (4,912 packets, 3.1 MB)
+
+1. Protocol Hierarchy
+   TCP 99.1%  |  File Transfer Protocol 1.2% (58 packets)  |  FTP Data 0%
+   -&gt; FTP Data 가 0%. 하지만 TCP 바이트는 3 MB. 뭔가 미인식 상태다.
+
+2. 필터: ftp
+   Follow &gt; TCP Stream 으로 제어 채널 전문 확인
+     USER backup_svc / PASS Wint3r!2026 / 230 Login successful.
+     TYPE I / PASV / 227 Entering Passive Mode (203,0,113,77,195,81)
+     RETR internal_report.pdf
+     150 Opening BINARY mode data connection ... (2317540 bytes)
+     226 Transfer complete.
+     DELE audit_trail.log
+     250 Delete operation successful.
+
+   삭제된 파일 = audit_trail.log  (두 번째 질문 해결)
+   가져간 파일 = internal_report.pdf, 2,317,540 bytes
+
+3. 첫 시도 (실패):
+   File &gt; Export Objects &gt; FTP-DATA
+   -&gt; 목록이 완전히 비어 있다.
+
+   원인 진단:
+     tshark -r ftp_case.pcapng -Y &#39;ftp-data&#39; | wc -l
+       0
+     tshark -r ftp_case.pcapng -Y &#39;ftp.response.code == 227&#39; \
+       -T fields -e ftp.passive.ip -e ftp.passive.port
+       203.0.113.77   50001
+
+   227 은 캡처에 있는데 ftp-data 로는 승격되지 않았다. 데이터 연결의
+   SYN 이 캡처 범위를 벗어나 시작되어 Wireshark 가 setup frame 을
+   연결하지 못한 상태다. ftp-data.setup-frame 도 비어 있다.
+
+   교훈: Export Objects 는 Wireshark 의 채널 연결이 성공했을 때만 채워진다.
+        비어 있다는 것은 &quot;파일이 없다&quot;가 아니라 &quot;연결에 실패했다&quot;다.
+
+4. 접근 변경 — 협상된 포트를 직접 쓴다
+   포트 계산 검산: 195 * 256 + 81 = 49920 + 81 = 50001  (필드값과 일치)
+
+   필터: tcp.port == 50001
+   Statistics &gt; Conversations &gt; TCP 에서 해당 대화 확인
+     10.0.0.15:51344 &lt;-&gt; 203.0.113.77:50001   1,712 packets  2,317,540 bytes
+
+   바이트 수가 150 응답의 2,317,540 과 정확히 일치한다. 이것이 그 파일이다.
+
+5. 추출
+   해당 패킷 우클릭 &gt; Follow &gt; TCP Stream
+   Show data as = Raw &gt; Save as &gt; report.bin
+
+   (또는 Decode As 로 FTP-DATA 를 강제한 뒤 Export Objects 재시도)
+
+6. 검증과 답
+   $ ls -l report.bin
+   -rw-r--r-- 1 user user 2317540 report.bin        &lt;- SIZE/150 응답과 일치
+   $ file report.bin
+   report.bin: PDF document, version 1.7
+   $ strings report.bin | grep -i &#39;flag{&#39;
+   flag{p4ssiv3_p0rt_195x256plus81}
+
+7. 시간 정리
+   MDTM 응답 213 20260314071502 = 2026-03-14 07:15:02 UTC
+                                = 2026-03-14 16:15:02 KST
+
+정답: flag{p4ssiv3_p0rt_195x256plus81} / 삭제된 파일 audit_trail.log</code></pre></div>
+<p>3단계의 실패가 핵심이다. <strong>Export Objects의 공백은 파일의 부재가 아니라 채널 연결의 실패를 뜻한다.</strong> <code>ftp.passive.port</code>로 포트를 확정하고 그 대화의 바이트 수를 <code>150</code>/<code>SIZE</code> 응답과 맞춰보면 언제나 정답 스트림을 찾을 수 있다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>ftp || ftp-data</code>로 봤는가 — <code>ftp</code>만으로는 파일 본문이 안 보인다</li><li><code>ftp</code> 아무 패킷에서 <code>Follow &gt; TCP Stream</code>을 했는가 — 세션 전문이 가장 빠르다</li><li><code>ftp.request.command</code> 전체 목록을 뽑았는가 — <code>DELE</code>/<code>RNTO</code> 같은 조용한 명령을 놓치기 쉽다</li><li><code>ftp.response.code == 226</code>인가 <code>426</code>인가 — 추출물의 온전성</li><li><code>SIZE</code>의 <code>213</code> 응답 바이트 수와 추출 파일 크기가 같은가</li><li><code>ftp.passive.port</code> / <code>ftp.active.port</code>를 확인했는가 — 없으면 <code>227</code> 원문에서 손계산</li><li>Export Objects가 비었는가 → <code>Decode As &gt; FTP-DATA</code> 또는 <code>Follow &gt; Raw</code></li><li>Conversations를 Bytes로 정렬해 21번 아닌 큰 대화를 찾았는가</li><li><code>tcp.stream</code> 별로 세션을 나눠 봤는가 — <code>QUIT</code> 이후는 별개 세션</li><li><code>AUTH TLS</code> / <code>234</code>가 있는가 — FTPS면 본문 복원은 포기하고 메타데이터로 승부</li><li><code>Protocol</code> 컬럼이 <code>TCP</code>뿐인가 → 비표준 포트 FTP. <code>Decode As &gt; FTP</code></li><li><code>strings capture.pcapng | grep -E &#39;^(USER|RETR|STOR) &#39;</code>를 돌렸는가 — 파서 우회</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-070 — RFC 959 (FTP): 명령어 정의(<code>USER</code> <code>PASS</code> <code>STOR</code> <code>RETR</code> <code>DELE</code> <code>RNFR</code> <code>RNTO</code> <code>TYPE</code> <code>PORT</code> <code>PASV</code>), 응답 코드 3자리 체계, <code>PORT</code>/<code>227</code>의 <code>h1,h2,h3,h4,p1,p2</code> 표기와 포트 계산 규칙, 액티브/패시브 데이터 채널 개설 주체</li><li>SRC-002 — Wireshark Display Filter Reference: 본문에 쓴 필드 이름 전체(<code>ftp.request.command</code>, <code>ftp.request.arg</code>, <code>ftp.response.code</code>, <code>ftp.response.arg</code>, <code>ftp.passive.ip</code>, <code>ftp.passive.port</code>, <code>ftp.active.cip</code>, <code>ftp.active.port</code>, <code>ftp.current-working-directory</code>, <code>ftp-data.setup-frame</code>, <code>ftp-data.command</code>, <code>ftp.command-response.bytes</code>)를 dfref의 <code>ftp</code> 항목에서 확인</li><li>SRC-003 — Wireshark User&#39;s Guide: <code>File &gt; Export Objects &gt; FTP-DATA</code>, <code>Follow &gt; TCP Stream</code>의 <code>Show data as: Raw</code>, <code>Analyze &gt; Decode As</code>, <code>Statistics &gt; Conversations</code></li><li><code>MDTM</code> 응답의 <code>YYYYMMDDhhmmss</code> UTC 표기는 RFC 3659(FTP 확장)에서 정의된 것으로, 서버 구현에 따라 지원되지 않을 수 있다. 실제 캡처에서 응답 코드 213이 오는지 확인할 것</li><li>메뉴 경로(<code>Export Objects</code>의 <code>FTP-DATA</code> 항목 명칭 등)는 Wireshark 버전에 따라 다를 수 있으므로 실제 화면에서 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./wireshark-30sec-triage.html">
+    <span class="rel-id">FOR-0146 · Network/PCAP</span>
+    Wireshark 30초 트리아지: pcap을 받고 처음 할 다섯 가지
+  </a>
+  <a class="related-item" href="./smb-file-access.html">
+    <span class="rel-id">FOR-0168 · Network/PCAP</span>
+    SMB2 공유 파일 접근 흔적: smb2.cmd로 읽은 파일과 계정 특정
+  </a>
+  <a class="related-item" href="./protocol-hierarchy.html">
+    <span class="rel-id">FOR-0148 · Network/PCAP</span>
+    Protocol Hierarchy: 프로토콜 비중과 End Packets 읽는 법
+  </a>
+  <a class="related-item" href="./http-post-find.html">
+    <span class="rel-id">FOR-0158 · Network/PCAP</span>
+    pcap에서 HTTP POST 찾아 본문·자격증명·업로드 파일 뽑기
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./http-status-analysis.html"><span class="rel-id">← FOR-0161</span>HTTP 상태 코드로 성공·실패 판정: http.response.code와 401→200 전환 읽기</a>
+<a class="related-item" href="./smtp-mail.html"><span class="rel-id">FOR-0167 →</span>SMTP 메일 복원: imf로 .eml 추출하고 AUTH LOGIN 자격증명 디코딩</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-제어-채널-전문-읽기">1단계 — 제어 채널 전문 읽기</a></li>
+<li class="toc-l3"><a href="#2단계-명령별-포렌식-의미">2단계 — 명령별 포렌식 의미</a></li>
+<li class="toc-l3"><a href="#3단계-응답-코드로-성공실패-판정">3단계 — 응답 코드로 성공/실패 판정</a></li>
+<li class="toc-l3"><a href="#4단계-데이터-채널-포트를-직접-계산한다">4단계 — 데이터 채널 포트를 직접 계산한다</a></li>
+<li class="toc-l3"><a href="#5단계-export-objects가-비었을-때의-우회">5단계 — Export Objects가 비었을 때의 우회</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>
