@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Wireshark 30초 트리아지: pcap을 받고 처음 할 다섯 가지 · FOR-0146 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Network%2FPCAP">Network/PCAP</a> / FOR-0146
+      </div>
+      <header class="article-head">
+        <h1>Wireshark 30초 트리아지: pcap을 받고 처음 할 다섯 가지</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Network/PCAP</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>pcap을 열면 패킷 목록을 스크롤하지 말고 Statistics &gt; Protocol Hierarchy → Conversations → 관심 프로토콜 필터 → Follow TCP Stream → Export Objects 순서로 30초 안에 &quot;어떤 프로토콜에 무엇이 실려 있는가&quot;를 확정한다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Wireshark, tshark, NetworkMiner, HxD</td></tr>
+<tr><th>artifact</th><td><code>pcap</code> · <code>pcapng</code></td></tr>
+<tr><th>프로토콜</th><td>HTTP, DNS, TCP, UDP, FTP, SMTP, SMB, TLS, ICMP, ARP, DHCP</td></tr>
+<tr><th>Wireshark 필터</th><td><code>http.request</code> · <code>dns</code> · <code>ftp || ftp-data</code> · <code>smtp</code> · <code>tcp.flags.syn == 1 &amp;&amp; tcp.flags.ack == 0</code> · <code>frame contains &quot;flag&quot;</code> · <code>tcp contains &quot;password&quot;</code> · <code>tcp.stream eq 0</code> · <code>!(arp || icmp || dns)</code></td></tr>
+<tr><th>tshark field</th><td><code>ip.src</code> · <code>ip.dst</code> · <code>tcp.stream</code> · <code>http.host</code> · <code>http.request.uri</code> · <code>dns.qry.name</code></td></tr>
+<tr><th>파일 형식</th><td><code>pcap</code> · <code>pcapng</code></td></tr>
+<tr><th>검색 별칭</th><td>와이어샤크 시작 · pcap 처음 · pcap 뭐부터 · 패킷 분석 순서 · 와이어샤크 트리아지 · wireshark 처음 · pcap 열었는데 뭘 봐야하나</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>pcap을 열면 패킷 목록을 스크롤하지 말고 <strong>Statistics &gt; Protocol Hierarchy → Conversations → 관심 프로토콜 필터 → Follow TCP Stream → Export Objects</strong> 순서로 30초 안에 &quot;어떤 프로토콜에 무엇이 실려 있는가&quot;를 확정한다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>첨부가 <code>.pcap</code> / <code>.pcapng</code> 하나뿐이고 지문이 짧은 모든 문제</li><li>패킷이 수만~수십만 개라 눈으로 볼 수 없는 상황</li><li>&quot;다운로드한 파일 이름&quot;, &quot;전송된 자격증명&quot;, &quot;명령 실행 흔적&quot;을 찾아야 하는 상황</li></ul>
+<p><strong>패킷 목록을 위에서 아래로 읽는 것은 거의 항상 오답이다.</strong> 통계 화면이 먼저다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li><strong>파일 크기</strong> — 수백 KB면 프로토콜이 몇 개 안 된다. 수십 MB면 파일 전송이나 스캔이 들어 있다.</li><li><strong>지문의 명사</strong> — &quot;다운로드&quot;→HTTP/FTP, &quot;메일&quot;→SMTP/IMF, &quot;조회&quot;→DNS, &quot;접속&quot;→TCP/RDP, &quot;숨겨진&quot;→ICMP/DNS 터널링</li><li><strong>Protocol Hierarchy에서 비중이 이상한 프로토콜</strong> — 정상 트래픽에 ICMP가 40%면 그것이 답이다</li><li><strong>패킷 개수 대비 시간 범위</strong> — 1초에 수천 패킷이면 스캔이나 플러딩</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<p>GUI 5단계:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1. Statistics &gt; Capture File Properties   -&gt; 패킷 수, 시간 범위, 캡처 환경
+2. Statistics &gt; Protocol Hierarchy        -&gt; 어떤 프로토콜이 있는가  (가장 중요)
+3. Statistics &gt; Conversations &gt; TCP       -&gt; Bytes로 정렬. 가장 큰 대화가 목표
+4. 해당 행 우클릭 &gt; Apply as Filter &gt; Selected
+5. 패킷 우클릭 &gt; Follow &gt; TCP Stream      -&gt; 내용을 눈으로 읽는다</code></pre></div>
+<p>CLI로 같은 것을 한 번에:</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -q -z io,phs</code></pre></div>
+<p>전문 없이 문자열만 먼저 확인하고 싶으면:</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">strings capture.pcapng | grep -Ei &#39;flag\{|password|user=|\.zip|\.exe|Authorization&#39;</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-capture-file-properties-판을-읽는다">1단계 — Capture File Properties: 판을 읽는다</h3>
+<p><code>Statistics &gt; Capture File Properties</code></p>
+<div class="table-wrap"><table><thead><tr><th>보는 항목</th><th>왜</th></tr></thead><tbody><tr><td>Packets</td><td>총 개수. 1,000개 이하면 수동으로도 볼 수 있다</td></tr><tr><td>First / Last packet</td><td>시간 범위. 문제 지문의 시각과 대조</td></tr><tr><td>Capture file comments</td><td><strong>pcapng는 주석을 담을 수 있다. 힌트가 들어 있는 경우가 있다</strong></td></tr><tr><td>Interfaces / Encapsulation</td><td>Ethernet인지 Wi-Fi(802.11)인지 Linux cooked인지</td></tr><tr><td>Average packets/s</td><td>급증 구간이 있는지 판단</td></tr></tbody></table></div>
+<p>pcapng 주석 확인은 CTF에서 실제로 정답인 경우가 있다. 놓치지 않는다.</p>
+<h3 id="2단계-protocol-hierarchy-전체-그림">2단계 — Protocol Hierarchy: 전체 그림</h3>
+<p><code>Statistics &gt; Protocol Hierarchy</code></p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Protocol                          Percent Packets  Packets  Bytes
+Frame                             100.0            18422    12894011
+  Ethernet                        100.0            18422    257908
+    Internet Protocol Version 4    99.4            18311    366220
+      Transmission Control Protocol 82.1           15125    11204418
+        Hypertext Transfer Protocol  3.4             631     1892044
+          Line-based text data       0.4              78      412009
+          Media Type                 0.2              41      983221
+        FTP Data                     8.8            1621     8104332   &lt;-- 큰 파일 전송
+        File Transfer Protocol       0.6             112       11204
+      User Datagram Protocol        17.3            3186      264880
+        Domain Name System          16.9            3112      258110   &lt;-- DNS가 비정상적으로 많다
+      Internet Control Message Protocol 0.9          171       28442</code></pre></div>
+<p>읽는 법:</p>
+<ul><li><strong><code>Bytes</code>가 큰 프로토콜</strong> = 파일이나 데이터가 실려 있다 → FTP Data 8 MB는 파일 전송 확정</li><li><strong><code>Packets</code>가 비정상적으로 많은 프로토콜</strong> = DNS 3,112개는 정상 브라우징으로 나오지 않는다 → <strong>DNS 터널링 의심</strong></li><li><strong>없어야 할 프로토콜의 존재</strong> = Telnet, FTP 평문, SMB, IRC</li><li><strong><code>data</code> / <code>Line-based text data</code></strong> = 파서가 인식 못한 페이로드. 커스텀 프로토콜/C2 후보</li></ul>
+<p>여기서 결정한 프로토콜 하나만 파는 것이 30초 트리아지의 목적이다.</p>
+<h3 id="3단계-conversations-endpoints-누가-얼마나">3단계 — Conversations / Endpoints: 누가 얼마나</h3>
+<p><code>Statistics &gt; Conversations</code> → <strong>TCP 탭</strong> → <code>Bytes</code> 컬럼 헤더 클릭해 내림차순 정렬</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Address A       Port A   Address B        Port B   Packets   Bytes     Stream ID
+10.0.0.15       49812    203.0.113.77     21       112       11204     3
+10.0.0.15       49813    203.0.113.77     20       1621      8104332   4     &lt;-- 8 MB
+10.0.0.15       49820    93.184.216.34    80       631       1892044   7</code></pre></div>
+<ul><li><code>Bytes</code> 1위 대화가 대개 문제의 핵심이다</li><li><code>Stream ID</code> 컬럼을 켜두면 그 값으로 바로 <code>tcp.stream eq 4</code> 필터를 만들 수 있다</li><li>행 우클릭 → <code>Apply as Filter &gt; Selected &gt; A ↔ B</code></li></ul>
+<p><code>Statistics &gt; Endpoints</code> → <strong>IPv4 탭</strong>은 &quot;누가 등장하는가&quot;를 본다. 외부 IP가 1개뿐이면 그것이 공격자/서버다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># CLI 동등물
+tshark -r capture.pcapng -q -z conv,tcp
+tshark -r capture.pcapng -q -z endpoints,ip</code></pre></div>
+<h3 id="4단계-프로토콜별-첫-필터">4단계 — 프로토콜별 첫 필터</h3>
+<p>2단계에서 고른 프로토콜에 따라 다음 한 줄만 입력한다.</p>
+<div class="table-wrap"><table><thead><tr><th>Protocol Hierarchy에서 본 것</th><th>첫 필터</th><th>다음 행동</th></tr></thead><tbody><tr><td>HTTP</td><td><code>http.request</code></td><td>URI/Host 확인 → Export Objects</td></tr><tr><td>HTTP POST 존재</td><td><code>http.request.method == &quot;POST&quot;</code></td><td>Follow TCP Stream으로 본문 (<a href="./http-post-find.html">FOR-0158</a>)</td></tr><tr><td>DNS가 과다</td><td><code>dns</code> → <code>dns.qry.name</code> 길이 확인</td><td>서브도메인 길이/개수 → 터널링 판정</td></tr><tr><td>FTP</td><td>`ftp.request.command == &quot;STOR&quot; \</td><td>\</td><td>ftp.request.command == &quot;RETR&quot;`</td><td>파일명 확보 → <code>ftp-data</code> Follow</td></tr><tr><td>SMTP</td><td>`smtp.data.fragment \</td><td>\</td><td>imf`</td><td>File &gt; Export Objects &gt; IMF (메일 원문)</td></tr><tr><td>SMB</td><td><code>smb2.cmd == 5</code> (Create)</td><td>접근한 파일 경로</td></tr><tr><td>Telnet</td><td><code>telnet</code></td><td>Follow TCP Stream = 입력한 명령 전체</td></tr><tr><td>TLS만 있음</td><td><code>tls.handshake.type == 1</code></td><td>SNI(<code>tls.handshake.extensions_server_name</code>)로 목적지 도메인</td></tr><tr><td>ICMP 과다</td><td><code>icmp &amp;&amp; data.len &gt; 32</code></td><td>페이로드에 데이터 은닉</td></tr><tr><td>무엇도 모를 때</td><td><code>frame contains &quot;flag&quot;</code></td><td>문자열 직접 사냥</td></tr></tbody></table></div>
+<p>만능 첫 필터 세 개:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">frame contains &quot;flag&quot;
+tcp contains &quot;password&quot;
+!(arp || icmp || dns || tls)</code></pre></div>
+<p>세 번째는 &quot;잡음 제거&quot;용이다. 남은 것이 본질이다.</p>
+<h3 id="5단계-follow-stream과-export-objects">5단계 — Follow Stream과 Export Objects</h3>
+<p><strong>Follow TCP Stream</strong> — 패킷 하나 우클릭 → <code>Follow &gt; TCP Stream</code></p>
+<ul><li>클라이언트→서버는 빨강, 서버→클라이언트는 파랑으로 표시된다</li><li>우하단 <code>Show data as</code>를 <code>ASCII</code> / <code>Hex Dump</code> / <code>Raw</code>로 바꿀 수 있다</li><li><strong><code>Raw</code>로 바꿔 저장하면 전송된 파일 바이너리를 그대로 얻는다</strong></li><li>좌하단의 스트림 번호 스핀박스로 다음 스트림을 훑을 수 있다</li></ul>
+<p><strong>Export Objects</strong> — <code>File &gt; Export Objects &gt;</code></p>
+<div class="table-wrap"><table><thead><tr><th>메뉴</th><th>추출 대상</th></tr></thead><tbody><tr><td>HTTP</td><td>HTTP로 전송된 모든 파일/응답 본문</td></tr><tr><td>IMF</td><td>SMTP 메일 원문 (<code>.eml</code>)</td></tr><tr><td>SMB / SMB2</td><td>공유를 통해 전송된 파일</td></tr><tr><td>FTP-DATA</td><td>FTP 데이터 채널의 파일</td></tr><tr><td>TFTP</td><td>TFTP 전송 파일</td></tr><tr><td>DICOM</td><td>의료 영상</td></tr></tbody></table></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># CLI로 일괄 추출
+tshark -r capture.pcapng --export-objects http,out_http/
+tshark -r capture.pcapng --export-objects smb,out_smb/
+ls -la out_http/ &amp;&amp; file out_http/*</code></pre></div>
+<p>추출 후 반드시 <code>file</code>과 <code>strings</code>를 돌린다 (<a href="./30sec-triage.html">FOR-0001</a>). 확장자가 거짓인 경우가 흔하다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p>트리아지 단계에서 컬럼을 아래처럼 바꿔두면 이후가 편하다.</p>
+<div class="table-wrap"><table><thead><tr><th>설정</th><th>경로</th><th>이유</th></tr></thead><tbody><tr><td>시간을 절대 UTC로</td><td><code>View &gt; Time Display Format &gt; UTC Date and Time of Day</code></td><td>로그·EVTX와 대조하려면 UTC 절대시각이 필요하다</td></tr><tr><td>초 단위 정밀도</td><td>같은 메뉴 &gt; <code>Milliseconds</code></td><td>순서 판정</td></tr><tr><td>컬럼 추가</td><td>필드 우클릭 &gt; <code>Apply as Column</code></td><td><code>http.host</code>, <code>dns.qry.name</code>, <code>tcp.stream</code>을 컬럼으로</td></tr><tr><td>이름 변환 끄기</td><td><code>View &gt; Name Resolution</code> 해제</td><td>포트 번호가 <code>http</code> 대신 <code>80</code>으로 보여 필터 작성이 정확해진다</td></tr></tbody></table></div>
+<p>기본 컬럼의 의미:</p>
+<div class="table-wrap"><table><thead><tr><th>컬럼</th><th>내용</th><th>함정</th></tr></thead><tbody><tr><td><code>No.</code></td><td>패킷 번호</td><td>필터를 걸어도 번호는 원본 유지</td></tr><tr><td><code>Time</code></td><td>기본은 <strong>캡처 시작 기준 상대 초</strong></td><td>절대시각으로 바꾸지 않으면 로그와 대조 불가</td></tr><tr><td><code>Source</code>/<code>Destination</code></td><td>IP (또는 MAC)</td><td>이름 변환이 켜져 있으면 도메인으로 보인다</td></tr><tr><td><code>Protocol</code></td><td>Wireshark가 <strong>최종 판정한</strong> 프로토콜</td><td>8080 포트 HTTP는 <code>TCP</code>로 보일 수 있다 → <code>Decode As</code></td></tr><tr><td><code>Length</code></td><td>프레임 전체 길이</td><td>페이로드 길이가 아니다</td></tr><tr><td><code>Info</code></td><td>요약</td><td>여기서 URI/쿼리/명령이 보이면 바로 답</td></tr></tbody></table></div>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>pcap에서 얻은 것</th><th>다음 목표</th></tr></thead><tbody><tr><td>다운로드한 파일명</td><td>디스크의 <code>$MFT</code> (<a href="./mft-basics.html">FOR-0021</a>), 브라우저 Downloads (<a href="./chrome-history.html">FOR-0191</a>)</td></tr><tr><td>접속한 도메인</td><td>브라우저 History, DNS 캐시, <code>hosts</code> 파일</td></tr><tr><td>자격증명</td><td>EVTX 4624/4625 (<a href="./event-4624-logon.html">FOR-0083</a>) — 실제 로그온 성공 여부</td></tr><tr><td>공격자 IP</td><td>웹 서버 <code>access.log</code> (<a href="./powershell-select-string.html">FOR-0121</a>)</td></tr><tr><td>실행된 명령 문자열</td><td>EVTX 4688, PowerShell 4104</td></tr><tr><td>추출한 실행 파일</td><td>해시 → Amcache/Prefetch 대조</td></tr><tr><td>전송 시각</td><td>그 시각 ±5분의 모든 artifact</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>패킷 목록을 스크롤하는 것.</strong> 18,000개를 눈으로 보는 것은 불가능하다. 통계 → 필터 순서를 지킨다.</li><li><strong>Display Filter와 Capture Filter를 혼동하는 것.</strong> 이미 저장된 pcap에는 <strong>Display Filter만</strong> 쓴다. Capture Filter(BPF, <code>tcp port 80</code>)는 캡처 시점 문법이며 분석 창에 넣으면 문법 오류가 난다.</li><li><strong><code>Time</code>을 상대 초로 두고 로그와 대조하는 것.</strong> <code>View &gt; Time Display Format</code>을 UTC 절대시각으로 먼저 바꾼다.</li><li><strong><code>Protocol</code> 컬럼을 신뢰하는 것.</strong> 비표준 포트의 HTTP는 <code>TCP</code>로만 표시된다. 우클릭 <code>Decode As &gt; HTTP</code>로 강제한다.</li><li><strong>TCP 재조립 실패를 놓치는 것.</strong> 캡처가 중간부터 시작되면 Follow Stream이 깨진다. <code>Analyze &gt; Expert Information</code>에서 재전송/누락을 먼저 확인한다.</li><li><strong>Export Objects에 안 나온다고 파일이 없다고 판단하는 것.</strong> 청크 전송·gzip·비표준 포트에서는 안 나올 수 있다. Follow Stream → <code>Raw</code> 저장으로 직접 꺼낸다.</li><li><strong>TLS를 보고 포기하는 것.</strong> 내용은 못 봐도 SNI(<code>tls.handshake.extensions_server_name</code>), 인증서 CN, 패킷 크기 패턴, JA3는 여전히 단서다.</li><li><strong><code>frame contains</code>의 대소문자.</strong> 대소문자를 구분한다. 대소문자 무시가 필요하면 <code>frame matches &quot;(?i)flag&quot;</code>.</li><li><strong>한글/UTF-16 문자열.</strong> <code>frame contains &quot;플래그&quot;</code>는 인코딩이 맞아야 걸린다. UTF-16으로 전송됐다면 hex 검색(<code>frame contains 66:00:6c:00</code>)이 필요하다.</li><li><strong>pcapng 주석을 안 보는 것.</strong> <code>Statistics &gt; Capture File Properties</code> 하단에 답이 적혀 있는 문제가 있다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) 프로토콜 구성 — GUI Protocol Hierarchy와 동일
+tshark -r capture.pcapng -q -z io,phs
+
+# 2) 대화 목록 — GUI Conversations와 동일
+tshark -r capture.pcapng -q -z conv,tcp
+
+# 3) HTTP 요청 전체를 표로
+tshark -r capture.pcapng -Y &#39;http.request&#39; \
+  -T fields -e frame.number -e frame.time -e ip.src -e http.host -e http.request.uri -E header=y
+
+# 4) DNS 질의 이름만 (터널링 판정)
+tshark -r capture.pcapng -Y &#39;dns.flags.response == 0&#39; -T fields -e dns.qry.name |
+  sort | uniq -c | sort -nr | head -20
+
+# 5) 파일 추출 — GUI Export Objects와 동일
+tshark -r capture.pcapng --export-objects http,out/
+
+# 6) 문자열 직접 사냥 — Wireshark가 파싱 못한 것도 잡힌다
+strings -n 6 capture.pcapng | grep -Ei &#39;flag\{|BEGIN .*PRIVATE KEY|Authorization: Basic&#39;</code></pre></div>
+<p>GUI와 tshark 결과가 다르면 필터 문법이나 재조립 설정을 다시 본다. <code>strings</code>는 파서를 거치지 않으므로 <strong>Wireshark가 놓친 것을 잡는 최후 수단</strong>이다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;공격자가 서버에서 가져간 파일 이름과 그 안의 flag를 구하세요.&quot;
+첨부: capture.pcapng (18,422 packets, 12 MB)
+
+1. Statistics &gt; Capture File Properties
+   Packets 18,422 / 2026-03-14 07:15:02 ~ 07:41:55 UTC / 주석 없음
+
+2. Statistics &gt; Protocol Hierarchy
+   TCP 82%  |  FTP Data 8.8% (8.1 MB)  |  DNS 16.9% (3,112 packets)
+   -&gt; 큰 것 하나(FTP Data)와 이상한 것 하나(DNS 과다)가 동시에 보인다.
+      먼저 파일 전송(FTP)을 판다.
+
+3. 필터: ftp
+   응답 목록에서 명령 흐름이 보인다.
+     USER anonymous / PASS ftp@example.com
+     ... 
+     STOR customer_list_2026.zip      &lt;- 업로드(서버로 올림)
+     RETR internal_report.pdf         &lt;- 다운로드(가져감)
+
+   지문은 &quot;가져간&quot; 이므로 RETR.
+
+4. 첫 시도 (실패):
+   File &gt; Export Objects &gt; FTP-DATA -&gt; 목록이 비어 있었다.
+   원인: 데이터 채널이 다른 포트(passive mode)로 열려 Wireshark가
+        FTP-DATA로 연결하지 못한 상태였다.
+
+5. 접근 변경 — Conversations에서 8 MB 대화를 직접 찾는다
+   Statistics &gt; Conversations &gt; TCP, Bytes 내림차순
+     10.0.0.15:49813 &lt;-&gt; 203.0.113.77:20   1621 packets  8,104,332 bytes  stream 4
+
+   필터: tcp.stream eq 4
+   우클릭 &gt; Follow &gt; TCP Stream
+   Show data as = Raw -&gt; Save as -&gt; extracted.bin
+
+6. 추출물 확인
+   $ file extracted.bin
+   extracted.bin: PDF document, version 1.7
+   $ strings extracted.bin | grep -i flag
+   flag{ftp_p4ssive_m0de_str1kes_back}
+
+7. 남은 이상 신호(DNS 3,112개)도 확인
+   tshark -r capture.pcapng -Y &#39;dns.flags.response == 0&#39; -T fields -e dns.qry.name | head -3
+     aGVsbG8gZnJvbSBk.tunnel.example.com
+     b3RoZXIgZGF0YSBo.tunnel.example.com
+   -&gt; Base64 서브도메인. DNS 터널링. 이 문제의 답은 아니지만 별도 플래그일 수 있다.
+
+정답: internal_report.pdf / flag{ftp_p4ssive_m0de_str1kes_back}</code></pre></div>
+<p>4단계의 실패가 핵심 교훈이다. <strong>Export Objects가 비어도 파일이 없는 것이 아니다.</strong> Conversations의 바이트 크기가 진실을 알려주고, <code>Follow Stream &gt; Raw</code>가 언제나 통한다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>Statistics &gt; Protocol Hierarchy</code>를 실제로 봤는가 — 대부분의 답이 여기서 갈린다</li><li><code>Statistics &gt; Capture File Properties</code>의 <strong>주석</strong>을 확인했는가</li><li><code>Statistics &gt; Conversations</code>를 Bytes로 정렬했는가 — 가장 큰 대화가 목표</li><li><code>frame contains &quot;flag&quot;</code> / <code>tcp contains &quot;flag&quot;</code>를 시도했는가</li><li><code>strings capture.pcapng | grep flag</code>를 시도했는가 — 파서를 우회한다</li><li><code>Analyze &gt; Expert Information</code>에 재전송·누락이 있는가 — Follow Stream 신뢰도 판단</li><li><code>Protocol</code> 컬럼이 <code>TCP</code>뿐인가 → <code>Decode As</code>로 프로토콜 강제</li><li>Export Objects가 비었는가 → <code>Follow Stream &gt; Raw &gt; Save as</code></li><li>TLS뿐인가 → SNI, 인증서 CN, 패킷 크기 패턴으로 전환</li><li>DNS/ICMP 개수가 비정상인가 → 터널링 라인으로 전환</li><li>시간을 UTC 절대시각으로 바꿨는가 — 다른 artifact와 대조하려면 필수</li><li>추출한 파일에 <code>file</code>/<code>strings</code>/<code>binwalk</code>를 돌렸는가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-003 — Wireshark User&#39;s Guide: Statistics 메뉴(Protocol Hierarchy, Conversations, Endpoints), Follow Stream, Export Objects</li><li>SRC-002 — Wireshark Display Filter Reference: 본문에 등장한 필터 필드 이름</li><li>SRC-010 — tshark man page: <code>-z io,phs</code>, <code>-z conv,tcp</code>, <code>--export-objects</code>, <code>-T fields</code></li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./30sec-triage.html">
+    <span class="rel-id">FOR-0001 · 트리아지</span>
+    포렌식 문제 파일을 받았을 때 30초 트리아지
+  </a>
+  <a class="related-item" href="./http-post-find.html">
+    <span class="rel-id">FOR-0158 · Network/PCAP</span>
+    pcap에서 HTTP POST 찾아 본문·자격증명·업로드 파일 뽑기
+  </a>
+  <a class="related-item" href="./ipv4-regex.html">
+    <span class="rel-id">FOR-0128 · 로그/Regex</span>
+    IPv4 주소 regex: 느슨한 패턴과 엄격한 패턴 골라 쓰기
+  </a>
+  <a class="related-item" href="./mft-basics.html">
+    <span class="rel-id">FOR-0021 · 디스크/NTFS</span>
+    $MFT 기본 구조와 포렌식 활용
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./ipv4-regex.html"><span class="rel-id">← FOR-0128</span>IPv4 주소 regex: 느슨한 패턴과 엄격한 패턴 골라 쓰기</a>
+<a class="related-item" href="./http-post-find.html"><span class="rel-id">FOR-0158 →</span>pcap에서 HTTP POST 찾아 본문·자격증명·업로드 파일 뽑기</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-capture-file-properties-판을-읽는다">1단계 — Capture File Properties: 판을 읽는다</a></li>
+<li class="toc-l3"><a href="#2단계-protocol-hierarchy-전체-그림">2단계 — Protocol Hierarchy: 전체 그림</a></li>
+<li class="toc-l3"><a href="#3단계-conversations-endpoints-누가-얼마나">3단계 — Conversations / Endpoints: 누가 얼마나</a></li>
+<li class="toc-l3"><a href="#4단계-프로토콜별-첫-필터">4단계 — 프로토콜별 첫 필터</a></li>
+<li class="toc-l3"><a href="#5단계-follow-stream과-export-objects">5단계 — Follow Stream과 Export Objects</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 02:32 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

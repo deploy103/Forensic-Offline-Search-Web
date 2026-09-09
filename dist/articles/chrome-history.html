@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Chrome History DB 구조: urls / visits / downloads 읽기 · FOR-0191 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%B8%8C%EB%9D%BC%EC%9A%B0%EC%A0%80%2F%EC%9B%B9">브라우저/웹</a> / FOR-0191
+      </div>
+      <header class="article-head">
+        <h1>Chrome History DB 구조: urls / visits / downloads 읽기</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">브라우저/웹</span>
+      <span class="badge badge-type">레퍼런스</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+      <span class="chip">macos</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>Chrome의 History는 확장자 없는 SQLite DB이며, urls(방문한 주소), visits(방문 1건씩의 시각과 유입 경로), downloads(내려받은 파일과 출처 URL) 세 테이블에 답이 들어 있고 모든 시각은 1601년 기준 마이크로초(WebKit) 이다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>sqlite3, DB Browser for SQLite, DCode, ChromeCacheView, FTK Imager</td></tr>
+<tr><th>artifact</th><td><code>Chrome History</code> · <code>urls</code> · <code>visits</code> · <code>downloads</code> · <code>keyword_search_terms</code> · <code>WebKit timestamp</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Users\&lt;user&gt;\AppData\Local\Google\Chrome\User Data\Default\History</code> · <code>%LocalAppData%\Google\Chrome\User Data\Default\History</code> · <code>%LocalAppData%\Microsoft\Edge\User Data\Default\History</code> · <code>~/.config/google-chrome/Default/History</code></td></tr>
+<tr><th>프로토콜</th><td>HTTP, HTTPS</td></tr>
+<tr><th>Wireshark 필터</th><td><code>http.host</code> · <code>tls.handshake.extensions_server_name</code></td></tr>
+<tr><th>tshark field</th><td><code>http.host</code> · <code>dns.qry.name</code></td></tr>
+<tr><th>regex</th><td><code>https?://[^\s&quot;&#39;&lt;&gt;]+</code></td></tr>
+<tr><th>로그 필드</th><td><code>url</code> · <code>title</code> · <code>visit_count</code> · <code>typed_count</code> · <code>last_visit_time</code> · <code>visit_time</code> · <code>from_visit</code> · <code>transition</code> · <code>target_path</code> · <code>tab_url</code> · <code>received_bytes</code></td></tr>
+<tr><th>파일 형식</th><td><code>sqlite</code></td></tr>
+<tr><th>검색 별칭</th><td>크롬 히스토리 · chrome history · 방문 기록 · 브라우저 기록 · 다운로드 기록 · 어디서 받았나 · 크롬 sqlite · webkit 시간 변환</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>Chrome의 <code>History</code>는 확장자 없는 SQLite DB이며, <strong><code>urls</code></strong>(방문한 주소), <strong><code>visits</code></strong>(방문 1건씩의 시각과 유입 경로), <strong><code>downloads</code></strong>(내려받은 파일과 출처 URL) 세 테이블에 답이 들어 있고 모든 시각은 <strong>1601년 기준 마이크로초(WebKit)</strong> 이다.</p>
+<h2 id="개념">개념</h2>
+<p>Chrome은 프로필별로 여러 개의 SQLite DB를 둔다. 포렌식에서 쓰는 것은 다음이다.</p>
+<div class="table-wrap"><table><thead><tr><th>파일명</th><th>내용</th><th>확장자</th></tr></thead><tbody><tr><td><code>History</code></td><td>방문 기록, 다운로드, 검색어</td><td>없음 (SQLite)</td></tr><tr><td><code>Cookies</code></td><td>쿠키 (값은 DPAPI 암호화)</td><td>없음</td></tr><tr><td><code>Login Data</code></td><td>저장된 계정 (비밀번호는 DPAPI 암호화)</td><td>없음</td></tr><tr><td><code>Web Data</code></td><td>자동완성, 신용카드</td><td>없음</td></tr><tr><td><code>Bookmarks</code></td><td>북마크</td><td>없음 (<strong>JSON</strong>)</td></tr><tr><td><code>Preferences</code></td><td>설정</td><td>없음 (JSON)</td></tr><tr><td><code>Top Sites</code></td><td>자주 방문</td><td>없음 (SQLite)</td></tr><tr><td><code>Favicons</code></td><td>파비콘</td><td>없음 (SQLite)</td></tr></tbody></table></div>
+<p>확장자가 없으므로 <code>file</code>로 확인한다 (<a href="./30sec-triage.html">FOR-0001</a>).</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">$ file History
+History: SQLite 3.x database, last written using SQLite version 3045000</code></pre></div>
+<p>Edge, Brave, Opera, Whale은 모두 Chromium 기반이라 <strong>스키마가 거의 동일하다.</strong> 이 글의 쿼리가 그대로 통한다.</p>
+<h2 id="파일-경로">파일 / 경로</h2>
+<div class="table-wrap"><table><thead><tr><th>브라우저 / OS</th><th>경로</th></tr></thead><tbody><tr><td>Chrome (Windows)</td><td><code>C:\Users\&lt;user&gt;\AppData\Local\Google\Chrome\User Data\Default\History</code></td></tr><tr><td>Edge (Windows)</td><td><code>C:\Users\&lt;user&gt;\AppData\Local\Microsoft\Edge\User Data\Default\History</code></td></tr><tr><td>Whale (Windows)</td><td><code>C:\Users\&lt;user&gt;\AppData\Local\Naver\Naver Whale\User Data\Default\History</code></td></tr><tr><td>Chrome (Linux)</td><td><code>~/.config/google-chrome/Default/History</code></td></tr><tr><td>Chrome (macOS)</td><td><code>~/Library/Application Support/Google/Chrome/Default/History</code></td></tr></tbody></table></div>
+<p><strong>프로필 폴더가 <code>Default</code>만이 아니다.</strong> 계정을 여러 개 쓰면 <code>Profile 1</code>, <code>Profile 2</code>가 생긴다. 반드시 전부 확인한다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Get-ChildItem &quot;C:\Users\*\AppData\Local\*\*\User Data\*\History&quot; -Force |
+  Select-Object FullName, Length, LastWriteTime</code></pre></div>
+<h3 id="함께-반드시-꺼낼-파일">함께 반드시 꺼낼 파일</h3>
+<div class="table-wrap"><table><thead><tr><th>파일</th><th>왜 필요한가</th></tr></thead><tbody><tr><td><code>History-journal</code></td><td>롤백 저널. 커밋되지 않은 변경이 들어 있다</td></tr><tr><td><code>History-wal</code></td><td><strong>WAL 모드의 최신 데이터.</strong> 이것 없이 열면 최근 방문이 누락된다</td></tr><tr><td><code>History-shm</code></td><td>공유 메모리 인덱스</td></tr></tbody></table></div>
+<p><code>History</code>만 복사하고 <code>-wal</code>을 두고 오면 <strong>가장 최근 방문 기록이 사라진다.</strong> 문제의 답이 &quot;마지막 방문&quot;이면 치명적이다. FTK Imager로 추출할 때 같은 폴더에서 <code>History*</code> 전부 선택한다.</p>
+<h2 id="주요-필드">주요 필드</h2>
+<h3 id="urls-방문한-주소-url-1개당-1행"><code>urls</code> — 방문한 주소 (URL 1개당 1행)</h3>
+<div class="table-wrap"><table><thead><tr><th>컬럼</th><th>타입</th><th>의미</th></tr></thead><tbody><tr><td><code>id</code></td><td>INTEGER</td><td>URL 고유 ID. <code>visits.url</code>이 이 값을 참조</td></tr><tr><td><code>url</code></td><td>TEXT</td><td>전체 URL</td></tr><tr><td><code>title</code></td><td>TEXT</td><td>페이지 제목</td></tr><tr><td><code>visit_count</code></td><td>INTEGER</td><td><strong>총 방문 횟수</strong></td></tr><tr><td><code>typed_count</code></td><td>INTEGER</td><td><strong>주소창에 직접 입력한 횟수</strong></td></tr><tr><td><code>last_visit_time</code></td><td>INTEGER</td><td>마지막 방문 (WebKit 마이크로초)</td></tr><tr><td><code>hidden</code></td><td>INTEGER</td><td>1이면 자동완성 후보에서 숨김</td></tr></tbody></table></div>
+<p><code>typed_count &gt; 0</code>은 <strong>사용자가 URL을 직접 타이핑했다</strong>는 뜻이다. 링크를 눌러 들어간 것과 의도적으로 접속한 것을 구분하는 핵심 지표다.</p>
+<h3 id="visits-방문-1건씩-같은-url을-3번-방문하면-3행"><code>visits</code> — 방문 1건씩 (같은 URL을 3번 방문하면 3행)</h3>
+<div class="table-wrap"><table><thead><tr><th>컬럼</th><th>타입</th><th>의미</th></tr></thead><tbody><tr><td><code>id</code></td><td>INTEGER</td><td>방문 고유 ID</td></tr><tr><td><code>url</code></td><td>INTEGER</td><td><code>urls.id</code> 참조</td></tr><tr><td><code>visit_time</code></td><td>INTEGER</td><td><strong>이 방문의 시각</strong> (WebKit)</td></tr><tr><td><code>from_visit</code></td><td>INTEGER</td><td><strong>직전 방문의 <code>visits.id</code>.</strong> 유입 경로 추적의 핵심</td></tr><tr><td><code>transition</code></td><td>INTEGER</td><td>어떻게 이동했는지 (아래 표)</td></tr><tr><td><code>visit_duration</code></td><td>INTEGER</td><td>머문 시간 (마이크로초)</td></tr><tr><td><code>segment_id</code></td><td>INTEGER</td><td>사이트 묶음 ID</td></tr><tr><td><code>opener_visit</code></td><td>INTEGER</td><td>새 탭을 연 방문의 id</td></tr></tbody></table></div>
+<p><code>urls</code>는 &quot;무엇을 봤나&quot;, <code>visits</code>는 &quot;언제·어떻게 봤나&quot;다. <strong>타임라인을 만들 때는 반드시 <code>visits</code>를 쓴다.</strong></p>
+<h3 id="transition-값-해석"><code>transition</code> 값 해석</h3>
+<p><code>transition</code>은 하위 8비트가 이동 유형, 상위 비트가 부가 정보인 비트필드다.</p>
+<div class="code-block" data-lang="sql"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-sql">transition &amp; 0xFF     -- 핵심 유형
+transition &amp; 0xFF000000  -- 한정자(qualifier)</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th><code>&amp; 0xFF</code></th><th>이름</th><th>의미</th></tr></thead><tbody><tr><td>0</td><td>LINK</td><td>링크 클릭</td></tr><tr><td>1</td><td>TYPED</td><td><strong>주소창에 직접 입력</strong></td></tr><tr><td>2</td><td>AUTO_BOOKMARK</td><td>북마크에서 이동</td></tr><tr><td>3</td><td>AUTO_SUBFRAME</td><td>iframe 자동 로드</td></tr><tr><td>4</td><td>MANUAL_SUBFRAME</td><td>iframe 안에서 클릭</td></tr><tr><td>5</td><td>GENERATED</td><td>주소창 자동완성/검색 제안</td></tr><tr><td>6</td><td>AUTO_TOPLEVEL</td><td>시작 페이지/홈</td></tr><tr><td>7</td><td>FORM_SUBMIT</td><td><strong>폼 제출 (로그인·검색 등)</strong></td></tr><tr><td>8</td><td>RELOAD</td><td>새로고침</td></tr><tr><td>9</td><td>KEYWORD</td><td>주소창 키워드 검색</td></tr><tr><td>10</td><td>KEYWORD_GENERATED</td><td>키워드로 생성된 URL</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>한정자 마스크</th><th>의미</th></tr></thead><tbody><tr><td><code>0x01000000</code></td><td>앞으로/뒤로 버튼</td></tr><tr><td><code>0x02000000</code></td><td>주소창에서 시작</td></tr><tr><td><code>0x08000000</code></td><td>확장/API가 유발</td></tr><tr><td><code>0x10000000</code></td><td>리다이렉트 체인 시작</td></tr><tr><td><code>0x20000000</code></td><td>리다이렉트 체인 끝</td></tr><tr><td><code>0x40000000</code></td><td><strong>클라이언트 리다이렉트</strong> (JS/meta)</td></tr><tr><td><code>0x80000000</code></td><td><strong>서버 리다이렉트</strong> (3xx)</td></tr></tbody></table></div>
+<p><code>AUTO_SUBFRAME</code>(3)은 사용자 의도가 아니라 광고/추적 iframe이다. <strong>의도적 방문만 보려면 3과 4를 걸러낸다.</strong></p>
+<h3 id="downloads-내려받은-파일"><code>downloads</code> — 내려받은 파일</h3>
+<div class="table-wrap"><table><thead><tr><th>컬럼</th><th>의미</th></tr></thead><tbody><tr><td><code>id</code> / <code>guid</code></td><td>다운로드 ID</td></tr><tr><td><code>current_path</code></td><td>실제 저장 경로 (<code>.crdownload</code> 중간 상태 포함)</td></tr><tr><td><code>target_path</code></td><td><strong>최종 저장 경로</strong></td></tr><tr><td><code>start_time</code> / <code>end_time</code></td><td>시작/종료 (WebKit)</td></tr><tr><td><code>received_bytes</code> / <code>total_bytes</code></td><td>받은 크기 / 전체 크기</td></tr><tr><td><code>state</code></td><td>0 진행중, 1 <strong>완료</strong>, 2 취소, 4 중단</td></tr><tr><td><code>danger_type</code></td><td>Safe Browsing 위험 판정</td></tr><tr><td><code>interrupt_reason</code></td><td>중단 원인 코드</td></tr><tr><td><code>hash</code></td><td>파일 SHA-256 (BLOB)</td></tr><tr><td><code>referrer</code></td><td><strong>참조 페이지 URL</strong></td></tr><tr><td><code>tab_url</code></td><td><strong>다운로드를 시작한 탭의 URL</strong></td></tr><tr><td><code>tab_referrer_url</code></td><td>그 탭의 참조 URL</td></tr><tr><td><code>site_url</code></td><td>사이트 단위 URL</td></tr><tr><td><code>mime_type</code> / <code>original_mime_type</code></td><td>선언된 MIME</td></tr><tr><td><code>opened</code></td><td>1이면 <strong>사용자가 파일을 열었다</strong></td></tr><tr><td><code>last_access_time</code></td><td>마지막 접근 (WebKit)</td></tr><tr><td><code>etag</code> / <code>last_modified</code></td><td>서버가 준 HTTP 헤더 값</td></tr></tbody></table></div>
+<p><code>downloads_url_chains</code> 테이블에는 <strong>리다이렉트 체인 전체</strong>가 <code>chain_index</code> 순서로 들어 있다. 최종 URL만 보면 진짜 출처를 놓친다.</p>
+<h3 id="keywordsearchterms-검색어"><code>keyword_search_terms</code> — 검색어</h3>
+<div class="table-wrap"><table><thead><tr><th>컬럼</th><th>의미</th></tr></thead><tbody><tr><td><code>keyword_id</code></td><td>검색 엔진 ID</td></tr><tr><td><code>url_id</code></td><td><code>urls.id</code> 참조</td></tr><tr><td><code>term</code></td><td><strong>사용자가 입력한 검색어 (원문)</strong></td></tr><tr><td><code>lower_term</code></td><td>소문자 정규화</td></tr></tbody></table></div>
+<p>주소창에서 검색한 내용이 그대로 남는다. &quot;무엇을 찾으려 했는가&quot;의 직접 증거다.</p>
+<h3 id="webkit-timestamp-변환">WebKit timestamp 변환</h3>
+<p>Chrome의 시각은 <strong>1601-01-01 00:00:00 UTC 기준 마이크로초</strong>다. Unix epoch와의 차이는 <strong>11,644,473,600초</strong>다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">unix_seconds = webkit_microseconds / 1000000 - 11644473600
+webkit       = (unix_seconds + 11644473600) * 1000000</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>언어</th><th>변환</th></tr></thead><tbody><tr><td>SQLite</td><td><code>datetime(t/1000000 - 11644473600, &#39;unixepoch&#39;)</code></td></tr><tr><td>SQLite (로컬)</td><td><code>datetime(t/1000000 - 11644473600, &#39;unixepoch&#39;, &#39;localtime&#39;)</code></td></tr><tr><td>SQLite (KST 고정)</td><td><code>datetime(t/1000000 - 11644473600, &#39;unixepoch&#39;, &#39;+9 hours&#39;)</code></td></tr><tr><td>Python</td><td><code>datetime(1601,1,1) + timedelta(microseconds=t)</code></td></tr><tr><td>PowerShell</td><td><code>[datetime]::FromFileTimeUtc($t * 10)</code></td></tr><tr><td>GUI</td><td>DCode에서 <code>Google Chrome Value</code> 선택</td></tr></tbody></table></div>
+<p>PowerShell의 <code>FromFileTimeUtc</code>는 100ns 단위를 받으므로 마이크로초에 <strong>10을 곱한다.</strong></p>
+<h2 id="빠른-명령">빠른 명령</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 스키마 확인 — Chrome 버전마다 컬럼이 다르므로 먼저 본다
+sqlite3 History &quot;.tables&quot;
+sqlite3 History &quot;.schema urls&quot;
+sqlite3 History &quot;.schema downloads&quot;
+
+# 1) 최근 방문 20개
+sqlite3 -header -column History &quot;
+SELECT datetime(last_visit_time/1000000-11644473600,&#39;unixepoch&#39;,&#39;+9 hours&#39;) AS kst,
+       visit_count AS cnt, typed_count AS typed, url, title
+FROM urls ORDER BY last_visit_time DESC LIMIT 20;&quot;
+
+# 2) 방문 타임라인 (visits 기준, 광고 iframe 제외)
+sqlite3 -header -column History &quot;
+SELECT datetime(v.visit_time/1000000-11644473600,&#39;unixepoch&#39;,&#39;+9 hours&#39;) AS kst,
+       (v.transition &amp; 255) AS tr, u.url, u.title
+FROM visits v JOIN urls u ON u.id = v.url
+WHERE (v.transition &amp; 255) NOT IN (3,4)
+ORDER BY v.visit_time;&quot;
+
+# 3) 주소창에 직접 입력한 URL만 = 의도적 접속
+sqlite3 -header -column History &quot;
+SELECT datetime(last_visit_time/1000000-11644473600,&#39;unixepoch&#39;,&#39;+9 hours&#39;) AS kst,
+       typed_count, url
+FROM urls WHERE typed_count &gt; 0 ORDER BY last_visit_time DESC;&quot;
+
+# 4) 다운로드 + 출처 (핵심 쿼리)
+sqlite3 -header -column History &quot;
+SELECT datetime(d.start_time/1000000-11644473600,&#39;unixepoch&#39;,&#39;+9 hours&#39;) AS started,
+       d.target_path, d.received_bytes, d.state, d.opened,
+       d.tab_url, d.referrer
+FROM downloads d ORDER BY d.start_time DESC;&quot;
+
+# 5) 다운로드 리다이렉트 체인 전체
+sqlite3 -header -column History &quot;
+SELECT d.target_path, c.chain_index, c.url
+FROM downloads d JOIN downloads_url_chains c ON c.id = d.id
+ORDER BY d.id, c.chain_index;&quot;
+
+# 6) 검색어
+sqlite3 -header -column History &quot;
+SELECT datetime(u.last_visit_time/1000000-11644473600,&#39;unixepoch&#39;,&#39;+9 hours&#39;) AS kst,
+       k.term, u.url
+FROM keyword_search_terms k JOIN urls u ON u.id = k.url_id
+ORDER BY u.last_visit_time DESC;&quot;
+
+# 7) 유입 경로 추적 — from_visit 자기조인
+sqlite3 -header -column History &quot;
+SELECT datetime(v.visit_time/1000000-11644473600,&#39;unixepoch&#39;,&#39;+9 hours&#39;) AS kst,
+       pu.url AS came_from, u.url AS went_to, (v.transition &amp; 255) AS tr
+FROM visits v
+JOIN urls u  ON u.id = v.url
+LEFT JOIN visits pv ON pv.id = v.from_visit
+LEFT JOIN urls   pu ON pu.id = pv.url
+ORDER BY v.visit_time;&quot;
+
+# 8) 특정 키워드가 들어간 URL 전부
+sqlite3 History &quot;SELECT url FROM urls WHERE url LIKE &#39;%upload%&#39; OR url LIKE &#39;%.exe&#39;;&quot;</code></pre></div>
+<p>WAL이 있는 상태에서 열면 SQLite가 자동으로 병합한다. 파일이 잠겨 있다는 오류가 나면 사본으로 작업한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">cp History History.copy &amp;&amp; cp History-wal History.copy-wal 2&gt;/dev/null
+sqlite3 History.copy &quot;PRAGMA wal_checkpoint(TRUNCATE);&quot;</code></pre></div>
+<p>Windows GUI만 쓸 수 있으면 <strong>DB Browser for SQLite</strong>로 열고 <code>Execute SQL</code> 탭에 위 쿼리를 붙인다.</p>
+<h2 id="함께-보는-artifact">함께 보는 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>Chrome History에서 얻은 것</th><th>다음 목표</th></tr></thead><tbody><tr><td><code>downloads.target_path</code></td><td><code>$MFT</code> (<a href="./mft-basics.html">FOR-0021</a>) — 디스크 생성/삭제 시각</td></tr><tr><td><code>downloads.target_path</code></td><td>Prefetch / Amcache — 그 파일을 <strong>실행</strong>했는가</td></tr><tr><td><code>downloads.tab_url</code></td><td>pcap의 <code>http.host</code> (<a href="./wireshark-30sec-triage.html">FOR-0146</a>) — 실제 트래픽</td></tr><tr><td>방문 도메인</td><td>DNS 질의 기록, <code>hosts</code> 파일</td></tr><tr><td>방문 시각</td><td>EVTX 4624 (<a href="./event-4624-logon.html">FOR-0083</a>) — 그 시각 로그온 세션</td></tr><tr><td>검색어</td><td><code>WordWheelQuery</code>(탐색기 검색), Windows Search DB</td></tr><tr><td><code>opened = 1</code></td><td>RecentDocs, LNK, Jump List</td></tr><tr><td>Cache 항목</td><td><code>Cache\</code> 폴더 → ChromeCacheView</td></tr><tr><td>로그인 흔적</td><td><code>Login Data</code>, <code>Cookies</code> (DPAPI 복호화 필요)</td></tr></tbody></table></div>
+<h2 id="흔한-실수">흔한 실수</h2>
+<ul><li><strong><code>History-wal</code>을 빼고 복사하는 것.</strong> 최신 방문·다운로드가 통째로 누락된다. <code>History*</code> 전부 가져온다.</li><li><strong><code>Default</code> 프로필만 보는 것.</strong> <code>Profile 1</code>, <code>Profile 2</code>에 답이 있을 수 있다.</li><li><strong><code>urls.last_visit_time</code>으로 타임라인을 만드는 것.</strong> 그것은 <strong>마지막</strong> 방문 1건이다. 전체 방문은 <code>visits.visit_time</code>에 있다.</li><li><strong>11644473600을 잊는 것.</strong> 안 빼면 1601년대 날짜가 나오고, <code>1000000</code>으로 안 나누면 미래 날짜가 나온다.</li><li><strong>UTC/KST 혼동.</strong> <code>&#39;unixepoch&#39;</code>만 쓰면 UTC다. KST 답이 필요하면 <code>&#39;+9 hours&#39;</code>. <code>&#39;localtime&#39;</code>은 <strong>분석 PC의</strong> 시간대를 쓰므로 증거물의 시간대와 다를 수 있다 — 대회에서는 <code>&#39;+9 hours&#39;</code>처럼 명시하는 편이 안전하다.</li><li><strong><code>transition</code>의 하위 8비트를 마스킹하지 않는 것.</strong> <code>transition = 1</code>로 비교하면 상위 한정자 비트가 붙은 TYPED 방문을 놓친다. 반드시 <code>&amp; 255</code>.</li><li><strong><code>AUTO_SUBFRAME</code>을 사용자 방문으로 세는 것.</strong> 광고/추적 iframe이 대량으로 섞인다.</li><li><strong><code>downloads.target_path</code>만 보고 출처를 결론 내는 것.</strong> 진짜 출처는 <code>tab_url</code>과 <code>downloads_url_chains</code>에 있다.</li><li><strong><code>state</code>를 확인하지 않는 것.</strong> <code>state = 1</code>(완료)이 아니면 파일이 온전히 저장되지 않았다.</li><li><strong><code>hash</code> 컬럼이 BLOB인 것을 놓치는 것.</strong> <code>SELECT hex(hash) FROM downloads;</code>로 봐야 SHA-256 문자열이 나온다.</li><li><strong>삭제된 기록을 포기하는 것.</strong> SQLite는 삭제 행을 즉시 지우지 않는다. <code>strings History | grep -Eo &#39;https?://[^ ]+&#39;</code> 또는 freelist 카빙으로 복구되는 경우가 많다.</li><li><strong>Bookmarks를 SQLite로 열려는 것.</strong> <code>Bookmarks</code>는 <strong>JSON</strong>이다. <code>jq</code>로 읽는다.</li></ul>
+<h2 id="mini-example">mini example</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;직원 PC의 Chrome 기록에서 악성 파일을 어디서 받았고 실행했는지 확인하세요.&quot;
+첨부: History, History-wal
+
+1. 파일 확인
+   $ file History
+   History: SQLite 3.x database
+   $ ls
+   History  History-wal        &lt;- wal이 있다. 함께 써야 한다.
+
+2. 스키마 먼저 (Chrome 버전에 따라 컬럼이 다르다)
+   $ sqlite3 History &quot;.schema downloads&quot; | head -5
+
+3. 다운로드 목록
+   $ sqlite3 -header -column History &quot;
+     SELECT datetime(start_time/1000000-11644473600,&#39;unixepoch&#39;,&#39;+9 hours&#39;) AS kst,
+            target_path, received_bytes, state, opened, tab_url
+     FROM downloads ORDER BY start_time DESC;&quot;
+
+   kst                  target_path                                  bytes   state opened tab_url
+   2026-03-14 16:33:12  C:\Users\jhkim\Downloads\invoice_0314.zip     284113  1     1      https://mail.example.co.kr/mail/read?id=88213
+   2026-03-14 16:35:40  C:\Users\jhkim\Downloads\invoice_0314.exe     198656  1     1      (null)
+
+   -&gt; zip을 받아 열고(opened=1), 그 안의 exe가 Downloads에 나왔다.
+      메일에서 시작된 흐름이다.
+
+4. 첫 시도 (불충분했던 접근):
+   tab_url만 보고 &quot;메일에서 받았다&quot;로 끝내려 했다.
+   그런데 exe의 tab_url이 null이었다. 실제 다운로드 서버를 모른다.
+
+5. 접근 변경 — 리다이렉트 체인 확인
+   $ sqlite3 -header -column History &quot;
+     SELECT d.target_path, c.chain_index, c.url
+     FROM downloads d JOIN downloads_url_chains c ON c.id = d.id
+     ORDER BY d.id, c.chain_index;&quot;
+
+   target_path                chain_index  url
+   ...invoice_0314.zip        0            https://cdn.example-mail.co.kr/att/88213/invoice_0314.zip
+   ...invoice_0314.zip        1            https://d1x9k.blob.core.windows.example/tmp/i.zip
+                                            ^^^ 리다이렉트된 실제 다운로드 위치
+
+   최종 URL만 봤다면 정상 CDN으로 오해했을 것이다.
+
+6. 방문 흐름 — 어떻게 그 메일에 도달했나
+   $ sqlite3 -header -column History &quot;
+     SELECT datetime(v.visit_time/1000000-11644473600,&#39;unixepoch&#39;,&#39;+9 hours&#39;) AS kst,
+            (v.transition &amp; 255) AS tr, u.url
+     FROM visits v JOIN urls u ON u.id=v.url
+     WHERE (v.transition &amp; 255) NOT IN (3,4)
+     ORDER BY v.visit_time DESC LIMIT 5;&quot;
+
+   kst                  tr  url
+   2026-03-14 16:32:05  0   https://mail.example.co.kr/mail/read?id=88213   (LINK)
+   2026-03-14 16:31:58  1   https://mail.example.co.kr/                     (TYPED)
+
+   tr=1(TYPED) = 사용자가 직접 메일 사이트에 접속 -&gt; 링크 클릭 -&gt; 첨부 다운로드
+
+7. pivot — 실제로 실행했는가
+   UserAssist 확인 (FOR-0061)
+   -&gt; C:\Users\jhkim\Downloads\invoice_0314.exe  Run Count 1
+      Last Executed 2026-03-14 16:36:21 (KST)
+
+   $MFT 확인 -&gt; 같은 시각에 %TEMP%에 추가 파일 3개 생성
+
+정답: 메일(mail.example.co.kr) 첨부 → cdn 리다이렉트 →
+      d1x9k.blob.core.windows.example/tmp/i.zip 에서 실제 수신,
+      invoice_0314.exe 를 2026-03-14 16:36:21 KST에 1회 실행</code></pre></div>
+<p>5단계가 핵심이었다. <strong><code>downloads_url_chains</code>를 보지 않으면 진짜 다운로드 출처를 놓친다.</strong></p>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-008 — Chromium source, <code>components/history/core/browser</code>: <code>urls</code>/<code>visits</code>/<code>downloads</code> 스키마와 <code>PageTransition</code> 상수 정의</li><li>SRC-011 — SQLite 날짜/시간 함수: <code>datetime(..., &#39;unixepoch&#39;)</code> 사용법</li><li>SRC-014 — Microsoft Learn, File Times: 1601-01-01 기준 시각과 11644473600초 차이의 근거</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./wireshark-30sec-triage.html">
+    <span class="rel-id">FOR-0146 · Network/PCAP</span>
+    Wireshark 30초 트리아지: pcap을 받고 처음 할 다섯 가지
+  </a>
+  <a class="related-item" href="./mft-basics.html">
+    <span class="rel-id">FOR-0021 · 디스크/NTFS</span>
+    $MFT 기본 구조와 포렌식 활용
+  </a>
+  <a class="related-item" href="./usnjrnl-basics.html">
+    <span class="rel-id">FOR-0027 · 디스크/NTFS</span>
+    $UsnJrnl($J)로 삭제·생성·이름변경 흔적 복원하기
+  </a>
+  <a class="related-item" href="./userassist.html">
+    <span class="rel-id">FOR-0061 · Registry</span>
+    UserAssist로 사용자가 직접 실행한 프로그램 찾기
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./http-post-find.html"><span class="rel-id">← FOR-0158</span>pcap에서 HTTP POST 찾아 본문·자격증명·업로드 파일 뽑기</a>
+<a class="related-item" href="./volatility-pslist.html"><span class="rel-id">FOR-0214 →</span>Volatility 3 windows.pslist로 메모리 덤프의 프로세스 목록 읽기</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#개념">개념</a></li>
+<li class="toc-l2"><a href="#파일-경로">파일 / 경로</a></li>
+<li class="toc-l3"><a href="#함께-반드시-꺼낼-파일">함께 반드시 꺼낼 파일</a></li>
+<li class="toc-l2"><a href="#주요-필드">주요 필드</a></li>
+<li class="toc-l3"><a href="#urls-방문한-주소-url-1개당-1행">`urls` — 방문한 주소 (URL 1개당 1행)</a></li>
+<li class="toc-l3"><a href="#visits-방문-1건씩-같은-url을-3번-방문하면-3행">`visits` — 방문 1건씩 (같은 URL을 3번 방문하면 3행)</a></li>
+<li class="toc-l3"><a href="#transition-값-해석">`transition` 값 해석</a></li>
+<li class="toc-l3"><a href="#downloads-내려받은-파일">`downloads` — 내려받은 파일</a></li>
+<li class="toc-l3"><a href="#keywordsearchterms-검색어">`keyword_search_terms` — 검색어</a></li>
+<li class="toc-l3"><a href="#webkit-timestamp-변환">WebKit timestamp 변환</a></li>
+<li class="toc-l2"><a href="#빠른-명령">빠른 명령</a></li>
+<li class="toc-l2"><a href="#함께-보는-artifact">함께 보는 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-실수">흔한 실수</a></li>
+<li class="toc-l2"><a href="#mini-example">mini example</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 02:32 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

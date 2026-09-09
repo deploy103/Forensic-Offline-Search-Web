@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>UserAssist로 사용자가 직접 실행한 프로그램 찾기 · FOR-0061 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Registry">Registry</a> / FOR-0061
+      </div>
+      <header class="article-head">
+        <h1>UserAssist로 사용자가 직접 실행한 프로그램 찾기</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Registry</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>NTUSER.DAT의 UserAssist 키에는 사용자가 Explorer에서 직접 실행한 프로그램의 이름·실행 횟수·마지막 실행 시각이 ROT13으로 인코딩되어 남으며, RegistryExplorer나 RegRipper가 자동 디코딩해 준다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>RegistryExplorer, RegRipper, rla, FTK Imager, KAPE</td></tr>
+<tr><th>artifact</th><td><code>UserAssist</code> · <code>NTUSER.DAT</code> · <code>Count</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Users\&lt;user&gt;\NTUSER.DAT</code> · <code>%UserProfile%\NTUSER.DAT</code></td></tr>
+<tr><th>레지스트리</th><td><code>NTUSER.DAT\Software\Microsoft\Windows\CurrentVersion\Explorer\UserAssist</code> · <code>HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\UserAssist\{CEBFF5CD-ACE2-4F4F-9178-9926F41749EA}\Count</code> · <code>HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\UserAssist\{F4E57C4B-2036-45F0-A9AB-443BCFE33D9F}\Count</code></td></tr>
+<tr><th>로그 필드</th><td><code>Run Count</code> · <code>Focus Count</code> · <code>Focus Time</code> · <code>Last Executed</code></td></tr>
+<tr><th>파일 형식</th><td><code>regf</code></td></tr>
+<tr><th>검색 별칭</th><td>userassist · 유저어시스트 · 프로그램 실행 · 실행 흔적 · 몇 번 실행했는지 · 누가 무엇을 실행했나 · 실행 횟수 확인</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>NTUSER.DAT</code>의 UserAssist 키에는 <strong>사용자가 Explorer에서 직접 실행한</strong> 프로그램의 이름·실행 횟수·마지막 실행 시각이 ROT13으로 인코딩되어 남으며, RegistryExplorer나 RegRipper가 자동 디코딩해 준다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;피의자가 어떤 도구를 사용했는가&quot;</li><li>&quot;이 프로그램을 몇 번 실행했는가&quot;</li><li>&quot;언제 마지막으로 실행했는가&quot;</li><li>&quot;누가 실행했는가&quot; (사용자별 <code>NTUSER.DAT</code>이므로 사용자가 자동으로 특정된다)</li></ul>
+<p>Prefetch·Amcache·Shimcache가 &quot;실행되었다&quot;는 사실을 알려주는 반면, UserAssist는 <strong>사람이 아이콘을 눌러 실행했다</strong>는 사실을 알려준다. 자동화·스크립트 실행과 사용자 의도를 구분하는 데 결정적이다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>첨부에 <code>NTUSER.DAT</code>이 있다 → UserAssist는 반드시 확인 대상</li><li>문제 지문에 &quot;직접&quot;, &quot;사용자가&quot;, &quot;실행 횟수&quot;, &quot;몇 번&quot; 같은 표현</li><li>다른 artifact에서 프로그램 이름은 나왔는데 <strong>횟수와 마지막 시각</strong>이 필요한 상황</li><li>레지스트리 값 이름이 <code>Zvpebfbsg.Jvaqbjf</code> 처럼 자음이 뒤틀린 문자열로 보이면 ROT13이다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">rip.exe -r &quot;C:\case\NTUSER.DAT&quot; -p userassist</code></pre></div>
+<p>GUI라면 RegistryExplorer로 <code>NTUSER.DAT</code>을 열고 좌측 트리에서 다음 경로로 이동한다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">NTUSER.DAT\Software\Microsoft\Windows\CurrentVersion\Explorer\UserAssist\{CEBFF5CD-ACE2-4F4F-9178-9926F41749EA}\Count</code></pre></div>
+<p>RegistryExplorer는 이 키에 전용 플러그인이 있어 하단 패널에 <strong>디코딩된 프로그램명 / Run Count / Last Executed</strong>를 표로 보여준다. ROT13을 수동으로 풀 필요가 없다.</p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-hive-확보와-정리">1단계 — hive 확보와 정리</h3>
+<p><code>NTUSER.DAT</code>은 실행 중인 시스템에서 잠겨 있고, 트랜잭션 로그(<code>NTUSER.DAT.LOG1</code>, <code>.LOG2</code>)에 최신 변경이 남아 있을 수 있다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">REM 트랜잭션 로그를 hive에 반영(replay) — 최신 값을 놓치지 않으려면 필수
+rla.exe -f &quot;C:\case\NTUSER.DAT&quot; --out &quot;C:\case\clean&quot;</code></pre></div>
+<p><code>rla</code>(Registry Log Aggregator)를 거치지 않으면 마지막 실행 기록이 누락되는 경우가 있다. 이미지에서 추출할 때 <code>NTUSER.DAT</code>, <code>NTUSER.DAT.LOG1</code>, <code>NTUSER.DAT.LOG2</code>를 <strong>같은 폴더에</strong> 함께 꺼낸다.</p>
+<h3 id="2단계-guid로-무엇이-실행됐는지-구분">2단계 — GUID로 무엇이 실행됐는지 구분</h3>
+<p><code>UserAssist</code> 아래의 GUID 서브키는 &quot;실행 방식&quot;을 뜻한다.</p>
+<div class="table-wrap"><table><thead><tr><th>GUID</th><th>의미</th></tr></thead><tbody><tr><td><code>{CEBFF5CD-ACE2-4F4F-9178-9926F41749EA}</code></td><td><strong>실행 파일(EXE) 직접 실행</strong></td></tr><tr><td><code>{F4E57C4B-2036-45F0-A9AB-443BCFE33D9F}</code></td><td><strong>바로가기(LNK) 통한 실행</strong></td></tr><tr><td><code>{75048700-EF1F-11D0-9888-006097DEACF9}</code></td><td>구형 시스템의 실행 항목</td></tr><tr><td><code>{9E04CAB2-CC14-11DF-BB8C-A2F1DED72085}</code></td><td>Windows 8+ UI 항목</td></tr><tr><td><code>{B267E3AD-A825-4A09-82B9-EEC22AA3B847}</code></td><td>Windows 8+ 검색/실행</td></tr></tbody></table></div>
+<p>두 개만 기억하면 된다. <strong><code>CEBFF5CD</code> = exe, <code>F4E57C4B</code> = lnk.</strong> 같은 프로그램이 두 GUID에 모두 있으면 사용자가 직접 exe로도, 바로가기로도 실행했다는 뜻이다.</p>
+<h3 id="3단계-값-이름-rot13-인코딩된-실행-경로">3단계 — 값 이름 = ROT13 인코딩된 실행 경로</h3>
+<p><code>Count</code> 서브키 아래의 각 <strong>값 이름</strong>이 실행된 대상이다. ROT13(알파벳 13칸 회전)이 적용되어 있다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">저장된 값 이름:
+{P:\\Jvaqbjf\\flfgrz32\\pzq.rkr
+
+ROT13 디코딩:
+{C:\Windows\system32\cmd.exe</code></pre></div>
+<p>숫자와 기호는 변하지 않고 알파벳만 회전한다. 앞의 <code>{...}</code> 는 Known Folder GUID인 경우가 있다.</p>
+<div class="table-wrap"><table><thead><tr><th>Known Folder GUID</th><th>실제 경로</th></tr></thead><tbody><tr><td><code>{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}</code></td><td><code>C:\Windows\System32</code></td></tr><tr><td><code>{6D809377-6AF0-444B-8957-A3773F02200E}</code></td><td><code>C:\Program Files</code> (64비트)</td></tr><tr><td><code>{7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}</code></td><td><code>C:\Program Files (x86)</code></td></tr><tr><td><code>{F38BF404-1D43-42F2-9305-67DE0B28FC23}</code></td><td><code>C:\Windows</code></td></tr><tr><td><code>{D65231B0-B2F1-4857-A4CE-A8E7C6EA7D27}</code></td><td><code>C:\Windows\System32</code> (SysWOW 대응)</td></tr><tr><td><code>{0139D44E-6AFE-49F2-8690-3DAFCAE6FFB8}</code></td><td><code>C:\ProgramData\...\Programs</code></td></tr><tr><td><code>{9E3995AB-1F9C-4F13-B827-48B24B6C7174}</code></td><td>작업 표시줄 고정 항목</td></tr></tbody></table></div>
+<h3 id="4단계-값-데이터-72바이트-해석-windows-7-이후">4단계 — 값 데이터 72바이트 해석 (Windows 7 이후)</h3>
+<p>수동으로 읽어야 할 때의 바이트 오프셋이다.</p>
+<div class="table-wrap"><table><thead><tr><th>오프셋</th><th>크기</th><th>필드</th></tr></thead><tbody><tr><td><code>0x00</code></td><td>4</td><td>Session ID</td></tr><tr><td><code>0x04</code></td><td>4</td><td><strong>Run Count (실행 횟수)</strong></td></tr><tr><td><code>0x08</code></td><td>4</td><td>Focus Count (포커스 획득 횟수)</td></tr><tr><td><code>0x0C</code></td><td>4</td><td>Focus Time (누적 포커스 시간, ms)</td></tr><tr><td><code>0x10</code>–<code>0x3B</code></td><td>44</td><td>사용 통계용 float 배열</td></tr><tr><td><code>0x3C</code></td><td>8</td><td><strong>Last Executed (FILETIME, UTC)</strong></td></tr><tr><td><code>0x44</code></td><td>4</td><td>예약/패딩</td></tr></tbody></table></div>
+<p>전체 <strong>72바이트(0x48)</strong>. <code>0x3C</code>의 8바이트 FILETIME은 1601-01-01 UTC 기준 100ns 단위다 — DCode에 넣으면 바로 변환된다.</p>
+<blockquote><p>Windows XP는 구조가 다르다. 값 데이터가 16바이트이고 실행 횟수가 <strong>5부터 시작</strong>하므로 <code>Run Count - 5</code>가 실제 횟수다.</p></blockquote>
+<h3 id="5단계-regripper로-일괄-추출">5단계 — RegRipper로 일괄 추출</h3>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">rip.exe -r &quot;C:\case\clean\NTUSER.DAT&quot; -p userassist &gt; userassist.txt</code></pre></div>
+<p>출력은 시간 역순으로 정렬되어 나온다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">UserAssist
+Software\Microsoft\Windows\CurrentVersion\Explorer\UserAssist
+
+{CEBFF5CD-ACE2-4F4F-9178-9926F41749EA}
+LastWrite Time 2026-03-14 07:41:22Z
+
+2026-03-14 07:38:05Z
+  C:\Users\jhkim\Downloads\dump_tool.exe (3)
+2026-03-14 07:22:41Z
+  {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\cmd.exe (12)
+2026-03-13 22:10:59Z
+  {7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}\7-Zip\7zFM.exe (5)</code></pre></div>
+<p>괄호 안 숫자가 Run Count다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>해석 방법</th><th>주의</th></tr></thead><tbody><tr><td>프로그램 경로</td><td>ROT13 해제 후의 값. Known Folder GUID는 표로 치환</td><td>경로가 <code>Downloads</code>/<code>Temp</code>/<code>AppData</code>면 강한 의심 신호</td></tr><tr><td>Run Count</td><td>사용자가 실행한 횟수</td><td>XP는 −5 보정 필요</td></tr><tr><td>Last Executed</td><td><strong>마지막 1회</strong>의 시각 (UTC)</td><td>이전 실행 시각은 남지 않는다</td></tr><tr><td>Focus Time</td><td>실제로 창을 사용한 누적 시간</td><td>0이면 실행 즉시 종료 = 오류/콘솔 프로그램 가능</td></tr><tr><td>키의 LastWrite</td><td>이 GUID 키가 마지막 갱신된 시각</td><td>개별 값의 시각과 다르다</td></tr></tbody></table></div>
+<p>Focus Time이 크면 사람이 그 프로그램을 실제로 붙잡고 작업했다는 뜻이고, Run Count는 큰데 Focus Time이 0이면 배치성 실행이거나 즉시 종료였다는 뜻이다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<p>UserAssist에서 프로그램 이름과 시각을 얻었다면 그 값으로 다음을 연다.</p>
+<div class="table-wrap"><table><thead><tr><th>얻은 정보</th><th>다음 목표</th><th>무엇을 확인하나</th></tr></thead><tbody><tr><td>실행 파일 경로</td><td>Prefetch (<code>C:\Windows\Prefetch\&lt;NAME&gt;-&lt;HASH&gt;.pf</code>)</td><td>실행 횟수·최초 실행·참조 파일</td></tr><tr><td>실행 파일 경로</td><td>Amcache (<code>Amcache.hve</code>)</td><td>SHA-1 해시, 최초 등록 시각</td></tr><tr><td>실행 시각</td><td>EVTX Security 4688 (<a href="./event-4624-logon.html">FOR-0083</a> 인접)</td><td>명령행 인자, 부모 프로세스</td></tr><tr><td>실행 파일이 있던 폴더</td><td><code>$MFT</code> (<a href="./mft-basics.html">FOR-0021</a>)</td><td>파일 생성/삭제 시각, 삭제 여부</td></tr><tr><td><code>Downloads</code> 경로</td><td>브라우저 Downloads (<a href="./chrome-history.html">FOR-0191</a>)</td><td>어디서 받았는지</td></tr><tr><td>LNK GUID 항목</td><td>Jump List, RecentDocs</td><td>어떤 문서를 열었는지</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>UserAssist에 없다 = 실행되지 않았다, 는 아니다.</strong> UserAssist는 <strong>Explorer를 통한 실행만</strong> 기록한다. <code>cmd.exe</code>에서 타이핑해 실행한 프로그램, 스케줄러·서비스·스크립트가 띄운 프로세스는 <strong>남지 않는다.</strong> 이 경우 Prefetch/Amcache/4688로 가야 한다.</li><li><strong>명령행 인자가 없다.</strong> UserAssist는 경로만 기록한다. <code>powershell.exe -enc ...</code> 같은 인자는 4688이나 4104에서 찾아야 한다.</li><li><strong>Last Executed는 1개뿐이다.</strong> &quot;3번 실행했다&quot;는 것은 알지만 1·2번째 시각은 UserAssist에 없다. 전체 타임라인은 Prefetch(최근 8회)와 EVTX로 보완한다.</li><li><strong><code>NTUSER.DAT</code>은 사용자별이다.</strong> 사용자가 여러 명이면 각 프로필의 hive를 모두 봐야 한다. 어느 SID가 누구인지는 <code>SAM</code> 또는 <code>SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList</code>로 확인한다.</li><li><strong>ROT13은 암호가 아니다.</strong> 값이 이상해 보인다고 복호화 툴을 찾을 필요 없다. 툴이 자동으로 풀거나, 최악의 경우 손으로 13칸 돌리면 된다.</li><li><strong>트랜잭션 로그 미반영.</strong> <code>rla</code> 없이 hive만 파싱하면 가장 최근 실행이 빠질 수 있다. 문제의 답이 &quot;마지막 실행&quot;이면 치명적이다.</li><li><strong>시간대.</strong> FILETIME은 UTC다. RegRipper 출력의 <code>Z</code>가 그 뜻이다. KST 답을 요구하면 +9시간.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<p>같은 &quot;실행&quot; 사실을 최소 두 곳에서 확인한다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">REM 1) UserAssist — 사용자가 직접 실행했는가 + 횟수
+rip.exe -r NTUSER.DAT -p userassist | Select-String &#39;dump_tool&#39;
+
+REM 2) Prefetch — 실행 사실 + 최근 실행 시각 8개 + 로드한 파일
+REM (WinPrefetchView로 열거나 PECmd 사용)
+PECmd.exe -f &quot;C:\case\Prefetch\DUMP_TOOL.EXE-1A2B3C4D.pf&quot;
+
+REM 3) Amcache — 파일 해시와 최초 등록
+rip.exe -r Amcache.hve -p amcache | Select-String &#39;dump_tool&#39;
+
+REM 4) $MFT — 파일이 언제 디스크에 생겼는가
+Import-Csv mft.csv | Where-Object { $_.FileName -like &#39;*dump_tool*&#39; }</code></pre></div>
+<p>네 값이 모두 같은 시간대를 가리키면 결론이 단단해진다. UserAssist에만 있고 Prefetch에 없다면 Prefetch가 삭제됐거나(반포렌식) SSD에서 비활성된 환경이다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;사용자 jhkim이 자료 유출에 사용한 도구의 이름과 실행 횟수를 구하세요.
+ 첨부: NTUSER.DAT, NTUSER.DAT.LOG1, NTUSER.DAT.LOG2&quot;
+
+1. 로그 반영
+   rla.exe -f NTUSER.DAT --out clean\
+   -&gt; clean\NTUSER.DAT 생성
+
+2. 첫 시도: RegRipper 전체
+   rip.exe -r clean\NTUSER.DAT -p userassist &gt; ua.txt
+   -&gt; 항목이 60개. 너무 많다.
+
+3. 필터: 시스템 기본 프로그램 제외, 사용자 폴더/임시 폴더만
+   Select-String -Path ua.txt -Pattern &#39;Users\\|Temp|Downloads|AppData&#39;
+
+   2026-03-14 07:38:05Z
+     C:\Users\jhkim\Downloads\dump_tool.exe (3)
+   2026-03-14 07:35:12Z
+     C:\Users\jhkim\AppData\Local\Temp\7zS8A1\setup.exe (1)
+
+4. 잘못된 접근이었던 것:
+   처음에 {F4E57C4B...}(LNK) 키만 보고 &quot;없다&quot;고 판단했다.
+   실제 기록은 {CEBFF5CD...}(EXE) 키에 있었다. 두 GUID를 모두 봐야 한다.
+
+5. 교차검증 — Prefetch
+   PECmd.exe -d Prefetch\ --csv .
+   -&gt; DUMP_TOOL.EXE  Run Count 3  Last Run 2026-03-14 07:38:05
+   UserAssist와 횟수·시각이 일치
+
+6. pivot — 어디서 받았는가
+   Chrome History의 downloads 테이블에서 dump_tool.exe 검색
+   -&gt; target_path = C:\Users\jhkim\Downloads\dump_tool.exe
+      tab_url     = http://filehost.example/dump_tool.exe
+
+정답: dump_tool.exe, 3회</code></pre></div>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><strong>두 GUID를 모두 봤는가</strong> — <code>CEBFF5CD</code>(exe)와 <code>F4E57C4B</code>(lnk)</li><li><strong><code>rla</code>로 트랜잭션 로그를 반영했는가</strong></li><li>UserAssist가 비어 있다면 → <strong>Prefetch → Amcache → Shimcache → BAM/DAM</strong> 순서로 이동</li><li>사용자가 여러 명인가 → 모든 프로필의 <code>NTUSER.DAT</code> 확인</li><li>값 이름이 GUID로 시작하는가 → Known Folder 표로 치환</li><li>Run Count가 5 근처의 어색한 값인가 → XP 환경(−5 보정) 의심</li><li>명령행 인자가 필요한가 → 4688(Security), 4104(PowerShell ScriptBlock)로 전환</li><li>Focus Time이 0인가 → 콘솔 프로그램이거나 즉시 종료. 실제 사용 증거는 다른 곳에서</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-009 — Forensics Wiki, UserAssist: GUID 목록, ROT13 인코딩, 값 구조</li><li>SRC-004 — Eric Zimmerman 문서: RegistryExplorer UserAssist 플러그인, <code>rla</code> 사용법</li><li>SRC-014 — Microsoft Learn, File Times: 오프셋 <code>0x3C</code> FILETIME 해석 기준</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./mft-basics.html">
+    <span class="rel-id">FOR-0021 · 디스크/NTFS</span>
+    $MFT 기본 구조와 포렌식 활용
+  </a>
+  <a class="related-item" href="./event-4624-logon.html">
+    <span class="rel-id">FOR-0083 · Event Log</span>
+    Event ID 4624 성공 로그온 분석: 누가 어디서 어떻게 들어왔나
+  </a>
+  <a class="related-item" href="./usnjrnl-basics.html">
+    <span class="rel-id">FOR-0027 · 디스크/NTFS</span>
+    $UsnJrnl($J)로 삭제·생성·이름변경 흔적 복원하기
+  </a>
+  <a class="related-item" href="./chrome-history.html">
+    <span class="rel-id">FOR-0191 · 브라우저/웹</span>
+    Chrome History DB 구조: urls / visits / downloads 읽기
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./usnjrnl-basics.html"><span class="rel-id">← FOR-0027</span>$UsnJrnl($J)로 삭제·생성·이름변경 흔적 복원하기</a>
+<a class="related-item" href="./event-4624-logon.html"><span class="rel-id">FOR-0083 →</span>Event ID 4624 성공 로그온 분석: 누가 어디서 어떻게 들어왔나</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-hive-확보와-정리">1단계 — hive 확보와 정리</a></li>
+<li class="toc-l3"><a href="#2단계-guid로-무엇이-실행됐는지-구분">2단계 — GUID로 무엇이 실행됐는지 구분</a></li>
+<li class="toc-l3"><a href="#3단계-값-이름-rot13-인코딩된-실행-경로">3단계 — 값 이름 = ROT13 인코딩된 실행 경로</a></li>
+<li class="toc-l3"><a href="#4단계-값-데이터-72바이트-해석-windows-7-이후">4단계 — 값 데이터 72바이트 해석 (Windows 7 이후)</a></li>
+<li class="toc-l3"><a href="#5단계-regripper로-일괄-추출">5단계 — RegRipper로 일괄 추출</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 02:32 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,41 @@
+# dist/ 는 의도적으로 커밋한다.
+# 대회장 PC에 Node 가 없어도 clone/복사만으로 dist/index.html 이 동작해야 한다.
+
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+
+# 큰 바이너리는 Git history 에 넣지 않는다 (STORAGE_BUDGET.md).
+# 증거물 샘플·툴 설치본·디스크/메모리 이미지는 repo 밖 별도 폴더에 둔다.
+*.E01
+*.e01
+*.raw
+*.mem
+*.vmem
+*.dmp
+*.vhd
+*.vhdx
+*.vmdk
+*.iso
+*.aff4
+hiberfil.sys
+pagefile.sys
+samples/
+evidence/
+toolkit/
+
+# OS / 편집기
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+*.swp
+*~
+.idea/
+.vscode/
+
+# 임시 산출물
+tmp/
+out/
+*.log.tmp

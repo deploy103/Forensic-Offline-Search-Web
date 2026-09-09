@@ -1,0 +1,21 @@
+{
+  "name": "forensic-offline-search-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "완전 오프라인 한국어 디지털 포렌식 검색 웹 (CTF 현장용). dist/index.html 을 더블클릭해 동작.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "validate": "node scripts/validate.mjs",
+    "validate:strict": "node scripts/validate.mjs --strict",
+    "test:search": "node scripts/search-test.mjs",
+    "test:search:verbose": "node scripts/search-test.mjs --verbose",
+    "test:offline": "node scripts/smoke-offline.mjs",
+    "check": "npm run build && npm run validate && npm run test:search && npm run test:offline"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

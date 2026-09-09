@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Event ID 4624 성공 로그온 분석: 누가 어디서 어떻게 들어왔나 · FOR-0083 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Event%20Log">Event Log</a> / FOR-0083
+      </div>
+      <header class="article-head">
+        <h1>Event ID 4624 성공 로그온 분석: 누가 어디서 어떻게 들어왔나</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Event Log</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>4624는 성공한 로그온을 기록하며, Logon Type으로 접속 방식을, IpAddress로 출처를, TargetLogonId로 그 세션에서 벌어진 모든 후속 활동을 연결한다 — 이 세 필드만 잡으면 침입 경로가 그려진다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>EvtxECmd, Event Viewer, PowerShell, Timeline Explorer</td></tr>
+<tr><th>artifact</th><td><code>Security.evtx</code> · <code>4624</code> · <code>Logon Type</code> · <code>Logon ID</code> · <code>EVTX</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Windows\System32\winevt\Logs\Security.evtx</code> · <code>%SystemRoot%\System32\winevt\Logs</code></td></tr>
+<tr><th>Event ID</th><td><code>4624</code> · <code>4625</code> · <code>4634</code> · <code>4647</code> · <code>4648</code> · <code>4672</code> · <code>4688</code> · <code>4776</code> · <code>4778</code> · <code>4779</code> · <code>5140</code> · <code>5145</code></td></tr>
+<tr><th>프로토콜</th><td>RDP, SMB, NTLM, Kerberos</td></tr>
+<tr><th>regex</th><td><code>Logon Type:\s+(\d+)</code> · <code>0x[0-9a-fA-F]{4,}</code></td></tr>
+<tr><th>로그 필드</th><td><code>TargetUserName</code> · <code>TargetLogonId</code> · <code>LogonType</code> · <code>IpAddress</code> · <code>WorkstationName</code> · <code>AuthenticationPackageName</code> · <code>LogonProcessName</code> · <code>ElevatedToken</code> · <code>SubjectLogonId</code></td></tr>
+<tr><th>파일 형식</th><td><code>evtx</code></td></tr>
+<tr><th>검색 별칭</th><td>4624 · 누가 로그인 · 로그인 성공 · 로그온 성공 · 원격 로그인 흔적 · rdp 접속 기록 · logon type 10 · 누가 접속했나</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>4624는 성공한 로그온을 기록하며, <strong>Logon Type</strong>으로 접속 방식을, <strong>IpAddress</strong>로 출처를, <strong>TargetLogonId</strong>로 그 세션에서 벌어진 모든 후속 활동을 연결한다 — 이 세 필드만 잡으면 침입 경로가 그려진다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;공격자가 언제 어떤 계정으로 로그인했는가&quot;</li><li>&quot;원격(RDP)으로 들어온 흔적이 있는가&quot;</li><li>&quot;접속한 IP는 무엇인가&quot;</li><li>&quot;로그인 후 무엇을 했는가&quot; (Logon ID로 세션 내 활동 추적)</li><li>&quot;내부자인가 외부 침입인가&quot; (Logon Type 2 vs 3 vs 10)</li></ul>
+<p>Security.evtx에서 4624는 수천 건이 나온다. <strong>필터 없이 보면 무조건 실패한다.</strong> Logon Type과 계정 이름으로 먼저 줄이는 것이 이 글의 핵심이다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>첨부에 <code>Security.evtx</code>가 있다 → 4624/4625/4672를 가장 먼저 본다</li><li>문제 지문의 &quot;접속&quot;, &quot;로그인&quot;, &quot;원격&quot;, &quot;누가&quot; → 4624 확정</li><li>IP가 하나 주어졌다 → <code>IpAddress</code>로 바로 필터</li><li>계정 이름이 하나 주어졌다 → <code>TargetUserName</code>으로 필터한 뒤 Logon ID 확보</li><li>시각이 하나 주어졌다 → 그 시각 ±5분의 4624 전부</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">EvtxECmd.exe -f &quot;C:\case\Security.evtx&quot; --csv &quot;C:\case\out&quot; --csvf sec.csv</code></pre></div>
+<p>CSV가 나오면 Timeline Explorer로 열고 <code>EventId</code> = 4624 필터 → <code>PayloadData</code> 컬럼에서 Logon Type과 계정을 읽는다.</p>
+<p>CSV 없이 PowerShell만으로:</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\Security.evtx&#39;; Id=4624} |
+  ForEach-Object {
+    $x = [xml]$_.ToXml()
+    $d = @{}; $x.Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.&#39;#text&#39; }
+    [pscustomobject]@{
+      Time    = $_.TimeCreated
+      User    = $d[&#39;TargetUserName&#39;]
+      Type    = $d[&#39;LogonType&#39;]
+      LogonId = $d[&#39;TargetLogonId&#39;]
+      Ip      = $d[&#39;IpAddress&#39;]
+      Wks     = $d[&#39;WorkstationName&#39;]
+      AuthPkg = $d[&#39;AuthenticationPackageName&#39;]
+    }
+  } |
+  Where-Object { $_.User -notmatch &#39;\$$&#39; -and $_.Type -in 2,3,10 } |
+  Sort-Object Time | Format-Table -AutoSize</code></pre></div>
+<p><code>-notmatch &#39;\$$&#39;</code>가 중요하다. 컴퓨터 계정(<code>WIN10$</code>)과 시스템 계정을 빼면 남는 건수가 보통 10분의 1로 줄어든다.</p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-logon-type으로-접속-방식-확정">1단계 — Logon Type으로 접속 방식 확정</h3>
+<p><strong>이 표가 4624 분석의 절반이다.</strong></p>
+<div class="table-wrap"><table><thead><tr><th>Type</th><th>이름</th><th>실제 의미</th><th>CTF에서의 신호</th></tr></thead><tbody><tr><td>2</td><td>Interactive</td><td>콘솔에 직접 로그인 (키보드)</td><td>물리적 접근 또는 VM 콘솔</td></tr><tr><td>3</td><td>Network</td><td>네트워크 공유/SMB/원격 접근</td><td><strong>가장 흔한 측면 이동</strong></td></tr><tr><td>4</td><td>Batch</td><td>예약 작업 실행</td><td>스케줄러 지속성</td></tr><tr><td>5</td><td>Service</td><td>서비스 시작</td><td>서비스 기반 지속성 (7045와 함께)</td></tr><tr><td>7</td><td>Unlock</td><td>화면 잠금 해제</td><td>사용자가 자리에 있었다</td></tr><tr><td>8</td><td>NetworkCleartext</td><td>평문 자격증명 네트워크 로그온</td><td>IIS 기본 인증 등. <strong>평문 노출</strong></td></tr><tr><td>9</td><td>NewCredentials</td><td><code>runas /netonly</code></td><td><strong>자격증명 도용 강한 신호</strong></td></tr><tr><td>10</td><td>RemoteInteractive</td><td><strong>RDP / 터미널 서비스</strong></td><td>원격 데스크톱 침입</td></tr><tr><td>11</td><td>CachedInteractive</td><td>캐시된 자격증명 로그인</td><td>도메인 컨트롤러 미접속 상태</td></tr><tr><td>12</td><td>CachedRemoteInteractive</td><td>캐시 기반 RDP</td><td>위와 동일</td></tr><tr><td>13</td><td>CachedUnlock</td><td>캐시 기반 잠금 해제</td><td>—</td></tr></tbody></table></div>
+<p>실전 우선순위: <strong>10 (RDP) → 3 (네트워크) → 9 (자격증명 도용) → 2 (콘솔)</strong>.</p>
+<h3 id="2단계-노이즈-제거">2단계 — 노이즈 제거</h3>
+<p>4624의 90% 이상은 분석 가치가 없다. 다음을 먼저 버린다.</p>
+<div class="table-wrap"><table><thead><tr><th>버릴 대상</th><th>판별 방법</th></tr></thead><tbody><tr><td>SYSTEM 로그온</td><td><code>TargetLogonId</code> = <code>0x3e7</code></td></tr><tr><td>LOCAL SERVICE</td><td><code>TargetLogonId</code> = <code>0x3e5</code></td></tr><tr><td>NETWORK SERVICE</td><td><code>TargetLogonId</code> = <code>0x3e4</code></td></tr><tr><td>컴퓨터 계정</td><td><code>TargetUserName</code>이 <code>$</code>로 끝남 (<code>WIN10$</code>)</td></tr><tr><td>서비스/배치</td><td><code>LogonType</code> = 5 또는 4 (별도로 볼 때 제외)</td></tr><tr><td><code>ANONYMOUS LOGON</code></td><td><code>TargetUserName</code> = <code>ANONYMOUS LOGON</code> (단, NTLM 널 세션은 별도로 의심)</td></tr><tr><td><code>UMFD-*</code>, <code>DWM-*</code></td><td>데스크톱 관리자 세션</td></tr></tbody></table></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Import-Csv sec.csv |
+  Where-Object {
+    $_.EventId -eq 4624 -and
+    $_.PayloadData1 -notmatch &#39;0x3e7|0x3e5|0x3e4&#39; -and
+    $_.UserName -notmatch &#39;\$$|^UMFD-|^DWM-|ANONYMOUS&#39;
+  }</code></pre></div>
+<blockquote><p>EvtxECmd CSV의 컬럼 배치는 버전에 따라 다르다. <code>PayloadData1..6</code>과 <code>Payload</code> 컬럼을 실제로 한 번 열어 확인한 뒤 필터를 짠다. 확실하게 하려면 <code>Payload</code>(원본 JSON) 컬럼을 정규식으로 긁는 편이 안전하다.</p></blockquote>
+<h3 id="3단계-ipaddress로-출처-확정">3단계 — IpAddress로 출처 확정</h3>
+<div class="table-wrap"><table><thead><tr><th><code>IpAddress</code> 값</th><th>의미</th></tr></thead><tbody><tr><td><code>-</code></td><td>로컬 로그온. 네트워크 출처 없음</td></tr><tr><td><code>127.0.0.1</code> / <code>::1</code></td><td>로컬 루프백. 로컬에서 실행된 원격 도구</td></tr><tr><td><code>10.x</code> / <code>172.16-31.x</code> / <code>192.168.x</code></td><td>내부망. <strong>측면 이동</strong> 후보</td></tr><tr><td>공인 IP</td><td>외부에서 직접 접속. 방화벽 노출</td></tr></tbody></table></div>
+<p><code>IpPort</code>도 함께 본다. 값이 있으면 실제 TCP 세션이 있었다는 뜻이다.</p>
+<h3 id="4단계-targetlogonid로-세션-전체를-연결">4단계 — TargetLogonId로 세션 전체를 연결</h3>
+<p><strong>여기가 4624 분석의 핵심 기술이다.</strong> <code>TargetLogonId</code>(예: <code>0x1a2b3c</code>)는 그 로그온 세션의 고유 ID이며, 세션이 유지되는 동안 발생한 다른 이벤트에 같은 값이 들어간다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 관심 세션 ID를 고정
+$sid = &#39;0x1a2b3c&#39;
+
+# 그 세션에서 발생한 모든 이벤트
+Import-Csv sec.csv | Where-Object { $_.Payload -like &quot;*$sid*&quot; } |
+  Select-Object TimeCreated, EventId, MapDescription |
+  Sort-Object TimeCreated</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>이벤트</th><th>Logon ID가 들어가는 필드</th><th>알 수 있는 것</th></tr></thead><tbody><tr><td>4624</td><td><code>TargetLogonId</code></td><td>세션 시작</td></tr><tr><td>4672</td><td><code>SubjectLogonId</code></td><td><strong>관리자 권한으로 로그온</strong></td></tr><tr><td>4688</td><td><code>SubjectLogonId</code></td><td>그 세션에서 실행한 프로세스와 명령행</td></tr><tr><td>4634</td><td><code>TargetLogonId</code></td><td>세션 종료</td></tr><tr><td>4647</td><td><code>TargetLogonId</code></td><td>사용자가 직접 로그오프</td></tr><tr><td>4648</td><td><code>SubjectLogonId</code></td><td>다른 자격증명으로 접속 시도</td></tr><tr><td>5140 / 5145</td><td><code>SubjectLogonId</code></td><td>접근한 네트워크 공유와 파일</td></tr></tbody></table></div>
+<p>즉 <strong>4624 → 4672 → 4688 × N → 4634</strong> 를 하나의 Logon ID로 엮으면 &quot;로그인 후 무엇을 했는가&quot;가 완성된다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p>원본 EventData의 실제 필드 이름이다. Event Viewer의 한글 표시명이 아니라 이 이름으로 검색해야 정확하다.</p>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>의미</th><th>읽는 법</th></tr></thead><tbody><tr><td><code>TargetUserName</code></td><td>로그온한 계정</td><td><code>$</code> 끝은 컴퓨터 계정</td></tr><tr><td><code>TargetDomainName</code></td><td>계정 도메인</td><td>로컬이면 컴퓨터 이름</td></tr><tr><td><code>TargetUserSid</code></td><td>계정 SID</td><td><code>S-1-5-18</code> = SYSTEM</td></tr><tr><td><code>TargetLogonId</code></td><td><strong>세션 ID (16진수)</strong></td><td>후속 이벤트 연결 키</td></tr><tr><td><code>LogonType</code></td><td>접속 방식</td><td>위 표 참조</td></tr><tr><td><code>IpAddress</code> / <code>IpPort</code></td><td>출처 IP / 포트</td><td><code>-</code>면 로컬</td></tr><tr><td><code>WorkstationName</code></td><td>접속한 클라이언트 이름</td><td>공격자가 자기 PC 이름을 남기는 경우가 많다</td></tr><tr><td><code>AuthenticationPackageName</code></td><td><code>Kerberos</code> / <code>NTLM</code> / <code>Negotiate</code></td><td>도메인 환경에서 <strong>NTLM은 이상 신호</strong></td></tr><tr><td><code>LogonProcessName</code></td><td><code>User32</code>(콘솔) / <code>NtLmSsp</code>(네트워크 NTLM) / <code>Kerberos</code> / <code>Advapi</code>(runas)</td><td>어떤 경로로 인증했는지</td></tr><tr><td><code>ProcessName</code></td><td>로그온을 수행한 프로세스</td><td><code>winlogon.exe</code>, <code>svchost.exe</code>, <code>services.exe</code></td></tr><tr><td><code>ElevatedToken</code></td><td><code>%%1842</code> = Yes, <code>%%1843</code> = No</td><td>Yes면 관리자 권한 세션</td></tr><tr><td><code>SubjectUserName</code> / <code>SubjectLogonId</code></td><td>이 로그온을 <strong>요청한</strong> 주체</td><td>보통 SYSTEM(<code>0x3e7</code>)</td></tr><tr><td><code>LmPackageName</code></td><td><code>NTLM V1</code> / <code>NTLM V2</code> / <code>-</code></td><td><strong>NTLM V1은 취약, 강한 의심</strong></td></tr><tr><td><code>KeyLength</code></td><td>세션 키 길이</td><td>0이면 Kerberos 또는 로컬</td></tr><tr><td><code>TargetLinkedLogonId</code></td><td>연결된 다른 세션 (UAC 분리 토큰)</td><td>관리자 승격 추적</td></tr></tbody></table></div>
+<p><code>ElevatedToken</code>이 <code>%%1842</code>인 4624는 그 직후에 거의 항상 4672가 따라온다. 둘이 짝을 이루면 &quot;관리자로 로그인 성공&quot;이 확정된다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>4624에서 얻은 것</th><th>다음 목표</th><th>확인할 것</th></tr></thead><tbody><tr><td><code>TargetLogonId</code></td><td>4688 (프로세스 생성)</td><td>실행한 명령과 인자</td></tr><tr><td><code>TargetLogonId</code></td><td>5140/5145</td><td>접근한 공유·파일</td></tr><tr><td><code>TargetUserName</code></td><td>4625 (실패 로그온)</td><td>앞선 무차별 대입 시도</td></tr><tr><td><code>IpAddress</code></td><td>pcap의 <code>ip.addr == &lt;IP&gt;</code></td><td>실제 트래픽 내용</td></tr><tr><td><code>LogonType</code> = 10</td><td><code>Microsoft-Windows-TerminalServices-LocalSessionManager/Operational</code> (21, 24, 25)</td><td>RDP 세션 상세, 클라이언트 IP</td></tr><tr><td><code>LogonType</code> = 3 + NTLM</td><td>4776 (NTLM 자격증명 검증)</td><td>인증 시도 원본</td></tr><tr><td>로그온 시각</td><td>UserAssist / Prefetch (<a href="./userassist.html">FOR-0061</a>)</td><td>그 세션에서 실행한 GUI 프로그램</td></tr><tr><td>로그온 시각</td><td><code>$MFT</code> (<a href="./mft-basics.html">FOR-0021</a>)</td><td>그 시각에 생성·삭제된 파일</td></tr><tr><td><code>WorkstationName</code></td><td>DHCP 로그, ARP, 다른 호스트의 EVTX</td><td>공격자 단말 특정</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>로그온 시각 ≠ 이벤트 기록 시각.</strong> 대개 같지만 시스템 부하/시간 동기화 문제로 어긋날 수 있다. <code>EventRecordID</code> 순서가 시간 순서보다 신뢰도가 높다.</li><li><strong>Logon Type 3을 무조건 공격으로 보는 것.</strong> 파일 공유 접근, 그룹 정책 적용 등 정상 트래픽이 대부분이다. 계정과 IP로 정상 기준선을 먼저 만든다.</li><li><strong><code>IpAddress = -</code>를 &quot;숨겼다&quot;로 오해하는 것.</strong> 로컬 로그온에서는 원래 <code>-</code>다.</li><li><strong>4624만 보고 4625를 빠뜨리는 것.</strong> 침입 직전의 실패 시도가 공격 방식(무차별 대입 vs 유효 자격증명 사용)을 알려준다.</li><li><strong>컴퓨터 계정을 사용자로 세는 것.</strong> <code>WIN10$</code>는 사람이 아니다.</li><li><strong>UTC/로컬 혼동.</strong> EVTX 내부 <code>SystemTime</code>은 <strong>UTC</strong>다. Event Viewer는 이를 로컬 시간대로 변환해 보여주므로 두 화면의 숫자가 다르다. EvtxECmd CSV는 UTC로 출력한다. 답이 KST면 +9시간.</li><li><strong>감사 정책이 꺼져 있던 구간을 고려하지 않는 것.</strong> 4624가 없다면 정말 로그온이 없었을 수도, 감사가 꺼졌을 수도 있다. 1102(로그 삭제)와 4719(감사 정책 변경)를 확인한다.</li><li><strong><code>0x3e7</code>을 계정으로 취급하는 것.</strong> 이건 SYSTEM 세션 ID다.</li><li><strong>NTLM V1을 정상으로 넘기는 것.</strong> 현대 도메인 환경에서 <code>LmPackageName = NTLM V1</code>은 다운그레이드 공격 신호일 수 있다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) 4624 — 로그온 성공 (Logon ID 확보)
+Get-WinEvent -FilterHashtable @{Path=&#39;Security.evtx&#39;;Id=4624} |
+  Where-Object { $_.Message -match &#39;Logon Type:\s+10&#39; }
+
+# 2) 4672 — 같은 시각 관리자 권한 부여 여부
+Get-WinEvent -FilterHashtable @{Path=&#39;Security.evtx&#39;;Id=4672}
+
+# 3) 4625 — 그 계정에 대한 사전 실패 시도
+Get-WinEvent -FilterHashtable @{Path=&#39;Security.evtx&#39;;Id=4625} |
+  Where-Object { $_.Message -match &#39;attacker01&#39; }
+
+# 4) RDP 전용 로그 — Logon Type 10의 클라이언트 IP 재확인
+Get-WinEvent -FilterHashtable @{
+  Path=&#39;Microsoft-Windows-TerminalServices-LocalSessionManager%4Operational.evtx&#39;
+  Id=21,24,25
+}
+
+# 5) 4688 — 그 Logon ID로 실행된 프로세스
+Get-WinEvent -FilterHashtable @{Path=&#39;Security.evtx&#39;;Id=4688} |
+  Where-Object { $_.Message -match &#39;0x1a2b3c&#39; }</code></pre></div>
+<p>RDP 문제라면 4624 Type 10과 TerminalServices 21/25의 IP가 일치해야 한다. 불일치하면 프록시·점프 호스트를 경유한 것이다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;2026-03-14에 침입이 있었습니다. 공격자가 사용한 계정과 접속 IP를 구하세요.
+ 첨부: Security.evtx (48,213 events)&quot;
+
+1. EvtxECmd.exe -f Security.evtx --csv out --csvf sec.csv
+   -&gt; 48,213행. 그대로는 못 본다.
+
+2. 첫 시도 (실패한 접근):
+   EventId=4624만 필터 -&gt; 여전히 9,842행.
+   대부분 TargetLogonId=0x3e7(SYSTEM)과 WIN10$ 컴퓨터 계정이었다.
+
+3. 노이즈 제거 후:
+   Import-Csv out\sec.csv |
+     Where-Object { $_.EventId -eq 4624 -and
+                    $_.Payload -notmatch &#39;0x3e7|0x3e5|0x3e4&#39; -and
+                    $_.Payload -notmatch &#39;&quot;TargetUserName&quot;:&quot;[^&quot;]*\$&quot;&#39; }
+   -&gt; 137행. 볼 수 있는 크기.
+
+4. Logon Type 10(RDP)만:
+   ... | Where-Object { $_.Payload -match &#39;&quot;LogonType&quot;:&quot;?10&#39; }
+
+   TimeCreated              TargetUserName  IpAddress      TargetLogonId
+   2026-03-14 07:18:44Z     svc_backup      203.0.113.77   0x1a2b3c
+   2026-03-14 09:02:11Z     jhkim           192.168.10.24  0x2f4e10
+
+   svc_backup 은 서비스 계정인데 RDP로 로그인했다. 정상 계정은 이렇게 안 쓴다.
+   IP도 공인 IP다. -&gt; 이것이 공격자.
+
+5. 확증 — 앞선 실패 시도 확인 (4625)
+   ... EventId=4625, TargetUserName=svc_backup
+   -&gt; 07:11:02 ~ 07:18:39 사이 214건 실패. 무차별 대입 후 성공.
+
+6. 확증 — 관리자 권한 (4672)
+   SubjectLogonId=0x1a2b3c 인 4672 존재 -&gt; 관리자 세션
+
+7. pivot — 세션 내 활동 (4688, 같은 Logon ID)
+   0x1a2b3c 로 실행된 프로세스:
+     07:19:31  C:\Windows\System32\cmd.exe
+     07:20:08  powershell.exe -enc SQBFAFgA...
+     07:24:55  C:\Users\svc_backup\Downloads\rclone.exe
+
+정답: 계정 svc_backup, IP 203.0.113.77</code></pre></div>
+<p>3단계의 노이즈 제거가 9,842행을 137행으로 줄인 지점이고, 4단계에서 &quot;서비스 계정 + RDP + 공인 IP&quot;라는 <strong>조합의 부자연스러움</strong>이 결정타였다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>$</code>로 끝나는 계정과 <code>0x3e7/0x3e5/0x3e4</code>를 제외했는가 — 이것만으로 대개 90% 감소</li><li>Logon Type 10 → 3 → 9 → 2 순서로 훑었는가</li><li>4625(실패)를 함께 봤는가 — 공격 방식이 드러난다</li><li>4672가 짝지어 있는가 — 관리자 세션 여부</li><li><code>TargetLogonId</code>로 4688을 엮었는가 — 실제 명령이 여기 있다</li><li>4624가 아예 없다면 → <strong>1102</strong>(감사 로그 삭제), <strong>4719</strong>(감사 정책 변경) 확인</li><li>RDP 문제인데 정보가 부족하면 → <code>TerminalServices-LocalSessionManager/Operational</code> 21/24/25, <code>RemoteConnectionManager</code> 1149</li><li>계정이 정상 사용자라면 → 그 계정의 정상 로그온 패턴(시간대·IP·Logon Type)과 비교해 이탈 지점을 찾는다</li><li>시간대를 UTC로 답했는지 KST로 답해야 하는지 문제 지문을 다시 읽는다</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-001 — Microsoft Learn, Event 4624: 전체 EventData 필드 정의와 Logon Type 표</li><li>SRC-004 — Eric Zimmerman 문서: EvtxECmd CSV 출력 형식과 맵 파일</li><li>SRC-014 — Microsoft Learn, File Times: EVTX <code>SystemTime</code>의 UTC 기준</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./userassist.html">
+    <span class="rel-id">FOR-0061 · Registry</span>
+    UserAssist로 사용자가 직접 실행한 프로그램 찾기
+  </a>
+  <a class="related-item" href="./powershell-select-string.html">
+    <span class="rel-id">FOR-0121 · 로그/Regex</span>
+    PowerShell Select-String으로 로그 검색하기 (Windows용 grep)
+  </a>
+  <a class="related-item" href="./usnjrnl-basics.html">
+    <span class="rel-id">FOR-0027 · 디스크/NTFS</span>
+    $UsnJrnl($J)로 삭제·생성·이름변경 흔적 복원하기
+  </a>
+  <a class="related-item" href="./ipv4-regex.html">
+    <span class="rel-id">FOR-0128 · 로그/Regex</span>
+    IPv4 주소 regex: 느슨한 패턴과 엄격한 패턴 골라 쓰기
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./userassist.html"><span class="rel-id">← FOR-0061</span>UserAssist로 사용자가 직접 실행한 프로그램 찾기</a>
+<a class="related-item" href="./powershell-select-string.html"><span class="rel-id">FOR-0121 →</span>PowerShell Select-String으로 로그 검색하기 (Windows용 grep)</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-logon-type으로-접속-방식-확정">1단계 — Logon Type으로 접속 방식 확정</a></li>
+<li class="toc-l3"><a href="#2단계-노이즈-제거">2단계 — 노이즈 제거</a></li>
+<li class="toc-l3"><a href="#3단계-ipaddress로-출처-확정">3단계 — IpAddress로 출처 확정</a></li>
+<li class="toc-l3"><a href="#4단계-targetlogonid로-세션-전체를-연결">4단계 — TargetLogonId로 세션 전체를 연결</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 02:32 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

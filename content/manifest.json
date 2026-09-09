@@ -1,0 +1,467 @@
+{
+  "target": 300,
+  "count": 11,
+  "generated_kst": "2026-09-10 02:32 KST",
+  "entries": [
+    {
+      "id": "FOR-0001",
+      "title": "포렌식 문제 파일을 받았을 때 30초 트리아지",
+      "slug": "30sec-triage",
+      "category": "트리아지",
+      "type": "troubleshooting",
+      "difficulty": "basic",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "file",
+        "HxD",
+        "strings",
+        "exiftool",
+        "binwalk",
+        "DIE",
+        "7-Zip"
+      ],
+      "artifact": [],
+      "protocols": [],
+      "regex_patterns": [],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-005",
+        "SRC-014"
+      ],
+      "file": "content/articles/FOR-0001-30sec-triage.md"
+    },
+    {
+      "id": "FOR-0021",
+      "title": "$MFT 기본 구조와 포렌식 활용",
+      "slug": "mft-basics",
+      "category": "디스크/NTFS",
+      "type": "reference",
+      "difficulty": "basic",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "FTK Imager",
+        "MFTECmd",
+        "analyzeMFT",
+        "Autopsy",
+        "Sleuth Kit",
+        "HxD",
+        "Arsenal Image Mounter"
+      ],
+      "artifact": [
+        "$MFT",
+        "MFT record",
+        "$STANDARD_INFORMATION",
+        "$FILE_NAME",
+        "$DATA",
+        "$BITMAP"
+      ],
+      "protocols": [],
+      "regex_patterns": [],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-005",
+        "SRC-014",
+        "SRC-004"
+      ],
+      "file": "content/articles/FOR-0021-mft-basics.md"
+    },
+    {
+      "id": "FOR-0027",
+      "title": "$UsnJrnl($J)로 삭제·생성·이름변경 흔적 복원하기",
+      "slug": "usnjrnl-basics",
+      "category": "디스크/NTFS",
+      "type": "reference",
+      "difficulty": "intermediate",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "MFTECmd",
+        "NTFS Log Tracker",
+        "FTK Imager",
+        "Arsenal Image Mounter",
+        "Timeline Explorer",
+        "fsutil"
+      ],
+      "artifact": [
+        "$UsnJrnl",
+        "$J",
+        "$Max",
+        "USN_RECORD",
+        "USN Journal",
+        "$Extend"
+      ],
+      "protocols": [],
+      "regex_patterns": [
+        "FileDelete",
+        "RenameOldName|RenameNewName",
+        "\\.(zip|7z|rar|exe|ps1)$"
+      ],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-013",
+        "SRC-004",
+        "SRC-014"
+      ],
+      "file": "content/articles/FOR-0027-usnjrnl-basics.md"
+    },
+    {
+      "id": "FOR-0061",
+      "title": "UserAssist로 사용자가 직접 실행한 프로그램 찾기",
+      "slug": "userassist",
+      "category": "Registry",
+      "type": "guide",
+      "difficulty": "intermediate",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "RegistryExplorer",
+        "RegRipper",
+        "rla",
+        "FTK Imager",
+        "KAPE"
+      ],
+      "artifact": [
+        "UserAssist",
+        "NTUSER.DAT",
+        "Count"
+      ],
+      "protocols": [],
+      "regex_patterns": [],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-009",
+        "SRC-004",
+        "SRC-014"
+      ],
+      "file": "content/articles/FOR-0061-userassist.md"
+    },
+    {
+      "id": "FOR-0083",
+      "title": "Event ID 4624 성공 로그온 분석: 누가 어디서 어떻게 들어왔나",
+      "slug": "event-4624-logon",
+      "category": "Event Log",
+      "type": "guide",
+      "difficulty": "intermediate",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "EvtxECmd",
+        "Event Viewer",
+        "PowerShell",
+        "Timeline Explorer"
+      ],
+      "artifact": [
+        "Security.evtx",
+        "4624",
+        "Logon Type",
+        "Logon ID",
+        "EVTX"
+      ],
+      "protocols": [
+        "RDP",
+        "SMB",
+        "NTLM",
+        "Kerberos"
+      ],
+      "regex_patterns": [
+        "Logon Type:\\s+(\\d+)",
+        "0x[0-9a-fA-F]{4,}"
+      ],
+      "wireshark_filters": [],
+      "event_ids": [
+        "4624",
+        "4625",
+        "4634",
+        "4647",
+        "4648",
+        "4672",
+        "4688",
+        "4776",
+        "4778",
+        "4779",
+        "5140",
+        "5145"
+      ],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-001",
+        "SRC-004",
+        "SRC-014"
+      ],
+      "file": "content/articles/FOR-0083-event-4624-logon.md"
+    },
+    {
+      "id": "FOR-0121",
+      "title": "PowerShell Select-String으로 로그 검색하기 (Windows용 grep)",
+      "slug": "powershell-select-string",
+      "category": "로그/Regex",
+      "type": "guide",
+      "difficulty": "intermediate",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "PowerShell",
+        "Select-String",
+        "Get-Content",
+        "Timeline Explorer"
+      ],
+      "artifact": [
+        "access.log",
+        "auth.log",
+        "text log",
+        "CSV log"
+      ],
+      "protocols": [],
+      "regex_patterns": [
+        "(?<ip>\\d{1,3}(?:\\.\\d{1,3}){3})",
+        "\"(?<method>GET|POST|PUT|DELETE) (?<uri>[^ ]+)",
+        "Failed password for (?:invalid user )?(?<user>\\S+) from (?<ip>\\S+)"
+      ],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-007",
+        "SRC-015"
+      ],
+      "file": "content/articles/FOR-0121-powershell-select-string.md"
+    },
+    {
+      "id": "FOR-0128",
+      "title": "IPv4 주소 regex: 느슨한 패턴과 엄격한 패턴 골라 쓰기",
+      "slug": "ipv4-regex",
+      "category": "로그/Regex",
+      "type": "reference",
+      "difficulty": "intermediate",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "grep",
+        "ripgrep",
+        "PowerShell",
+        "Python",
+        "awk",
+        "tshark"
+      ],
+      "artifact": [
+        "access.log",
+        "auth.log",
+        "syslog",
+        "firewall log",
+        "memory strings"
+      ],
+      "protocols": [
+        "IPv4",
+        "TCP",
+        "UDP"
+      ],
+      "regex_patterns": [
+        "[0-9]{1,3}(\\.[0-9]{1,3}){3}",
+        "\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b",
+        "(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])",
+        "\\b(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\\b",
+        "(?<![\\d.])(?:(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)(?![\\d.])",
+        "\\b(?:10|127|169\\.254|172\\.(?:1[6-9]|2\\d|3[01])|192\\.168)\\."
+      ],
+      "wireshark_filters": [
+        "ip.addr == 203.0.113.77",
+        "ip.src == 10.0.0.0/8"
+      ],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-012",
+        "SRC-015",
+        "SRC-007"
+      ],
+      "file": "content/articles/FOR-0128-ipv4-regex.md"
+    },
+    {
+      "id": "FOR-0146",
+      "title": "Wireshark 30초 트리아지: pcap을 받고 처음 할 다섯 가지",
+      "slug": "wireshark-30sec-triage",
+      "category": "Network/PCAP",
+      "type": "guide",
+      "difficulty": "intermediate",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "Wireshark",
+        "tshark",
+        "NetworkMiner",
+        "HxD"
+      ],
+      "artifact": [
+        "pcap",
+        "pcapng"
+      ],
+      "protocols": [
+        "HTTP",
+        "DNS",
+        "TCP",
+        "UDP",
+        "FTP",
+        "SMTP",
+        "SMB",
+        "TLS",
+        "ICMP",
+        "ARP",
+        "DHCP"
+      ],
+      "regex_patterns": [],
+      "wireshark_filters": [
+        "http.request",
+        "dns",
+        "ftp || ftp-data",
+        "smtp",
+        "tcp.flags.syn == 1 && tcp.flags.ack == 0",
+        "frame contains \"flag\"",
+        "tcp contains \"password\"",
+        "tcp.stream eq 0",
+        "!(arp || icmp || dns)"
+      ],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-003",
+        "SRC-002",
+        "SRC-010"
+      ],
+      "file": "content/articles/FOR-0146-wireshark-30sec-triage.md"
+    },
+    {
+      "id": "FOR-0158",
+      "title": "pcap에서 HTTP POST 찾아 본문·자격증명·업로드 파일 뽑기",
+      "slug": "http-post-find",
+      "category": "Network/PCAP",
+      "type": "guide",
+      "difficulty": "intermediate",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "Wireshark",
+        "tshark",
+        "CyberChef 대체(Base64encoder)",
+        "HxD"
+      ],
+      "artifact": [
+        "pcap",
+        "pcapng",
+        "HTTP request body"
+      ],
+      "protocols": [
+        "HTTP",
+        "TCP"
+      ],
+      "regex_patterns": [
+        "(?i)(user(name)?|pass(word)?|pw|login|token|session)=([^&\\s]+)",
+        "(?i)Authorization:\\s*Basic\\s+([A-Za-z0-9+/=]+)"
+      ],
+      "wireshark_filters": [
+        "http.request.method == \"POST\"",
+        "urlencoded-form",
+        "http.file_data",
+        "http.content_type contains \"multipart\"",
+        "mime_multipart",
+        "json",
+        "http.request.uri contains \"login\"",
+        "http.file_data contains \"password\"",
+        "tcp.stream eq 7",
+        "http.response.code == 200"
+      ],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-002",
+        "SRC-003",
+        "SRC-010"
+      ],
+      "file": "content/articles/FOR-0158-http-post-find.md"
+    },
+    {
+      "id": "FOR-0191",
+      "title": "Chrome History DB 구조: urls / visits / downloads 읽기",
+      "slug": "chrome-history",
+      "category": "브라우저/웹",
+      "type": "reference",
+      "difficulty": "intermediate",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "sqlite3",
+        "DB Browser for SQLite",
+        "DCode",
+        "ChromeCacheView",
+        "FTK Imager"
+      ],
+      "artifact": [
+        "Chrome History",
+        "urls",
+        "visits",
+        "downloads",
+        "keyword_search_terms",
+        "WebKit timestamp"
+      ],
+      "protocols": [
+        "HTTP",
+        "HTTPS"
+      ],
+      "regex_patterns": [
+        "https?://[^\\s\"'<>]+"
+      ],
+      "wireshark_filters": [
+        "http.host",
+        "tls.handshake.extensions_server_name"
+      ],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-008",
+        "SRC-011",
+        "SRC-014"
+      ],
+      "file": "content/articles/FOR-0191-chrome-history.md"
+    },
+    {
+      "id": "FOR-0214",
+      "title": "Volatility 3 windows.pslist로 메모리 덤프의 프로세스 목록 읽기",
+      "slug": "volatility-pslist",
+      "category": "메모리",
+      "type": "guide",
+      "difficulty": "intermediate",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "Volatility 3",
+        "strings",
+        "grep",
+        "HxD"
+      ],
+      "artifact": [
+        "memory dump",
+        "EPROCESS",
+        "process list"
+      ],
+      "protocols": [],
+      "regex_patterns": [],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-006",
+        "SRC-014"
+      ],
+      "file": "content/articles/FOR-0214-volatility-pslist.md"
+    }
+  ]
+}
