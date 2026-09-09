@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>PhotoRec 사용법: TUI 절차, File Opt, recup_dir 해석 · FOR-0047 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%94%94%EC%8A%A4%ED%81%AC%2FNTFS">디스크/NTFS</a> / FOR-0047
+      </div>
+      <header class="article-head">
+        <h1>PhotoRec 사용법: TUI 절차, File Opt, recup_dir 해석</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">디스크/NTFS</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">linux</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>PhotoRec은 대화형 TUI를 미디어 → 파티션 테이블 타입 → 파티션 → 파일시스템 타입(ext2/3 vs Other) → Free/Whole → 출력 폴더 순서로 통과시키는 것이 전부이며, 속도가 문제라면 File Opt에서 형식을 다 끄고 필요한 것만 켜고 범위는 반드시 Free(비할당만)를 고른다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>PhotoRec, QPhotoRec, TestDisk, foremost, Sleuth Kit, exiftool, file</td></tr>
+<tr><th>artifact</th><td><code>unallocated space</code> · <code>recup_dir</code> · <code>file signature</code> · <code>photorec.log</code></td></tr>
+<tr><th>파일 경로</th><td><code>recup_dir.1</code> · <code>photorec.log</code></td></tr>
+<tr><th>파일 형식</th><td><code>jpg</code> · <code>png</code> · <code>pdf</code> · <code>zip</code> · <code>sqlite</code> · <code>raw</code> · <code>dd</code> · <code>e01</code></td></tr>
+<tr><th>검색 별칭</th><td>photorec · 포토렉 · photorec 사용법 · 사진 복구 · 삭제 사진 복구 · testdisk · qphotorec · recup_dir</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>PhotoRec은 대화형 TUI를 <strong>미디어 → 파티션 테이블 타입 → 파티션 → 파일시스템 타입(ext2/3 vs Other) → Free/Whole → 출력 폴더</strong> 순서로 통과시키는 것이 전부이며, 속도가 문제라면 <code>File Opt</code>에서 형식을 다 끄고 필요한 것만 켜고 범위는 반드시 <code>Free</code>(비할당만)를 고른다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>foremost/scalpel로 뽑은 파일이 중간에서 잘리거나 깨져 나오는 경우 (<strong>조각화</strong>)</li><li>지원 형식이 넓어야 하는 문제 — SQLite, 문서, 압축, 동영상, 메일이 섞여 있는 이미지</li><li>파티션 테이블이 없거나 깨져서 파일시스템 경로가 막힌 이미지</li><li>카메라 SD카드/USB 이미지에서 사진·동영상을 대량으로 건져야 하는 경우</li><li>원본 파일 이름은 필요 없고 <strong>내용만</strong> 필요한 경우</li></ul>
+<p>원본 이름·경로·삭제 시각이 답이라면 PhotoRec은 답을 주지 못한다. 그때는 <code>$MFT</code>/<code>$UsnJrnl</code> (<a href="./usnjrnl-basics.html">FOR-0027</a>)이 먼저다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li><code>mmls</code>가 파티션을 못 찾는다 → PhotoRec의 파티션 테이블 타입에서 <code>None</code>을 골라야 하는 신호</li><li>foremost 결과에 <code>at max size</code>가 많다 → 조각화. PhotoRec의 brute force 쪽이 유리하다</li><li>이미지 크기와 남은 시간 — <code>Whole</code>은 <code>Free</code>보다 몇 배 느리다</li><li>지문이 요구하는 형식이 한두 개인가 → <code>File Opt</code>로 나머지를 다 끈다</li><li>출력 폴더를 둘 여유 공간 — 카빙 결과는 원본 이미지 크기에 육박할 수 있다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">photorec image.dd</code></pre></div>
+<p>TUI에서 누를 순서만 외운다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1. 미디어 선택            -&gt; image.dd (또는 /dev/sdb) 에서 [Proceed]
+2. 파티션 테이블 타입     -&gt; Intel (일반 MBR) / EFI GPT / None (파티션 없는 볼륨 단독)
+3. 파티션 목록            -&gt; 대상 파티션 선택
+   (여기서 [File Opt] 로 형식 선택, [Options] 로 동작 변경)
+4. [Search]
+5. 파일시스템 타입        -&gt; ext2/ext3 이면 첫 항목, 그 외 전부 [Other]
+6. 범위                   -&gt; [Free] 비할당만  /  [Whole] 파티션 전체
+7. 출력 폴더 선택         -&gt; 원본과 다른 디스크. 확인 키를 눌러 확정
+8. 진행 화면에서 형식별 개수가 올라간다</code></pre></div>
+<p>Windows에서는 다운로드한 폴더의 <code>photorec_win.exe</code>를 <strong>관리자 권한</strong>으로 실행한다. 물리 디스크를 대상으로 하려면 관리자 권한이 필수다. GUI가 편하면 같은 폴더의 <code>qphotorec_win.exe</code>(QPhotoRec)를 쓴다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 출력 폴더를 미리 지정해 폴더 선택 단계를 건너뛴다
+photorec /d /cases/recup image.dd
+
+# 로그를 남긴다 (photorec.log)
+photorec /log /d /cases/recup image.dd</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-실행-대상과-권한">1단계 — 실행 대상과 권한</h3>
+<div class="table-wrap"><table><thead><tr><th>대상</th><th>명령</th><th>주의</th></tr></thead><tbody><tr><td>RAW/dd 이미지</td><td><code>photorec image.dd</code></td><td>가장 흔한 CTF 형태</td></tr><tr><td>물리 디스크</td><td><code>sudo photorec /dev/sdb</code></td><td>루트/관리자 권한 필요</td></tr><tr><td>E01</td><td>직접 열 수 없다</td><td><code>ewfmount</code>로 마운트해 나온 <code>ewf1</code>을 주거나 <code>ewfexport</code>로 raw 변환</td></tr><tr><td>마운트된 이미지(Windows)</td><td>Arsenal로 마운트 후 물리 디스크로 선택 (<a href="./arsenal-image-mounter.html">FOR-0017</a>)</td><td>읽기 전용 모드로 마운트</td></tr></tbody></table></div>
+<p><strong>원본은 절대 쓰기 대상이 되지 않게 한다.</strong> PhotoRec은 읽기만 하지만, 출력 폴더를 복구 대상과 같은 파티션에 두면 비할당 영역을 덮어써서 아직 못 찾은 파일을 파괴한다. TUI의 출력 폴더 선택 화면에도 같은 경고가 표시된다.</p>
+<h3 id="2단계-파티션-테이블-타입-선택-첫-갈림길">2단계 — 파티션 테이블 타입 선택 (첫 갈림길)</h3>
+<p>미디어를 고르고 <code>[Proceed]</code>를 누르면 파티션 테이블 타입을 묻는다.</p>
+<div class="table-wrap"><table><thead><tr><th>선택</th><th>언제</th></tr></thead><tbody><tr><td><code>Intel</code></td><td>일반적인 MBR 디스크 이미지</td></tr><tr><td><code>EFI GPT</code></td><td>GPT 디스크 (<code>mmls</code>가 GPT라고 답한 경우, <a href="./mbr-gpt.html">FOR-0019</a>)</td></tr><tr><td><code>None</code></td><td><strong>파티션 테이블이 없는 볼륨 단독 이미지</strong>, 또는 테이블이 완전히 파괴된 경우</td></tr><tr><td><code>Mac</code> / <code>Sun</code> / <code>XBox</code> / <code>Humax</code></td><td>해당 플랫폼 디스크</td></tr></tbody></table></div>
+<p>PhotoRec은 보통 올바른 값을 미리 선택해 준다. 그 추천이 틀렸다고 판단할 근거는 <code>mmls</code>/<code>fsstat</code> 결과다. <code>mmls</code>가 실패하고 <code>fsstat -o 0</code>이 성공하는 이미지는 볼륨 단독이므로 <code>None</code>이다 (<a href="./partition-offset-problems.html">FOR-0048</a>).</p>
+<p><code>None</code>을 고르면 파티션 목록에 <code>Whole disk</code> 하나만 나온다. 이것을 선택해 진행한다.</p>
+<h3 id="3단계-파티션-선택-화면의-하단-메뉴">3단계 — 파티션 선택 화면의 하단 메뉴</h3>
+<p>파티션 목록 화면 하단에 다음 항목들이 있다.</p>
+<div class="table-wrap"><table><thead><tr><th>메뉴</th><th>역할</th></tr></thead><tbody><tr><td><code>Search</code></td><td>선택한 파티션에서 카빙 시작</td></tr><tr><td><code>Options</code></td><td>동작 옵션 변경 (5단계)</td></tr><tr><td><code>File Opt</code></td><td><strong>카빙할 파일 형식 선택/해제</strong> (4단계)</td></tr><tr><td><code>Quit</code></td><td>이전 화면</td></tr></tbody></table></div>
+<p><strong><code>Search</code>를 누르기 전에 <code>File Opt</code>를 먼저 다녀오는 것이 실전 순서다.</strong> 형식을 좁히는 것이 속도를 가장 크게 바꾼다.</p>
+<h3 id="4단계-file-opt로-속도를-올린다">4단계 — File Opt로 속도를 올린다</h3>
+<p><code>File Opt</code> 화면은 수백 개의 확장자 목록이고, 각 줄 앞의 표시가 활성/비활성을 나타낸다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">[X] 1cd  1CD file
+[X] 3dm  Rhino 3D Model
+[X] 7z   7zip archive
+[ ] a    ar archive
+[X] abr  Adobe Brush
+...</code></pre></div>
+<p>권장 절차:</p>
+<ol><li>전체 해제 키를 눌러 <strong>모든 형식을 끈다</strong> (화면 하단에 안내되는 키를 쓴다)</li><li>필요한 형식만 스페이스로 켠다 — <code>jpg</code>, <code>png</code>, <code>gif</code>, <code>pdf</code>, <code>zip</code>, <code>doc</code>, <code>sqlite</code> 등</li><li>저장 항목을 선택하면 설정이 파일로 저장되어 다음 실행에도 유지된다</li><li><code>Quit</code>으로 파티션 화면으로 돌아가 <code>Search</code></li></ol>
+<p>형식을 3~4개로 줄이면 검사할 시그니처 수가 줄어 검사 속도가 크게 올라가고, 무엇보다 <strong>결과 파일 개수가 사람이 볼 수 있는 수준으로 떨어진다.</strong> 형식 전부를 켠 채로 수십 GB를 돌리면 결과가 수만 개가 되어 그 자체가 새로운 문제가 된다.</p>
+<p>키 배치와 전체 토글 키는 버전에 따라 다르므로 화면 하단 안내를 읽고 누른다.</p>
+<h3 id="5단계-options-화면">5단계 — Options 화면</h3>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>값</th><th>의미</th></tr></thead><tbody><tr><td><code>Paranoid</code></td><td><code>Yes</code> (기본)</td><td>카빙한 파일을 내부 검증해 깨진 것을 버린다</td></tr><tr><td><code>Paranoid</code></td><td><code>bf</code></td><td><strong>brute force.</strong> 조각화된 파일을 재조립 시도. 매우 느리다</td></tr><tr><td><code>Paranoid</code></td><td><code>No</code></td><td>검증 없이 전부 저장</td></tr><tr><td><code>Keep corrupted files</code></td><td><code>Yes</code></td><td>검증에 실패한 파일도 남긴다 — <strong>부분 복구가 필요하면 켠다</strong></td></tr><tr><td><code>Expert mode</code></td><td><code>Yes</code></td><td>파일시스템 블록 크기/시작 오프셋을 직접 지정</td></tr><tr><td><code>Low memory</code></td><td><code>Yes</code></td><td>메모리가 부족해 죽을 때</td></tr></tbody></table></div>
+<p>실전 조합:</p>
+<ul><li><strong>1차: 기본값(<code>Paranoid Yes</code>)</strong> 으로 빠르게 돌려 정상 파일을 확보</li><li><strong>2차: <code>Paranoid bf</code> + <code>Keep corrupted files Yes</code></strong> 로 조각화·부분 파일을 노린다</li></ul>
+<p>옵션 이름과 기본값은 버전에 따라 다를 수 있으므로 실제 화면에서 확인한다.</p>
+<h3 id="6단계-파일시스템-타입과-범위">6단계 — 파일시스템 타입과 범위</h3>
+<p><code>Search</code>를 누르면 두 개를 연달아 묻는다.</p>
+<p>첫 질문 — 파일이 저장돼 있던 파일시스템:</p>
+<div class="table-wrap"><table><thead><tr><th>선택</th><th>대상</th></tr></thead><tbody><tr><td><code>ext2/ext3/ext4</code></td><td>Linux 파일시스템</td></tr><tr><td><code>Other</code></td><td><strong>FAT / exFAT / NTFS / HFS+ 등 그 외 전부</strong></td></tr></tbody></table></div>
+<p>NTFS 이미지에서 <code>ext2</code> 쪽을 고르면 블록 판정이 어긋나 결과가 급감한다. Windows 이미지는 예외 없이 <code>Other</code>다.</p>
+<p>두 번째 질문 — 검사 범위:</p>
+<div class="table-wrap"><table><thead><tr><th>선택</th><th>의미</th><th>언제</th></tr></thead><tbody><tr><td><code>Free</code></td><td><strong>비할당 영역만</strong> 검사</td><td>삭제 파일만 원할 때. 빠르다. <strong>기본 선택지</strong></td></tr><tr><td><code>Whole</code></td><td>파티션 전체 검사</td><td>파일시스템이 깨져서 할당 정보를 믿을 수 없을 때, <code>Free</code>가 아무것도 못 찾았을 때</td></tr></tbody></table></div>
+<p><code>Free</code>는 파일시스템의 할당 비트맵을 읽어 빈 클러스터만 훑는다. 그래서 <strong>파일시스템이 손상되면 <code>Free</code>가 아무것도 못 찾는다.</strong> 그럴 때 <code>Whole</code>로 전환하는 것이 정석 대응이다.</p>
+<h3 id="7단계-출력-폴더와-진행-화면">7단계 — 출력 폴더와 진행 화면</h3>
+<p>출력 폴더 선택은 방향키로 디렉터리를 이동하고 확인 키로 확정하는 파일 브라우저다. 화면 하단에 확정 키가 안내된다.</p>
+<p>진행 화면은 형식별로 찾은 개수를 실시간으로 보여 준다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Destination /cases/recup
+
+Pass 1 - Reading sector 1245184/8388608, 128 files found
+Elapsed time 0h02m14s - Estimated time to completion 0h11m40
+
+jpg: 96 recovered
+png: 12 recovered
+pdf: 14 recovered
+zip: 6 recovered</code></pre></div>
+<p><code>Pass 1</code>이 끝나면 <code>Pass 2</code>로 넘어가며, 패스가 올라갈수록 정렬되지 않은 위치까지 훑는다. 중단하면 그 시점까지의 결과는 남는다.</p>
+<h3 id="8단계-recupdir-출력-구조와-파일명-규칙">8단계 — recup_dir 출력 구조와 파일명 규칙</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">/cases/recup/
+├── recup_dir.1/
+│   ├── f0012345.jpg
+│   ├── f0012800.jpg
+│   ├── f0018220.pdf
+│   └── ... (수백 개)
+├── recup_dir.2/
+│   └── ...
+└── recup_dir.3/</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>규칙</th><th>내용</th></tr></thead><tbody><tr><td>폴더</td><td><code>recup_dir.1</code>, <code>recup_dir.2</code> … 한 폴더에 수백 개(대략 500개)씩 채워지면 다음 폴더를 만든다</td></tr><tr><td>파일명</td><td><code>f</code> + 숫자 + 확장자. 숫자는 <strong>파일이 발견된 위치(블록/섹터 번호)</strong> 에서 유도된다</td></tr><tr><td>원본 이름</td><td><strong>복구되지 않는다.</strong> 단, 파일 내부 메타데이터에 이름이 들어 있는 일부 형식은 이름 일부가 덧붙는 경우가 있다 (실제 출력에서 확인)</td></tr><tr><td>타임스탬프</td><td>복구되지 않는다. mtime은 추출 시각이다</td></tr></tbody></table></div>
+<p>폴더가 많아 다루기 힘들면 한 번에 정리한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 형식별 개수
+find /cases/recup -type f | sed &#39;s/.*\.//&#39; | sort | uniq -c | sort -nr
+
+# 실제 형식 재판정 (확장자는 PhotoRec의 추측이다)
+find /cases/recup -type f -exec file {} + | awk -F: &#39;{print $2}&#39; | sort | uniq -c | sort -nr
+
+# 형식별로 한 폴더에 모으기
+mkdir -p sorted/jpg &amp;&amp; find /cases/recup -name &#39;*.jpg&#39; -exec cp {} sorted/jpg/ \;
+
+# 중복 제거
+find /cases/recup -type f -exec md5sum {} + | sort | uniq -w32 -d | head</code></pre></div>
+<p><strong>시간 주의.</strong> 복구된 파일의 mtime/ctime은 전부 추출 시각이므로 타임라인에 넣으면 안 된다. 증거 시각은 파일 내부에서만 얻는다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">exiftool -DateTimeOriginal -CreateDate -GPSPosition sorted/jpg/*.jpg | head -30</code></pre></div>
+<p>EXIF <code>DateTimeOriginal</code>은 보통 촬영 기기의 <strong>로컬 시각</strong>이고 시간대 정보가 없다. Office 문서의 <code>docProps/core.xml</code>은 UTC(<code>Z</code>)로 기록된다. KST 답을 요구하면 어느 기준인지 확정한 뒤 +9시간을 적용한다.</p>
+<h3 id="9단계-비대화형-실행">9단계 — 비대화형 실행</h3>
+<p>PhotoRec에는 문서화된 명령줄 옵션이 있다.</p>
+<div class="table-wrap"><table><thead><tr><th>옵션</th><th>의미</th><th>확신도</th></tr></thead><tbody><tr><td><code>/d &lt;경로&gt;</code></td><td>출력(recup) 경로 지정</td><td>문서화됨</td></tr><tr><td><code>/log</code></td><td><code>photorec.log</code>에 로그 기록</td><td>문서화됨</td></tr><tr><td><code>/debug</code></td><td>디버그 로그</td><td>문서화됨</td></tr><tr><td><code>/cmd &lt;장치&gt; &lt;명령열&gt;</code></td><td><strong>완전 비대화형 배치 실행</strong></td><td>존재하지만 서브명령 문법이 버전마다 다르다</td></tr></tbody></table></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">photorec /log /d /cases/recup image.dd</code></pre></div>
+<p><code>/cmd</code>로 파티션 선택·형식 선택·검색까지 한 줄에 지정하는 배치 실행이 가능하다고 문서에 나오지만, <strong>서브명령 이름과 순서는 버전에 따라 달라진다.</strong> 대회장에서 확실하지 않은 문법을 쓰다 시간을 잃지 말고, <code>photorec</code> 실행 시 표시되는 사용법(또는 <code>/help</code>)으로 지원 여부를 먼저 확인한 뒤 쓴다. 배치가 꼭 필요하면 QPhotoRec GUI나 foremost 쪽이 확실하다.</p>
+<h3 id="10단계-foremostscalpel과의-비교">10단계 — foremost/scalpel과의 비교</h3>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>PhotoRec</th><th>foremost / scalpel</th></tr></thead><tbody><tr><td>지원 형식 수</td><td>수백 개 (사실상 최다)</td><td>내장 십여 개 + conf 추가</td></tr><tr><td>조각화 대응</td><td><code>Paranoid bf</code>로 <strong>재조립 시도</strong></td><td>없음. 연속 바이트만</td></tr><tr><td>파일 검증</td><td>형식별 내부 검증으로 쓰레기를 버린다</td><td>헤더/푸터만</td></tr><tr><td>비할당 한정</td><td><code>Free</code> 선택 하나로</td><td><code>blkls</code>로 미리 잘라 넣어야 한다</td></tr><tr><td>속도</td><td>느리다</td><td>빠르다</td></tr><tr><td>실행 방식</td><td>대화형 TUI (배치는 제약)</td><td>완전한 CLI. 스크립트에 강하다</td></tr><tr><td>커스텀 시그니처</td><td>코드 수준. 사용자가 쉽게 추가 못 한다</td><td><strong><code>foremost.conf</code> 한 줄로 추가</strong> (<a href="./foremost.html">FOR-0046</a>)</td></tr><tr><td>결과 위치 추적</td><td>파일명 숫자로 유추</td><td><code>audit.txt</code>에 <code>File Offset</code> 명시</td></tr><tr><td>파일명 복구</td><td>안 됨</td><td>안 됨</td></tr></tbody></table></div>
+<p>정리하면 <strong>커스텀 매직 바이트나 정확한 오프셋이 필요하면 foremost, 형식 폭과 깨지지 않은 결과가 필요하면 PhotoRec</strong>이다. 둘 다 돌려서 개수를 비교하는 것이 가장 안전하다.</p>
+<h3 id="11단계-testdisk와의-관계">11단계 — TestDisk와의 관계</h3>
+<p>PhotoRec과 TestDisk는 같은 배포 패키지(CGSecurity)에 들어 있는 형제 도구이며 역할이 다르다.</p>
+<div class="table-wrap"><table><thead><tr><th>도구</th><th>무엇을 하나</th><th>파일 이름 복구</th></tr></thead><tbody><tr><td><strong>TestDisk</strong></td><td>파티션 테이블 복구, 부트섹터 복구, 파일시스템 메타데이터를 이용한 삭제 파일 복사</td><td><strong>가능</strong> (메타데이터를 쓰므로)</td></tr><tr><td><strong>PhotoRec</strong></td><td>파일시스템을 무시하고 시그니처로 카빙</td><td>불가</td></tr></tbody></table></div>
+<p>그래서 순서가 정해진다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1. 파티션이 안 보인다        -&gt; TestDisk (Analyse -&gt; Quick Search)
+2. 파티션은 보이는데 파일이 지워졌다 -&gt; TestDisk 의 Undelete, 또는 fls/icat
+3. 위 둘이 실패한다          -&gt; PhotoRec</code></pre></div>
+<p>원본 파일 이름이 답인 문제에서 PhotoRec부터 돌리는 것은 순서를 거꾸로 밟는 것이다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p>진행 화면과 결과에서 판정에 쓰는 값들이다.</p>
+<div class="table-wrap"><table><thead><tr><th>관찰</th><th>해석</th><th>조치</th></tr></thead><tbody><tr><td><code>Free</code>로 0개</td><td>할당 비트맵을 못 읽었다 = 파일시스템 손상</td><td><code>Whole</code>로 재시도</td></tr><tr><td><code>Whole</code>에서만 나온다</td><td>파일시스템 메타데이터가 깨졌다</td><td>결과를 신뢰. 단 살아 있는 파일도 섞인다</td></tr><tr><td>개수가 수만 개</td><td><code>File Opt</code>에서 형식을 안 좁혔다</td><td>형식을 3~4개로 줄여 재실행</td></tr><tr><td>같은 사진 수십 장</td><td>썸네일·캐시가 함께 잡혔다</td><td>해시로 중복 제거</td></tr><tr><td>진행률이 멈춘 듯 느리다</td><td><code>Paranoid bf</code> 또는 <code>Whole</code></td><td>정상. 시간 없으면 <code>Free</code> + 기본값</td></tr><tr><td><code>file</code>이 <code>data</code>라고 답한다</td><td>헤더만 맞았다</td><td><code>Keep corrupted files</code>로 뽑힌 부분 파일일 수 있다</td></tr><tr><td>크기가 비정상적으로 큰 파일</td><td>뒤쪽에 다른 데이터가 붙었다</td><td>푸터까지 수동 절단</td></tr></tbody></table></div>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>PhotoRec에서 얻은 것</th><th>다음 목표</th></tr></thead><tbody><tr><td>사진 다수</td><td><code>exiftool</code>로 EXIF·GPS·기기 모델·<code>DateTimeOriginal</code></td></tr><tr><td>SQLite 파일</td><td>브라우저 History/모바일 앱 DB로 식별 (<a href="./chrome-history.html">FOR-0191</a>)</td></tr><tr><td>파일명 숫자(위치)</td><td>원본 이미지의 그 오프셋을 hex로 확인 → 어떤 파일 안이었나</td></tr><tr><td>문서(zip 계열)</td><td>압축 해제 → <code>docProps/core.xml</code>의 작성자·시각</td></tr><tr><td>복구된 실행 파일</td><td>해시 → Prefetch/Amcache로 실행 여부</td></tr><tr><td>원래 이름이 필요하다</td><td><code>$UsnJrnl</code>의 <code>FileDelete</code> (<a href="./usnjrnl-basics.html">FOR-0027</a>)</td></tr><tr><td>결과가 부실하다</td><td>foremost로 교차 카빙 (<a href="./foremost.html">FOR-0046</a>)</td></tr><tr><td>파티션 자체가 안 보였다</td><td>TestDisk, 그리고 오프셋 점검 (<a href="./partition-offset-problems.html">FOR-0048</a>)</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>출력 폴더를 복구 대상과 같은 파티션에 두는 것.</strong> 아직 카빙하지 못한 비할당 영역을 자기 결과물로 덮어쓴다. 다른 디스크나 별도 볼륨을 쓴다.</li><li><strong><code>Whole</code>을 기본으로 고르는 것.</strong> 살아 있는 파일까지 전부 다시 뽑혀 결과가 수만 개가 되고 시간도 몇 배로 든다. 삭제 파일이 목표라면 <code>Free</code>가 먼저다.</li><li><strong><code>File Opt</code>를 건너뛰는 것.</strong> 수백 개 형식을 다 켠 상태가 기본이다. 이것이 &quot;PhotoRec은 느리다&quot;의 실제 원인이다.</li><li><strong>NTFS/FAT 이미지에서 <code>ext2/ext3</code>를 고르는 것.</strong> 블록 판정이 어긋나 결과가 급감한다. Windows 계열은 전부 <code>Other</code>다.</li><li><strong>파티션 테이블 타입에서 추천을 무시하고 <code>Intel</code>을 고집하는 것.</strong> 볼륨 단독 이미지는 <code>None</code>이어야 하고, GPT 디스크는 <code>EFI GPT</code>다. 잘못 고르면 파티션 목록 자체가 엉뚱하게 나온다.</li><li><strong><code>f0012345.jpg</code>의 숫자를 원본 파일 이름의 일부로 착각하는 것.</strong> 발견 위치에서 만든 번호다. 원본 이름은 카빙으로 절대 나오지 않는다.</li><li><strong>복구된 파일의 mtime을 증거 시각으로 쓰는 것.</strong> 추출 시각이다. 시각은 EXIF/문서 메타데이터에서만 얻는다.</li><li><strong><code>Paranoid Yes</code> 상태에서 &quot;그 파일은 없다&quot;고 결론 내리는 것.</strong> 검증에 실패한 파일이 조용히 버려진 것일 수 있다. <code>Keep corrupted files Yes</code>로 다시 돌린다.</li><li><strong><code>Paranoid bf</code>를 처음부터 켜는 것.</strong> 대회 시간 안에 끝나지 않는다. 기본값으로 1차를 돌려 확보한 뒤 2차에서 켠다.</li><li><strong>E01을 직접 넘기는 것.</strong> PhotoRec은 raw를 기대한다. <code>ewfmount</code>나 <code>ewfexport</code>로 raw를 만들어 준다.</li><li><strong>결과 개수만 보고 성공했다고 판단하는 것.</strong> <code>file</code>로 실제 형식을 재판정하고 열어 봐야 복구다.</li><li><strong>디스크 여유 공간을 확인하지 않는 것.</strong> 카빙 결과는 쉽게 수 GB가 된다. 공간이 차면 중간에 멈춘다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) PhotoRec 결과 개수
+find /cases/recup -type f | wc -l
+find /cases/recup -type f | sed &#39;s/.*\.//&#39; | sort | uniq -c | sort -nr
+
+# 2) foremost 로 같은 이미지를 카빙해 개수 비교
+blkls -o 2048 image.dd &gt; unalloc.blkls
+foremost -t jpg,png,pdf,zip -i unalloc.blkls -o carved
+tail -10 carved/audit.txt
+
+# 3) 시그니처를 직접 세어 상한을 구한다
+grep -abo $&#39;\xff\xd8\xff&#39; image.dd | wc -l
+grep -abo &#39;%PDF&#39; image.dd | wc -l
+
+# 4) 파일시스템 경로가 살아 있는지 (있으면 그쪽이 정답)
+mmls image.dd
+fls -o 2048 -r -d -p image.dd | head -30
+
+# 5) 형식 재판정
+find /cases/recup -type f -exec file {} + | awk -F: &#39;{print $2}&#39; | sort | uniq -c | sort -nr</code></pre></div>
+<p>PhotoRec이 foremost보다 적게 찾았다면 <code>File Opt</code>에서 그 형식이 꺼져 있거나 <code>Paranoid</code>가 버린 것이다. 많이 찾았다면 조각화 재조립이나 넓은 형식 지원이 작동한 것이다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;손상된 SD카드 이미지입니다. 삭제된 문서에서 flag를 찾으세요.&quot;
+첨부: sd.dd (8 GB)
+
+1. 정찰
+   $ mmls sd.dd
+   Cannot determine partition type
+   $ fsstat -o 0 sd.dd
+   File System Type: FAT32
+   Cluster Size: 32768
+   -&gt; 파티션 테이블이 없는 볼륨 단독 이미지다.
+
+2. 첫 시도 (실패):
+   photorec sd.dd
+     파티션 테이블 타입 -&gt; Intel   (추천이 None 이었는데 습관적으로 Intel 을 골랐다)
+     파티션 목록 -&gt; &quot;Unknown&quot; 하나만 표시
+     Search -&gt; Other -&gt; Free
+   결과: 0 files found
+
+   원인: 파티션 테이블이 없는데 Intel 로 지정해
+        PhotoRec 이 존재하지 않는 파티션 구조를 기준으로 범위를 잡았다.
+        Free 는 할당 비트맵을 읽어야 하는데 그 기준점이 틀렸다.
+
+3. 접근 변경 — 파티션 테이블 타입을 None 으로
+   photorec sd.dd
+     파티션 테이블 타입 -&gt; None
+     파티션 목록 -&gt; &quot;Whole disk&quot; 선택
+     File Opt -&gt; 전체 해제 후 pdf, doc, zip, xlsx 만 활성
+     Search -&gt; Other -&gt; Free
+     출력 -&gt; /cases/recup   (원본과 다른 디스크)
+
+   Pass 1 ... 41 files found
+   결과: recup_dir.1 에 41개
+
+4. 두 번째 시도의 부분 실패:
+   $ find /cases/recup -type f -exec file {} + | awk -F: &#39;{print $2}&#39; | sort | uniq -c
+        22  PDF document, version 1.7
+        11  Microsoft Word 2007+
+         8  Zip archive data
+
+   $ grep -ril &#39;flag{&#39; /cases/recup
+   (출력 없음)
+
+   $ for f in /cases/recup/recup_dir.1/*.pdf; do
+   &gt;   echo &quot;== $f&quot;; strings -n 6 &quot;$f&quot; | grep -i &#39;flag&#39; ; done
+   (없음)
+
+   flag 가 있어야 할 문서가 아예 안 뽑힌 것으로 보인다.
+   여기서 &quot;손상된 SD카드&quot;라는 지문을 다시 읽는다.
+   파일시스템이 손상되었다면 Free 가 신뢰할 수 없다.
+
+5. 세 번째 시도 — Whole + Keep corrupted files
+   photorec sd.dd
+     None -&gt; Whole disk
+     Options -&gt; Keep corrupted files: Yes,  Paranoid: bf
+     File Opt -&gt; pdf, doc, zip 만
+     Search -&gt; Other -&gt; Whole
+
+   Pass 1 ... 화면상 개수가 계속 올라간다
+   결과: 156개 (recup_dir.1 ~ recup_dir.2)
+
+   $ grep -rl &#39;flag{&#39; /cases/recup2
+   /cases/recup2/recup_dir.1/f0421120.pdf
+
+   $ strings -n 6 /cases/recup2/recup_dir.1/f0421120.pdf | grep -o &#39;flag{[^}]*}&#39;
+   flag{ph0t0r3c_wh0l3_n0t_fr33}
+
+6. 검증
+   $ file /cases/recup2/recup_dir.1/f0421120.pdf
+   PDF document, version 1.5
+   $ xxd -l 8 /cases/recup2/recup_dir.1/f0421120.pdf
+   00000000: 2550 4446 2d31 2e35                      %PDF-1.5
+   $ tail -c 16 /cases/recup2/recup_dir.1/f0421120.pdf | xxd
+   -&gt; %%EOF 확인 (푸터까지 온전하다)
+   $ pdftotext f0421120.pdf - | head       # 실제로 열리는지
+
+7. 원래 이름 확보 (PhotoRec 으로는 불가)
+   블록 번호 421120 -&gt; 원본 오프셋을 hex 로 확인하고,
+   같은 시간대의 $UsnJrnl FileDelete 와 대조해 이름을 찾는다.
+
+정답: flag{ph0t0r3c_wh0l3_n0t_fr33}</code></pre></div>
+<p>두 번의 실패가 각각 다른 교훈이다. <strong>① 파티션 테이블 타입을 잘못 고르면 결과가 0개로 나온다</strong> — PhotoRec의 추천을 무시하지 말고, <code>mmls</code> 실패 + <code>fsstat -o 0</code> 성공은 <code>None</code>이라는 신호다. <strong>② <code>Free</code>가 비면 파일시스템 손상을 의심하고 <code>Whole</code>로 전환한다</strong> — &quot;없다&quot;는 결론을 내리기 전에 범위를 바꿔 본다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li>파티션 테이블 타입을 PhotoRec의 <strong>추천대로</strong> 골랐는가 (<code>None</code>이 필요한 이미지인가)</li><li>파일시스템 질문에서 Windows 이미지에 <code>Other</code>를 골랐는가</li><li><code>Free</code>가 0개인가 → <strong><code>Whole</code>로 재시도</strong></li><li><code>File Opt</code>에서 필요한 형식이 실제로 켜져 있는가</li><li><code>Options</code>의 <code>Keep corrupted files</code>를 <code>Yes</code>로 바꿔 봤는가</li><li><code>Paranoid</code>를 <code>bf</code>로 올려 조각화 재조립을 시도했는가</li><li>출력 폴더가 원본과 <strong>다른 디스크</strong>인가, 여유 공간이 충분한가</li><li>E01을 raw로 변환/마운트해서 넘겼는가</li><li><code>find ... -exec file {} +</code>로 실제 형식을 재판정했는가</li><li>결과 파일을 하나씩 열어 <code>strings</code>/<code>grep</code>을 돌렸는가 (한 번에 넘기면 묻힌다)</li><li>foremost로 같은 이미지를 돌려 개수를 비교했는가 (<a href="./foremost.html">FOR-0046</a>)</li><li>파일 이름·경로·삭제 시각이 답인가 → TestDisk / <code>fls -d</code> / <code>$UsnJrnl</code>로 전환</li><li>파티션 자체가 안 보이는가 → TestDisk의 파티션 복구, 그리고 오프셋 점검 (<a href="./partition-offset-problems.html">FOR-0048</a>)</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-036 — CGSecurity TestDisk/PhotoRec 문서: TUI 진행 단계(미디어 → 파티션 테이블 타입 → 파티션 → 파일시스템 타입 → Free/Whole → 출력 폴더), <code>File Opt</code>/<code>Options</code> 화면, <code>recup_dir.N</code> 출력 규칙, <code>/d</code> <code>/log</code> <code>/debug</code> 명령줄 옵션, TestDisk와의 역할 분담</li><li>SRC-035 — foremost/scalpel 매뉴얼: 비교표의 foremost 쪽 동작(내장 타입, conf 기반 시그니처, <code>audit.txt</code>의 오프셋)</li><li>SRC-032 — The Sleuth Kit 도구 문서: 교차검증에 쓴 <code>mmls</code>, <code>fsstat</code>, <code>fls -d</code>, <code>blkls</code></li><li>메뉴 항목 이름, 키 배치, <code>Options</code> 기본값, <code>/cmd</code> 서브명령 문법은 버전에 따라 다르다. 실제 화면과 실행 시 표시되는 사용법에서 확인할 것</li><li>파일명에 원본 이름 일부가 덧붙는 경우가 있는지는 형식과 버전에 의존하므로 실제 출력에서 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./foremost.html">
+    <span class="rel-id">FOR-0046 · 디스크/NTFS</span>
+    foremost로 파일 카빙하기: 옵션, foremost.conf, audit.txt
+  </a>
+  <a class="related-item" href="./deleted-file-recovery-walkthrough.html">
+    <span class="rel-id">FOR-0049 · 디스크/NTFS</span>
+    삭제 파일 복구 실전: 휴지통 → $UsnJrnl → $MFT → 카빙 판정 트리
+  </a>
+  <a class="related-item" href="./autopsy-ingest.html">
+    <span class="rel-id">FOR-0018 · 디스크/NTFS</span>
+    Autopsy로 이미지 ingest 시작하고 결과 트리 읽기
+  </a>
+  <a class="related-item" href="./carving-strategy.html">
+    <span class="rel-id">FOR-0045 · 디스크/NTFS</span>
+    파일 카빙 전략: 언제 카빙하고 언제 하지 않는가
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./foremost.html"><span class="rel-id">← FOR-0046</span>foremost로 파일 카빙하기: 옵션, foremost.conf, audit.txt</a>
+<a class="related-item" href="./partition-offset-problems.html"><span class="rel-id">FOR-0048 →</span>파티션 오프셋이 안 맞을 때: 섹터/바이트, 4Kn, 볼륨 단독 이미지</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-실행-대상과-권한">1단계 — 실행 대상과 권한</a></li>
+<li class="toc-l3"><a href="#2단계-파티션-테이블-타입-선택-첫-갈림길">2단계 — 파티션 테이블 타입 선택 (첫 갈림길)</a></li>
+<li class="toc-l3"><a href="#3단계-파티션-선택-화면의-하단-메뉴">3단계 — 파티션 선택 화면의 하단 메뉴</a></li>
+<li class="toc-l3"><a href="#4단계-file-opt로-속도를-올린다">4단계 — File Opt로 속도를 올린다</a></li>
+<li class="toc-l3"><a href="#5단계-options-화면">5단계 — Options 화면</a></li>
+<li class="toc-l3"><a href="#6단계-파일시스템-타입과-범위">6단계 — 파일시스템 타입과 범위</a></li>
+<li class="toc-l3"><a href="#7단계-출력-폴더와-진행-화면">7단계 — 출력 폴더와 진행 화면</a></li>
+<li class="toc-l3"><a href="#8단계-recupdir-출력-구조와-파일명-규칙">8단계 — recup_dir 출력 구조와 파일명 규칙</a></li>
+<li class="toc-l3"><a href="#9단계-비대화형-실행">9단계 — 비대화형 실행</a></li>
+<li class="toc-l3"><a href="#10단계-foremostscalpel과의-비교">10단계 — foremost/scalpel과의 비교</a></li>
+<li class="toc-l3"><a href="#11단계-testdisk와의-관계">11단계 — TestDisk와의 관계</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 03:39 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

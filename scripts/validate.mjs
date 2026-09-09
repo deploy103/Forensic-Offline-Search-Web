@@ -34,10 +34,73 @@ const warn = (m) => warnings.push(m);
 
 // ------------------------------------------------------------ content checks
 
+/** Every SRC id declared in research/sources.json. */
+function knownSourceIds() {
+  const file = path.join(ROOT, 'research', 'sources.json');
+  if (!fs.existsSync(file)) {
+    warn('research/sources.json missing — source_ids cannot be checked');
+    return null;
+  }
+  try {
+    const json = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return new Set((json.sources || []).map((s) => s.id));
+  } catch (e) {
+    err(`research/sources.json is not valid JSON: ${e.message}`);
+    return null;
+  }
+}
+
+// NTFS metafile names. Inside a double-quoted PowerShell string these are
+// expanded as variables ("C:\case\$MFT" becomes "C:\case\"), so the command
+// silently runs against a truncated path. They must be single-quoted.
+const NTFS_METAFILES = [
+  'MFTMirr', 'MFT', 'LogFile', 'UsnJrnl', 'Recycle\\.Bin', 'Extend', 'Boot',
+  'Bitmap', 'BadClus', 'Secure', 'Volume', 'AttrDef', 'UpCase', 'Quota',
+  'ObjId', 'Reparse', 'OrphanFiles', 'Max', 'J', 'I', 'R',
+];
+const METAFILE_RE = new RegExp('\\$(?:' + NTFS_METAFILES.join('|') + ')(?![A-Za-z0-9_])');
+
+/**
+ * PowerShell code fences must actually run when pasted. Catches the two
+ * mistakes that recur across authors:
+ *   - `REM` comments (that is cmd.exe; PowerShell needs `#`)
+ *   - NTFS metafile paths in double quotes (variable expansion)
+ */
+function checkPowerShellBlocks(article, report) {
+  const lines = article.body.replace(/\r\n/g, '\n').split('\n');
+  let inPs = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const fence = /^\s*```\s*([A-Za-z0-9_+-]*)\s*$/.exec(lines[i]);
+    if (fence) {
+      inPs = inPs ? false : /^(powershell|ps|pwsh)$/i.test(fence[1]);
+      continue;
+    }
+    if (!inPs) continue;
+
+    if (/^\s*REM(\s|$)/i.test(lines[i])) {
+      report(`powershell block uses "REM" (cmd.exe syntax); use "#" — line ${i + 1}`);
+    }
+    for (const m of lines[i].matchAll(/"([^"\n]*)"/g)) {
+      if (METAFILE_RE.test(m[1])) {
+        report(
+          `powershell block double-quotes an NTFS metafile path (${m[0].slice(0, 40)}); ` +
+            `PowerShell expands it as a variable — use single quotes — line ${i + 1}`
+        );
+      }
+    }
+  }
+}
+
 function checkArticles(articles) {
+  const sourceIds = knownSourceIds();
   const ids = new Map();
   const slugs = new Map();
   const titles = new Map();
+  // primary_terms declares "this entry is THE answer for this term". Two
+  // entries claiming the same term is a real editorial conflict, not a typo,
+  // so it is an error: search would have to guess which one wins.
+  const primaryTerms = new Map();
 
   for (const a of articles) {
     const fm = a.fm;
@@ -73,6 +136,24 @@ function checkArticles(articles) {
     if (titles.has(fm.title)) err(`duplicate title "${fm.title}": ${titles.get(fm.title)} and ${a.file}`);
     else titles.set(fm.title, a.file);
 
+    // primary_terms: unique across the corpus, and each must be reachable via
+    // an ordinary metadata/keyword field too (otherwise the boost applies to a
+    // term the entry never actually mentions).
+    for (const term of fm.primary_terms) {
+      const key = term.toLowerCase();
+      if (primaryTerms.has(key)) {
+        err(
+          `primary_terms conflict on "${term}": claimed by both ` +
+            `${primaryTerms.get(key)} and ${a.file} — only one entry can be the answer`
+        );
+      } else {
+        primaryTerms.set(key, a.file);
+      }
+    }
+    if (fm.primary_terms.length === 0) {
+      warn(`${at}: primary_terms is empty — nothing marks this entry as canonical for any term`);
+    }
+
     // Searchability: an entry nobody can find is a dead entry.
     if (fm.keywords.length === 0) err(`${at}: keywords must not be empty`);
     if (fm.aliases.length === 0) warn(`${at}: no aliases — Korean search will be weaker`);
@@ -83,24 +164,48 @@ function checkArticles(articles) {
       warn(`${at}: no exact-match metadata (artifact/path/event_id/filter/regex/tool)`);
     }
 
-    // Verified entries must cite something.
+    // Verified entries must cite something, and every citation must resolve.
     if (fm.status === 'verified' && fm.source_ids.length === 0) {
       err(`${at}: status=verified but source_ids is empty`);
     }
+    if (sourceIds) {
+      for (const sid of fm.source_ids) {
+        if (!sourceIds.has(sid)) {
+          err(`${at}: source_ids references ${sid}, which is not in research/sources.json`);
+        }
+      }
+    }
 
-    // Body structure
+    // Body structure. The first `##` must be 한 줄 결론 — build.mjs lifts that
+    // section's opening paragraph into the search card and the answer box, so
+    // if it is missing or buried the entry looks empty in search results.
     if (!a.answer) err(`${at}: could not extract a one-line answer (add "## 한 줄 결론")`);
+    const firstH2 = a.headings.find((h) => h.level === 2);
+    if (firstH2 && !/^(한 줄 결론|한줄 결론|한 줄 정답|결론)$/.test(firstH2.text.trim())) {
+      err(`${at}: first "##" section must be "한 줄 결론", found "${firstH2.text}"`);
+    }
     if (a.text.length < 400) err(`${at}: body too short (${a.text.length} chars) — looks like a number filler`);
     if (a.headings.filter((h) => h.level === 2).length < 3) {
       err(`${at}: needs at least 3 "##" sections`);
     }
 
-    // Related IDs must resolve.
+    checkPowerShellBlocks(a, (msg) => err(`${at}: ${msg}`));
+
+    // Related IDs. Pointing at an article that is planned but not written yet
+    // is normal while authoring in parallel, so that is a warning — the link
+    // resolves once the article lands. A malformed or self-referencing id is
+    // always an error. (In-body ./slug.html links stay hard errors; see
+    // checkDist.)
     for (const rel of fm.related) {
-      if (!ids.has(rel) && !articles.some((x) => x.fm.id === rel)) {
-        err(`${at}: related id ${rel} does not exist`);
+      if (rel === fm.id) {
+        err(`${at}: related must not point at itself`);
+      } else if (!articles.some((x) => x.fm.id === rel)) {
+        if (/^FOR-0(?:[0-2]\d\d|300)$/.test(rel) && rel !== 'FOR-0000') {
+          warn(`${at}: related ${rel} is planned but not written yet`);
+        } else {
+          err(`${at}: related id ${rel} is not a valid FOR-0001..FOR-0300 id`);
+        }
       }
-      if (rel === fm.id) err(`${at}: related must not point at itself`);
     }
   }
 

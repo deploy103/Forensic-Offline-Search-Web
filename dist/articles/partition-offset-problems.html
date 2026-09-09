@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>파티션 오프셋이 안 맞을 때: 섹터/바이트, 4Kn, 볼륨 단독 이미지 · FOR-0048 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%94%94%EC%8A%A4%ED%81%AC%2FNTFS">디스크/NTFS</a> / FOR-0048
+      </div>
+      <header class="article-head">
+        <h1>파티션 오프셋이 안 맞을 때: 섹터/바이트, 4Kn, 볼륨 단독 이미지</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">디스크/NTFS</span>
+      <span class="badge badge-type">트러블슈팅</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>오프셋이 맞는지는 오직 fsstat -o &lt;섹터&gt; image.dd가 File System Type을 출력하는지로 판정하고, 그것이 실패하면 원인을 추측하지 말고 아래 7가지 후보를 순서대로 배제한다 — 1순위는 언제나 섹터/바이트 단위 혼동이다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Sleuth Kit, mmls, fsstat, losetup, kpartx, mount, xxd, HxD, ewfmount, ewfinfo, testdisk, Arsenal Image Mounter, FTK Imager</td></tr>
+<tr><th>artifact</th><td><code>partition offset</code> · <code>sector size</code> · <code>4Kn</code> · <code>volume image</code> · <code>EWF</code></td></tr>
+<tr><th>로그 필드</th><td><code>Units are in</code> · <code>Sector Size</code> · <code>Cluster Size</code> · <code>File System Type</code></td></tr>
+<tr><th>파일 형식</th><td><code>raw</code> · <code>dd</code> · <code>e01</code> · <code>ntfs</code></td></tr>
+<tr><th>검색 별칭</th><td>오프셋 안 맞음 · mount 실패 · 파일시스템을 못 찾는다 · 오프셋 계산 · 섹터 바이트 변환 · fsstat 실패 · offset 얼마 · wrong fs type</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>오프셋이 맞는지는 오직 <code>fsstat -o &lt;섹터&gt; image.dd</code>가 <code>File System Type</code>을 출력하는지로 판정하고, 그것이 실패하면 <strong>원인을 추측하지 말고 아래 7가지 후보를 순서대로 배제</strong>한다 — 1순위는 언제나 섹터/바이트 단위 혼동이다.</p>
+<h2 id="증상">증상</h2>
+<div class="table-wrap"><table><thead><tr><th>증상</th><th>어디서</th></tr></thead><tbody><tr><td><code>Cannot determine file system type</code></td><td><code>fsstat</code>, <code>fls</code>, <code>icat</code></td></tr><tr><td><code>Cannot determine partition type</code></td><td><code>mmls</code></td></tr><tr><td><code>mount: wrong fs type, bad option, bad superblock</code></td><td>Linux <code>mount</code></td></tr><tr><td><code>NTFS signature is missing</code></td><td><code>ntfs-3g</code></td></tr><tr><td>파일 목록이 나오긴 하는데 <strong>이름이 깨진 쓰레기</strong></td><td><code>fls</code></td></tr><tr><td>도구가 볼륨을 하나도 못 보여준다</td><td>Autopsy, FTK Imager</td></tr><tr><td>hex로 열었는데 원하는 구조가 안 보인다</td><td>HxD, <code>xxd</code></td></tr><tr><td>마운트는 됐는데 폴더가 비어 있다</td><td><code>mount</code>, Arsenal</td></tr></tbody></table></div>
+<p><strong>&quot;파일 목록이 나오는데 쓰레기&quot;가 가장 위험한 증상이다.</strong> 오프셋이 조금 틀려도 도구는 에러 없이 무의미한 값을 해석해 보여 준다. 이름에 제어문자가 섞이거나 크기가 수 TB로 나오면 오프셋을 의심한다.</p>
+<p>이 글은 &quot;안 될 때 무엇을 하나&quot;만 다룬다. MBR/GPT 바이트를 직접 읽는 법과 시그니처 스캔은 <a href="./mbr-gpt.html">FOR-0019</a>에 있다.</p>
+<h2 id="가장-가능성-높은-원인">가장 가능성 높은 원인</h2>
+<p>빈도 순서다. 위에서부터 배제한다.</p>
+<div class="table-wrap"><table><thead><tr><th>#</th><th>원인</th><th>판정 신호</th><th>해결</th></tr></thead><tbody><tr><td>1</td><td><strong>섹터 단위 vs 바이트 단위 혼동</strong></td><td><code>mmls</code>가 정상 출력되는데 <code>mount</code>/<code>xxd</code>만 실패, 또는 그 반대</td><td>아래 단위 표대로 환산</td></tr><tr><td>2</td><td><strong>섹터 크기가 4096 (4Kn)</strong></td><td><code>mmls</code> 첫 줄이 <code>Units are in 4096-byte sectors</code></td><td>바이트 = LBA × 4096</td></tr><tr><td>3</td><td><strong>볼륨 단독 이미지에 오프셋을 준 경우</strong></td><td><code>mmls</code> 실패 + <code>fsstat -o 0</code> 성공</td><td>오프셋을 <strong>주지 않는다</strong></td></tr><tr><td>4</td><td><strong>물리 이미지인데 오프셋을 안 준 경우</strong></td><td><code>mmls</code> 성공 + <code>fsstat</code>(오프셋 없이) 실패</td><td><code>mmls</code>의 <code>Start</code> 값을 <code>-o</code>에</td></tr><tr><td>5</td><td><strong>파티션 테이블 손상</strong></td><td><code>mmls</code> 실패 + <code>fsstat -o 0</code>도 실패</td><td>시그니처 스캔 / <code>testdisk</code></td></tr><tr><td>6</td><td><strong>이미지가 잘렸다</strong></td><td>파일 크기 &lt; 파티션 끝 오프셋</td><td>뒤쪽 파티션 포기, 앞쪽만 분석</td></tr><tr><td>7</td><td><strong>E01을 raw로 취급</strong></td><td>첫 8바이트가 <code>45 56 46 09 0D 0A FF 00</code></td><td><code>ewfmount</code> / <code>-i ewf</code></td></tr></tbody></table></div>
+<h2 id="1차-확인">1차 확인</h2>
+<p>세 명령으로 1~4번을 거의 다 가른다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">mmls image.dd</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">ls -l image.dd                    # 원인 6 판정용 실제 크기
+xxd -l 16 image.dd                # 원인 7 판정용 매직 바이트
+fsstat -o 0 image.dd              # 원인 3 판정용 (볼륨 단독인가)</code></pre></div>
+<h3 id="판정-분기">판정 분기</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">mmls 성공?
+├─ 예 -&gt; Units 줄의 섹터 크기 확인 (512 인가 4096 인가)
+│        Start 값(섹터)을 fsstat -o 에 넣어 확인
+│        성공 -&gt; 오프셋 확정. 바이트가 필요한 도구는 Start × 섹터크기
+│        실패 -&gt; 원인 5(해당 파티션 부트섹터 손상) 또는 6(이미지 잘림)
+└─ 아니오 -&gt; fsstat -o 0 성공?
+             ├─ 예   -&gt; 원인 3. 볼륨 단독 이미지다. 오프셋을 주지 않는다
+             └─ 아니오 -&gt; xxd -l 16 으로 EWF(원인 7) 확인
+                          아니면 원인 5. 시그니처 스캔으로 넘어간다</code></pre></div>
+<h3 id="원인-1-섹터바이트-혼동-가장-흔함">원인 1 — 섹터/바이트 혼동 (가장 흔함)</h3>
+<p><code>mmls</code>가 <code>Start 206848</code>을 알려줬을 때 각 도구에 넣어야 하는 값이 다르다.</p>
+<div class="table-wrap"><table><thead><tr><th>도구 / 인자</th><th>단위</th><th>넣을 값</th><th>잘못 넣으면</th></tr></thead><tbody><tr><td><code>mmls -o</code></td><td>섹터</td><td><code>206848</code></td><td>엉뚱한 위치를 테이블로 해석</td></tr><tr><td><code>fls -o</code> / <code>icat -o</code> / <code>fsstat -o</code> / <code>istat -o</code> / <code>blkls -o</code> / <code>blkcalc -o</code></td><td><strong>섹터</strong></td><td><code>206848</code></td><td><code>Cannot determine file system type</code></td></tr><tr><td><code>xxd -s</code></td><td>바이트</td><td><code>105906176</code></td><td>전혀 다른 바이트가 보인다</td></tr><tr><td><code>dd bs=512 skip=</code></td><td>섹터(bs 기준)</td><td><code>206848</code></td><td>—</td></tr><tr><td><code>dd bs=1 skip=</code></td><td>바이트</td><td><code>105906176</code></td><td>시작이 어긋난 잘린 볼륨</td></tr><tr><td><code>mount -o offset=</code></td><td><strong>바이트</strong></td><td><code>105906176</code></td><td><code>wrong fs type, bad superblock</code></td></tr><tr><td><code>losetup -o</code></td><td><strong>바이트</strong></td><td><code>105906176</code></td><td>마운트 단계에서 실패</td></tr><tr><td>HxD Goto</td><td>바이트 (16진 입력 가능)</td><td><code>105906176</code> / <code>0x6500000</code></td><td>구조가 안 보인다</td></tr><tr><td><code>photorec</code> / <code>testdisk</code></td><td>오프셋 인자 없음</td><td>파티션을 골라 준다</td><td>—</td></tr></tbody></table></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">바이트 = 시작 LBA × 섹터 크기
+       = 206848 × 512 = 105,906,176   (0x6500000)
+섹터   = 바이트 ÷ 섹터 크기</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 계산을 손으로 하지 않는다
+python3 -c &quot;print(206848*512)&quot;
+sudo mount -o ro,loop,offset=$((206848*512)) image.dd /mnt/case</code></pre></div>
+<p><strong>증상으로 구분하는 법:</strong> Sleuth Kit 계열은 되는데 <code>mount</code>만 실패하면 바이트로 환산하지 않은 것이다. 반대로 <code>mount</code>는 되는데 <code>fsstat</code>이 실패하면 섹터로 되돌리지 않은 것이다.</p>
+<h3 id="원인-2-섹터-크기-4096-4kn">원인 2 — 섹터 크기 4096 (4Kn)</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">$ mmls image.dd
+GUID Partition Table (EFI)
+Offset Sector: 0
+Units are in 4096-byte sectors        &lt;- 여기를 읽지 않으면 8배 틀린다
+
+      Slot      Start        End          Length       Description
+002:  000       0000000256   0000131327   0000131072   Basic data partition</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">바이트 오프셋 = 256 × 4096 = 1,048,576
+512로 계산하면 256 × 512 = 131,072  -&gt; 8배 작다. 아무것도 안 보인다</code></pre></div>
+<ul><li><code>fsstat</code> 출력의 <code>Sector Size</code> 필드로 재확인한다</li><li>도구가 섹터 크기를 잘못 추정하면 <code>mmls -b 4096 image.dd</code>로 강제한다</li><li>4Kn은 대용량 디스크·일부 VM 이미지·SSD 이미지에서 나온다. <strong><code>mmls</code> 첫 줄을 읽는 습관 하나로 예방된다</strong></li></ul>
+<h3 id="원인-3-볼륨-단독-이미지에-오프셋을-준-경우">원인 3 — 볼륨 단독 이미지에 오프셋을 준 경우</h3>
+<p>파티션 테이블 없이 <strong>볼륨(파일시스템)만</strong> 담긴 이미지가 CTF에 흔하다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">$ mmls vol.dd
+Cannot determine partition type
+
+$ xxd -l 16 vol.dd
+00000000: eb52 904e 5446 5320 2020 2000 0208 0000  .R.NTFS    .....
+              ^^^^^^^^^^^^^^^^^^ 오프셋 3에 OEM ID &quot;NTFS    &quot;
+
+$ fsstat -o 0 vol.dd          (또는 fsstat vol.dd)
+File System Type: NTFS
+Sector Size: 512
+Cluster Size: 4096
+-&gt; 성공. 이 이미지는 오프셋 0에서 파일시스템이 시작한다</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>볼륨 종류</th><th>오프셋 3부터의 OEM ID / 매직</th><th>위치</th></tr></thead><tbody><tr><td>NTFS</td><td><code>NTFS    </code> (공백 4개 포함 8바이트)</td><td>오프셋 <code>0x03</code></td></tr><tr><td>exFAT</td><td><code>EXFAT   </code></td><td>오프셋 <code>0x03</code></td></tr><tr><td>FAT</td><td><code>MSDOS5.0</code>, <code>mkfs.fat</code> 등</td><td>오프셋 <code>0x03</code></td></tr><tr><td>ext2/3/4</td><td>매직 <code>53 EF</code></td><td>오프셋 <code>0x438</code></td></tr></tbody></table></div>
+<p>이 경우 해결은 &quot;오프셋을 안 주는 것&quot;이다. <code>-o</code>를 붙이면 오히려 실패한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">fsstat vol.dd
+fls -r -p vol.dd | head
+sudo mount -o ro,loop vol.dd /mnt/case          # offset 없이</code></pre></div>
+<h3 id="원인-4-물리-이미지인데-오프셋을-안-준-경우">원인 4 — 물리 이미지인데 오프셋을 안 준 경우</h3>
+<p>원인 3의 반대다. <code>mmls</code>는 잘 되는데 <code>fsstat image.dd</code>(오프셋 없이)가 실패한다. 이미지 첫 512바이트는 MBR/GPT이고 파일시스템이 아니므로 당연하다. <code>mmls</code>의 <code>Start</code>를 <code>-o</code>에 넣는다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">mmls image.dd                       # Start = 2048
+fsstat -o 2048 image.dd             # 이제 성공</code></pre></div>
+<p>파티션이 여러 개면 <strong>각각 시도</strong>한다. <code>Description</code>이 <code>NTFS / exFAT (0x07)</code>인 것부터 본다.</p>
+<h2 id="2차-확인">2차 확인</h2>
+<p>1~4번을 배제했는데도 실패하면 5~7번이다.</p>
+<h3 id="원인-5-파티션-테이블-손상">원인 5 — 파티션 테이블 손상</h3>
+<p><code>mmls</code>도 실패하고 <code>fsstat -o 0</code>도 실패하는 경우다. 파일시스템 시그니처를 직접 찾아 오프셋을 만든다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">grep -abo &#39;NTFS    &#39; image.dd | head
+# 출력: 105906179  -&gt;  볼륨 시작 = 105906179 - 3 = 105906176 바이트
+python3 -c &quot;print((105906179-3)//512)&quot;     # -&gt; 206848 (섹터)
+fsstat -o 206848 image.dd                  # 성공하면 확정</code></pre></div>
+<p>시그니처 스캔의 상세 절차와 다른 파일시스템의 매직 값은 <a href="./mbr-gpt.html">FOR-0019</a>에 정리되어 있다. 결과가 여러 개 나오면 <strong>전부</strong> 시도한다. <code>head</code>로 끊지 않는다.</p>
+<h3 id="원인-6-이미지가-잘렸다">원인 6 — 이미지가 잘렸다</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">ls -l image.dd
+# 실제 크기 4,294,967,296 (4 GB)
+
+mmls image.dd
+# 003:  000:001   0000206848   0062521343   0062314496   NTFS / exFAT (0x07)
+# 끝 섹터 62,521,343 -&gt; 필요한 크기 = (62521343+1) × 512 = 32,011,208,192 (약 32 GB)</code></pre></div>
+<p>필요한 크기가 실제 파일 크기보다 크면 <strong>이미지가 잘린 것</strong>이다. 판정 공식:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">필요 크기 = (End 섹터 + 1) × 섹터 크기
+필요 크기 &gt; 실제 파일 크기  -&gt;  잘림</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>잘렸을 때 어떻게 되나</th><th>대응</th></tr></thead><tbody><tr><td>앞쪽 파티션은 정상 동작</td><td>앞쪽만 분석한다</td></tr><tr><td><code>$MFT</code>가 이미지 범위 안에 있으면 파일 목록은 나온다</td><td><code>fls</code>는 되지만 <code>icat</code>이 빈 파일/에러</td></tr><tr><td>뒤쪽 클러스터를 참조하는 파일 추출 실패</td><td>그 파일은 포기하거나 카빙으로 우회 (<a href="./foremost.html">FOR-0046</a>)</td></tr><tr><td>E01이 <code>.E02</code>, <code>.E03</code>… 분할인데 일부만 받았다</td><td><strong>모든 세그먼트를 같은 폴더에</strong> 두고 <code>.E01</code>만 지정</td></tr></tbody></table></div>
+<h3 id="원인-7-e01을-raw로-취급">원인 7 — E01을 raw로 취급</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">xxd -l 16 image.E01
+# 00000000: 4556 4609 0d0a ff00 0100 ...   &quot;EVF\x09\r\n\xff\x00&quot;</code></pre></div>
+<p>첫 8바이트가 <code>45 56 46 09 0D 0A FF 00</code>이면 EWF(E01)다. raw가 아니므로 <code>xxd -s</code>로 오프셋을 계산해도 무의미하고, <code>mount -o offset=</code>도 통하지 않는다. 확장자가 <code>.dd</code>나 <code>.raw</code>로 위장돼 있어도 매직 바이트가 진실이다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># FUSE 로 raw 처럼 노출한다 (권장)
+ewfinfo image.E01                       # 획득 정보와 해시 확인
+mkdir /mnt/ewf &amp;&amp; ewfmount image.E01 /mnt/ewf     # /mnt/ewf/ewf1 이 raw 로 보인다
+mmls /mnt/ewf/ewf1 &amp;&amp; fsstat -o 2048 /mnt/ewf/ewf1
+
+# Sleuth Kit 이 libewf 지원으로 빌드돼 있으면 직접 열린다
+mmls -i ewf image.E01</code></pre></div>
+<p>Windows에서는 Arsenal Image Mounter(<a href="./arsenal-image-mounter.html">FOR-0017</a>)나 FTK Imager(<a href="./ftk-imager-open-image.html">FOR-0016</a>)가 E01을 그대로 읽으므로 오프셋 문제 자체가 사라진다.</p>
+<h2 id="다른-방법">다른 방법</h2>
+<p>오프셋을 손으로 계산하는 것을 아예 피하는 우회로들이다. <strong>막히면 계산을 더 하지 말고 이쪽으로 넘어간다.</strong></p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 커널이 파티션을 대신 잘라 준다 (-P). 오프셋 계산이 필요 없다
+sudo losetup -P -f --show image.dd
+# -&gt; /dev/loop0 , 파티션은 /dev/loop0p1, /dev/loop0p2 로 생긴다
+sudo mount -o ro /dev/loop0p2 /mnt/case
+sudo umount /mnt/case &amp;&amp; sudo losetup -d /dev/loop0</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">sudo kpartx -av image.dd &amp;&amp; ls /dev/mapper/     # device-mapper 매핑 (해제는 -d)
+dd if=image.dd of=vol.dd bs=512 skip=206848     # 파티션만 별도 파일로 분리
+testdisk image.dd                               # Analyse -&gt; Quick Search -&gt; Deeper Search</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>방법</th><th>장점</th><th>주의</th></tr></thead><tbody><tr><td><code>losetup -P</code></td><td>오프셋 계산이 필요 없다</td><td>파티션 테이블이 온전해야 한다. root 권한</td></tr><tr><td><code>kpartx</code></td><td>같은 효과</td><td>사용 후 반드시 <code>-d</code>로 해제</td></tr><tr><td><code>dd</code>로 분리</td><td>이후 모든 도구를 오프셋 0으로</td><td>디스크 공간을 그만큼 더 쓴다</td></tr><tr><td><code>testdisk</code></td><td>손상된 테이블을 재구성</td><td><strong>쓰기 기능이 있으므로 반드시 사본에</strong></td></tr><tr><td>Arsenal / FTK Imager</td><td>E01·VHD·VMDK를 그대로, GUI</td><td>Windows 전용</td></tr><tr><td>Autopsy</td><td>이미지를 넣으면 볼륨을 스스로 찾는다 (<a href="./autopsy-ingest.html">FOR-0018</a>)</td><td>느리다</td></tr></tbody></table></div>
+<p><strong>시각 관련 주의.</strong> 오프셋 시행착오 중 이미지를 쓰기 가능 상태로 마운트하면 파일시스템의 접근/수정 시각과 저널이 갱신되어 증거가 오염된다. Linux는 항상 <code>-o ro</code>, Windows는 Arsenal의 읽기 전용 모드를 쓴다. <code>ntfs-3g</code>가 dirty 볼륨을 자동 복구하려 드는 경우가 있어 <code>-o ro</code> 없이는 저널이 재생될 수 있다.</p>
+<h2 id="실제-예시">실제 예시</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;이미지의 사용자 문서 폴더에서 flag.txt 를 찾으세요.&quot;
+첨부: evidence.raw (2.1 GB)
+
+1. 판을 읽는다
+   $ ls -l evidence.raw
+   -rw-r--r-- 1 user user 2147483648 evidence.raw
+
+   $ mmls evidence.raw
+   GUID Partition Table (EFI)
+   Offset Sector: 0
+   Units are in 4096-byte sectors
+
+         Slot      Start        End          Length       Description
+   000:  Meta      0000000000   0000000000   0000000001   Safety Table
+   001:  -------   0000000000   0000000255   0000000256   Unallocated
+   002:  Meta      0000000001   0000000001   0000000001   GPT Header
+   003:  Meta      0000000002   0000000005   0000000004   Partition Table
+   004:  000       0000000256   0000000511   0000000256   EFI system partition
+   005:  001       0000000512   0000524287   0000523776   Basic data partition
+
+   목표는 005 (Basic data partition), 시작 섹터 512.
+
+2. 첫 시도 (실패):
+   $ sudo mount -o ro,loop,offset=$((512*512)) evidence.raw /mnt/case
+   mount: /mnt/case: wrong fs type, bad option, bad superblock on /dev/loop0
+
+   습관적으로 512를 곱했다. 그런데 mmls 첫 줄은
+   &quot;Units are in 4096-byte sectors&quot; 였다.
+   512 × 512 = 262,144  -&gt; 파일시스템이 없는 지점
+
+3. 접근 변경 — 섹터 크기를 4096으로
+   $ fsstat -o 512 evidence.raw | head -5
+   FILE SYSTEM INFORMATION
+   File System Type: NTFS
+   Sector Size: 4096
+   Cluster Size: 4096
+
+   fsstat(섹터 단위)이 성공했다. 오프셋 확정.
+
+   $ python3 -c &quot;print(512*4096)&quot;
+   2097152
+   $ sudo mount -o ro,loop,offset=2097152 evidence.raw /mnt/case
+   $ ls /mnt/case
+   &#39;$Recycle.Bin&#39;  Users  Windows
+
+4. 두 번째 문제 — 파일이 안 보인다
+   $ ls /mnt/case/Users/jhkim/Documents
+   (비어 있다)
+
+   $ fls -o 512 -r -p evidence.raw | grep -i &#39;flag.txt&#39;
+   -/r * 84213:  Users/jhkim/Documents/flag.txt        (* = 삭제됨)
+
+   마운트로는 안 보이는 것이 정상이다. 삭제된 파일이었다.
+
+5. 추출
+   $ icat -o 512 -r evidence.raw 84213 &gt; flag.txt
+   $ cat flag.txt
+   flag{s3ct0r_s1z3_1s_n0t_4lw4ys_512}
+
+   (오프셋 인자가 여기서도 섹터 단위(512)임에 주의.
+    바이트 2097152 를 넣었다면 조용히 실패했을 것이다)
+
+정답: flag{s3ct0r_s1z3_1s_n0t_4lw4ys_512}</code></pre></div>
+<p>2단계의 실패가 이 글의 요지다. <strong><code>mmls</code> 출력 첫 줄의 <code>Units are in N-byte sectors</code>를 읽지 않고 512를 곱하는 것이 이 분야에서 가장 자주 일어나는 실수다.</strong> 그리고 <code>mount</code>가 실패했을 때 오프셋을 이리저리 바꿔 보는 대신 <strong><code>fsstat -o &lt;섹터&gt;</code>로 판정을 먼저 확정</strong>하는 것이 시간을 아끼는 순서다. <code>mount</code>는 성공/실패를 알려 주지만 왜 실패했는지는 알려 주지 않고, <code>fsstat</code>은 맞았을 때 <code>Sector Size</code>와 <code>Cluster Size</code>까지 준다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>mmls</code> 첫 줄의 <strong><code>Units are in N-byte sectors</code></strong> 를 읽었는가 (512 vs 4096)</li><li>넣는 오프셋의 단위가 <strong>섹터인지 바이트인지</strong> 도구별로 확인했는가</li><li><code>fsstat -o &lt;섹터&gt;</code>가 성공하는가 — <strong>이것만이 판정 기준이다</strong></li><li><code>mmls</code>가 실패하면 <code>fsstat -o 0</code>(오프셋 없이)을 시도했는가 → 볼륨 단독 이미지</li><li><code>xxd -l 16</code>으로 매직 바이트를 봤는가 → <code>EVF</code> = E01, <code>NTFS</code>/<code>EXFAT</code> = 볼륨 단독</li><li>E01/Ex01이면 <code>ewfmount</code> 또는 <code>mmls -i ewf</code>로 열었는가</li><li>E01 분할 세그먼트(<code>.E02</code>, <code>.E03</code>…)가 <strong>모두 같은 폴더에</strong> 있는가</li><li><code>ls -l</code> 크기가 <code>(End 섹터 + 1) × 섹터 크기</code>보다 작은가 → 이미지 잘림</li><li>파티션이 여러 개면 <strong>전부</strong> <code>-o</code>에 넣어 봤는가</li><li><code>mmls -b 4096</code>으로 섹터 크기를 강제해 봤는가</li><li><code>losetup -P -f --show</code>로 커널이 파티션을 잘라 주게 했는가 (계산 불필요)</li><li>파일 목록이 <strong>쓰레기 이름</strong>으로 나오는가 → 오프셋이 근접했지만 틀렸다</li><li><code>grep -abo &#39;NTFS    &#39;</code> 시그니처 스캔 결과를 <strong>전부</strong> 시도했는가 (<a href="./mbr-gpt.html">FOR-0019</a>)</li><li><code>testdisk</code>로 파티션 테이블 복구를 시도했는가 (반드시 사본에)</li><li>마운트가 <code>ro</code>인가 — 쓰기 마운트는 증거를 오염시킨다</li><li>BitLocker/암호화 볼륨인가 → 오프셋 문제가 아니다. 복호화가 먼저다</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-032 — The Sleuth Kit 도구 문서: <code>mmls</code>/<code>fsstat</code>/<code>fls</code>/<code>icat</code>/<code>istat</code>/<code>blkls</code>의 <code>-o</code>가 섹터 단위임, <code>-b</code>(장치 섹터 크기 강제), <code>-i</code>(이미지 타입) 옵션, <code>fsstat</code>의 <code>Sector Size</code>/<code>Cluster Size</code> 출력</li><li>SRC-034 — UEFI 명세(GPT): 파티션 시작/끝을 LBA로 기술하므로 바이트 환산에 섹터 크기가 필요하다는 근거, 4Kn 디스크의 LBA 크기</li><li>SRC-005 — Microsoft Learn(NTFS/MFT): 볼륨 부트섹터의 OEM ID(<code>NTFS    </code>) 위치와 볼륨 시작 지점의 관계</li><li>오류 메시지 문구는 배포판·도구 버전·로케일에 따라 다르다. 문구가 아니라 <strong>어떤 명령이 성공하는가</strong>로 판정할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./mbr-gpt.html">
+    <span class="rel-id">FOR-0019 · 디스크/NTFS</span>
+    MBR과 GPT 파티션 테이블 직접 읽기
+  </a>
+  <a class="related-item" href="./deleted-file-recovery-walkthrough.html">
+    <span class="rel-id">FOR-0049 · 디스크/NTFS</span>
+    삭제 파일 복구 실전: 휴지통 → $UsnJrnl → $MFT → 카빙 판정 트리
+  </a>
+  <a class="related-item" href="./arsenal-image-mounter.html">
+    <span class="rel-id">FOR-0017 · 디스크/NTFS</span>
+    Arsenal Image Mounter로 이미지를 실제 디스크처럼 마운트하기
+  </a>
+  <a class="related-item" href="./tsk-mmls.html">
+    <span class="rel-id">FOR-0040 · 디스크/NTFS</span>
+    Sleuth Kit mmls 옵션과 오프셋 파이프라인
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./photorec.html"><span class="rel-id">← FOR-0047</span>PhotoRec 사용법: TUI 절차, File Opt, recup_dir 해석</a>
+<a class="related-item" href="./deleted-file-recovery-walkthrough.html"><span class="rel-id">FOR-0049 →</span>삭제 파일 복구 실전: 휴지통 → $UsnJrnl → $MFT → 카빙 판정 트리</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#증상">증상</a></li>
+<li class="toc-l2"><a href="#가장-가능성-높은-원인">가장 가능성 높은 원인</a></li>
+<li class="toc-l2"><a href="#1차-확인">1차 확인</a></li>
+<li class="toc-l3"><a href="#판정-분기">판정 분기</a></li>
+<li class="toc-l3"><a href="#원인-1-섹터바이트-혼동-가장-흔함">원인 1 — 섹터/바이트 혼동 (가장 흔함)</a></li>
+<li class="toc-l3"><a href="#원인-2-섹터-크기-4096-4kn">원인 2 — 섹터 크기 4096 (4Kn)</a></li>
+<li class="toc-l3"><a href="#원인-3-볼륨-단독-이미지에-오프셋을-준-경우">원인 3 — 볼륨 단독 이미지에 오프셋을 준 경우</a></li>
+<li class="toc-l3"><a href="#원인-4-물리-이미지인데-오프셋을-안-준-경우">원인 4 — 물리 이미지인데 오프셋을 안 준 경우</a></li>
+<li class="toc-l2"><a href="#2차-확인">2차 확인</a></li>
+<li class="toc-l3"><a href="#원인-5-파티션-테이블-손상">원인 5 — 파티션 테이블 손상</a></li>
+<li class="toc-l3"><a href="#원인-6-이미지가-잘렸다">원인 6 — 이미지가 잘렸다</a></li>
+<li class="toc-l3"><a href="#원인-7-e01을-raw로-취급">원인 7 — E01을 raw로 취급</a></li>
+<li class="toc-l2"><a href="#다른-방법">다른 방법</a></li>
+<li class="toc-l2"><a href="#실제-예시">실제 예시</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 03:39 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

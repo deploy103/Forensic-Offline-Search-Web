@@ -34,6 +34,20 @@
     { "name": "ZipRipper", "folder": "ZipRipper-main", "purpose": "미확인 (ZIP 관련 도구로 추정)", "artifacts": [], "status": "unverified", "notes": "readme 확인 필요. 확인 전까지 손상 ZIP 분석 글에서 언급하지 않는다." },
     { "name": "show", "purpose": "미확인", "artifacts": [], "status": "unverified", "notes": "폴더명만으로 기능 추정 불가. 확인 필요." }
   ],
+  "recommended_additions": {
+    "note": "글에서 실제로 사용하지만 AGENTS.md 의 확인된 툴 목록에 없는 것들. 전부 Eric Zimmerman 무료 도구이며 EvtxECmd/RBCmd/RegistryExplorer/rla 와 같은 배포처에서 받는다. 대회 전에 함께 챙기는 것을 권한다. 없어도 되도록 각 글에 대체 도구를 함께 적었다.",
+    "tools": [
+      { "name": "MFTECmd", "purpose": "$MFT / $J / $LogFile / $Boot / $SDS 파싱 → CSV/JSON/bodyfile", "alternative_in_kit": "analyzeMFT (기능 범위가 좁고 $J 미지원)" },
+      { "name": "PECmd", "purpose": "Prefetch(.pf) 파싱 → CSV. 실행 횟수·최근 8회 실행 시각·참조 파일", "alternative_in_kit": "WinPrefetchView (GUI, 일괄 CSV는 불편)" },
+      { "name": "AmcacheParser", "purpose": "Amcache.hve 파싱 → 실행 파일 SHA-1, 최초 등록 시각", "alternative_in_kit": "RegRipper amcache 플러그인" },
+      { "name": "LECmd", "purpose": "LNK 파일 파싱 → 대상 경로, 볼륨 시리얼, MAC 시각", "alternative_in_kit": "없음 (Metadata++ 로 부분 확인)" },
+      { "name": "JLECmd", "purpose": "Jump List(automaticDestinations/customDestinations) 파싱", "alternative_in_kit": "없음" },
+      { "name": "SrumECmd", "purpose": "SRUDB.dat 파싱 → 앱별 네트워크 송수신량·실행 시간", "alternative_in_kit": "ESEDatabaseView (원시 테이블만 보임)" },
+      { "name": "Timeline Explorer", "purpose": "대용량 CSV 뷰어. 컬럼 필터·정렬·조건부 서식. 타임라인 통합에 사실상 필수", "alternative_in_kit": "Excel (수십만 행에서 느림), PowerShell Import-Csv" },
+      { "name": "streams (Sysinternals)", "purpose": "ADS 목록/삭제", "alternative_in_kit": "dir /r, PowerShell Get-Item -Stream *" },
+      { "name": "TrID", "purpose": "파일 형식 판정(시그니처 DB 기반)", "alternative_in_kit": "DIE, file (WSL)" }
+    ]
+  },
   "linux": [
     { "name": "file", "purpose": "매직 바이트 기반 파일 형식 판정", "status": "verified" },
     { "name": "strings", "purpose": "인쇄 가능 문자열 추출 (-el 로 UTF-16LE)", "status": "verified" },

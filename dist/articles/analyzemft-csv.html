@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>analyzeMFT / MFTECmd CSV로 $MFT 필터링하기 · FOR-0022 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%94%94%EC%8A%A4%ED%81%AC%2FNTFS">디스크/NTFS</a> / FOR-0022
+      </div>
+      <header class="article-head">
+        <h1>analyzeMFT / MFTECmd CSV로 $MFT 필터링하기</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">디스크/NTFS</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>$MFT는 수십만 행 CSV로 변환한 뒤 InUse + Extension + 시간 구간 세 조건으로 좁혀야 쓸 수 있다. MFTECmd는 경로(ParentPath)까지 채워 주므로 기본값으로 쓰고, analyzeMFT는 STF FN Shift·uSec Zero 같은 이상 징후 컬럼이 필요할 때 쓴다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>analyzeMFT, MFTECmd, Timeline Explorer, PowerShell, ripgrep, awk, sqlite3, FTK Imager</td></tr>
+<tr><th>artifact</th><td><code>$MFT</code> · <code>MFT CSV</code> · <code>MFT record</code> · <code>bodyfile</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\$MFT</code> · <code>C:\case\out\mft.csv</code></td></tr>
+<tr><th>regex</th><td><code>\.(zip|7z|rar|exe|ps1|docx|xlsx)$</code> · <code>^2026-03-14</code></td></tr>
+<tr><th>로그 필드</th><td><code>EntryNumber</code> · <code>SequenceNumber</code> · <code>InUse</code> · <code>ParentEntryNumber</code> · <code>ParentPath</code> · <code>FileName</code> · <code>Extension</code> · <code>FileSize</code> · <code>IsDirectory</code> · <code>HasAds</code> · <code>SI&lt;FN</code> · <code>uSecZeros</code> · <code>Created0x10</code> · <code>LastModified0x10</code> · <code>Record Number</code> · <code>Active</code> · <code>Std Info Creation date</code> · <code>STF FN Shift</code> · <code>uSec Zero</code></td></tr>
+<tr><th>파일 형식</th><td><code>ntfs</code> · <code>csv</code></td></tr>
+<tr><th>검색 별칭</th><td>analyzemft · mftecmd · mft csv · mft 파싱 · mft 엑셀로 보기 · 삭제 파일만 보기 · mft 필터링 · mft 경로 복원</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>$MFT</code>는 수십만 행 CSV로 변환한 뒤 <strong><code>InUse</code> + <code>Extension</code> + 시간 구간</strong> 세 조건으로 좁혀야 쓸 수 있다. MFTECmd는 경로(<code>ParentPath</code>)까지 채워 주므로 기본값으로 쓰고, analyzeMFT는 <code>STF FN Shift</code>·<code>uSec Zero</code> 같은 이상 징후 컬럼이 필요할 때 쓴다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;삭제된 파일 중 <code>.zip</code>만 찾아라&quot;</li><li>&quot;2026-03-14 07:00~08:00 사이에 생성된 파일 전체&quot;</li><li>&quot;<code>C:\Users\jhkim\Documents</code> 아래에 뭐가 있었나&quot;</li><li>&quot;확장자별 파일 개수&quot; / &quot;가장 큰 파일 10개&quot;</li><li>&quot;이 파일의 전체 경로&quot; (CSV에 이름만 있을 때)</li><li>Excel로 열었더니 행이 잘리거나 응답이 없을 때</li></ul>
+<p><code>$MFT</code> 구조 자체는 <a href="./mft-basics.html">FOR-0021</a>에서 다룬다. 이 글은 <strong>CSV가 나온 다음</strong>을 다룬다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>첨부가 <code>$MFT</code> 파일 하나 → 이 절차 그대로</li><li>첨부가 이미 <code>mft.csv</code> → 헤더 한 줄부터 확인해 어느 파서 산출물인지 판별</li><li>지문에 시각이 있다 → 그 시각 ±10분의 <code>Created0x10</code></li><li>지문에 폴더 경로가 있다 → <code>ParentPath</code> 부분일치</li><li>지문에 &quot;삭제&quot; → <code>InUse = False</code></li><li>지문에 &quot;숨겨진&quot; → <code>HasAds = True</code> 또는 <code>IsAds = True</code></li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">MFTECmd.exe -f &#39;C:\case\$MFT&#39; --csv &quot;C:\case\out&quot; --csvf mft.csv</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 헤더 한 줄로 파서 판별 — 컬럼명이 다르면 필터도 달라진다
+Get-Content C:\case\out\mft.csv -TotalCount 1
+
+# 삭제된 항목만, 파일만
+Import-Csv C:\case\out\mft.csv |
+  Where-Object { $_.InUse -eq &#39;False&#39; -and $_.IsDirectory -eq &#39;False&#39; } |
+  Select-Object EntryNumber, ParentPath, FileName, FileSize, Created0x10</code></pre></div>
+<p>CSV가 100MB를 넘으면 <code>Import-Csv</code>부터 쓰지 않는다. 아래 &quot;대용량 CSV&quot; 절로 바로 간다.</p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-파서-선택">1단계 — 파서 선택</h3>
+<div class="table-wrap"><table><thead><tr><th></th><th>MFTECmd</th><th>analyzeMFT</th></tr></thead><tbody><tr><td>언어/실행</td><td>.NET 단일 실행 파일</td><td>Python 스크립트</td></tr><tr><td>속도</td><td>수십만 레코드를 수십 초</td><td>상대적으로 느리다</td></tr><tr><td><strong>경로 복원</strong></td><td><code>ParentPath</code> 컬럼을 채워 준다</td><td>부모 레코드 번호만 준다</td></tr><tr><td>이상 징후 컬럼</td><td><code>SI&lt;FN</code>, <code>uSecZeros</code>, <code>HasAds</code>, <code>Copied</code></td><td><code>STF FN Shift</code>, <code>uSec Zero</code> (<code>-a</code> 옵션)</td></tr><tr><td>추가 입력</td><td><code>-m $MFT</code>로 <code>$J</code> 파싱 시 경로 결합</td><td>—</td></tr><tr><td>bodyfile 출력</td><td><code>--body</code> / <code>--bodyf</code></td><td><code>-b</code></td></tr><tr><td>기타 지원</td><td><code>$J</code>, <code>$Boot</code>, <code>$SDS</code></td><td><code>$MFT</code> 전용</td></tr></tbody></table></div>
+<p>실전 결론: <strong>경로가 필요하면 MFTECmd, Python만 있는 환경이거나 이상 징후 플래그를 원하면 analyzeMFT.</strong> 둘 다 돌려서 교차검증하는 것이 가장 안전하다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># MFTECmd — 기본
+MFTECmd.exe -f &#39;C:\case\$MFT&#39; --csv &quot;C:\case\out&quot; --csvf mft.csv
+
+# JSON 으로 (jq 로 다루고 싶을 때)
+MFTECmd.exe -f &#39;C:\case\$MFT&#39; --json &quot;C:\case\out&quot; --jsonf mft.json
+
+# bodyfile (mactime 타임라인용). --bdl 로 드라이브 문자를 붙인다
+MFTECmd.exe -f &#39;C:\case\$MFT&#39; --body &quot;C:\case\out&quot; --bodyf mft.body --bdl C
+
+# 레코드 하나만 상세 덤프 — 속성 단위로 본다
+MFTECmd.exe -f &#39;C:\case\$MFT&#39; --de 84213</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># analyzeMFT — -a 를 붙여야 이상 징후 컬럼이 채워진다
+analyzeMFT.py -f &#39;$MFT&#39; -o mft.csv -a
+
+# bodyfile 출력
+analyzeMFT.py -f &#39;$MFT&#39; -b mft.body</code></pre></div>
+<h3 id="2단계-헤더를-먼저-읽는다">2단계 — 헤더를 먼저 읽는다</h3>
+<p>필터를 짜기 전에 컬럼 이름을 확인한다. 컬럼명 하나 틀리면 <code>Where-Object</code>는 <strong>에러 없이 0건</strong>을 돌려주기 때문에, 필터가 잘못됐는지 데이터가 없는지 구분이 안 된다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">head -1 mft.csv | tr &#39;,&#39; &#39;\n&#39; | nl</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># PowerShell 로도 같은 확인
+(Import-Csv mft.csv -TotalCount 1) | Get-Member -MemberType NoteProperty | Select-Object Name</code></pre></div>
+<h3 id="3단계-레시피">3단계 — 레시피</h3>
+<p>아래는 MFTECmd 컬럼명 기준이다. analyzeMFT를 쓰면 <code>InUse</code>→<code>Active</code>, <code>FileName</code>→<code>Filename #1</code>, <code>Created0x10</code>→<code>Std Info Creation date</code>로 바꾼다.</p>
+<p><strong>삭제된 파일만</strong></p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Import-Csv out\mft.csv |
+  Where-Object { $_.InUse -eq &#39;False&#39; -and $_.IsDirectory -eq &#39;False&#39; } |
+  Sort-Object { [datetime]$_.Created0x10 } |
+  Select-Object EntryNumber, SequenceNumber, ParentPath, FileName, FileSize, Created0x10</code></pre></div>
+<p><strong>확장자별 (삭제 여부 무시)</strong></p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Import-Csv out\mft.csv |
+  Where-Object { $_.Extension -in &#39;.zip&#39;, &#39;.7z&#39;, &#39;.rar&#39;, &#39;.exe&#39;, &#39;.ps1&#39; } |
+  Select-Object ParentPath, FileName, FileSize, Created0x10, LastModified0x10</code></pre></div>
+<p><strong>시간 구간별</strong> — 문자열 비교가 아니라 <code>[datetime]</code> 캐스팅으로 비교한다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$from = [datetime]&#39;2026-03-14 07:00:00&#39;
+$to   = [datetime]&#39;2026-03-14 08:00:00&#39;
+
+Import-Csv out\mft.csv |
+  Where-Object {
+    $_.Created0x10 -and
+    ([datetime]$_.Created0x10) -ge $from -and ([datetime]$_.Created0x10) -le $to
+  } |
+  Sort-Object { [datetime]$_.Created0x10 } |
+  Format-Table Created0x10, ParentPath, FileName, FileSize</code></pre></div>
+<p><strong>특정 폴더만</strong></p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Import-Csv out\mft.csv |
+  Where-Object { $_.ParentPath -like &#39;*\Users\jhkim\Downloads*&#39; } |
+  Select-Object FileName, FileSize, Created0x10, InUse</code></pre></div>
+<p><code>ParentPath</code>는 MFTECmd 버전에 따라 <code>.\Users\jhkim\Downloads</code> 처럼 <code>.\</code>로 시작한다. 그래서 앞뒤를 <code>*</code>로 감싼 부분일치를 쓴다.</p>
+<p><strong>파일 개수 집계</strong></p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 확장자별 개수 상위 20
+Import-Csv out\mft.csv |
+  Where-Object { $_.IsDirectory -eq &#39;False&#39; } |
+  Group-Object Extension |
+  Sort-Object Count -Descending | Select-Object -First 20 Count, Name
+
+# 삭제 / 활성 비율
+Import-Csv out\mft.csv | Group-Object InUse | Select-Object Name, Count
+
+# 폴더별 파일 수
+Import-Csv out\mft.csv | Group-Object ParentPath |
+  Sort-Object Count -Descending | Select-Object -First 15 Count, Name</code></pre></div>
+<p><strong>가장 큰 파일</strong></p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Import-Csv out\mft.csv |
+  Where-Object { $_.IsDirectory -eq &#39;False&#39; -and $_.FileSize -as [long] } |
+  Sort-Object { [long]$_.FileSize } -Descending |
+  Select-Object -First 10 FileName, ParentPath, @{n=&#39;MB&#39;;e={[math]::Round($_.FileSize/1MB,1)}}</code></pre></div>
+<h3 id="4단계-ripgrep-awk-powershell이-느릴-때">4단계 — ripgrep / awk (PowerShell이 느릴 때)</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 삭제된 zip/7z/rar — 컬럼 위치를 몰라도 되는 거친 필터
+rg -N -i &#39;\.(zip|7z|rar)&quot;?,&#39; mft.csv | rg -N &#39;,False,&#39; | head -30
+
+# 특정 날짜에 생성된 항목 (생성일 컬럼 번호를 head -1 로 미리 확인)
+awk -F&#39;,&#39; &#39;NR==1 || $20 ~ /^2026-03-14/&#39; mft.csv | head
+
+# 확장자별 개수 — Extension 컬럼 번호가 8일 때
+awk -F&#39;,&#39; &#39;NR&gt;1 {print $8}&#39; mft.csv | sort | uniq -c | sort -nr | head -20
+
+# 특정 폴더
+rg -N &#39;Users\\\\jhkim\\\\Downloads&#39; mft.csv | wc -l</code></pre></div>
+<p>CSV 필드에 콤마가 들어간 파일명이 있으면 <code>awk -F&#39;,&#39;</code>는 컬럼이 밀린다. <strong>집계는 awk, 최종 확인은 반드시 PowerShell <code>Import-Csv</code>나 Timeline Explorer로</strong> 다시 본다.</p>
+<h3 id="5단계-parententrynumber로-경로-복원">5단계 — ParentEntryNumber로 경로 복원</h3>
+<p>analyzeMFT처럼 경로 컬럼이 없거나, MFTECmd의 <code>ParentPath</code>가 비어 있는(부모 레코드가 재사용된) 항목은 직접 올라간다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">규칙: EntryNumber 5 = 루트 디렉터리 -&gt; 여기서 멈춘다
+      ParentEntryNumber 를 따라 이름을 앞에 붙여 나간다
+      ParentSequenceNumber 가 부모의 SequenceNumber 와 다르면 -&gt; 부모가 이미 재사용됨 (경로 불확실)</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$rows = Import-Csv out\mft.csv
+$byEntry = @{}
+foreach ($r in $rows) { $byEntry[$r.EntryNumber] = $r }
+
+function Get-MftPath([string]$entry) {
+  $parts = @()
+  $cur = $byEntry[$entry]
+  $guard = 0
+  while ($cur -and $guard -lt 64) {
+    if ($cur.EntryNumber -eq &#39;5&#39;) { break }          # 루트 도달
+    $parts = ,$cur.FileName + $parts
+    $next = $byEntry[$cur.ParentEntryNumber]
+    if (-not $next) { $parts = ,&#39;&lt;ORPHAN&gt;&#39; + $parts; break }
+    if ($next.SequenceNumber -ne $cur.ParentSequenceNumber) {
+      $parts = ,&#39;&lt;REUSED&gt;&#39; + $parts; break           # 부모 슬롯 재사용 = 경로 신뢰 불가
+    }
+    $cur = $next
+    $guard++
+  }
+  &#39;\&#39; + ($parts -join &#39;\&#39;)
+}
+
+Get-MftPath &#39;84213&#39;</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">\Users\jhkim\Documents\secret.txt</code></pre></div>
+<p><code>&lt;ORPHAN&gt;</code>이 나오면 부모 레코드가 CSV에 없다는 뜻이다. 삭제된 폴더의 자식일 때 흔하고, 이 경우 경로는 <code>$UsnJrnl</code>의 <code>ParentEntryNumber</code>나 <code>$LogFile</code>의 인덱스 조작 기록으로 보완한다 (<a href="./usnjrnl-basics.html">FOR-0027</a>).</p>
+<h3 id="6단계-timeline-explorer">6단계 — Timeline Explorer</h3>
+<p>CSV를 GUI로 볼 때는 Excel이 아니라 Timeline Explorer를 쓴다. Excel은 행 한계(1,048,576)와 자동 형식 변환 때문에 타임스탬프를 망친다.</p>
+<div class="table-wrap"><table><thead><tr><th>하려는 일</th><th>Timeline Explorer에서</th></tr></thead><tbody><tr><td>컬럼별 조건 필터</td><td>헤더 아래 필터 입력 행에 값을 입력한다</td></tr><tr><td>여러 조건 조합</td><td>필터 편집 창에서 컬럼 조건을 AND/OR로 조합한다</td></tr><tr><td>전체 문자열 검색</td><td>검색 상자에 키워드를 넣어 전체 컬럼을 훑는다</td></tr><tr><td>중요한 행 표시</td><td>행에 태그/체크를 달아 두고 태그된 행만 다시 본다</td></tr><tr><td>컬럼 고정</td><td>자주 보는 컬럼(시각·파일명)을 왼쪽에 고정한다</td></tr><tr><td>결과 내보내기</td><td>필터가 적용된 현재 화면을 CSV/Excel로 export</td></tr></tbody></table></div>
+<p>메뉴 이름과 배치는 버전에 따라 다르다. 컬럼 필터 → 정렬 → export 라는 <strong>순서</strong>만 기억하면 된다.</p>
+<h3 id="7단계-대용량-csv">7단계 — 대용량 CSV</h3>
+<p><code>$MFT</code>가 큰 볼륨이면 CSV가 300MB~1GB까지 간다. <code>Import-Csv</code>는 전체를 객체로 올리므로 메모리에서 터진다.</p>
+<p><strong>방법 A — SQLite로 밀어 넣는다 (가장 강력하다)</strong></p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">sqlite3 mft.db &lt;&lt;&#39;SQL&#39;
+.mode csv
+.import --csv mft.csv mft
+SQL
+
+# 이제 SQL로 질의한다
+sqlite3 -header -column mft.db &quot;
+  SELECT EntryNumber, ParentPath, FileName, FileSize, Created0x10
+  FROM mft
+  WHERE InUse=&#39;False&#39; AND Extension IN (&#39;.zip&#39;,&#39;.7z&#39;,&#39;.rar&#39;)
+  ORDER BY Created0x10;
+&quot;
+
+# 확장자별 집계
+sqlite3 -header -column mft.db &quot;
+  SELECT Extension, COUNT(*) c FROM mft
+  WHERE IsDirectory=&#39;False&#39; GROUP BY Extension ORDER BY c DESC LIMIT 20;
+&quot;
+
+# 시간 구간 — 문자열 비교로도 ISO 형식이면 정확하다
+sqlite3 -header -column mft.db &quot;
+  SELECT Created0x10, ParentPath, FileName FROM mft
+  WHERE Created0x10 &gt;= &#39;2026-03-14 07:00&#39; AND Created0x10 &lt; &#39;2026-03-14 08:00&#39;
+  ORDER BY Created0x10;
+&quot;</code></pre></div>
+<p><code>.import</code>로 넣으면 모든 컬럼이 TEXT다. 크기 비교가 필요하면 <code>CAST(FileSize AS INTEGER)</code>를 쓴다.</p>
+<p><strong>방법 B — 스트리밍 필터로 CSV를 먼저 줄인다</strong></p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 헤더 + 삭제 항목만 남긴 작은 CSV
+{ head -1 mft.csv; rg -N &#39;,False,&#39; mft.csv; } &gt; deleted.csv
+wc -l deleted.csv</code></pre></div>
+<p><strong>방법 C — PowerShell 스트리밍</strong></p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 파이프 중간에서 바로 필터해 결과만 남긴다 (전체를 변수에 담지 않는다)
+Import-Csv out\mft.csv |
+  Where-Object { $_.InUse -eq &#39;False&#39; } |
+  Export-Csv out\deleted.csv -NoTypeInformation
+
+# 그래도 느리면 파일을 텍스트로 흘려 읽는다
+Get-Content out\mft.csv -ReadCount 5000 |
+  ForEach-Object { $_ | Where-Object { $_ -match &#39;,False,.*\.zip&#39; } }</code></pre></div>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<h3 id="mftecmd-csv">MFTECmd CSV</h3>
+<div class="table-wrap"><table><thead><tr><th>컬럼</th><th>의미</th><th>필터에서 쓰는 법</th></tr></thead><tbody><tr><td><code>EntryNumber</code></td><td>MFT 레코드 번호</td><td><code>--de</code>, <code>icat</code>에 그대로 넣는다</td></tr><tr><td><code>SequenceNumber</code></td><td>슬롯 재사용 횟수</td><td>같은 <code>EntryNumber</code>라도 값이 다르면 다른 파일</td></tr><tr><td><code>InUse</code></td><td>사용 중</td><td><code>False</code> = <strong>삭제</strong></td></tr><tr><td><code>ParentEntryNumber</code></td><td>부모 레코드 번호</td><td>경로 복원 키</td></tr><tr><td><code>ParentSequenceNumber</code></td><td>부모 슬롯 재사용 횟수</td><td>불일치 = 경로 신뢰 불가</td></tr><tr><td><code>ParentPath</code></td><td>복원된 부모 경로</td><td>폴더 필터</td></tr><tr><td><code>FileName</code></td><td>파일 이름</td><td>검색 대상</td></tr><tr><td><code>Extension</code></td><td>확장자 (점 포함)</td><td><code>.zip</code> 처럼 점까지 넣어 비교</td></tr><tr><td><code>FileSize</code></td><td>논리 크기</td><td>문자열이므로 <code>[long]</code> 캐스팅 후 비교</td></tr><tr><td><code>IsDirectory</code></td><td>디렉터리 여부</td><td>파일만 볼 때 <code>False</code></td></tr><tr><td><code>HasAds</code> / <code>IsAds</code></td><td>ADS 보유 / 자기 자신이 ADS</td><td>은닉 스트림 탐지</td></tr><tr><td><code>SI&lt;FN</code></td><td><code>$SI</code> 시각이 <code>$FN</code>보다 빠름</td><td><strong>timestomp 후보</strong> (<a href="./si-vs-fn-timestamps.html">FOR-0024</a>)</td></tr><tr><td><code>uSecZeros</code></td><td>서브초가 0</td><td>위와 동일 신호</td></tr><tr><td><code>Copied</code></td><td>복사 흔적 판정</td><td>생성 &gt; 수정 형태</td></tr><tr><td><code>NameType</code></td><td>이름 공간</td><td><code>Win32</code>, <code>Dos</code>, <code>Win32&amp;Dos</code>, <code>Posix</code></td></tr><tr><td><code>Created0x10</code> / <code>Created0x30</code></td><td><code>$SI</code> / <code>$FN</code> 생성 시각</td><td>대조 → 조작 탐지</td></tr><tr><td><code>LastModified0x10</code> / <code>0x30</code></td><td>수정 시각</td><td>동일</td></tr><tr><td><code>LastRecordChange0x10</code> / <code>0x30</code></td><td>MFT 엔트리 변경 시각</td><td>조작이 가장 어려운 값</td></tr><tr><td><code>LastAccess0x10</code> / <code>0x30</code></td><td>접근 시각</td><td>Win7+ 갱신 비활성인 경우 많음</td></tr><tr><td><code>UpdateSequenceNumber</code></td><td><code>$SI</code>에 기록된 USN</td><td><code>$UsnJrnl</code>과 조인</td></tr><tr><td><code>LogfileSequenceNumber</code></td><td>마지막 변경의 LSN</td><td><code>$LogFile</code>과 조인 (<a href="./logfile-basics.html">FOR-0025</a>)</td></tr><tr><td><code>ZoneIdContents</code></td><td><code>Zone.Identifier</code> ADS 내용</td><td>다운로드 출처 URL</td></tr></tbody></table></div>
+<h3 id="analyzemft-csv">analyzeMFT CSV</h3>
+<div class="table-wrap"><table><thead><tr><th>컬럼</th><th>MFTECmd 대응</th><th>비고</th></tr></thead><tbody><tr><td><code>Record Number</code></td><td><code>EntryNumber</code></td><td>—</td></tr><tr><td><code>Good</code></td><td>—</td><td>레코드 파싱 정상 여부</td></tr><tr><td><code>Active</code></td><td><code>InUse</code></td><td><code>Active</code>/<code>Inactive</code> 문자열</td></tr><tr><td><code>Record type</code></td><td><code>IsDirectory</code> 등</td><td><code>File</code>/<code>Folder</code></td></tr><tr><td><code>Sequence Number</code></td><td><code>SequenceNumber</code></td><td>—</td></tr><tr><td><code>Parent File Rec. #</code></td><td><code>ParentEntryNumber</code></td><td>경로는 직접 복원해야 한다</td></tr><tr><td><code>Filename #1</code></td><td><code>FileName</code></td><td>이름이 여러 개면 <code>#2</code>, <code>#3</code>로 이어진다</td></tr><tr><td><code>Std Info Creation date</code></td><td><code>Created0x10</code></td><td>—</td></tr><tr><td><code>Std Info Modification date</code></td><td><code>LastModified0x10</code></td><td>—</td></tr><tr><td><code>Std Info Access date</code></td><td><code>LastAccess0x10</code></td><td>—</td></tr><tr><td><code>Std Info Entry date</code></td><td><code>LastRecordChange0x10</code></td><td>—</td></tr><tr><td><code>FN Info *</code></td><td><code>*0x30</code></td><td><code>$FILE_NAME</code> 4개</td></tr><tr><td><code>STF FN Shift</code></td><td><code>SI&lt;FN</code> 유사</td><td><code>-a</code>(anomaly) 옵션에서 채워진다</td></tr><tr><td><code>uSec Zero</code></td><td><code>uSecZeros</code></td><td>동일 개념</td></tr><tr><td><code>ADS</code></td><td><code>HasAds</code></td><td>—</td></tr></tbody></table></div>
+<p><strong>컬럼 이름에 공백과 점이 들어간다.</strong> PowerShell에서는 반드시 백틱 인용을 쓴다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Import-Csv mft.csv | Where-Object { $_.Active -eq &#39;Inactive&#39; } |
+  Select-Object &#39;Record Number&#39;, &#39;Filename #1&#39;, &#39;Std Info Creation date&#39;</code></pre></div>
+<p>두 파서 모두 타임스탬프를 <strong>UTC</strong>로 출력하는 것이 기본이다. FILETIME은 1601-01-01 UTC 기준 100ns 단위이며 Unix epoch와의 차이는 11644473600초다. 문제가 KST를 요구하면 <strong>+9시간</strong>한다. analyzeMFT는 로컬 시간대로 출력하는 옵션(<code>-l</code>)이 있어, 그 옵션이 켜졌는지 모른 채 +9를 또 하면 18시간이 틀린다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>CSV에서 얻은 값</th><th>다음 목표</th><th>확인할 것</th></tr></thead><tbody><tr><td><code>EntryNumber</code></td><td><code>icat -o &lt;off&gt; image.dd &lt;n&gt;</code></td><td>파일 내용 직접 추출</td></tr><tr><td><code>EntryNumber</code></td><td><code>MFTECmd --de &lt;n&gt;</code></td><td>속성 단위 원본, resident 데이터</td></tr><tr><td><code>InUse=False</code> + 시각</td><td><code>$UsnJrnl:$J</code> (<a href="./usnjrnl-basics.html">FOR-0027</a>)</td><td>삭제 시각과 원래 이름</td></tr><tr><td><code>LogfileSequenceNumber</code></td><td><code>$LogFile</code> (<a href="./logfile-basics.html">FOR-0025</a>)</td><td>그 변경의 redo/undo 상세</td></tr><tr><td><code>SI&lt;FN=True</code> / <code>uSecZeros=True</code></td><td><code>$SI</code> vs <code>$FN</code> 대조 (<a href="./si-vs-fn-timestamps.html">FOR-0024</a>)</td><td>timestomp 확정</td></tr><tr><td><code>Created0x10</code> 군집</td><td>MACB 패턴 (<a href="./mft-macb.html">FOR-0023</a>)</td><td>복사·압축해제·설치 구분</td></tr><tr><td><code>HasAds=True</code></td><td><code>Get-Item -Stream *</code>, <code>ZoneIdContents</code></td><td>다운로드 출처</td></tr><tr><td><code>ZoneIdContents</code> URL</td><td>브라우저 History (<a href="./chrome-history.html">FOR-0191</a>)</td><td>어느 사이트에서 받았나</td></tr><tr><td>실행 파일 이름</td><td>Prefetch / Amcache / UserAssist (<a href="./userassist.html">FOR-0061</a>)</td><td>실제로 실행됐나</td></tr><tr><td>시각</td><td>EVTX 4624/4688 (<a href="./event-4624-logon.html">FOR-0083</a>)</td><td>어느 세션이 만들었나</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>컬럼명을 확인하지 않고 필터를 짜는 것.</strong> <code>Where-Object { $_.Deleted -eq &#39;True&#39; }</code>는 존재하지 않는 속성을 비교하므로 조용히 0건을 반환한다. 결과가 0이면 먼저 <code>Get-Content -TotalCount 1</code>로 헤더를 본다.</li><li><strong><code>InUse</code>를 boolean으로 비교하는 것.</strong> CSV에서 온 값은 <code>&#39;False&#39;</code> <strong>문자열</strong>이다. <code>-eq $false</code>는 매치되지 않는다. 항상 문자열로 비교한다.</li><li><strong><code>FileSize</code>를 문자열로 정렬하는 것.</strong> <code>Sort-Object FileSize</code>는 <code>&quot;9&quot;</code>를 <code>&quot;1000000&quot;</code>보다 크게 본다. <code>[long]</code>으로 캐스팅한다.</li><li><strong><code>Extension</code>을 점 없이 비교하는 것.</strong> MFTECmd의 <code>Extension</code>은 <code>.zip</code> 형태다. <code>-eq &#39;zip&#39;</code>은 안 맞는다.</li><li><strong>Excel로 CSV를 여는 것.</strong> 행 한계에서 잘리고, <code>Created0x10</code>을 로컬 시간대 서식으로 바꿔 버리며, 긴 숫자를 지수 표기로 망친다. Timeline Explorer 또는 SQLite를 쓴다.</li><li><strong><code>awk -F&#39;,&#39;</code>로 최종 결론을 내는 것.</strong> 파일명에 콤마가 들어가면 컬럼이 밀린다. 집계 용도로만 쓰고 확인은 정식 CSV 파서로 한다.</li><li><strong><code>ParentPath</code>를 절대 경로로 믿는 것.</strong> 파서는 <code>.\Users\...</code> 같은 상대 표기를 쓰고, 부모가 삭제·재사용된 항목은 비어 있거나 부정확하다. <code>ParentSequenceNumber</code> 일치를 함께 본다.</li><li><strong><code>EntryNumber</code>만으로 두 CSV를 조인하는 것.</strong> <code>$J</code>나 다른 시점의 <code>$MFT</code>와 조인할 때는 <code>EntryNumber</code> + <code>SequenceNumber</code> <strong>둘 다</strong> 키로 써야 한다. 레코드 슬롯은 재사용된다.</li><li><strong><code>-l</code>(로컬 시간) 옵션 유무를 확인하지 않고 +9시간 하는 것.</strong> 출력이 이미 KST면 두 번 더해 18시간이 틀어진다. 알려진 이벤트(예: EVTX 로그온 시각) 하나로 기준을 맞춘다.</li><li><strong><code>IsAds=True</code> 행을 파일로 세는 것.</strong> ADS는 부모 파일과 같은 <code>EntryNumber</code>를 공유한다. 파일 개수 집계에서 중복이 된다.</li><li><strong>디렉터리를 제외하지 않고 개수를 세는 것.</strong> <code>IsDirectory=True</code>가 상당수라 확장자 집계가 왜곡된다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) 두 파서의 레코드 수가 맞는가
+(Import-Csv out\mft.csv).Count
+(Import-Csv analyzemft.csv).Count
+
+# 2) 파일 크기 검산 — $MFT 크기 / 레코드 크기 = 레코드 수
+(Get-Item &#39;C:\case\$MFT&#39;).Length / 1024
+
+# 3) 특정 레코드를 속성 단위로 재확인
+MFTECmd.exe -f &#39;C:\case\$MFT&#39; --de 84213</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 4) Sleuth Kit 으로 같은 목록을 다시 뽑아 대조 (삭제 파일 포함)
+fls -o 2048 -r -p image.dd | rg -i &#39;secret&#39;
+
+# 5) 레코드 상세를 istat 으로 재확인 — 속성별 크기와 data run 이 보인다
+istat -o 2048 image.dd 84213</code></pre></div>
+<p>CSV에서 본 <code>FileSize</code>와 <code>istat</code>의 <code>init_size</code>/<code>actual_size</code>가 다르면 파서가 아니라 <strong>속성 해석 차이</strong>다. <code>istat</code> 쪽을 신뢰한다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;유출 의심 압축파일을 특정하세요. 첨부: $MFT (1.2GB), image 없음&quot;
+
+1. 파싱
+   MFTECmd.exe -f &quot;$MFT&quot; --csv out --csvf mft.csv
+   -&gt; 1,241,880 레코드, CSV 612MB
+
+2. 첫 시도 (실패):
+   Import-Csv out\mft.csv | Where-Object { $_.Extension -eq &#39;.zip&#39; }
+
+   -&gt; 5분 넘게 응답 없음. 메모리 사용량이 6GB를 넘어가고 세션이 죽었다.
+
+   왜 틀렸나: Import-Csv 는 612MB CSV의 모든 행을 PSObject 로 만들어
+   메모리에 올린다. 1백만 행 × 30컬럼이면 감당이 안 된다.
+   &quot;필터를 나중에&quot; 하는 파이프라인이 문제다.
+
+3. 접근 변경 — 파일을 먼저 줄인다
+   { head -1 mft.csv; rg -N &#39;,False,&#39; mft.csv; } &gt; deleted.csv
+   -&gt; 18,442행, 9MB. 여기부터는 Import-Csv 로 충분하다.
+
+4. 두 번째 시도도 빗나감:
+   Import-Csv deleted.csv | Where-Object { $_.Extension -eq &#39;zip&#39; }
+   -&gt; 0건.
+
+   왜 틀렸나: MFTECmd 의 Extension 은 점을 포함한 &#39;.zip&#39; 이다.
+
+5. 정정 후:
+   Import-Csv deleted.csv |
+     Where-Object { $_.Extension -in &#39;.zip&#39;,&#39;.7z&#39;,&#39;.rar&#39; -and
+                    $_.IsDirectory -eq &#39;False&#39; } |
+     Sort-Object { [long]$_.FileSize } -Descending |
+     Select-Object -First 5 EntryNumber, ParentPath, FileName, FileSize, Created0x10
+
+   EntryNumber ParentPath                  FileName          FileSize   Created0x10
+   ----------- ----------                  --------          --------   -----------
+   128441      .\Users\jhkim\Documents     report_final.7z   284113920  2026-03-14 07:31:04
+   96110       .\Windows\Temp              vc_redist.7z      1204224    2026-01-08 11:02:19
+   ...
+
+   271MB 짜리 삭제된 7z 가 사용자 Documents 에 있었다. 이것이 후보.
+
+6. 경로 검증 — ParentPath 를 그대로 믿지 않는다
+   Import-Csv deleted.csv | Where-Object { $_.EntryNumber -eq &#39;128441&#39; } |
+     Select-Object ParentEntryNumber, ParentSequenceNumber
+
+   ParentEntryNumber ParentSequenceNumber
+   ----------------- --------------------
+   9114              3
+
+   Import-Csv out\mft.csv | Where-Object { $_.EntryNumber -eq &#39;9114&#39; } |
+     Select-Object FileName, SequenceNumber
+   -&gt; Documents, 3      (일치 -&gt; 경로 신뢰 가능)
+
+7. 조작 여부 확인
+   Import-Csv deleted.csv | Where-Object { $_.EntryNumber -eq &#39;128441&#39; } |
+     Select-Object &#39;SI&lt;FN&#39;, uSecZeros, Created0x10, Created0x30, LastModified0x10
+   -&gt; SI&lt;FN=False, uSecZeros=False  (조작 흔적 없음)
+
+8. 집계로 사건 시각 좁히기
+   Import-Csv deleted.csv |
+     Where-Object { $_.Created0x10 -like &#39;2026-03-14*&#39; } |
+     Group-Object { ([datetime]$_.Created0x10).ToString(&#39;HH&#39;) } |
+     Select-Object Name, Count | Sort-Object Name
+
+   Name Count
+   ---- -----
+   07     214      &lt;- 이 시간대에 삭제 대상이 몰려 있다
+   09       6
+
+정답: .\Users\jhkim\Documents\report_final.7z (EntryNumber 128441),
+      생성 2026-03-14 07:31:04 UTC = 16:31:04 KST</code></pre></div>
+<p>3단계가 이 문제의 분기점이다. <strong>&quot;CSV 전체를 파서에 넣고 필터&quot;가 아니라 &quot;텍스트로 먼저 줄이고 파서에 넣기&quot;</strong> 로 순서를 뒤집자 5분 걸리던 질의가 2초가 됐다. 4단계의 점 하나(<code>zip</code> vs <code>.zip</code>)도 0건 오판의 전형이다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>Get-Content -TotalCount 1</code>로 컬럼명을 확인했는가 — 0건의 절반은 컬럼명 오타다</li><li><code>InUse</code>/<code>Active</code>를 <strong>문자열</strong>로 비교했는가</li><li><code>Extension</code>에 점을 붙였는가</li><li><code>FileSize</code>를 <code>[long]</code>으로 캐스팅했는가</li><li>CSV가 100MB를 넘는데 <code>Import-Csv</code>로 시작했는가 → <code>rg</code>로 먼저 줄이거나 SQLite로 옮긴다</li><li>경로가 안 나오면 → <code>ParentEntryNumber</code> 재귀 복원, <code>ParentSequenceNumber</code> 일치 확인</li><li><code>&lt;ORPHAN&gt;</code>이면 → <code>$UsnJrnl</code>의 <code>ParentEntryNumber</code>로 보완</li><li>타임스탬프가 예상과 9시간 어긋나면 → 파서의 시간대 옵션과 KST 변환을 이중으로 했는지 확인</li><li>파일 개수가 이상하면 → <code>IsDirectory=True</code>와 <code>IsAds=True</code>를 제외했는가</li><li>찾는 파일이 아예 없으면 → 레코드 슬롯이 재사용된 것이다. <code>$UsnJrnl</code>/<code>$LogFile</code>로 넘어간다</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-005 — Microsoft Learn, Master File Table: MFT 레코드와 속성의 의미(각 CSV 컬럼이 무엇을 옮긴 것인지)</li><li>SRC-004 — Eric Zimmerman 문서: MFTECmd의 <code>-f</code>/<code>-m</code>/<code>--csv</code>/<code>--csvf</code>/<code>--json</code>/<code>--body</code>/<code>--de</code> 옵션과 CSV 컬럼 정의, Timeline Explorer 사용법</li><li>SRC-014 — Microsoft Learn, File Times: FILETIME이 1601-01-01 UTC 기준 100ns이며 Unix와 11644473600초 차이라는 근거</li><li>MFTECmd와 analyzeMFT의 <strong>컬럼 이름·개수·옵션 문자는 버전에 따라 다르다.</strong> 필터를 짜기 전에 <code>--help</code>와 CSV 헤더 첫 줄을 실제로 확인할 것</li><li>Timeline Explorer의 메뉴·버튼 이름도 버전에 따라 다르므로 실제 화면에서 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./mft-basics.html">
+    <span class="rel-id">FOR-0021 · 디스크/NTFS</span>
+    $MFT 기본 구조와 포렌식 활용
+  </a>
+  <a class="related-item" href="./mft-macb.html">
+    <span class="rel-id">FOR-0023 · 디스크/NTFS</span>
+    MFT MACB 시간 해석: 복사·이동·다운로드·압축해제 구분법
+  </a>
+  <a class="related-item" href="./si-vs-fn-timestamps.html">
+    <span class="rel-id">FOR-0024 · 디스크/NTFS</span>
+    $STANDARD_INFORMATION vs $FILE_NAME: 8개 타임스탬프로 timestomp 잡기
+  </a>
+  <a class="related-item" href="./ntfs-log-tracker.html">
+    <span class="rel-id">FOR-0026 · 디스크/NTFS</span>
+    NTFS Log Tracker로 $LogFile·$UsnJrnl·$MFT 한 번에 묶어 보기
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./mft-basics.html"><span class="rel-id">← FOR-0021</span>$MFT 기본 구조와 포렌식 활용</a>
+<a class="related-item" href="./mft-macb.html"><span class="rel-id">FOR-0023 →</span>MFT MACB 시간 해석: 복사·이동·다운로드·압축해제 구분법</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-파서-선택">1단계 — 파서 선택</a></li>
+<li class="toc-l3"><a href="#2단계-헤더를-먼저-읽는다">2단계 — 헤더를 먼저 읽는다</a></li>
+<li class="toc-l3"><a href="#3단계-레시피">3단계 — 레시피</a></li>
+<li class="toc-l3"><a href="#4단계-ripgrep-awk-powershell이-느릴-때">4단계 — ripgrep / awk (PowerShell이 느릴 때)</a></li>
+<li class="toc-l3"><a href="#5단계-parententrynumber로-경로-복원">5단계 — ParentEntryNumber로 경로 복원</a></li>
+<li class="toc-l3"><a href="#6단계-timeline-explorer">6단계 — Timeline Explorer</a></li>
+<li class="toc-l3"><a href="#7단계-대용량-csv">7단계 — 대용량 CSV</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l3"><a href="#mftecmd-csv">MFTECmd CSV</a></li>
+<li class="toc-l3"><a href="#analyzemft-csv">analyzeMFT CSV</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 03:39 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

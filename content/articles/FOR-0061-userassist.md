@@ -19,6 +19,7 @@ wireshark_filters: []
 tshark_fields: []
 log_fields: ["Run Count", "Focus Count", "Focus Time", "Last Executed"]
 file_formats: ["regf"]
+primary_terms: ["UserAssist", "ROT13", "실행 횟수", "run count", "rla"]
 keywords: ["UserAssist", "실행 횟수", "run count", "ROT13", "NTUSER.DAT", "프로그램 실행", "GUI 실행", "마지막 실행 시간"]
 aliases: ["userassist", "유저어시스트", "프로그램 실행", "실행 흔적", "몇 번 실행했는지", "누가 무엇을 실행했나", "실행 횟수 확인"]
 symptom_keywords: ["프로그램을 실행했는지 알고 싶다", "실행 횟수가 필요하다", "언제 실행했는지", "사용자가 직접 켰는지", "rot13으로 보인다", "레지스트리 값이 암호처럼 보인다"]
@@ -69,7 +70,7 @@ RegistryExplorer는 이 키에 전용 플러그인이 있어 하단 패널에 **
 `NTUSER.DAT`은 실행 중인 시스템에서 잠겨 있고, 트랜잭션 로그(`NTUSER.DAT.LOG1`, `.LOG2`)에 최신 변경이 남아 있을 수 있다.
 
 ```powershell
-REM 트랜잭션 로그를 hive에 반영(replay) — 최신 값을 놓치지 않으려면 필수
+# 트랜잭션 로그를 hive에 반영(replay) — 최신 값을 놓치지 않으려면 필수
 rla.exe -f "C:\case\NTUSER.DAT" --out "C:\case\clean"
 ```
 
@@ -196,17 +197,17 @@ UserAssist에서 프로그램 이름과 시각을 얻었다면 그 값으로 다
 같은 "실행" 사실을 최소 두 곳에서 확인한다.
 
 ```powershell
-REM 1) UserAssist — 사용자가 직접 실행했는가 + 횟수
+# 1) UserAssist — 사용자가 직접 실행했는가 + 횟수
 rip.exe -r NTUSER.DAT -p userassist | Select-String 'dump_tool'
 
-REM 2) Prefetch — 실행 사실 + 최근 실행 시각 8개 + 로드한 파일
-REM (WinPrefetchView로 열거나 PECmd 사용)
+# 2) Prefetch — 실행 사실 + 최근 실행 시각 8개 + 로드한 파일
+# (WinPrefetchView로 열거나 PECmd 사용)
 PECmd.exe -f "C:\case\Prefetch\DUMP_TOOL.EXE-1A2B3C4D.pf"
 
-REM 3) Amcache — 파일 해시와 최초 등록
+# 3) Amcache — 파일 해시와 최초 등록
 rip.exe -r Amcache.hve -p amcache | Select-String 'dump_tool'
 
-REM 4) $MFT — 파일이 언제 디스크에 생겼는가
+# 4) $MFT — 파일이 언제 디스크에 생겼는가
 Import-Csv mft.csv | Where-Object { $_.FileName -like '*dump_tool*' }
 ```
 

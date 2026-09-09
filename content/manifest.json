@@ -1,7 +1,7 @@
 {
   "target": 300,
-  "count": 11,
-  "generated_kst": "2026-09-10 02:32 KST",
+  "count": 50,
+  "generated_kst": "2026-09-10 03:39 KST",
   "entries": [
     {
       "id": "FOR-0001",
@@ -32,6 +32,190 @@
         "SRC-014"
       ],
       "file": "content/articles/FOR-0001-30sec-triage.md"
+    },
+    {
+      "id": "FOR-0016",
+      "title": "FTK Imager로 디스크 이미지 열고 필요한 artifact만 꺼내기",
+      "slug": "ftk-imager-open-image",
+      "category": "디스크/NTFS",
+      "type": "guide",
+      "difficulty": "basic",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "FTK Imager",
+        "Arsenal Image Mounter",
+        "HxD",
+        "HashCalc"
+      ],
+      "artifact": [
+        "E01",
+        "RAW",
+        "AD1",
+        "$MFT",
+        "$LogFile",
+        "$UsnJrnl",
+        "unallocated space",
+        "$OrphanFiles"
+      ],
+      "protocols": [],
+      "regex_patterns": [],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-005",
+        "SRC-004"
+      ],
+      "file": "content/articles/FOR-0016-ftk-imager-open-image.md"
+    },
+    {
+      "id": "FOR-0017",
+      "title": "Arsenal Image Mounter로 이미지를 실제 디스크처럼 마운트하기",
+      "slug": "arsenal-image-mounter",
+      "category": "디스크/NTFS",
+      "type": "guide",
+      "difficulty": "basic",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "Arsenal Image Mounter",
+        "FTK Imager",
+        "RegistryExplorer",
+        "KAPE",
+        "EvtxECmd"
+      ],
+      "artifact": [
+        "E01",
+        "RAW",
+        "VHD",
+        "VHDX",
+        "VMDK",
+        "VDI",
+        "mounted volume"
+      ],
+      "protocols": [],
+      "regex_patterns": [],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-005",
+        "SRC-004"
+      ],
+      "file": "content/articles/FOR-0017-arsenal-image-mounter.md"
+    },
+    {
+      "id": "FOR-0018",
+      "title": "Autopsy로 이미지 ingest 시작하고 결과 트리 읽기",
+      "slug": "autopsy-ingest",
+      "category": "디스크/NTFS",
+      "type": "guide",
+      "difficulty": "basic",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "Autopsy",
+        "Sleuth Kit",
+        "PhotoRec",
+        "FTK Imager",
+        "Arsenal Image Mounter"
+      ],
+      "artifact": [
+        "disk image",
+        "Extracted Content",
+        "Keyword Hits",
+        "Deleted Files",
+        "unallocated space",
+        "Timeline"
+      ],
+      "protocols": [],
+      "regex_patterns": [],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-005",
+        "SRC-004"
+      ],
+      "file": "content/articles/FOR-0018-autopsy-ingest.md"
+    },
+    {
+      "id": "FOR-0019",
+      "title": "MBR과 GPT 파티션 테이블 직접 읽기",
+      "slug": "mbr-gpt",
+      "category": "디스크/NTFS",
+      "type": "guide",
+      "difficulty": "intermediate",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "HxD",
+        "Sleuth Kit",
+        "FTK Imager",
+        "Arsenal Image Mounter",
+        "xxd",
+        "fdisk",
+        "gdisk"
+      ],
+      "artifact": [
+        "MBR",
+        "GPT",
+        "protective MBR",
+        "partition table",
+        "LBA",
+        "EFI PART"
+      ],
+      "protocols": [],
+      "regex_patterns": [],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-005"
+      ],
+      "file": "content/articles/FOR-0019-mbr-gpt.md"
+    },
+    {
+      "id": "FOR-0020",
+      "title": "NTFS 핵심 구조: 부트섹터 오프셋부터 속성·data run까지",
+      "slug": "ntfs-structure",
+      "category": "디스크/NTFS",
+      "type": "reference",
+      "difficulty": "basic",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "HxD",
+        "Sleuth Kit",
+        "FTK Imager",
+        "Arsenal Image Mounter",
+        "Autopsy"
+      ],
+      "artifact": [
+        "$Boot",
+        "VBR",
+        "Volume Boot Record",
+        "cluster",
+        "data run",
+        "Update Sequence Array",
+        "$Extend",
+        "ADS",
+        "$AttrDef",
+        "$UpCase",
+        "backup boot sector"
+      ],
+      "protocols": [],
+      "regex_patterns": [],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-005",
+        "SRC-032",
+        "SRC-081"
+      ],
+      "file": "content/articles/FOR-0020-ntfs-structure.md"
     },
     {
       "id": "FOR-0021",
@@ -70,6 +254,207 @@
         "SRC-004"
       ],
       "file": "content/articles/FOR-0021-mft-basics.md"
+    },
+    {
+      "id": "FOR-0022",
+      "title": "analyzeMFT / MFTECmd CSV로 $MFT 필터링하기",
+      "slug": "analyzemft-csv",
+      "category": "디스크/NTFS",
+      "type": "guide",
+      "difficulty": "basic",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "analyzeMFT",
+        "MFTECmd",
+        "Timeline Explorer",
+        "PowerShell",
+        "ripgrep",
+        "awk",
+        "sqlite3",
+        "FTK Imager"
+      ],
+      "artifact": [
+        "$MFT",
+        "MFT CSV",
+        "MFT record",
+        "bodyfile"
+      ],
+      "protocols": [],
+      "regex_patterns": [
+        "\\.(zip|7z|rar|exe|ps1|docx|xlsx)$",
+        "^2026-03-14"
+      ],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-005",
+        "SRC-004",
+        "SRC-014"
+      ],
+      "file": "content/articles/FOR-0022-analyzemft-csv.md"
+    },
+    {
+      "id": "FOR-0023",
+      "title": "MFT MACB 시간 해석: 복사·이동·다운로드·압축해제 구분법",
+      "slug": "mft-macb",
+      "category": "디스크/NTFS",
+      "type": "guide",
+      "difficulty": "intermediate",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "MFTECmd",
+        "analyzeMFT",
+        "mactime",
+        "Sleuth Kit",
+        "DCode",
+        "Timeline Explorer",
+        "PowerShell",
+        "fsutil"
+      ],
+      "artifact": [
+        "MACB",
+        "$STANDARD_INFORMATION",
+        "$FILE_NAME",
+        "FILETIME",
+        "bodyfile",
+        "Zone.Identifier"
+      ],
+      "protocols": [],
+      "regex_patterns": [],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-005",
+        "SRC-014",
+        "SRC-004"
+      ],
+      "file": "content/articles/FOR-0023-mft-macb.md"
+    },
+    {
+      "id": "FOR-0024",
+      "title": "$STANDARD_INFORMATION vs $FILE_NAME: 8개 타임스탬프로 timestomp 잡기",
+      "slug": "si-vs-fn-timestamps",
+      "category": "디스크/NTFS",
+      "type": "guide",
+      "difficulty": "intermediate",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "MFTECmd",
+        "analyzeMFT",
+        "Sleuth Kit",
+        "Timeline Explorer",
+        "PowerShell"
+      ],
+      "artifact": [
+        "$STANDARD_INFORMATION",
+        "$FILE_NAME",
+        "0x10",
+        "0x30",
+        "timestomp",
+        "$INDEX_ROOT",
+        "$INDEX_ALLOCATION",
+        "INDX"
+      ],
+      "protocols": [],
+      "regex_patterns": [
+        "\\.0000000$",
+        "\\.000$"
+      ],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-005",
+        "SRC-014",
+        "SRC-086"
+      ],
+      "file": "content/articles/FOR-0024-si-vs-fn-timestamps.md"
+    },
+    {
+      "id": "FOR-0025",
+      "title": "$LogFile 기본: NTFS 트랜잭션 로그의 RSTR/RCRD와 redo·undo",
+      "slug": "logfile-basics",
+      "category": "디스크/NTFS",
+      "type": "reference",
+      "difficulty": "basic",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "NTFS Log Tracker",
+        "FTK Imager",
+        "Sleuth Kit",
+        "Arsenal Image Mounter",
+        "HxD",
+        "Timeline Explorer",
+        "chkdsk"
+      ],
+      "artifact": [
+        "$LogFile",
+        "RSTR",
+        "RCRD",
+        "LSN",
+        "redo",
+        "undo",
+        "restart area",
+        "log record",
+        "transaction"
+      ],
+      "protocols": [],
+      "regex_patterns": [],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-005",
+        "SRC-013",
+        "SRC-032"
+      ],
+      "file": "content/articles/FOR-0025-logfile-basics.md"
+    },
+    {
+      "id": "FOR-0026",
+      "title": "NTFS Log Tracker로 $LogFile·$UsnJrnl·$MFT 한 번에 묶어 보기",
+      "slug": "ntfs-log-tracker",
+      "category": "디스크/NTFS",
+      "type": "guide",
+      "difficulty": "intermediate",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "NTFS Log Tracker",
+        "MFTECmd",
+        "Timeline Explorer",
+        "FTK Imager",
+        "Arsenal Image Mounter",
+        "sqlite3",
+        "DB Browser for SQLite"
+      ],
+      "artifact": [
+        "$LogFile",
+        "$UsnJrnl",
+        "$J",
+        "$MFT",
+        "$I30",
+        "INDX",
+        "LSN",
+        "USN"
+      ],
+      "protocols": [],
+      "regex_patterns": [],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-005",
+        "SRC-013",
+        "SRC-004"
+      ],
+      "file": "content/articles/FOR-0026-ntfs-log-tracker.md"
     },
     {
       "id": "FOR-0027",
@@ -111,6 +496,1169 @@
         "SRC-014"
       ],
       "file": "content/articles/FOR-0027-usnjrnl-basics.md"
+    },
+    {
+      "id": "FOR-0028",
+      "title": "USN_REASON 플래그 조합으로 실제 행위 판정하기 (삭제·이동·복사·timestomp 구분)",
+      "slug": "usn-reason-flags",
+      "category": "디스크/NTFS",
+      "type": "guide",
+      "difficulty": "intermediate",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "MFTECmd",
+        "NTFS Log Tracker",
+        "Timeline Explorer",
+        "PowerShell"
+      ],
+      "artifact": [
+        "USN_REASON",
+        "UpdateReasons",
+        "$J",
+        "$UsnJrnl",
+        "USN_RECORD",
+        "Usn"
+      ],
+      "protocols": [],
+      "regex_patterns": [
+        "RenameOldName\\|RenameNewName",
+        "^BasicInfoChange(\\|Close)?$",
+        "FileCreate.*DataExtend",
+        "StreamChange"
+      ],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-013",
+        "SRC-004",
+        "SRC-086"
+      ],
+      "file": "content/articles/FOR-0028-usn-reason-flags.md"
+    },
+    {
+      "id": "FOR-0029",
+      "title": "$LogFile과 $UsnJrnl 교차검증: 한쪽에만 기록이 있을 때 무엇을 믿나",
+      "slug": "logfile-usnjrnl-crosscheck",
+      "category": "디스크/NTFS",
+      "type": "guide",
+      "difficulty": "intermediate",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "NTFS Log Tracker",
+        "MFTECmd",
+        "FTK Imager",
+        "Sleuth Kit",
+        "Timeline Explorer",
+        "fsutil"
+      ],
+      "artifact": [
+        "$LogFile",
+        "$UsnJrnl",
+        "$J",
+        "$MFT",
+        "LSN",
+        "LFS",
+        "$Extend"
+      ],
+      "protocols": [],
+      "regex_patterns": [
+        "InitializeFileRecordSegment",
+        "DeallocateFileRecordSegment",
+        "AddIndexEntry(Root|Allocation)",
+        "DeleteIndexEntry(Root|Allocation)"
+      ],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-013",
+        "SRC-005",
+        "SRC-032"
+      ],
+      "file": "content/articles/FOR-0029-logfile-usnjrnl-crosscheck.md"
+    },
+    {
+      "id": "FOR-0030",
+      "title": "$Recycle.Bin의 $I / $R 파일: 원래 경로·원본 크기·삭제 시각 복원",
+      "slug": "recycle-bin-i-r",
+      "category": "디스크/NTFS",
+      "type": "guide",
+      "difficulty": "basic",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "RBCmd",
+        "FTK Imager",
+        "HxD",
+        "Autopsy",
+        "Timeline Explorer",
+        "DCode"
+      ],
+      "artifact": [
+        "$Recycle.Bin",
+        "$I",
+        "$R",
+        "INFO2",
+        "RECYCLER",
+        "SID"
+      ],
+      "protocols": [],
+      "regex_patterns": [
+        "^\\$I[A-Z0-9]{6}\\.",
+        "^\\$R[A-Z0-9]{6}\\.",
+        "S-1-5-21-\\d+-\\d+-\\d+-\\d+"
+      ],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-004",
+        "SRC-014",
+        "SRC-019"
+      ],
+      "file": "content/articles/FOR-0030-recycle-bin-i-r.md"
+    },
+    {
+      "id": "FOR-0031",
+      "title": "RBCmd로 $Recycle.Bin 일괄 파싱: -f / -d / --csv 와 $R 복원",
+      "slug": "rbcmd",
+      "category": "디스크/NTFS",
+      "type": "guide",
+      "difficulty": "basic",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "RBCmd",
+        "Timeline Explorer",
+        "PowerShell",
+        "RegistryExplorer",
+        "FTK Imager"
+      ],
+      "artifact": [
+        "$Recycle.Bin",
+        "$I",
+        "$R",
+        "INFO2",
+        "SID"
+      ],
+      "protocols": [],
+      "regex_patterns": [
+        "\\$I[A-Za-z0-9]{6}\\.",
+        "S-1-5-21-[\\d-]+",
+        "\\.(xlsx|docx|pdf|7z|zip)$"
+      ],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-004",
+        "SRC-019",
+        "SRC-014"
+      ],
+      "file": "content/articles/FOR-0031-rbcmd.md"
+    },
+    {
+      "id": "FOR-0032",
+      "title": "삭제된 파일이 휴지통에 없을 때: 원인 8가지와 확인 순서",
+      "slug": "deleted-file-not-in-recycle-bin",
+      "category": "디스크/NTFS",
+      "type": "troubleshooting",
+      "difficulty": "intermediate",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "MFTECmd",
+        "RBCmd",
+        "NTFS Log Tracker",
+        "photorec",
+        "foremost",
+        "WinPrefetchView",
+        "RegistryExplorer",
+        "Sleuth Kit"
+      ],
+      "artifact": [
+        "$Recycle.Bin",
+        "$UsnJrnl",
+        "$J",
+        "$LogFile",
+        "$MFT",
+        "Prefetch",
+        "NukeOnDelete"
+      ],
+      "protocols": [],
+      "regex_patterns": [
+        "File_?Delete",
+        "sdelete|cipher|bleachbit|ccleaner|eraser",
+        "Remove-Item|del\\s|rd\\s+/s"
+      ],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-013",
+        "SRC-005",
+        "SRC-086"
+      ],
+      "file": "content/articles/FOR-0032-deleted-file-not-in-recycle-bin.md"
+    },
+    {
+      "id": "FOR-0033",
+      "title": "비할당 영역(Unallocated Space) 추출과 카빙",
+      "slug": "unallocated-space",
+      "category": "디스크/NTFS",
+      "type": "guide",
+      "difficulty": "intermediate",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "Sleuth Kit",
+        "FTK Imager",
+        "Autopsy",
+        "foremost",
+        "scalpel",
+        "photorec",
+        "bulk_extractor",
+        "strings",
+        "binwalk"
+      ],
+      "artifact": [
+        "unallocated space",
+        "$Bitmap",
+        "$Unalloc",
+        "cluster",
+        "deleted file"
+      ],
+      "protocols": [],
+      "regex_patterns": [],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-032",
+        "SRC-005",
+        "SRC-035"
+      ],
+      "file": "content/articles/FOR-0033-unallocated-space.md"
+    },
+    {
+      "id": "FOR-0034",
+      "title": "File Slack(RAM slack / drive slack) 계산과 추출",
+      "slug": "file-slack",
+      "category": "디스크/NTFS",
+      "type": "guide",
+      "difficulty": "intermediate",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "Sleuth Kit",
+        "HxD",
+        "FTK Imager",
+        "Autopsy",
+        "strings",
+        "MFTECmd"
+      ],
+      "artifact": [
+        "file slack",
+        "RAM slack",
+        "drive slack",
+        "cluster",
+        "$DATA",
+        "resident"
+      ],
+      "protocols": [],
+      "regex_patterns": [],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-032",
+        "SRC-005",
+        "SRC-088"
+      ],
+      "file": "content/articles/FOR-0034-file-slack.md"
+    },
+    {
+      "id": "FOR-0035",
+      "title": "ADS(Alternate Data Stream)와 Zone.Identifier로 다운로드 출처 찾기",
+      "slug": "alternate-data-streams",
+      "category": "디스크/NTFS",
+      "type": "guide",
+      "difficulty": "intermediate",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "PowerShell",
+        "Sleuth Kit",
+        "MFTECmd",
+        "FTK Imager",
+        "Autopsy",
+        "HxD",
+        "streams.exe"
+      ],
+      "artifact": [
+        "ADS",
+        "Alternate Data Stream",
+        "Zone.Identifier",
+        "$DATA",
+        "MOTW",
+        "HasAds"
+      ],
+      "protocols": [],
+      "regex_patterns": [
+        "HostUrl=(.*)",
+        "ZoneId=([0-4])"
+      ],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-081",
+        "SRC-005",
+        "SRC-004"
+      ],
+      "file": "content/articles/FOR-0035-alternate-data-streams.md"
+    },
+    {
+      "id": "FOR-0036",
+      "title": "확장자 위조 파일 대량 스캔: 시그니처와 확장자 불일치 찾기",
+      "slug": "signature-extension-mismatch",
+      "category": "디스크/NTFS",
+      "type": "guide",
+      "difficulty": "basic",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "file",
+        "Autopsy",
+        "Detect It Easy",
+        "TrID",
+        "binwalk",
+        "7-Zip",
+        "PowerShell",
+        "Python",
+        "Sleuth Kit",
+        "MFTECmd"
+      ],
+      "artifact": [
+        "file signature",
+        "magic byte",
+        "MIME type",
+        "Extension Mismatch Detected",
+        "footer"
+      ],
+      "protocols": [],
+      "regex_patterns": [
+        "\\.(jpg|png|gif)$"
+      ],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-089",
+        "SRC-033",
+        "SRC-042"
+      ],
+      "file": "content/articles/FOR-0036-signature-extension-mismatch.md"
+    },
+    {
+      "id": "FOR-0037",
+      "title": "HxD로 헤더 확인·오프셋 점프·손상 시그니처 복구",
+      "slug": "hxd-header-check",
+      "category": "디스크/NTFS",
+      "type": "guide",
+      "difficulty": "basic",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "HxD",
+        "xxd",
+        "PowerShell",
+        "Detect It Easy",
+        "Sleuth Kit",
+        "FTK Imager"
+      ],
+      "artifact": [
+        "file header",
+        "magic byte",
+        "FILETIME",
+        "offset",
+        "MFT record"
+      ],
+      "protocols": [],
+      "regex_patterns": [],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-088",
+        "SRC-089",
+        "SRC-014"
+      ],
+      "file": "content/articles/FOR-0037-hxd-header-check.md"
+    },
+    {
+      "id": "FOR-0038",
+      "title": "Timestomp 탐지: $SI/$FN 불일치부터 나노초 0까지 7가지 지표",
+      "slug": "timestomp-detection",
+      "category": "디스크/NTFS",
+      "type": "guide",
+      "difficulty": "intermediate",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "MFTECmd",
+        "analyzeMFT",
+        "Timeline Explorer",
+        "NTFS Log Tracker",
+        "RegistryExplorer",
+        "WinPrefetchView",
+        "Autopsy",
+        "HxD"
+      ],
+      "artifact": [
+        "$STANDARD_INFORMATION",
+        "$FILE_NAME",
+        "$MFT",
+        "$UsnJrnl",
+        "MACB",
+        "EntryNumber",
+        "Prefetch",
+        "Amcache"
+      ],
+      "protocols": [],
+      "regex_patterns": [
+        "\\.0000000$",
+        "\\.000000$"
+      ],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-005",
+        "SRC-013",
+        "SRC-086"
+      ],
+      "file": "content/articles/FOR-0038-timestomp-detection.md"
+    },
+    {
+      "id": "FOR-0039",
+      "title": "파일명 변경 흔적 추적: $UsnJrnl RENAME 쌍으로 원래 이름 찾기",
+      "slug": "filename-change-traces",
+      "category": "디스크/NTFS",
+      "type": "guide",
+      "difficulty": "intermediate",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "MFTECmd",
+        "NTFS Log Tracker",
+        "LECmd",
+        "JLECmd",
+        "RegistryExplorer",
+        "WinPrefetchView",
+        "Timeline Explorer",
+        "sqlite3",
+        "Autopsy"
+      ],
+      "artifact": [
+        "$UsnJrnl",
+        "$J",
+        "$LogFile",
+        "$FILE_NAME",
+        "LNK",
+        "Jump List",
+        "RecentDocs",
+        "Prefetch",
+        "$I"
+      ],
+      "protocols": [],
+      "regex_patterns": [
+        "Rename(Old|New)Name"
+      ],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-013",
+        "SRC-005",
+        "SRC-029"
+      ],
+      "file": "content/articles/FOR-0039-filename-change-traces.md"
+    },
+    {
+      "id": "FOR-0040",
+      "title": "Sleuth Kit mmls 옵션과 오프셋 파이프라인",
+      "slug": "tsk-mmls",
+      "category": "디스크/NTFS",
+      "type": "guide",
+      "difficulty": "basic",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "Sleuth Kit",
+        "mmls",
+        "fsstat",
+        "fls",
+        "icat",
+        "ewfmount",
+        "ewfinfo",
+        "libewf",
+        "Autopsy"
+      ],
+      "artifact": [
+        "volume system",
+        "partition table",
+        "unallocated space",
+        "metadata volume",
+        "Safety Table"
+      ],
+      "protocols": [],
+      "regex_patterns": [],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-032",
+        "SRC-034"
+      ],
+      "file": "content/articles/FOR-0040-tsk-mmls.md"
+    },
+    {
+      "id": "FOR-0041",
+      "title": "fls로 파일 목록·삭제 항목·bodyfile 뽑기",
+      "slug": "tsk-fls",
+      "category": "디스크/NTFS",
+      "type": "guide",
+      "difficulty": "basic",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "Sleuth Kit",
+        "fls",
+        "mactime",
+        "icat",
+        "istat",
+        "mmls",
+        "grep",
+        "awk",
+        "Timeline Explorer"
+      ],
+      "artifact": [
+        "directory entry",
+        "metadata address",
+        "deleted file",
+        "bodyfile",
+        "$OrphanFiles",
+        "MACB"
+      ],
+      "protocols": [],
+      "regex_patterns": [
+        "[0-9]+-[0-9]+-[0-9]+"
+      ],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-032",
+        "SRC-005"
+      ],
+      "file": "content/articles/FOR-0041-tsk-fls.md"
+    },
+    {
+      "id": "FOR-0042",
+      "title": "icat으로 파일 내용·ADS·삭제 파일 추출",
+      "slug": "tsk-icat",
+      "category": "디스크/NTFS",
+      "type": "guide",
+      "difficulty": "basic",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "Sleuth Kit",
+        "icat",
+        "istat",
+        "fls",
+        "tsk_recover",
+        "file",
+        "strings",
+        "md5sum",
+        "xxd"
+      ],
+      "artifact": [
+        "metadata address",
+        "$DATA",
+        "alternate data stream",
+        "Zone.Identifier",
+        "file slack",
+        "deleted file"
+      ],
+      "protocols": [],
+      "regex_patterns": [
+        "[0-9]+-[0-9]+-[0-9]+"
+      ],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-032",
+        "SRC-005",
+        "SRC-081"
+      ],
+      "file": "content/articles/FOR-0042-tsk-icat.md"
+    },
+    {
+      "id": "FOR-0043",
+      "title": "fsstat 출력 필드 레퍼런스 (NTFS/FAT/ext)",
+      "slug": "tsk-fsstat",
+      "category": "디스크/NTFS",
+      "type": "reference",
+      "difficulty": "basic",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "Sleuth Kit",
+        "fsstat",
+        "mmls",
+        "fls",
+        "icat",
+        "istat",
+        "HxD"
+      ],
+      "artifact": [
+        "volume boot record",
+        "$MFT",
+        "$MFTMirr",
+        "cluster",
+        "sector",
+        "$AttrDef",
+        "superblock"
+      ],
+      "protocols": [],
+      "regex_patterns": [],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-032",
+        "SRC-005"
+      ],
+      "file": "content/articles/FOR-0043-tsk-fsstat.md"
+    },
+    {
+      "id": "FOR-0044",
+      "title": "Autopsy Timeline로 시각 축 좁히기 (Counts/Details/List)",
+      "slug": "autopsy-timeline",
+      "category": "디스크/NTFS",
+      "type": "guide",
+      "difficulty": "intermediate",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "Autopsy",
+        "Sleuth Kit",
+        "MFTECmd",
+        "EvtxECmd",
+        "Timeline Explorer",
+        "mactime"
+      ],
+      "artifact": [
+        "Timeline",
+        "Counts View",
+        "Details View",
+        "List View",
+        "event cluster",
+        "Histogram"
+      ],
+      "protocols": [],
+      "regex_patterns": [],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-033",
+        "SRC-005",
+        "SRC-004"
+      ],
+      "file": "content/articles/FOR-0044-autopsy-timeline.md"
+    },
+    {
+      "id": "FOR-0045",
+      "title": "파일 카빙 전략: 언제 카빙하고 언제 하지 않는가",
+      "slug": "carving-strategy",
+      "category": "디스크/NTFS",
+      "type": "guide",
+      "difficulty": "intermediate",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "Sleuth Kit",
+        "blkls",
+        "blkcalc",
+        "foremost",
+        "scalpel",
+        "photorec",
+        "binwalk",
+        "bulk_extractor",
+        "Autopsy",
+        "file",
+        "md5sum"
+      ],
+      "artifact": [
+        "unallocated space",
+        "file slack",
+        "cluster alignment",
+        "fragmentation",
+        "file signature",
+        "carved file"
+      ],
+      "protocols": [],
+      "regex_patterns": [],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-035",
+        "SRC-036",
+        "SRC-032",
+        "SRC-037"
+      ],
+      "file": "content/articles/FOR-0045-carving-strategy.md"
+    },
+    {
+      "id": "FOR-0046",
+      "title": "foremost로 파일 카빙하기: 옵션, foremost.conf, audit.txt",
+      "slug": "foremost",
+      "category": "디스크/NTFS",
+      "type": "guide",
+      "difficulty": "basic",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "foremost",
+        "scalpel",
+        "Sleuth Kit",
+        "blkls",
+        "blkcalc",
+        "file",
+        "binwalk"
+      ],
+      "artifact": [
+        "unallocated space",
+        "file signature",
+        "header",
+        "footer",
+        "audit.txt"
+      ],
+      "protocols": [],
+      "regex_patterns": [],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-035",
+        "SRC-032",
+        "SRC-089"
+      ],
+      "file": "content/articles/FOR-0046-foremost.md"
+    },
+    {
+      "id": "FOR-0047",
+      "title": "PhotoRec 사용법: TUI 절차, File Opt, recup_dir 해석",
+      "slug": "photorec",
+      "category": "디스크/NTFS",
+      "type": "guide",
+      "difficulty": "basic",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "PhotoRec",
+        "QPhotoRec",
+        "TestDisk",
+        "foremost",
+        "Sleuth Kit",
+        "exiftool",
+        "file"
+      ],
+      "artifact": [
+        "unallocated space",
+        "recup_dir",
+        "file signature",
+        "photorec.log"
+      ],
+      "protocols": [],
+      "regex_patterns": [],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-036",
+        "SRC-035",
+        "SRC-032"
+      ],
+      "file": "content/articles/FOR-0047-photorec.md"
+    },
+    {
+      "id": "FOR-0048",
+      "title": "파티션 오프셋이 안 맞을 때: 섹터/바이트, 4Kn, 볼륨 단독 이미지",
+      "slug": "partition-offset-problems",
+      "category": "디스크/NTFS",
+      "type": "troubleshooting",
+      "difficulty": "intermediate",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "Sleuth Kit",
+        "mmls",
+        "fsstat",
+        "losetup",
+        "kpartx",
+        "mount",
+        "xxd",
+        "HxD",
+        "ewfmount",
+        "ewfinfo",
+        "testdisk",
+        "Arsenal Image Mounter",
+        "FTK Imager"
+      ],
+      "artifact": [
+        "partition offset",
+        "sector size",
+        "4Kn",
+        "volume image",
+        "EWF"
+      ],
+      "protocols": [],
+      "regex_patterns": [],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-032",
+        "SRC-034",
+        "SRC-005"
+      ],
+      "file": "content/articles/FOR-0048-partition-offset-problems.md"
+    },
+    {
+      "id": "FOR-0049",
+      "title": "삭제 파일 복구 실전: 휴지통 → $UsnJrnl → $MFT → 카빙 판정 트리",
+      "slug": "deleted-file-recovery-walkthrough",
+      "category": "디스크/NTFS",
+      "type": "guide",
+      "difficulty": "intermediate",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "Sleuth Kit",
+        "icat",
+        "istat",
+        "blkstat",
+        "ifind",
+        "MFTECmd",
+        "RBCmd",
+        "FTK Imager",
+        "foremost",
+        "PhotoRec",
+        "HxD"
+      ],
+      "artifact": [
+        "$Recycle.Bin",
+        "$I",
+        "$R",
+        "$UsnJrnl",
+        "$MFT",
+        "unallocated space",
+        "slack space",
+        "data run"
+      ],
+      "protocols": [],
+      "regex_patterns": [
+        "flag\\{[^}]*\\}"
+      ],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-005",
+        "SRC-013",
+        "SRC-032",
+        "SRC-035"
+      ],
+      "file": "content/articles/FOR-0049-deleted-file-recovery-walkthrough.md"
+    },
+    {
+      "id": "FOR-0050",
+      "title": "NTFS artifact 종합 타임라인 만들기: $MFT·$J·EVTX·Prefetch를 한 축에",
+      "slug": "ntfs-artifact-timeline",
+      "category": "디스크/NTFS",
+      "type": "guide",
+      "difficulty": "intermediate",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "MFTECmd",
+        "EvtxECmd",
+        "PECmd",
+        "RBCmd",
+        "LECmd",
+        "Timeline Explorer",
+        "NTFS Log Tracker",
+        "Sleuth Kit",
+        "mactime"
+      ],
+      "artifact": [
+        "$MFT",
+        "$UsnJrnl",
+        "$LogFile",
+        "$Recycle.Bin",
+        "LNK",
+        "Prefetch",
+        "EVTX",
+        "MACB",
+        "bodyfile"
+      ],
+      "protocols": [],
+      "regex_patterns": [],
+      "wireshark_filters": [],
+      "event_ids": [
+        "1102",
+        "104",
+        "4616"
+      ],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-005",
+        "SRC-013",
+        "SRC-004",
+        "SRC-032"
+      ],
+      "file": "content/articles/FOR-0050-ntfs-artifact-timeline.md"
+    },
+    {
+      "id": "FOR-0051",
+      "title": "Registry hive 전체 지도: 루트키와 디스크상 파일 대응표",
+      "slug": "registry-hive-map",
+      "category": "Registry",
+      "type": "reference",
+      "difficulty": "basic",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "RegistryExplorer",
+        "RegRipper",
+        "rla",
+        "FTK Imager",
+        "KAPE",
+        "HxD",
+        "xxd / hexdump"
+      ],
+      "artifact": [
+        "Registry hive",
+        "SAM",
+        "SYSTEM",
+        "SOFTWARE",
+        "SECURITY",
+        "DEFAULT",
+        "NTUSER.DAT",
+        "UsrClass.dat",
+        "Amcache.hve",
+        "regf"
+      ],
+      "protocols": [],
+      "regex_patterns": [],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-017",
+        "SRC-027",
+        "SRC-004"
+      ],
+      "file": "content/articles/FOR-0051-registry-hive-map.md"
+    },
+    {
+      "id": "FOR-0052",
+      "title": "SAM hive로 로컬 사용자 계정·RID·마지막 로그온 분석",
+      "slug": "sam-user-accounts",
+      "category": "Registry",
+      "type": "guide",
+      "difficulty": "intermediate",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "RegRipper",
+        "RegistryExplorer",
+        "rla",
+        "FTK Imager",
+        "KAPE"
+      ],
+      "artifact": [
+        "SAM",
+        "RID",
+        "F value",
+        "V value",
+        "SID",
+        "ProfileList"
+      ],
+      "protocols": [],
+      "regex_patterns": [],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-017",
+        "SRC-019",
+        "SRC-004"
+      ],
+      "file": "content/articles/FOR-0052-sam-user-accounts.md"
+    },
+    {
+      "id": "FOR-0053",
+      "title": "SYSTEM hive ControlSet 구조와 Select 키로 활성 세트 판정",
+      "slug": "system-controlset",
+      "category": "Registry",
+      "type": "guide",
+      "difficulty": "intermediate",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "RegistryExplorer",
+        "RegRipper",
+        "rla",
+        "AppCompatCacheParser",
+        "FTK Imager"
+      ],
+      "artifact": [
+        "SYSTEM hive",
+        "Select",
+        "ControlSet001",
+        "ControlSet002",
+        "MountedDevices",
+        "Services",
+        "USBSTOR"
+      ],
+      "protocols": [],
+      "regex_patterns": [],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-017",
+        "SRC-004",
+        "SRC-027"
+      ],
+      "file": "content/articles/FOR-0053-system-controlset.md"
+    },
+    {
+      "id": "FOR-0054",
+      "title": "SYSTEM hive 시간대(TimeZoneInformation)와 UTC/KST 보정",
+      "slug": "system-timezone",
+      "category": "Registry",
+      "type": "guide",
+      "difficulty": "basic",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "RegRipper",
+        "RegistryExplorer",
+        "DCode",
+        "rla"
+      ],
+      "artifact": [
+        "TimeZoneInformation",
+        "SYSTEM hive",
+        "FILETIME",
+        "Bias",
+        "ActiveTimeBias"
+      ],
+      "protocols": [],
+      "regex_patterns": [],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-018",
+        "SRC-014",
+        "SRC-004"
+      ],
+      "file": "content/articles/FOR-0054-system-timezone.md"
+    },
+    {
+      "id": "FOR-0055",
+      "title": "SOFTWARE hive로 설치 프로그램·OS 버전·ProfileList 확인",
+      "slug": "software-installed-programs",
+      "category": "Registry",
+      "type": "guide",
+      "difficulty": "intermediate",
+      "priority": "critical",
+      "status": "verified",
+      "tools": [
+        "RegRipper",
+        "RegistryExplorer",
+        "rla",
+        "FTK Imager",
+        "KAPE"
+      ],
+      "artifact": [
+        "SOFTWARE hive",
+        "Uninstall",
+        "WOW6432Node",
+        "ProfileList",
+        "Windows NT CurrentVersion",
+        "Run"
+      ],
+      "protocols": [],
+      "regex_patterns": [],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-017",
+        "SRC-004",
+        "SRC-014"
+      ],
+      "file": "content/articles/FOR-0055-software-installed-programs.md"
+    },
+    {
+      "id": "FOR-0056",
+      "title": "SECURITY hive 개요: 감사 정책·도메인 SID·LSA Secrets",
+      "slug": "security-hive-overview",
+      "category": "Registry",
+      "type": "reference",
+      "difficulty": "intermediate",
+      "priority": "critical",
+      "status": "draft",
+      "tools": [
+        "RegRipper",
+        "RegistryExplorer",
+        "rla",
+        "FTK Imager",
+        "KAPE"
+      ],
+      "artifact": [
+        "SECURITY hive",
+        "PolAdtEv",
+        "PolAcDmS",
+        "PolPrDmN",
+        "LSA Secrets",
+        "Cache",
+        "NL$"
+      ],
+      "protocols": [],
+      "regex_patterns": [],
+      "wireshark_filters": [],
+      "event_ids": [],
+      "last_verified": "2026-09-10",
+      "source_ids": [
+        "SRC-017",
+        "SRC-019",
+        "SRC-004"
+      ],
+      "file": "content/articles/FOR-0056-security-hive-overview.md"
     },
     {
       "id": "FOR-0061",

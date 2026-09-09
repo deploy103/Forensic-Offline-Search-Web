@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Autopsy로 이미지 ingest 시작하고 결과 트리 읽기 · FOR-0018 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%94%94%EC%8A%A4%ED%81%AC%2FNTFS">디스크/NTFS</a> / FOR-0018
+      </div>
+      <header class="article-head">
+        <h1>Autopsy로 이미지 ingest 시작하고 결과 트리 읽기</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">디스크/NTFS</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>Autopsy는 강력하지만 전체 ingest가 느리므로, 처음에는 File Type Identification / Extension Mismatch Detector / Recent Activity / EXIF 만 켜서 5분 안에 1차 결과를 받고, 키워드 검색과 PhotoRec 카버는 목표가 좁혀진 뒤 2차로 돌린다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Autopsy, Sleuth Kit, PhotoRec, FTK Imager, Arsenal Image Mounter</td></tr>
+<tr><th>artifact</th><td><code>disk image</code> · <code>Extracted Content</code> · <code>Keyword Hits</code> · <code>Deleted Files</code> · <code>unallocated space</code> · <code>Timeline</code></td></tr>
+<tr><th>로그 필드</th><td><code>Name</code> · <code>Location</code> · <code>Modified Time</code> · <code>Created Time</code> · <code>Size</code> · <code>MD5 Hash</code> · <code>Extension</code> · <code>MIME Type</code></td></tr>
+<tr><th>파일 형식</th><td><code>e01</code> · <code>raw</code> · <code>dd</code> · <code>vmdk</code> · <code>vhd</code> · <code>ad1</code></td></tr>
+<tr><th>검색 별칭</th><td>autopsy · 오토프시 · autopsy 사용법 · 이미지 통합 분석 · ingest 모듈 · 키워드 검색 · 카빙 자동 · autopsy 느림</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>Autopsy는 강력하지만 전체 ingest가 느리므로, <strong>처음에는 File Type Identification / Extension Mismatch Detector / Recent Activity / EXIF 만 켜서 5분 안에 1차 결과를 받고</strong>, 키워드 검색과 PhotoRec 카버는 목표가 좁혀진 뒤 2차로 돌린다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>디스크 이미지 전체를 한 화면에서 훑어야 하는 경우</li><li><strong>확장자가 위조된 파일</strong>을 자동으로 찾아야 하는 경우</li><li>삭제 파일 목록과 비할당 영역 카빙을 한 번에 처리하고 싶은 경우</li><li>브라우저·레지스트리·최근문서 등 여러 artifact를 통합 타임라인으로 보고 싶은 경우</li><li>이미지 전체에 키워드(<code>flag{</code>, 사람 이름, 도메인)를 검색해야 하는 경우</li></ul>
+<p>FTK Imager가 &quot;추출&quot;, Arsenal이 &quot;마운트&quot;라면 Autopsy는 <strong>&quot;자동 분석&quot;</strong> 이다. 다만 대회장에서는 시간이 곧 점수이므로 모듈 선택이 실력이 된다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>이미지 크기가 수십~수백 GB이고 <strong>어디를 봐야 할지 지문이 알려주지 않는다</strong> → Autopsy 자동 분석이 유효</li><li>지문이 &quot;숨겨진 파일&quot;, &quot;위조된 확장자&quot;, &quot;삭제된 사진&quot;을 언급 → Extension Mismatch / PhotoRec</li><li>지문이 특정 문자열·계정·도메인을 준다 → Keyword Search</li><li>지문이 &quot;언제 무슨 일이 있었나&quot;를 요구 → Timeline</li></ol>
+<p>반대로 <strong>지문이 특정 artifact를 지목하면 Autopsy를 쓰지 않는다.</strong> <code>$MFT</code>나 EVTX를 원하는 문제는 FTK Imager로 파일만 꺼내 전용 파서에 넘기는 편이 몇 배 빠르다 (<a href="./ftk-imager-open-image.html">FOR-0016</a>).</p>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1. New Case  -&gt; Case Name, Base Directory 지정 &gt; Next &gt; Finish
+2. Add Data Source &gt; Disk Image or VM File &gt; 이미지 경로
+3. Time zone 을 증거물의 시간대로 지정   &lt;- 가장 중요한 한 줄
+4. Configure Ingest Modules:
+     [v] File Type Identification
+     [v] Extension Mismatch Detector
+     [v] Recent Activity
+     [v] EXIF Parser
+     [ ] Keyword Search        &lt;- 1차에서는 끈다 (색인이 오래 걸린다)
+     [ ] PhotoRec Carver       &lt;- 1차에서는 끈다 (매우 오래 걸린다)
+     [ ] Hash Lookup           &lt;- 해시셋이 없으면 의미 없다
+5. Finish -&gt; 우하단 진행률 확인</code></pre></div>
+<p>Time zone 선택을 놓치면 이후 모든 화면의 시각이 어긋난다. <strong>여기서 틀리면 나중에 전부 다시 봐야 한다.</strong></p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-data-source-유형">1단계 — Data Source 유형</h3>
+<div class="table-wrap"><table><thead><tr><th>유형</th><th>대상</th></tr></thead><tbody><tr><td><strong>Disk Image or VM File</strong></td><td><code>.E01</code>, <code>.raw</code>, <code>.dd</code>, <code>.vmdk</code>, <code>.vhd</code>. <strong>CTF에서 거의 항상 이것</strong></td></tr><tr><td>Local Disk</td><td>물리 디스크 직접 (라이브 수집)</td></tr><tr><td>Logical Files</td><td>파일/폴더 집합 (파일시스템 구조 없음)</td></tr><tr><td>Unallocated Space Image File</td><td>비할당 영역만 담은 파일 (카빙 전용)</td></tr></tbody></table></div>
+<p>분할 이미지는 첫 조각만 지정하면 나머지가 자동으로 이어진다.</p>
+<h3 id="2단계-ingest-모듈-선택-무엇이-빠르고-무엇이-느린가">2단계 — Ingest 모듈 선택: 무엇이 빠르고 무엇이 느린가</h3>
+<p><strong>이 표가 이 글의 핵심이다.</strong></p>
+<div class="table-wrap"><table><thead><tr><th>모듈</th><th>속도</th><th>하는 일</th><th>1차에 켜나</th></tr></thead><tbody><tr><td><strong>File Type Identification</strong></td><td>빠름</td><td>매직 바이트로 실제 MIME 판정</td><td><strong>예 (다른 모듈의 전제)</strong></td></tr><tr><td><strong>Extension Mismatch Detector</strong></td><td>빠름</td><td>확장자 ≠ 실제 형식인 파일 목록화</td><td><strong>예</strong></td></tr><tr><td><strong>Recent Activity</strong></td><td>보통</td><td>브라우저·최근문서·설치프로그램·USB 등 자동 추출</td><td><strong>예</strong></td></tr><tr><td><strong>EXIF Parser</strong></td><td>보통</td><td>이미지 메타데이터·GPS 추출</td><td><strong>예</strong></td></tr><tr><td>Embedded File Extractor</td><td>보통</td><td>ZIP/문서 내부 파일 재귀 추출</td><td>상황에 따라</td></tr><tr><td>Email Parser</td><td>보통</td><td>PST/MBOX 파싱</td><td>메일 문제면 예</td></tr><tr><td>Encryption Detection</td><td>빠름</td><td>엔트로피 기반 암호화 후보 탐지</td><td>저렴하므로 켜도 무방</td></tr><tr><td>Interesting Files Identifier</td><td>빠름</td><td>규칙 기반 관심 파일 표시</td><td>켜도 무방</td></tr><tr><td><strong>Hash Lookup</strong></td><td>빠름(해시셋 있을 때)</td><td>NSRL/알려진 악성 해시 대조</td><td>해시셋 없으면 아니오</td></tr><tr><td><strong>Keyword Search</strong></td><td><strong>매우 느림</strong></td><td>전체 텍스트 색인 생성</td><td><strong>아니오 (2차)</strong></td></tr><tr><td><strong>PhotoRec Carver</strong></td><td><strong>매우 느림</strong></td><td>비할당 영역 파일 카빙</td><td><strong>아니오 (2차)</strong></td></tr><tr><td>Plaso</td><td>매우 느림</td><td>초정밀 타임라인</td><td>아니오</td></tr><tr><td>Virtual Machine Extractor</td><td>느림</td><td>이미지 내부의 VM 디스크 추출</td><td>해당 시</td></tr><tr><td>Android/iOS Analyzer</td><td>보통</td><td>모바일 이미지 파싱</td><td>모바일 문제면 예</td></tr><tr><td>YARA</td><td>느림</td><td>규칙 기반 스캔</td><td>규칙이 있을 때</td></tr><tr><td>Data Source Integrity</td><td>빠름</td><td>이미지 해시 계산·검증</td><td>예</td></tr></tbody></table></div>
+<p>1차 조합(위 4~5개)은 수십 GB 이미지에서도 보통 몇 분 안에 끝난다. 여기서 방향이 잡히면 2차로 필요한 무거운 모듈만 추가한다.</p>
+<p><strong>모듈은 나중에 다시 돌릴 수 있다.</strong> 데이터 소스 우클릭 → <code>Run Ingest Modules</code>로 추가 실행하면 되므로 처음부터 다 켜야 한다는 부담을 가질 필요가 없다.</p>
+<h3 id="3단계-결과-트리-읽기-어디에-무엇이-있나">3단계 — 결과 트리 읽기 (어디에 무엇이 있나)</h3>
+<p>좌측 트리 구조와 각 노드의 용도다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">▼ Data Sources
+  ▼ pc01.E01
+    ▼ vol2 (NTFS)
+      ├ $Extend, Users, Windows ...          &lt;- 실제 파일 트리
+      ├ $CarvedFiles                          &lt;- 카버가 복원한 파일
+      ├ $Unalloc                              &lt;- 비할당 영역 블록
+      └ $OrphanFiles                          &lt;- 부모를 잃은 파일 (삭제 흔적)
+▼ Views
+  ├ File Types
+  │   ├ By Extension     (images, videos, archives, documents, executable)
+  │   └ By MIME Type     &lt;- 실제 형식 기준. 위조 파일 찾기에 유용
+  ├ Deleted Files
+  │   ├ File System      &lt;- MFT 에 남은 삭제 파일
+  │   └ All
+  └ File Size
+▼ Results
+  ├ Extracted Content
+  │   ├ Web History / Web Downloads / Web Cookies / Web Search
+  │   ├ Recent Documents
+  │   ├ Installed Programs
+  │   ├ USB Device Attached           &lt;- USB 흔적
+  │   ├ Operating System Information
+  │   ├ Run Programs
+  │   ├ Shell Bags
+  │   ├ Metadata / EXIF Metadata
+  │   └ Encryption Detected
+  ├ Keyword Hits           &lt;- Keyword Search 모듈 결과
+  ├ Hashset Hits
+  ├ E-Mail Messages
+  ├ Interesting Items
+  │   └ Extension Mismatch Detected   &lt;- 확장자 위조 파일
+  └ Accounts
+▼ Tags
+▼ Reports</code></pre></div>
+<p><strong>실전에서 가장 먼저 보는 세 곳:</strong></p>
+<ol><li><code>Results &gt; Interesting Items &gt; Extension Mismatch Detected</code> — 위조된 파일</li><li><code>Results &gt; Extracted Content</code> — 브라우저·USB·최근문서·실행프로그램이 이미 정리되어 있다</li><li><code>Views &gt; Deleted Files</code> — 삭제 파일 목록</li></ol>
+<h3 id="4단계-확장자-위조-파일-찾기">4단계 — 확장자 위조 파일 찾기</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Results &gt; Interesting Items &gt; Extension Mismatch Detected</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Name              Location                           Extension  MIME Type
+vacation.jpg      /Users/jhkim/Pictures/             jpg        application/zip
+notes.txt         /Users/jhkim/Desktop/              txt        application/x-dosexec
+logo.png          /Users/jhkim/Downloads/            png        application/x-7z-compressed</code></pre></div>
+<p><code>MIME Type</code>이 진실이다. <code>vacation.jpg</code>는 실제로 ZIP이므로 이름을 바꿔 압축을 풀면 된다. <strong>CTF에서 매우 흔한 패턴이며, Autopsy를 쓰는 가장 큰 이유 중 하나다.</strong></p>
+<p>같은 목적으로 <code>Views &gt; File Types &gt; By MIME Type</code>을 열어 실제 형식별로 훑을 수도 있다.</p>
+<h3 id="5단계-키워드-검색-2차">5단계 — 키워드 검색 (2차)</h3>
+<p>방향이 잡힌 뒤 실행한다. 상단 우측 검색창 또는 <code>Tools &gt; Keyword Search</code>.</p>
+<div class="table-wrap"><table><thead><tr><th>검색 유형</th><th>예</th><th>용도</th></tr></thead><tbody><tr><td>Exact Match</td><td><code>flag{</code></td><td>정확한 문자열</td></tr><tr><td>Substring Match</td><td><code>secret</code></td><td>부분 문자열</td></tr><tr><td><strong>Regular Expression</strong></td><td><code>flag\{[^}]+\}</code></td><td>패턴</td></tr></tbody></table></div>
+<p>자주 쓰는 정규식:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">flag\{[^}]{1,64}\}
+[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}
+(?:\d{1,3}\.){3}\d{1,3}
+https?://[^\s&quot;&#39;&lt;&gt;]+
+-----BEGIN [A-Z ]*PRIVATE KEY-----
+[A-Za-z0-9+/]{40,}={0,2}</code></pre></div>
+<p>키워드 목록(Keyword List)을 미리 만들어 두면 ingest 시점에 함께 검색된다. <strong>대회 전에 위 패턴들을 리스트로 저장해 두는 것이 준비의 핵심이다.</strong></p>
+<p>키워드 검색은 색인 기반이라 최초 실행이 느리지만, 한 번 색인되면 이후 검색은 즉시 끝난다.</p>
+<h3 id="6단계-카빙-2차">6단계 — 카빙 (2차)</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">데이터 소스 우클릭 &gt; Run Ingest Modules &gt; PhotoRec Carver 만 체크</code></pre></div>
+<p>결과는 <code>$CarvedFiles</code> 노드에 쌓인다. 파일명은 복원되지 않고 오프셋 기반 이름(<code>f0012345.jpg</code>)이 붙는다.</p>
+<p>카빙은 <strong>비할당 영역</strong>을 대상으로 하므로 파일 이름·경로·타임스탬프가 없다. 이름이 필요하면 <code>$MFT</code>/<code>$UsnJrnl</code>과 대조해야 한다 (<a href="./usnjrnl-basics.html">FOR-0027</a>).</p>
+<p>이미지가 크면 매우 오래 걸린다. 대안:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">FTK Imager 로 [unallocated space] 만 Export -&gt; foremost/photorec 를 CLI로 직접</code></pre></div>
+<p>목표 파일 형식이 정해져 있다면 CLI 카빙이 훨씬 빠르다.</p>
+<h3 id="7단계-타임라인">7단계 — 타임라인</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Tools &gt; Timeline</code></pre></div>
+<p>파일시스템 시각 + 웹 활동 + 최근문서 등을 하나의 축에 올린다. 상단에서 기간을 좁히고, 좌측에서 이벤트 유형(File Modified / Accessed / Created / Changed, Web Activity 등)을 필터링한다.</p>
+<p>정밀한 타임라인이 필요하면 Autopsy 타임라인보다 <strong><code>$MFT</code> + <code>$J</code> + EVTX CSV를 Timeline Explorer에 모아 보는 편</strong>이 컬럼이 풍부하고 빠르다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p>파일 목록 창의 주요 컬럼이다.</p>
+<div class="table-wrap"><table><thead><tr><th>컬럼</th><th>의미</th><th>함정</th></tr></thead><tbody><tr><td><code>Name</code></td><td>파일명</td><td>삭제 파일은 이름 앞에 표시가 붙는다</td></tr><tr><td><code>Location</code></td><td>볼륨 내 경로</td><td><code>/</code> 구분자를 쓴다</td></tr><tr><td><code>Modified/Accessed/Created/Changed Time</code></td><td>MACB</td><td><strong><code>Changed</code>가 MFT 엔트리 변경 시각</strong></td></tr><tr><td><code>Size</code></td><td>논리 크기</td><td>물리 점유와 다르다</td></tr><tr><td><code>Flags(Dir)</code> / <code>Flags(Meta)</code></td><td><code>Allocated</code> / <code>Unallocated</code></td><td><strong><code>Unallocated</code> = 삭제됨</strong></td></tr><tr><td><code>Known</code></td><td>해시셋 대조 결과</td><td><code>Unknown</code>이 기본</td></tr><tr><td><code>MD5 Hash</code></td><td>해시</td><td>Hash Lookup 모듈 실행 시 채워진다</td></tr><tr><td><code>MIME Type</code></td><td><strong>실제 형식</strong></td><td>확장자 위조 판별의 근거</td></tr><tr><td><code>Extension</code></td><td>확장자</td><td><code>MIME Type</code>과 비교한다</td></tr></tbody></table></div>
+<p><code>Flags(Meta) = Unallocated</code>가 삭제 파일 판별의 정확한 기준이다.</p>
+<p>시각은 <strong>Data Source 추가 시 지정한 시간대로 표시된다.</strong> 이 값이 틀렸다면 <code>Case &gt; Case Properties</code>에서 확인하고, 최종 답은 <code>$MFT</code> 파서의 UTC 값으로 검증한다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>Autopsy에서 얻은 것</th><th>다음 목표</th></tr></thead><tbody><tr><td>Extension Mismatch 파일</td><td>Extract File → <code>file</code>/<code>binwalk</code>/7-Zip (<a href="./30sec-triage.html">FOR-0001</a>)</td></tr><tr><td><code>Extracted Content &gt; Web History</code></td><td>Chrome History DB 직접 질의 (<a href="./chrome-history.html">FOR-0191</a>)</td></tr><tr><td><code>Extracted Content &gt; USB Device Attached</code></td><td><code>SYSTEM</code> hive의 USBSTOR / MountedDevices</td></tr><tr><td><code>Extracted Content &gt; Run Programs</code></td><td>UserAssist / Prefetch 교차검증 (<a href="./userassist.html">FOR-0061</a>)</td></tr><tr><td><code>Views &gt; Deleted Files</code></td><td><code>$UsnJrnl</code> 로 삭제 시각·원래 이름 (<a href="./usnjrnl-basics.html">FOR-0027</a>)</td></tr><tr><td>Keyword Hit의 위치</td><td>해당 파일 Extract → 전체 문맥 확인</td></tr><tr><td><code>$CarvedFiles</code> 의 복원 파일</td><td>해시 → <code>$MFT</code> 대조로 원래 이름 추정</td></tr><tr><td>시각 하나</td><td>Timeline에서 그 시각 ±5분</td></tr><tr><td>사용자 계정 목록</td><td>각 프로필의 <code>NTUSER.DAT</code></td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>Time zone을 기본값으로 두고 진행하는 것.</strong> 이후 모든 시각이 어긋난다. Data Source 추가 화면에서 반드시 증거물 시간대로 설정한다.</li><li><strong>모든 모듈을 켜고 기다리는 것.</strong> 수십 GB 이미지에서 Keyword Search + PhotoRec을 함께 돌리면 수 시간이 간다. <strong>1차는 가벼운 모듈만.</strong></li><li><strong>Hash Lookup을 해시셋 없이 켜는 것.</strong> NSRL 등을 등록하지 않으면 아무 결과가 없다.</li><li><strong>ingest 완료 전에 결과를 결론으로 삼는 것.</strong> 우하단 진행률이 100%가 되기 전에는 목록이 계속 늘어난다.</li><li><strong><code>$MFT</code> 수준의 상세 타임스탬프를 Autopsy에서 찾는 것.</strong> <code>$SI</code>/<code>$FN</code> 구분이나 8개 타임스탬프 비교는 <code>$MFT</code> 파서가 필요하다 (<a href="./mft-basics.html">FOR-0021</a>).</li><li><strong>삭제 파일 판별을 이름 표시로 하는 것.</strong> <code>Flags(Meta) = Unallocated</code>가 정확한 기준이다.</li><li><strong><code>$CarvedFiles</code>의 파일명을 원래 이름으로 착각하는 것.</strong> 카빙 결과의 이름은 오프셋에서 생성된 것이다.</li><li><strong>Case 폴더를 이미지와 같은 드라이브에 두는 것.</strong> 색인·카빙 결과가 이미지 크기에 육박할 수 있다.</li><li><strong><code>Views &gt; File Types &gt; By Extension</code>만 보는 것.</strong> 위조 파일은 여기서 잘못된 분류에 들어간다. <code>By MIME Type</code>을 본다.</li><li><strong>Keyword Search 정규식을 grep 문법으로 쓰는 것.</strong> Autopsy는 Java 정규식(Lucene 기반)이다. 문법 차이가 있으니 간단한 패턴으로 시작한다.</li><li><strong>결과를 화면에서만 보는 것.</strong> 목록을 우클릭 → <code>Export selected rows to CSV</code>로 뽑아 <code>rg</code>/PowerShell로 검색하는 편이 빠를 때가 많다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) Autopsy 의 파일 목록  vs  Sleuth Kit 직접 실행
+mmls image.dd                        # 파티션 오프셋 (예: 2048)
+fls -o 2048 -r -p image.dd | wc -l   # 전체 항목 수
+fls -o 2048 -r -p -d image.dd        # 삭제 항목만 (-d)
+
+# 2) Autopsy 의 삭제 파일 수  vs  $MFT 의 InUse=False 수
+#    (FTK Imager 로 $MFT 를 꺼내 MFTECmd 파싱)
+
+# 3) Autopsy 의 Extension Mismatch  vs  직접 확인
+#    해당 파일을 Extract 한 뒤
+file extracted_vacation.jpg
+
+# 4) Autopsy Web History  vs  Chrome History DB 직접 질의
+sqlite3 History &quot;SELECT count(*) FROM urls;&quot;</code></pre></div>
+<p>Autopsy와 Sleuth Kit의 결과가 다르면 파티션 오프셋 지정이 다른 것이다 — Autopsy가 자동 탐지한 볼륨과 <code>mmls</code> 출력을 비교한다 (<a href="./mbr-gpt.html">FOR-0019</a>).</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;사진 폴더에 위조된 파일이 있습니다. 숨겨진 내용을 찾으세요.&quot;
+첨부: photos.E01 (8 GB)
+
+1. New Case &gt; Add Data Source &gt; Disk Image &gt; photos.E01
+   Time zone: (GMT+9:00) Asia/Seoul     &lt;- 지문의 시각이 KST 였다
+
+2. 첫 시도 (실패한 접근):
+   모든 모듈을 켜고 Finish.
+   Keyword Search 색인과 PhotoRec 이 돌기 시작해 12분이 지나도 30% 였다.
+   -&gt; Cancel 하고 다시 시작.
+
+3. 접근 변경 — 가벼운 모듈만
+   Run Ingest Modules 다시 실행:
+     [v] File Type Identification
+     [v] Extension Mismatch Detector
+     [v] EXIF Parser
+   -&gt; 90초 만에 완료.
+
+4. Results &gt; Interesting Items &gt; Extension Mismatch Detected
+
+   Name             Location                  Extension  MIME Type
+   IMG_2841.jpg     /Users/jhkim/Pictures/    jpg        application/zip
+   IMG_2903.jpg     /Users/jhkim/Pictures/    jpg        application/x-7z-compressed
+
+   2건. 목표 확정.
+
+5. IMG_2841.jpg 우클릭 &gt; Extract File(s) &gt; C:\case\out\
+
+   $ file IMG_2841.jpg
+   IMG_2841.jpg: Zip archive data, at least v2.0 to extract
+
+   $ 7z l IMG_2841.jpg
+   secret/notes.txt
+   secret/flag.txt
+
+   $ 7z x IMG_2841.jpg -osecret_out
+   $ cat secret_out/secret/flag.txt
+   flag{3xt3ns10n_m1smatch_1s_a_g1ft}
+
+6. 두 번째 파일도 확인
+   IMG_2903.jpg -&gt; 7z 아카이브, 암호 필요
+   -&gt; notes.txt 의 내용이 암호였다
+
+7. 교차검증 — EXIF 로 진짜 사진과 구분
+   Results &gt; Extracted Content &gt; EXIF Metadata
+   -&gt; 정상 사진 142장에는 EXIF 가 있고, 위조된 2건에는 없다.
+      MIME Type 판정과 일치.
+
+정답: flag{3xt3ns10n_m1smatch_1s_a_g1ft}</code></pre></div>
+<p>2→3단계가 이 글의 요지다. <strong>모듈을 다 켜면 시간을 잃고, 필요한 세 개만 켜면 90초에 답이 나온다.</strong></p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><strong>Time zone</strong>을 증거물 시간대로 설정했는가</li><li>무거운 모듈(Keyword Search, PhotoRec, Plaso)을 1차에서 껐는가</li><li>ingest 진행률이 100%인가</li><li><code>Results &gt; Interesting Items &gt; Extension Mismatch Detected</code>를 봤는가</li><li><code>Views &gt; File Types &gt; **By MIME Type**</code>을 봤는가 (By Extension이 아니라)</li><li><code>Results &gt; Extracted Content</code> 하위 노드를 전부 펼쳐 봤는가 — 이미 정리된 정보가 많다</li><li><code>Views &gt; Deleted Files</code>와 <code>$OrphanFiles</code>를 봤는가</li><li>파일이 없는가 → PhotoRec 카버 2차 실행 또는 CLI 카빙</li><li>문자열을 찾는가 → Keyword Search 정규식 (Java 문법)</li><li>시각 정밀도가 부족한가 → <code>$MFT</code>/<code>$J</code>를 꺼내 전용 파서로 (<a href="./ftk-imager-open-image.html">FOR-0016</a>)</li><li>파티션이 예상과 다른가 → <code>mmls</code>로 대조 (<a href="./mbr-gpt.html">FOR-0019</a>)</li><li>목록이 많은가 → CSV로 Export 후 <code>rg</code>/PowerShell로 검색</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-005 — Microsoft Learn, Master File Table: 할당/비할당 판정과 NTFS 메타데이터의 근거</li><li>SRC-004 — Eric Zimmerman 문서: Autopsy 결과를 검증할 때 쓰는 전용 파서들의 입출력</li><li>모듈 이름과 트리 노드 명칭은 Autopsy 버전에 따라 다를 수 있으므로 실제 화면에서 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./ftk-imager-open-image.html">
+    <span class="rel-id">FOR-0016 · 디스크/NTFS</span>
+    FTK Imager로 디스크 이미지 열고 필요한 artifact만 꺼내기
+  </a>
+  <a class="related-item" href="./arsenal-image-mounter.html">
+    <span class="rel-id">FOR-0017 · 디스크/NTFS</span>
+    Arsenal Image Mounter로 이미지를 실제 디스크처럼 마운트하기
+  </a>
+  <a class="related-item" href="./mft-basics.html">
+    <span class="rel-id">FOR-0021 · 디스크/NTFS</span>
+    $MFT 기본 구조와 포렌식 활용
+  </a>
+  <a class="related-item" href="./unallocated-space.html">
+    <span class="rel-id">FOR-0033 · 디스크/NTFS</span>
+    비할당 영역(Unallocated Space) 추출과 카빙
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./arsenal-image-mounter.html"><span class="rel-id">← FOR-0017</span>Arsenal Image Mounter로 이미지를 실제 디스크처럼 마운트하기</a>
+<a class="related-item" href="./mbr-gpt.html"><span class="rel-id">FOR-0019 →</span>MBR과 GPT 파티션 테이블 직접 읽기</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-data-source-유형">1단계 — Data Source 유형</a></li>
+<li class="toc-l3"><a href="#2단계-ingest-모듈-선택-무엇이-빠르고-무엇이-느린가">2단계 — Ingest 모듈 선택: 무엇이 빠르고 무엇이 느린가</a></li>
+<li class="toc-l3"><a href="#3단계-결과-트리-읽기-어디에-무엇이-있나">3단계 — 결과 트리 읽기 (어디에 무엇이 있나)</a></li>
+<li class="toc-l3"><a href="#4단계-확장자-위조-파일-찾기">4단계 — 확장자 위조 파일 찾기</a></li>
+<li class="toc-l3"><a href="#5단계-키워드-검색-2차">5단계 — 키워드 검색 (2차)</a></li>
+<li class="toc-l3"><a href="#6단계-카빙-2차">6단계 — 카빙 (2차)</a></li>
+<li class="toc-l3"><a href="#7단계-타임라인">7단계 — 타임라인</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 03:39 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

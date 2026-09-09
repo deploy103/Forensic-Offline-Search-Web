@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>FTK Imager로 디스크 이미지 열고 필요한 artifact만 꺼내기 · FOR-0016 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%94%94%EC%8A%A4%ED%81%AC%2FNTFS">디스크/NTFS</a> / FOR-0016
+      </div>
+      <header class="article-head">
+        <h1>FTK Imager로 디스크 이미지 열고 필요한 artifact만 꺼내기</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">디스크/NTFS</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>File &gt; Add Evidence Item &gt; Image File로 이미지를 열고, Evidence Tree에서 [root]을 펼쳐 $MFT / $Extend\$UsnJrnl / Windows\System32\config / winevt\Logs / 사용자 프로필만 Export Files로 꺼내면 이후 분석에 필요한 재료가 전부 확보된다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>FTK Imager, Arsenal Image Mounter, HxD, HashCalc</td></tr>
+<tr><th>artifact</th><td><code>E01</code> · <code>RAW</code> · <code>AD1</code> · <code>$MFT</code> · <code>$LogFile</code> · <code>$UsnJrnl</code> · <code>unallocated space</code> · <code>$OrphanFiles</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\$MFT</code> · <code>C:\$Extend\$UsnJrnl</code> · <code>C:\Windows\System32\config</code> · <code>C:\Windows\System32\winevt\Logs</code> · <code>C:\Windows\Prefetch</code> · <code>C:\Users\&lt;user&gt;\NTUSER.DAT</code></td></tr>
+<tr><th>로그 필드</th><td><code>MD5</code> · <code>SHA1</code> · <code>Logical Size</code> · <code>Physical Size</code> · <code>Date Created</code> · <code>Date Modified</code> · <code>Date Accessed</code></td></tr>
+<tr><th>파일 형식</th><td><code>e01</code> · <code>ex01</code> · <code>s01</code> · <code>aff</code> · <code>raw</code> · <code>dd</code> · <code>ad1</code></td></tr>
+<tr><th>검색 별칭</th><td>ftk imager · ftk · 이미지 열기 · E01 열기 · 디스크 이미지 열기 · artifact 뽑기 · 파일 추출하기 · ftk imager 사용법</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>File &gt; Add Evidence Item &gt; Image File</code>로 이미지를 열고, Evidence Tree에서 <code>[root]</code>을 펼쳐 <strong><code>$MFT</code> / <code>$Extend\$UsnJrnl</code> / <code>Windows\System32\config</code> / <code>winevt\Logs</code> / 사용자 프로필</strong>만 <code>Export Files</code>로 꺼내면 이후 분석에 필요한 재료가 전부 확보된다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>첨부가 <code>.E01</code>, <code>.001</code>, <code>.dd</code>, <code>.raw</code>, <code>.AD1</code> 같은 디스크 이미지인 모든 문제</li><li>Autopsy ingest가 너무 느려서 <strong>필요한 artifact만 빠르게 빼내야</strong> 하는 상황</li><li>삭제 파일 목록을 눈으로 훑어야 하는 상황</li><li>이미지 해시를 검증해 무결성을 확인해야 하는 상황</li></ul>
+<p>CTF에서 FTK Imager의 가치는 &quot;분석&quot;이 아니라 <strong>추출 속도</strong>다. 이미지를 열고 30초 안에 필요한 파일을 꺼내 각자의 전용 파서로 넘기는 것이 정석이다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>확장자 <code>.E01</code> / <code>.Ex01</code> / <code>.001</code>~<code>.00n</code> / <code>.dd</code> / <code>.raw</code> / <code>.img</code> / <code>.AD1</code></li><li>파일이 <code>image.E01</code>, <code>image.E02</code>, <code>image.E03</code>... 으로 <strong>분할</strong>되어 있다 → 첫 조각(<code>.E01</code>)만 지정하면 나머지는 자동으로 붙는다</li><li><code>file</code>로 확인하면 E01은 <code>EVF</code>로 시작한다 (<a href="./30sec-triage.html">FOR-0001</a>)</li><li>문제 지문의 명사가 어떤 artifact를 꺼낼지 결정한다 — &quot;실행&quot;→Prefetch, &quot;로그인&quot;→EVTX, &quot;삭제&quot;→<code>$UsnJrnl</code></li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1. File &gt; Add Evidence Item...
+2. Image File 선택 &gt; Next
+3. 이미지 경로 지정 (분할 이미지는 .E01 또는 .001 하나만)
+4. Evidence Tree에서 파티션 &gt; [root] 펼치기
+5. 필요한 파일/폴더 우클릭 &gt; Export Files...
+6. 출력 폴더 지정</code></pre></div>
+<p><code>Add Evidence Item</code> 화면의 4가지 소스 유형:</p>
+<div class="table-wrap"><table><thead><tr><th>유형</th><th>대상</th></tr></thead><tbody><tr><td><strong>Physical Drive</strong></td><td>물리 디스크 전체 (파티션 테이블 포함). 라이브 수집용</td></tr><tr><td><strong>Logical Drive</strong></td><td>마운트된 볼륨 하나 (<code>C:</code>). 파티션 테이블은 안 보인다</td></tr><tr><td><strong>Image File</strong></td><td><strong>이미 만들어진 이미지 파일. CTF에서 거의 항상 이것</strong></td></tr><tr><td><strong>Contents of a Folder</strong></td><td>폴더 트리 (논리 파일 집합)</td></tr></tbody></table></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-어떤-이미지-형식을-열-수-있나">1단계 — 어떤 이미지 형식을 열 수 있나</h3>
+<div class="table-wrap"><table><thead><tr><th>형식</th><th>확장자</th><th>특징</th></tr></thead><tbody><tr><td>EnCase</td><td><code>.E01</code>, <code>.Ex01</code></td><td>압축 + 내부 CRC. 분할되면 <code>.E02</code>, <code>.E03</code>...</td></tr><tr><td>SMART</td><td><code>.s01</code></td><td>압축 지원</td></tr><tr><td>RAW (dd)</td><td><code>.001</code>, <code>.dd</code>, <code>.raw</code>, <code>.img</code></td><td>압축 없음. 원본 크기 그대로</td></tr><tr><td>AFF</td><td><code>.aff</code></td><td>오픈 포맷</td></tr><tr><td>AD1</td><td><code>.ad1</code></td><td><strong>논리</strong> 파일만 담은 커스텀 이미지 (파티션 구조 없음)</td></tr></tbody></table></div>
+<p><code>.VHD</code> / <code>.VHDX</code> / <code>.VMDK</code> / <code>.VDI</code> 는 <a href="./arsenal-image-mounter.html">Arsenal Image Mounter</a>로 먼저 마운트한 뒤 <code>Logical Drive</code>로 여는 편이 확실하다.</p>
+<h3 id="2단계-evidence-tree-읽기">2단계 — Evidence Tree 읽기</h3>
+<p>트리를 펼치면 이런 구조가 나온다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">▼ image.E01
+  ▼ Partition 1 [100MB]           &lt;- EFI System Partition
+  ▼ Partition 2 [237GB]           &lt;- 본체
+    ▼ NONAME [NTFS]
+      ▼ [root]                    &lt;- 여기가 C:\ 에 해당
+        ├ $BadClus
+        ├ $Extend                 &lt;- $UsnJrnl 이 여기
+        ├ $LogFile
+        ├ $MFT                    &lt;- 최우선 추출 대상
+        ├ $MFTMirr
+        ├ $Recycle.Bin
+        ├ Users
+        └ Windows
+      ▶ [unallocated space]       &lt;- 비할당 영역 (카빙 대상)
+      ▶ [orphan]                  &lt;- 부모를 잃은 파일 ($OrphanFiles)
+  ▶ [unpartitioned space]</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>노드</th><th>의미</th><th>놓치면 안 되는 이유</th></tr></thead><tbody><tr><td><code>[root]</code></td><td>볼륨 루트 (= <code>C:\</code>)</td><td>모든 artifact의 시작점</td></tr><tr><td><code>[unallocated space]</code></td><td>어떤 파일에도 속하지 않은 클러스터</td><td><strong>삭제 파일 카빙 대상.</strong> Export 후 foremost/photorec</td></tr><tr><td><code>[orphan]</code></td><td>MFT 레코드는 있으나 부모 디렉터리가 사라진 파일</td><td>삭제된 파일이 여기 모인다</td></tr><tr><td><code>[unpartitioned space]</code></td><td>파티션 밖 영역</td><td>숨긴 파티션·데이터</td></tr></tbody></table></div>
+<p><strong>File List 창의 빨간 X 아이콘이 삭제된 파일이다.</strong> 아이콘만으로 즉시 식별할 수 있다.</p>
+<h3 id="3단계-꺼낼-파일-목록-이-표가-핵심">3단계 — 꺼낼 파일 목록 (이 표가 핵심)</h3>
+<div class="table-wrap"><table><thead><tr><th>목표</th><th>경로</th><th>파서</th></tr></thead><tbody><tr><td>전체 파일 목록·타임라인</td><td><code>[root]\$MFT</code></td><td>MFTECmd / analyzeMFT (<a href="./mft-basics.html">FOR-0021</a>)</td></tr><tr><td>삭제·이름변경 흔적</td><td><code>[root]\$Extend\$UsnJrnl</code> (<strong><code>$J</code> 스트림 포함</strong>)</td><td>MFTECmd <code>-f $J</code> (<a href="./usnjrnl-basics.html">FOR-0027</a>)</td></tr><tr><td>파일시스템 트랜잭션</td><td><code>[root]\$LogFile</code></td><td>NTFS Log Tracker</td></tr><tr><td>휴지통</td><td><code>[root]\$Recycle.Bin</code> (SID 하위 전체)</td><td>RBCmd</td></tr><tr><td>시스템 레지스트리</td><td><code>Windows\System32\config\</code> → <code>SAM</code>, <code>SYSTEM</code>, <code>SOFTWARE</code>, <code>SECURITY</code> <strong>+ 각 <code>.LOG1</code>/<code>.LOG2</code></strong></td><td>RegistryExplorer / RegRipper</td></tr><tr><td>사용자 레지스트리</td><td><code>Users\&lt;user&gt;\NTUSER.DAT</code> <strong>+ <code>.LOG1</code>/<code>.LOG2</code></strong></td><td>RegRipper (<a href="./userassist.html">FOR-0061</a>)</td></tr><tr><td>탐색기 활동</td><td><code>Users\&lt;user&gt;\AppData\Local\Microsoft\Windows\UsrClass.dat</code></td><td>ShellBags 파서</td></tr><tr><td>이벤트 로그</td><td><code>Windows\System32\winevt\Logs\</code> (폴더 전체)</td><td>EvtxECmd (<a href="./event-4624-logon.html">FOR-0083</a>)</td></tr><tr><td>프로그램 실행</td><td><code>Windows\Prefetch\</code> (폴더 전체)</td><td>WinPrefetchView / PECmd</td></tr><tr><td>실행 파일 이력</td><td><code>Windows\AppCompat\Programs\Amcache.hve</code></td><td>AmcacheParser</td></tr><tr><td>브라우저</td><td><code>Users\&lt;user&gt;\AppData\Local\Google\Chrome\User Data\Default\</code> (<strong><code>History*</code> 전부</strong>)</td><td>sqlite3 (<a href="./chrome-history.html">FOR-0191</a>)</td></tr><tr><td>바로가기·최근문서</td><td><code>Users\&lt;user&gt;\AppData\Roaming\Microsoft\Windows\Recent\</code></td><td>LECmd / JLECmd</td></tr><tr><td>사용 통계</td><td><code>Windows\System32\sru\SRUDB.dat</code></td><td>SrumECmd / ESEDatabaseView</td></tr><tr><td>검색 색인</td><td><code>ProgramData\Microsoft\Search\Data\Applications\Windows\Windows.edb</code></td><td>WinSearchDBAnalyzer</td></tr><tr><td>스케줄 작업</td><td><code>Windows\System32\Tasks\</code></td><td>텍스트(XML)</td></tr><tr><td>사용자 문서</td><td><code>Users\&lt;user&gt;\Desktop</code>, <code>Documents</code>, <code>Downloads</code></td><td>상황에 따라</td></tr></tbody></table></div>
+<p><strong>트랜잭션 로그(<code>.LOG1</code>, <code>.LOG2</code>)를 함께 꺼내는 것을 잊지 않는다.</strong> 없으면 가장 최근 레지스트리 변경이 누락된다 (<a href="./userassist.html">FOR-0061</a>의 <code>rla</code> 절 참고).</p>
+<h3 id="4단계-usnjrnlj-꺼내기-자주-실패하는-지점">4단계 — <code>$UsnJrnl:$J</code> 꺼내기 (자주 실패하는 지점)</h3>
+<p><code>$UsnJrnl</code>은 파일 이름이고 데이터는 <strong>ADS인 <code>$J</code>에 있다.</strong> FTK Imager는 이를 별도 항목으로 보여준다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">[root] &gt; $Extend &gt; $UsnJrnl 을 선택하면
+File List 창에 다음이 나온다:
+
+  Name              Type          Size
+  $UsnJrnl          NTFS Alt Data Stream   0
+  $UsnJrnl:$J       NTFS Alt Data Stream   35,651,584      &lt;- 이것을 Export
+  $UsnJrnl:$Max     NTFS Alt Data Stream   32</code></pre></div>
+<p><code>$J</code>를 골라야 한다. <code>$UsnJrnl</code>만 꺼내면 0바이트 파일을 얻는다.</p>
+<p><code>$J</code>는 sparse 파일이라 <strong>논리 크기가 수십 GB로 표시될 수 있다.</strong> Export하면 앞쪽이 0으로 채워진 큰 파일이 나오지만 MFTECmd는 정상 처리한다.</p>
+<h3 id="5단계-무결성-검증과-해시">5단계 — 무결성 검증과 해시</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">File &gt; Verify Drive/Image...</code></pre></div>
+<p>이미지 안에 저장된 해시와 실제 계산 해시를 비교한다. E01은 획득 당시 해시를 내부에 갖고 있어 자동 대조되고, RAW는 계산만 해준다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Verify Results
+  Name              image.E01
+  Sector count      500118192
+  MD5 Hash
+    Computed hash   3f1a...   Stored verification hash   3f1a...   Report Hash Verified
+  SHA1 Hash
+    Computed hash   9b2c...   Stored verification hash   9b2c...   Report Hash Verified</code></pre></div>
+<p>개별 파일 해시는 File List에서 파일들을 선택해 우클릭 → <code>Export File Hash List...</code> → CSV로 나온다. 추출물이 원본과 같은지 확인할 때 쓴다.</p>
+<h3 id="6단계-디렉터리-목록만-csv로">6단계 — 디렉터리 목록만 CSV로</h3>
+<p>전체 파일 목록을 텍스트로 확보하면 <code>rg</code>/PowerShell로 검색할 수 있어 GUI보다 훨씬 빠르다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">[root] 우클릭 &gt; Export Directory Listing...</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 나온 CSV에서 특정 확장자 찾기
+Import-Csv listing.csv | Where-Object { $_.Filename -match &#39;\.(7z|zip|rar)$&#39; } |
+  Select-Object Filename, &#39;Full Path&#39;, Size, Created</code></pre></div>
+<p><code>$MFT</code> 파싱과 목적이 겹치지만, <strong><code>$MFT</code> 파서가 없을 때의 대안</strong>으로 유용하다.</p>
+<h3 id="7단계-부가-기능-라이브-시스템에서">7단계 — 부가 기능 (라이브 시스템에서)</h3>
+<div class="table-wrap"><table><thead><tr><th>메뉴</th><th>하는 일</th></tr></thead><tbody><tr><td><code>File &gt; Create Disk Image</code></td><td>이미지 생성 (RAW/E01/AFF/SMART). 분할 크기·압축·해시 설정</td></tr><tr><td><code>File &gt; Capture Memory</code></td><td>물리 메모리 덤프 (<code>.mem</code>) + pagefile 옵션</td></tr><tr><td><code>File &gt; Obtain Protected Files</code></td><td>잠긴 레지스트리 hive를 라이브에서 복사</td></tr><tr><td><code>File &gt; Image Mounting</code></td><td>이미지를 드라이브 문자로 마운트 (읽기 전용)</td></tr><tr><td><code>File &gt; Export Logical Image (AD1)</code></td><td>선택한 파일만 담은 논리 이미지 생성</td></tr></tbody></table></div>
+<p><code>Capture Memory</code>는 메모리 문제의 출발점이 된다 (<a href="./volatility-pslist.html">FOR-0214</a>).</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p>File List 창의 컬럼이다.</p>
+<div class="table-wrap"><table><thead><tr><th>컬럼</th><th>의미</th><th>함정</th></tr></thead><tbody><tr><td><code>Name</code></td><td>파일명</td><td>ADS는 <code>파일명:스트림명</code>으로 표시</td></tr><tr><td><code>Size</code></td><td><strong>논리 크기</strong> (바이트)</td><td>실제 디스크 점유(물리 크기)와 다르다</td></tr><tr><td><code>Type</code></td><td><code>Regular File</code> / <code>Directory</code> / <code>NTFS Alt Data Stream</code> / <code>Unallocated space</code></td><td>ADS 식별</td></tr><tr><td><code>Date Modified</code></td><td>수정 시각</td><td><strong><code>$SI</code> 기준. 조작 가능</strong></td></tr><tr><td><code>Date Created</code></td><td>생성 시각</td><td>위와 동일</td></tr><tr><td><code>Date Accessed</code></td><td>접근 시각</td><td>Win7+ 기본 갱신 비활성인 경우 많음</td></tr><tr><td>빨간 X 아이콘</td><td><strong>삭제된 파일</strong></td><td>아이콘만으로 판별</td></tr></tbody></table></div>
+<p><strong>FTK Imager가 보여주는 시각은 <code>$STANDARD_INFORMATION</code>(<code>$SI</code>) 기준이다.</strong> timestomp를 탐지하려면 <code>$MFT</code>를 꺼내 <code>$SI</code>와 <code>$FN</code>을 비교해야 한다 (<a href="./mft-basics.html">FOR-0021</a>).</p>
+<p>하단 Viewer 창은 세 모드로 전환된다.</p>
+<div class="table-wrap"><table><thead><tr><th>모드</th><th>용도</th></tr></thead><tbody><tr><td>Hex</td><td>매직 바이트 확인. 확장자 위조 즉시 판별</td></tr><tr><td>Text</td><td>텍스트 파일·설정·로그 미리보기</td></tr><tr><td>Automatic</td><td>이미지 파일 썸네일 표시</td></tr></tbody></table></div>
+<p>파일을 꺼내기 전에 Hex 모드로 헤더만 확인하는 습관이 시간을 아낀다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>FTK Imager에서 확인한 것</th><th>다음 목표</th></tr></thead><tbody><tr><td>사용자 폴더 이름</td><td>그 사용자의 <code>NTUSER.DAT</code> → UserAssist (<a href="./userassist.html">FOR-0061</a>)</td></tr><tr><td>의심 파일 발견</td><td>Hex 헤더 확인 → Export → <code>file</code>/<code>strings</code>/해시</td></tr><tr><td>삭제 파일(빨간 X)</td><td><code>$MFT</code> + <code>$UsnJrnl</code> 로 삭제 시각·원래 이름 (<a href="./usnjrnl-basics.html">FOR-0027</a>)</td></tr><tr><td>파일이 안 보임</td><td><code>[unallocated space]</code> Export → foremost/photorec 카빙</td></tr><tr><td><code>[orphan]</code> 내용</td><td>삭제된 디렉터리 트리 복원</td></tr><tr><td>파티션이 하나만 보임</td><td><code>[unpartitioned space]</code> 확인 → 숨긴 파티션</td></tr><tr><td>시간대 확인 필요</td><td><code>SYSTEM</code> hive의 <code>TimeZoneInformation</code></td></tr><tr><td>Prefetch 존재</td><td>실행 이력 → Amcache/UserAssist 교차검증</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>$UsnJrnl</code>만 꺼내고 <code>$J</code>를 놓치는 것.</strong> 0바이트를 얻는다. <code>$UsnJrnl:$J</code>를 선택해야 한다.</li><li><strong>레지스트리 hive만 꺼내고 <code>.LOG1</code>/<code>.LOG2</code>를 두고 오는 것.</strong> 최신 변경이 누락된다.</li><li><strong>Chrome <code>History</code>만 꺼내고 <code>History-wal</code>을 두고 오는 것.</strong> 최근 방문이 사라진다 (<a href="./chrome-history.html">FOR-0191</a>).</li><li><strong>분할 이미지의 조각을 전부 지정하려 하는 것.</strong> <code>.E01</code>(또는 <code>.001</code>) 하나만 지정하면 나머지는 자동으로 이어진다. 단 <strong>모든 조각이 같은 폴더에 있어야 한다.</strong></li><li><strong>삭제 파일을 Export하고 내용이 온전할 것으로 기대하는 것.</strong> MFT 레코드는 남았지만 데이터 클러스터는 재할당되었을 수 있다. 크기가 맞는지, 헤더가 온전한지 확인한다.</li><li><strong><code>Logical Drive</code>로 열고 파티션 테이블을 찾는 것.</strong> 논리 볼륨에는 MBR/GPT가 없다. <code>Physical Drive</code> 또는 <code>Image File</code>로 열어야 파티션이 보인다 (<a href="./mbr-gpt.html">FOR-0019</a>).</li><li><strong>마운트된 볼륨에서 Explorer로 <code>$MFT</code>를 복사하려는 것.</strong> NTFS 드라이버가 잠근다. 마운트했더라도 <strong>FTK Imager로 <code>Logical Drive</code>를 열어</strong> 꺼내야 한다.</li><li><strong>Export 대상 폴더를 이미지와 같은 드라이브로 잡는 것.</strong> 대용량 Export 시 공간이 터진다.</li><li><strong><code>Size</code>를 물리 크기로 착각하는 것.</strong> 논리 크기다. sparse/compressed 파일에서 크게 차이 난다.</li><li><strong>시간대 설정을 안 보는 것.</strong> FTK Imager는 시각을 어느 시간대로 표시하는지 명시하지 않는 경우가 있다. 결론은 반드시 <code>$MFT</code> 파서(UTC 출력)로 재확인한다.</li><li><strong>AD1 이미지에서 <code>$MFT</code>를 찾는 것.</strong> AD1은 논리 파일만 담아 파일시스템 메타파일이 없다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1) FTK Imager 의 File List 시각        -&gt; $SI 기준
+2) 꺼낸 $MFT 를 MFTECmd 로 파싱        -&gt; $SI 와 $FN 둘 다
+3) 꺼낸 $J 를 MFTECmd 로 파싱          -&gt; 실제 변경 사건과 시각
+4) Export File Hash List 의 MD5        -&gt; 추출물 해시와 일치 확인
+5) Verify Drive/Image                  -&gt; 이미지 자체 무결성</code></pre></div>
+<p>1)과 2)의 시각이 다르면 timestomp이거나 FTK Imager가 표시하는 시간대가 다른 것이다. <strong>2)를 신뢰한다.</strong></p>
+<p>Arsenal로 같은 이미지를 마운트해 파일 개수와 크기를 비교하면 FTK Imager의 파싱 오류를 걸러낼 수 있다 (<a href="./arsenal-image-mounter.html">FOR-0017</a>).</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;직원 PC 이미지입니다. 반출된 파일 이름과 반출 시각을 구하세요.&quot;
+첨부: pc01.E01 (12 GB), pc01.E02, pc01.E03
+
+1. file pc01.E01
+   -&gt; pc01.E01: EWF/Expert Witness/EnCase image file format
+
+2. FTK Imager: File &gt; Add Evidence Item &gt; Image File &gt; pc01.E01
+   (E02/E03 는 지정하지 않는다. 같은 폴더에 있으면 자동으로 이어짐)
+
+3. File &gt; Verify Drive/Image
+   -&gt; MD5/SHA1 Verified. 이미지 손상 없음.
+
+4. Evidence Tree 확인
+   Partition 1 [100MB]  EFI
+   Partition 2 [11GB]   NONAME [NTFS]  &lt;- 본체
+     [root]
+     [unallocated space]
+
+5. 첫 시도 (느렸던 접근):
+   Users\jhkim\Documents 를 눈으로 훑었다.
+   파일이 400개가 넘고 반출된 파일이 이미 삭제되어 보이지 않았다.
+
+6. 접근 변경 — 메타파일부터 꺼낸다
+   [root] 에서 Export Files:
+     $MFT
+     $Extend &gt; $UsnJrnl:$J          &lt;- $J 를 명시적으로 선택
+     $Recycle.Bin (폴더 전체)
+   Users\jhkim 에서:
+     NTUSER.DAT, NTUSER.DAT.LOG1, NTUSER.DAT.LOG2
+   Windows\System32\config 에서:
+     SYSTEM, SOFTWARE + 각 .LOG1/.LOG2
+
+   여기까지 40초.
+
+7. $J 파싱
+   MFTECmd.exe -f &quot;$J&quot; -m &quot;$MFT&quot; --csv out --csvf usn.csv
+
+   Import-Csv out\usn.csv |
+     Where-Object { $_.UpdateReasons -match &#39;FileDelete&#39; -and
+                    $_.FileName -match &#39;\.(7z|zip|rar)$&#39; }
+
+   UpdateTimestamp        FileName          ParentPath
+   2026-03-14 07:39:52Z   report_final.7z   .\Users\jhkim\Documents
+
+8. 이름 변경 이력 확인 (같은 EntryNumber 추적)
+   -&gt; 원래 이름 customer_db_2026.7z 로 확인 (FOR-0027 참조)
+
+9. 반출 수단 확인
+   SYSTEM hive 의 USBSTOR + $J 의 같은 시간대 변경
+   -&gt; 07:35 경 rclone.exe 생성. 클라우드 업로드.
+
+10. 시간대 보정
+    SYSTEM\ControlSet001\Control\TimeZoneInformation -&gt; Korea Standard Time
+    07:39:52 UTC = 16:39:52 KST
+
+정답: customer_db_2026.7z (report_final.7z 로 위장), 2026-03-14 16:39:52 KST 삭제</code></pre></div>
+<p>5→6단계의 전환이 핵심이다. <strong>GUI로 폴더를 훑는 것이 아니라 메타파일을 꺼내 전용 파서에 넘기는 것</strong>이 FTK Imager의 올바른 사용법이다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li>이미지가 안 열리는가 → <code>file</code>로 형식 확인. VHD/VMDK면 Arsenal로 먼저 마운트</li><li>분할 이미지의 모든 조각이 <strong>같은 폴더</strong>에 있는가</li><li><code>Verify Drive/Image</code>로 이미지 손상 여부를 확인했는가</li><li><code>$UsnJrnl:$J</code>를 선택했는가 (<code>$UsnJrnl</code>이 아니라)</li><li>레지스트리 hive의 <code>.LOG1</code>/<code>.LOG2</code>를 함께 꺼냈는가</li><li>파일이 안 보이는가 → <code>[unallocated space]</code>와 <code>[orphan]</code> 확인</li><li>파티션이 하나만 보이는가 → <code>[unpartitioned space]</code> 확인</li><li>사용자가 여러 명인가 → 모든 프로필 확인</li><li>시각이 이상한가 → <code>SYSTEM</code> hive의 시간대 확인 후 <code>$MFT</code> 파서 값으로 재검증</li><li>대용량 카빙이 필요한가 → <code>[unallocated space]</code> Export 후 foremost/photorec</li><li>Export가 느린가 → 목적 파일만 선별. 전체 Export는 이미지 크기만큼 시간이 든다</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-005 — Microsoft Learn, Master File Table: <code>$MFT</code> 및 NTFS 메타파일 목록</li><li>SRC-004 — Eric Zimmerman 문서: 추출한 artifact를 넘길 파서(MFTECmd, RegistryExplorer, EvtxECmd, PECmd)의 입력 요구사항</li><li>FTK Imager의 메뉴 경로와 컬럼명은 도구 버전에 따라 미세하게 다를 수 있으므로 실제 화면에서 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./arsenal-image-mounter.html">
+    <span class="rel-id">FOR-0017 · 디스크/NTFS</span>
+    Arsenal Image Mounter로 이미지를 실제 디스크처럼 마운트하기
+  </a>
+  <a class="related-item" href="./mft-basics.html">
+    <span class="rel-id">FOR-0021 · 디스크/NTFS</span>
+    $MFT 기본 구조와 포렌식 활용
+  </a>
+  <a class="related-item" href="./usnjrnl-basics.html">
+    <span class="rel-id">FOR-0027 · 디스크/NTFS</span>
+    $UsnJrnl($J)로 삭제·생성·이름변경 흔적 복원하기
+  </a>
+  <a class="related-item" href="./ntfs-log-tracker.html">
+    <span class="rel-id">FOR-0026 · 디스크/NTFS</span>
+    NTFS Log Tracker로 $LogFile·$UsnJrnl·$MFT 한 번에 묶어 보기
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./30sec-triage.html"><span class="rel-id">← FOR-0001</span>포렌식 문제 파일을 받았을 때 30초 트리아지</a>
+<a class="related-item" href="./arsenal-image-mounter.html"><span class="rel-id">FOR-0017 →</span>Arsenal Image Mounter로 이미지를 실제 디스크처럼 마운트하기</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-어떤-이미지-형식을-열-수-있나">1단계 — 어떤 이미지 형식을 열 수 있나</a></li>
+<li class="toc-l3"><a href="#2단계-evidence-tree-읽기">2단계 — Evidence Tree 읽기</a></li>
+<li class="toc-l3"><a href="#3단계-꺼낼-파일-목록-이-표가-핵심">3단계 — 꺼낼 파일 목록 (이 표가 핵심)</a></li>
+<li class="toc-l3"><a href="#4단계-usnjrnlj-꺼내기-자주-실패하는-지점">4단계 — `$UsnJrnl:$J` 꺼내기 (자주 실패하는 지점)</a></li>
+<li class="toc-l3"><a href="#5단계-무결성-검증과-해시">5단계 — 무결성 검증과 해시</a></li>
+<li class="toc-l3"><a href="#6단계-디렉터리-목록만-csv로">6단계 — 디렉터리 목록만 CSV로</a></li>
+<li class="toc-l3"><a href="#7단계-부가-기능-라이브-시스템에서">7단계 — 부가 기능 (라이브 시스템에서)</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 03:39 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

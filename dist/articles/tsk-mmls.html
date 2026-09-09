@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Sleuth Kit mmls 옵션과 오프셋 파이프라인 · FOR-0040 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%94%94%EC%8A%A4%ED%81%AC%2FNTFS">디스크/NTFS</a> / FOR-0040
+      </div>
+      <header class="article-head">
+        <h1>Sleuth Kit mmls 옵션과 오프셋 파이프라인</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">디스크/NTFS</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">linux</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>mmls는 이미지의 볼륨 시스템만 읽어 파티션 목록을 뽑는 도구이며, 출력의 Start 값이 그대로 뒤따르는 모든 Sleuth Kit 명령의 -o 인자가 된다 — 실패하면 -t로 타입을, -b로 섹터 크기를, -i로 이미지 형식을 강제하는 순서로 뚫는다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Sleuth Kit, mmls, fsstat, fls, icat, ewfmount, ewfinfo, libewf, Autopsy</td></tr>
+<tr><th>artifact</th><td><code>volume system</code> · <code>partition table</code> · <code>unallocated space</code> · <code>metadata volume</code> · <code>Safety Table</code></td></tr>
+<tr><th>로그 필드</th><td><code>Slot</code> · <code>Start</code> · <code>End</code> · <code>Length</code> · <code>Description</code> · <code>Offset Sector</code> · <code>Units are in 512-byte sectors</code></td></tr>
+<tr><th>파일 형식</th><td><code>raw</code> · <code>dd</code> · <code>e01</code> · <code>aff</code> · <code>split</code></td></tr>
+<tr><th>검색 별칭</th><td>mmls · mmls 사용법 · 파티션 오프셋 구하기 · mmls 안 됨 · e01 mmls · -o 값 뭐 넣어야 하나 · mmls gpt · mmls 4096</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>mmls</code>는 이미지의 볼륨 시스템만 읽어 파티션 목록을 뽑는 도구이며, 출력의 <code>Start</code> 값이 그대로 뒤따르는 모든 Sleuth Kit 명령의 <code>-o</code> 인자가 된다 — 실패하면 <code>-t</code>로 타입을, <code>-b</code>로 섹터 크기를, <code>-i</code>로 이미지 형식을 강제하는 순서로 뚫는다.</p>
+<p>파티션 테이블의 바이트 구조와 파티션 타입 코드/GUID는 <a href="./mbr-gpt.html">FOR-0019</a>에서 다룬다. 이 글은 <strong>도구를 어떻게 굴리는가</strong>만 다룬다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li><code>fls</code> / <code>icat</code> / <code>fsstat</code> / <code>istat</code> 가 요구하는 <code>-o</code> 값을 알아내야 하는 경우</li><li>이미지에 볼륨이 몇 개인지, 비할당 영역이 어디에 얼마나 있는지 먼저 재야 하는 경우</li><li>Autopsy가 볼륨을 잘못 잡았거나 하나도 못 잡았을 때 CLI로 대조하는 경우</li><li>E01/split RAW를 변환 없이 그대로 읽어야 하는 경우</li><li>카빙 대상 범위(비할당 구간의 시작·길이)를 정해야 하는 경우 (<a href="./carving-strategy.html">FOR-0045</a>)</li></ul>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li><code>mmls image.dd</code>가 <strong>파티션 표를 정상 출력</strong>한다 → 바로 <code>Start</code> 값을 <code>-o</code>에 넣고 진행</li><li><code>Cannot determine partition type</code> → 타입 자동탐지 실패. <code>-t</code> 강제 대상</li><li>표는 나오는데 <strong>전부 <code>-------</code> (Unallocated)</strong> → 테이블은 있으나 엔트리가 비었거나 섹터 크기가 틀렸다</li><li><code>Units are in 4096-byte sectors</code> → 4Kn 이미지. 이후 모든 명령에 <code>-b 4096</code>을 붙여야 한다</li><li>파일명이 <code>.E01</code> / <code>.001</code> / <code>.aff</code> → 이미지 형식 지정(<code>-i</code>) 또는 분할 자동 인식 대상</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">mmls image.dd</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">mmls -B image.dd                 # 파티션 크기를 바이트 컬럼으로 함께 본다
+mmls -t dos image.dd             # 자동탐지 실패 시 타입 강제 (dos / gpt / mac / bsd / sun)
+mmls -b 4096 image.dd            # 4Kn 디스크
+mmls -i ewf image.E01            # libewf 지원으로 빌드된 TSK 라면 E01 직접
+fsstat -o &lt;Start&gt; image.dd       # 오프셋이 맞는지 즉시 검증</code></pre></div>
+<p><code>mmls</code>가 성공하면 그 자리에서 <code>fsstat -o &lt;Start&gt;</code>로 검증까지 끝낸다. <strong>검증 없이 <code>-o</code> 값을 다음 명령에 넘기면 빈 출력의 원인을 찾느라 시간을 잃는다.</strong></p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-옵션-전체">1단계 — 옵션 전체</h3>
+<div class="table-wrap"><table><thead><tr><th>옵션</th><th>의미</th><th>실전 용도</th></tr></thead><tbody><tr><td><code>-t mmtype</code></td><td>볼륨 시스템(미디어 관리) 타입 강제</td><td>자동탐지 실패 시. <code>dos</code> <code>gpt</code> <code>mac</code> <code>bsd</code> <code>sun</code></td></tr><tr><td><code>-t list</code></td><td>지원 타입 목록 출력</td><td>빌드가 무엇을 아는지 확인</td></tr><tr><td><code>-o offset</code></td><td><strong>이미지 안에서 볼륨 시스템이 시작하는 오프셋(섹터)</strong></td><td>이미지 안에 이미지가 들어 있는 경우, 중첩 볼륨</td></tr><tr><td><code>-b size</code></td><td>하부 장치의 섹터 크기(바이트)</td><td>4Kn = <code>-b 4096</code>. 지정 없으면 이미지 형식의 값, 없으면 512</td></tr><tr><td><code>-B</code></td><td>파티션 크기를 <strong>바이트로 표시하는 컬럼 추가</strong></td><td>크기를 눈으로 환산하지 않아도 된다</td></tr><tr><td><code>-r</code></td><td>DOS 파티션 안으로 <strong>재귀</strong>해 다른 파티션 테이블을 찾는다</td><td>확장 파티션, x86에 설치된 Unix 디스크 라벨</td></tr><tr><td><code>-a</code></td><td>할당된 볼륨만 표시</td><td>스크립트로 파티션만 뽑을 때</td></tr><tr><td><code>-A</code></td><td>비할당 볼륨만 표시</td><td>숨긴 영역·카빙 대상 찾기</td></tr><tr><td><code>-m</code></td><td>메타데이터 볼륨 표시</td><td>GPT 헤더/파티션 테이블 행</td></tr><tr><td><code>-M</code></td><td>메타데이터 볼륨 숨김</td><td>출력 정리</td></tr><tr><td><code>-i imgtype</code></td><td>이미지 형식 강제</td><td><code>raw</code> <code>ewf</code> <code>aff</code> <code>split</code> 등. <code>-i list</code>로 확인</td></tr><tr><td><code>-i list</code></td><td>지원 이미지 형식 목록</td><td><strong>E01 지원 여부 판정에 쓴다</strong></td></tr><tr><td><code>-v</code></td><td>디버그 출력(stderr)</td><td>왜 자동탐지가 실패했는지</td></tr><tr><td><code>-V</code></td><td>버전 표시</td><td>빌드 확인</td></tr></tbody></table></div>
+<p><code>-a</code> <code>-A</code> <code>-m</code> <code>-M</code> 중 <strong>아무것도 주지 않으면 전부 표시된다.</strong> 하나라도 주면 그 종류만 표시된다. <code>mmls -a</code>는 파티션만 남기므로 파싱하기 편하다.</p>
+<h3 id="2단계-dos-파티션-테이블-출력">2단계 — DOS 파티션 테이블 출력</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">$ mmls -B image.dd
+DOS Partition Table
+Offset Sector: 0
+Units are in 512-byte sectors
+
+      Slot      Start        End          Length       Size    Description
+000:  Meta      0000000000   0000000000   0000000001   512B    Primary Table (#0)
+001:  -------   0000000000   0000002047   0000002048   1M      Unallocated
+002:  000:000   0000002048   0000206847   0000204800   100M    NTFS / exFAT (0x07)
+003:  000:001   0000206848   0500117503   0499910656   238G    NTFS / exFAT (0x07)
+004:  -------   0500117504   0500118191   0000000688   344K    Unallocated</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>헤더 줄</th><th>의미</th></tr></thead><tbody><tr><td><code>DOS Partition Table</code></td><td>판정된 볼륨 시스템 타입. <code>GUID Partition Table (EFI)</code>면 GPT</td></tr><tr><td><code>Offset Sector: 0</code></td><td><code>-o</code>로 준 값이 반영된 기준점</td></tr><tr><td><code>Units are in 512-byte sectors</code></td><td><strong>이 값이 <code>Start</code>/<code>End</code>/<code>Length</code>의 단위다. 반드시 읽는다</strong></td></tr></tbody></table></div>
+<h3 id="3단계-gpt-출력의-차이">3단계 — GPT 출력의 차이</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">$ mmls image_gpt.dd
+GUID Partition Table (EFI)
+Offset Sector: 0
+Units are in 512-byte sectors
+
+      Slot      Start        End          Length       Description
+000:  Meta      0000000000   0000000000   0000000001   Safety Table
+001:  -------   0000000000   0000002047   0000002048   Unallocated
+002:  Meta      0000000001   0000000001   0000000001   GPT Header
+003:  Meta      0000000002   0000000033   0000000032   Partition Table
+004:  000       0000002048   0001085439   0001083392   EFI system partition
+005:  001       0001085440   0001118207   0000032768   Microsoft reserved partition
+006:  002       0001118208   0499808255   0498690048   Basic data partition</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>DOS와 다른 점</th><th>설명</th></tr></thead><tbody><tr><td><code>Slot</code> 표기</td><td>DOS는 <code>000:001</code>(테이블:엔트리), GPT는 <code>000</code> <code>001</code> 단일 번호</td></tr><tr><td><code>Description</code></td><td>DOS는 파티션 타입 코드 추정, GPT는 <strong>엔트리에 저장된 파티션 이름 문자열</strong></td></tr><tr><td><code>Meta</code> 행</td><td>GPT는 <code>Safety Table</code>(protective MBR), <code>GPT Header</code>, <code>Partition Table</code>이 별도 행으로 나온다</td></tr></tbody></table></div>
+<p>GPT의 <code>Description</code>은 사람이 쓴 이름이므로 <strong>파일시스템 종류의 근거가 아니다.</strong> <code>Basic data partition</code>이라고 적혀 있어도 안이 NTFS인지 exFAT인지 ext4인지는 <code>fsstat</code>으로 확인한다 (<a href="./tsk-fsstat.html">FOR-0043</a>).</p>
+<h3 id="4단계-e01-직접-읽기">4단계 — E01 직접 읽기</h3>
+<p>두 가지 경로가 있다.</p>
+<p><strong>경로 A — TSK가 libewf 지원으로 빌드된 경우</strong></p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">mmls -i list                # 목록에 ewf 가 있는지 먼저 본다
+mmls -i ewf image.E01
+fls  -i ewf -o 206848 -r -p image.E01
+icat -i ewf -o 206848 image.E01 9134 &gt; out.bin</code></pre></div>
+<p><code>-i ewf</code>를 쓰면 <strong>뒤따르는 모든 TSK 명령에도 <code>-i ewf</code>를 붙여야 한다.</strong> 하나라도 빠지면 그 명령만 raw로 해석해 실패한다.</p>
+<p><strong>경로 B — 지원이 없거나 형식이 애매한 경우: ewfmount로 raw로 노출</strong></p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">ewfinfo image.E01                     # 획득 정보·해시·분할 개수 확인
+mkdir -p /mnt/ewf
+ewfmount image.E01 /mnt/ewf           # /mnt/ewf/ewf1 이 raw 이미지처럼 보인다
+mmls /mnt/ewf/ewf1
+fls -o 206848 -r -p /mnt/ewf/ewf1</code></pre></div>
+<p>분할 이미지는 <strong>첫 조각만 지정한다.</strong> <code>image.001</code>을 주면 <code>.002</code> 이후를 자동으로 이어 붙인다. <code>image.E01</code>도 같다.</p>
+<p>Windows GUI가 편하면 FTK Imager나 Arsenal Image Mounter로 마운트해 raw 볼륨을 만든 뒤 그 위에서 작업한다 (<a href="./ftk-imager-open-image.html">FOR-0016</a>, <a href="./arsenal-image-mounter.html">FOR-0017</a>).</p>
+<h3 id="5단계-실패-진단-순서">5단계 — 실패 진단 순서</h3>
+<p>증상별로 이 순서대로 뚫는다.</p>
+<div class="table-wrap"><table><thead><tr><th>증상</th><th>원인</th><th>대응</th></tr></thead><tbody><tr><td><code>Cannot determine partition type</code></td><td>자동탐지 실패</td><td><code>mmls -t dos</code> → <code>-t gpt</code> → <code>-t mac</code> → <code>-t bsd</code> → <code>-t sun</code> 순으로 강제</td></tr><tr><td>위를 다 해도 실패</td><td><strong>파티션 테이블이 없는 단일 볼륨 이미지</strong></td><td><code>mmls</code>를 포기하고 <code>fsstat -o 0 image.dd</code></td></tr><tr><td>표는 나오는데 파티션이 없다</td><td>엔트리가 지워졌다</td><td>시그니처 스캔으로 볼륨 시작 찾기 (<a href="./mbr-gpt.html">FOR-0019</a>)</td></tr><tr><td>크기가 실제 디스크의 1/8</td><td>섹터 크기 오판</td><td><code>mmls -b 4096</code></td></tr><tr><td><code>Start</code> 값을 넣었는데 <code>fsstat</code> 실패</td><td><code>-b</code>를 downstream에 안 넘겼다</td><td>모든 명령에 동일한 <code>-b</code> 지정</td></tr><tr><td>E01을 못 읽는다</td><td>빌드에 EWF 지원 없음</td><td><code>-i list</code> 확인 → <code>ewfmount</code></td></tr><tr><td>논리 이미지(AD1)·단일 파일</td><td>볼륨 시스템 자체가 없다</td><td><code>mmls</code> 대상이 아니다</td></tr><tr><td>큰 <code>Unallocated</code>가 하나뿐</td><td>삭제·숨긴 파티션 또는 암호화 볼륨</td><td>시그니처 스캔 / BitLocker 확인</td></tr></tbody></table></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># -t 를 순서대로 시도하는 한 줄
+for t in dos gpt mac bsd sun; do echo &quot;== $t&quot;; mmls -t $t image.dd 2&gt;&amp;1 | head -5; done</code></pre></div>
+<h3 id="6단계-오프셋을-다음-명령으로-이어-쓰는-파이프라인">6단계 — 오프셋을 다음 명령으로 이어 쓰는 파이프라인</h3>
+<p><code>mmls</code>의 결론은 숫자 하나다. 그 숫자를 셸 변수에 넣고 끝까지 재사용한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">IMG=image.dd
+OFF=$(mmls -a &quot;$IMG&quot; | awk &#39;/NTFS/ {print $3; exit}&#39;)
+echo &quot;offset=$OFF&quot;
+
+fsstat -o &quot;$OFF&quot; &quot;$IMG&quot; | head -20          # 검증
+fls   -o &quot;$OFF&quot; -r -p &quot;$IMG&quot; &gt; files.txt    # 전체 목록
+fls   -o &quot;$OFF&quot; -r -p -d &quot;$IMG&quot; &gt; del.txt   # 삭제 항목만
+icat  -o &quot;$OFF&quot; &quot;$IMG&quot; 9134 &gt; out.bin       # 특정 파일 추출</code></pre></div>
+<p><code>mmls -a</code>로 <strong>할당 볼륨만 남기면 컬럼 수가 고정되어</strong> <code>awk &#39;{print $3}&#39;</code>가 안전하다. <code>-a</code> 없이 돌리면 <code>-------</code> 행과 <code>Meta</code> 행의 컬럼 수가 달라 파싱이 깨진다.</p>
+<p>4Kn 이미지는 <code>-b</code>를 전부에 붙인다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">B=4096
+OFF=$(mmls -a -b $B &quot;$IMG&quot; | awk &#39;/NTFS/ {print $3; exit}&#39;)
+fsstat -o &quot;$OFF&quot; -b $B &quot;$IMG&quot;
+fls    -o &quot;$OFF&quot; -b $B -r -p &quot;$IMG&quot;</code></pre></div>
+<p>비할당 구간만 뽑아 카빙 범위를 정하는 것도 <code>mmls</code>의 역할이다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">mmls -A -B image.dd            # 비할당 볼륨만, 바이트 크기 포함</code></pre></div>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="table-wrap"><table><thead><tr><th>컬럼</th><th>의미</th><th>어디에 쓰는가</th></tr></thead><tbody><tr><td>행 번호(<code>002:</code>)</td><td>출력 줄 번호</td><td>사람이 지목하기 위한 번호. 파티션 번호가 아니다</td></tr><tr><td><code>Slot</code></td><td><code>Meta</code> / <code>-------</code> / 파티션 슬롯</td><td><code>Meta</code>=테이블 자체, <code>-------</code>=비할당</td></tr><tr><td><code>Start</code></td><td><strong>시작 섹터</strong></td><td>그대로 <code>-o</code> 값</td></tr><tr><td><code>End</code></td><td>끝 섹터(포함)</td><td>범위 계산</td></tr><tr><td><code>Length</code></td><td>섹터 개수</td><td><code>Length × 섹터크기</code> = 볼륨 크기</td></tr><tr><td><code>Size</code>(<code>-B</code>)</td><td>크기를 바이트/축약 단위로</td><td>눈으로 환산 생략</td></tr><tr><td><code>Description</code></td><td>DOS는 타입 코드 추정, GPT는 파티션 이름</td><td><strong>확정 근거가 아니다.</strong> <code>fsstat</code>으로 확인</td></tr></tbody></table></div>
+<p><code>Start</code>가 0인 볼륨과 <code>Offset Sector</code> 값은 다르다. <code>Offset Sector</code>는 <code>-o</code>로 준 기준점이고, <code>Start</code>는 그 기준점 기준의 상대 섹터다. <strong><code>-o</code>를 준 상태에서 나온 <code>Start</code>를 다시 <code>-o</code>에 넣으면 두 번 더해지지 않는다</strong> — <code>mmls -o N</code>은 이미 절대 섹터로 환산해 출력한다. 헷갈리면 <code>-o</code> 없이 다시 돌려 대조한다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>mmls에서 얻은 것</th><th>다음 목표</th></tr></thead><tbody><tr><td>파티션 <code>Start</code></td><td><code>fsstat -o N</code>으로 파일시스템 확정 (<a href="./tsk-fsstat.html">FOR-0043</a>)</td></tr><tr><td>파일시스템 확정</td><td><code>fls -o N -r -p</code>로 전체 파일 목록 (<a href="./tsk-fls.html">FOR-0041</a>)</td></tr><tr><td>파일의 메타주소</td><td><code>icat -o N</code>으로 내용 추출 (<a href="./tsk-icat.html">FOR-0042</a>)</td></tr><tr><td>큰 <code>Unallocated</code> 구간</td><td>비할당만 떼어 카빙 (<a href="./carving-strategy.html">FOR-0045</a>)</td></tr><tr><td>파티션 여러 개</td><td>각각 <code>fsstat</code>으로 종류 판정 후 우선순위 결정</td></tr><tr><td><code>Description</code>이 Linux</td><td><code>/etc/passwd</code>, <code>/var/log</code>, <code>~/.bash_history</code></td></tr><tr><td>테이블이 깨졌다</td><td>파티션 테이블 바이트 직접 읽기 (<a href="./mbr-gpt.html">FOR-0019</a>)</td></tr><tr><td>GUI로 교차확인</td><td>FTK Imager Evidence Tree (<a href="./ftk-imager-open-image.html">FOR-0016</a>)</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>Units are in N-byte sectors</code> 줄을 읽지 않는 것.</strong> 4Kn 이미지에서 512를 가정하면 오프셋이 8배 틀린다. → 첫 세 줄을 항상 읽고, 512가 아니면 이후 모든 명령에 <code>-b</code>를 붙인다.</li><li><strong><code>-b</code>를 <code>mmls</code>에만 주고 <code>fls</code>/<code>icat</code>/<code>fsstat</code>에는 빼먹는 것.</strong> TSK의 <code>-o</code>는 &quot;섹터 단위&quot;이므로 섹터 크기가 다르면 같은 숫자가 다른 위치를 가리킨다. → 셸 변수로 묶어 전부에 넘긴다.</li><li><strong><code>-i ewf</code>를 첫 명령에만 주는 것.</strong> 형식 지정은 명령마다 독립이다. 빠진 명령은 E01 헤더를 데이터로 읽고 실패한다.</li><li><strong><code>Description</code>을 파일시스템 확정으로 쓰는 것.</strong> DOS는 타입 코드 기반 추정이고 GPT는 사용자가 쓴 이름이다. → <code>fsstat</code>이 유일한 판정 근거다.</li><li><strong><code>Meta</code> 행의 <code>Start</code>를 <code>-o</code>에 넣는 것.</strong> <code>Primary Table</code>, <code>GPT Header</code>, <code>Partition Table</code>은 파티션이 아니다. <code>-M</code>으로 숨기면 실수하지 않는다.</li><li><strong><code>mmls</code> 실패를 &quot;이미지가 깨졌다&quot;로 결론 내는 것.</strong> 파티션 테이블 없는 단일 볼륨 이미지가 CTF에서 매우 흔하다. → <code>fsstat -o 0</code>을 반드시 시도한다.</li><li><strong><code>-r</code>을 안 써서 확장 파티션 안쪽을 놓치는 것.</strong> DOS 확장 파티션이나 x86 디스크에 얹힌 BSD 라벨은 재귀해야 보인다.</li><li><strong><code>awk &#39;{print $3}&#39;</code>을 <code>-a</code> 없이 쓰는 것.</strong> <code>-------</code> 행은 <code>Slot</code> 컬럼이 한 토큰, 파티션 행은 <code>000:001</code>로 역시 한 토큰이지만 <code>Meta</code> 행과 헤더 줄이 섞이면 오탐이 난다. → <code>mmls -a</code>로 좁히고 <code>exit</code>으로 첫 결과만 받는다.</li><li><strong>분할 이미지의 조각을 전부 나열하려다 순서를 틀리는 것.</strong> 첫 조각만 주면 자동으로 이어진다.</li><li><strong><code>mmls</code> 결과를 Autopsy가 잡은 볼륨과 대조하지 않는 것.</strong> 둘이 다르면 오프셋 지정이 다른 것이다. 개수부터 맞춰 본다 (<a href="./autopsy-ingest.html">FOR-0018</a>).</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) Sleuth Kit
+mmls -B image.dd
+
+# 2) 다른 구현으로 대조
+fdisk -l image.dd            # MBR 중심
+gdisk -l image.dd            # GPT 중심, 백업 헤더 자동 시도
+
+# 3) 시그니처 직접 확인 (구조 해석은 FOR-0019)
+xxd -s 0x1FE -l 2 image.dd   # 55 aa
+xxd -s 512   -l 8 image.dd   # &quot;EFI PART&quot;
+
+# 4) 최종 판정 — 오프셋이 맞으면 fsstat 이 성공한다
+fsstat -o 206848 image.dd | head -5
+
+# 5) 이미지 형식·해시 확인 (E01)
+ewfinfo image.E01</code></pre></div>
+<p><code>mmls</code>와 <code>fdisk</code>/<code>gdisk</code>의 파티션 개수가 다르면 볼륨 시스템 판정이 갈린 것이다. <code>mmls -t dos</code>와 <code>mmls -t gpt</code>를 각각 강제해 어느 쪽이 일관된 표를 내는지 본다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;첨부한 이미지에서 사용자 문서를 찾아 플래그를 제출하세요.&quot;
+첨부: case01.E01 (단일 파일, 4 GB)
+
+1. 첫 시도 (실패):
+   $ mmls case01.E01
+   Cannot determine partition type
+
+   E01 이니 형식을 강제해 본다.
+   $ mmls -i ewf case01.E01
+   mmls: image type &quot;ewf&quot; not supported
+
+   -&gt; 이 TSK 빌드에 libewf 지원이 없다.
+
+2. 지원 목록을 먼저 확인한다 (처음부터 이걸 했어야 한다)
+   $ mmls -i list
+   Supported image format types:
+       raw (Single or split raw file (dd))
+       aff (Advanced Forensic Format)
+       ...
+   -&gt; ewf 가 없다. 우회로가 필요하다.
+
+3. 접근 변경 — ewfmount 로 raw 로 노출
+   $ ewfinfo case01.E01 | head
+   Acquiry information ...
+   $ mkdir -p /mnt/ewf &amp;&amp; ewfmount case01.E01 /mnt/ewf
+   $ ls /mnt/ewf
+   ewf1
+
+   $ mmls /mnt/ewf/ewf1
+   Cannot determine partition type      &lt;- 또 실패
+
+4. 두 번째 실패의 원인은 형식이 아니었다
+   $ ls -l /mnt/ewf/ewf1
+   -r--r--r-- 1 root root 4294967296 ...   (4 GiB)
+
+   4 GiB 인데 512바이트 섹터로 보면 8388608 섹터.
+   -t 를 전부 강제해 본다.
+   $ for t in dos gpt mac bsd sun; do echo &quot;== $t&quot;; \
+       mmls -t $t /mnt/ewf/ewf1 2&gt;&amp;1 | head -3; done
+   == dos
+   Cannot determine partition type
+   == gpt
+   Cannot determine partition type
+   ...
+   -&gt; 타입 문제도 아니다. 남은 변수는 섹터 크기다.
+
+5. 섹터 크기 강제
+   $ mmls -b 4096 /mnt/ewf/ewf1
+   DOS Partition Table
+   Offset Sector: 0
+   Units are in 4096-byte sectors
+
+         Slot      Start        End          Length       Description
+   000:  Meta      0000000000   0000000000   0000000001   Primary Table (#0)
+   001:  -------   0000000000   0000000255   0000000256   Unallocated
+   002:  000:000   0000000256   0001048575   0001048320   NTFS / exFAT (0x07)
+
+   -&gt; 4Kn 이미지였다. Start = 256 (4096바이트 섹터 기준)
+
+6. 검증 — -b 를 빼먹으면 여기서 또 실패한다
+   $ fsstat -o 256 /mnt/ewf/ewf1
+   Cannot determine file system type       &lt;- -b 누락
+
+   $ fsstat -o 256 -b 4096 /mnt/ewf/ewf1 | head -6
+   FILE SYSTEM INFORMATION
+   --------------------------------------------
+   File System Type: NTFS
+   Volume Serial Number: 4C2F9A1B7D3E5061
+   OEM Name: NTFS
+   Version: Windows XP
+   -&gt; 성공. 오프셋 확정.
+
+7. 파이프라인으로 이어 쓴다
+   $ fls -o 256 -b 4096 -r -p /mnt/ewf/ewf1 | grep -i &#39;documents/&#39;
+   r/r 9134-128-1:  Users/kim/Documents/report.docx
+   -/r * 9188-128-1: Users/kim/Documents/passwords.txt
+
+   $ icat -o 256 -b 4096 /mnt/ewf/ewf1 9188 &gt; pw.txt
+   $ cat pw.txt
+   flag{4kn_s3ct0r_s1z3_m4tt3rs}
+
+정답: flag{4kn_s3ct0r_s1z3_m4tt3rs}</code></pre></div>
+<p>두 번의 실패가 각각 다른 변수였다. <strong>1단계는 이미지 형식, 4단계는 섹터 크기.</strong> <code>mmls</code>가 실패하면 형식(<code>-i</code>) → 타입(<code>-t</code>) → 섹터 크기(<code>-b</code>) 순으로 하나씩 고정해 가며 좁힌다. 그리고 <code>-b</code>는 반드시 뒤따르는 모든 명령에 복사한다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li>출력 셋째 줄의 <code>Units are in N-byte sectors</code>를 읽었는가</li><li><code>-b</code>를 <code>fsstat</code>/<code>fls</code>/<code>icat</code>에도 전부 넘겼는가</li><li><code>mmls -i list</code>로 이 빌드가 E01을 아는지 확인했는가</li><li><code>-i ewf</code>를 모든 명령에 붙였는가, 아니면 <code>ewfmount</code>로 raw로 바꿨는가</li><li><code>-t dos</code> <code>-t gpt</code> <code>-t mac</code> <code>-t bsd</code> <code>-t sun</code>을 전부 시도했는가</li><li>그래도 안 되면 <code>fsstat -o 0</code>으로 <strong>파티션 없는 단일 볼륨</strong>을 시도했는가</li><li><code>-r</code>로 확장 파티션 안쪽을 봤는가</li><li><code>-A -B</code>로 비할당 구간의 크기를 확인했는가 (수 GB면 숨긴 파티션)</li><li><code>Meta</code> 행의 <code>Start</code>를 오프셋으로 쓰지 않았는가 (<code>-M</code>으로 숨겨 확인)</li><li><code>Description</code>을 파일시스템 확정 근거로 쓰지 않았는가</li><li>분할 이미지에서 <strong>첫 조각</strong>을 지정했는가</li><li><code>fdisk -l</code> / <code>gdisk -l</code> 결과와 파티션 개수가 일치하는가</li><li>논리 이미지(AD1)라면 볼륨 시스템이 애초에 없다는 것을 알고 있는가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-032 — The Sleuth Kit 도구 문서(mmls man page): <code>-t</code> <code>-o</code> <code>-b</code> <code>-B</code> <code>-r</code> <code>-a</code> <code>-A</code> <code>-m</code> <code>-M</code> <code>-i</code> <code>-v</code> <code>-V</code> 의 정의, &quot;아무 선택 플래그도 없으면 전 종류 표시&quot; 규칙, 분할 이미지 자동 인식</li><li>SRC-034 — UEFI 명세: GPT의 protective MBR / GPT 헤더 / 파티션 엔트리 배열이 별도 <code>Meta</code> 볼륨으로 표시되는 근거, 파티션 이름 필드가 <code>Description</code>에 나오는 이유</li><li>지원되는 <code>-t</code> / <code>-i</code> 값 목록은 man page가 열거하지 않고 <strong>빌드마다 다르다.</strong> 반드시 <code>mmls -t list</code> / <code>mmls -i list</code>로 현장에서 확인할 것</li><li>출력 예시의 파티션 배치·시리얼·플래그 값은 설명을 위한 예시이며 실제 이미지의 값은 다르다</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./mbr-gpt.html">
+    <span class="rel-id">FOR-0019 · 디스크/NTFS</span>
+    MBR과 GPT 파티션 테이블 직접 읽기
+  </a>
+  <a class="related-item" href="./tsk-fls.html">
+    <span class="rel-id">FOR-0041 · 디스크/NTFS</span>
+    fls로 파일 목록·삭제 항목·bodyfile 뽑기
+  </a>
+  <a class="related-item" href="./tsk-fsstat.html">
+    <span class="rel-id">FOR-0043 · 디스크/NTFS</span>
+    fsstat 출력 필드 레퍼런스 (NTFS/FAT/ext)
+  </a>
+  <a class="related-item" href="./partition-offset-problems.html">
+    <span class="rel-id">FOR-0048 · 디스크/NTFS</span>
+    파티션 오프셋이 안 맞을 때: 섹터/바이트, 4Kn, 볼륨 단독 이미지
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./filename-change-traces.html"><span class="rel-id">← FOR-0039</span>파일명 변경 흔적 추적: $UsnJrnl RENAME 쌍으로 원래 이름 찾기</a>
+<a class="related-item" href="./tsk-fls.html"><span class="rel-id">FOR-0041 →</span>fls로 파일 목록·삭제 항목·bodyfile 뽑기</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-옵션-전체">1단계 — 옵션 전체</a></li>
+<li class="toc-l3"><a href="#2단계-dos-파티션-테이블-출력">2단계 — DOS 파티션 테이블 출력</a></li>
+<li class="toc-l3"><a href="#3단계-gpt-출력의-차이">3단계 — GPT 출력의 차이</a></li>
+<li class="toc-l3"><a href="#4단계-e01-직접-읽기">4단계 — E01 직접 읽기</a></li>
+<li class="toc-l3"><a href="#5단계-실패-진단-순서">5단계 — 실패 진단 순서</a></li>
+<li class="toc-l3"><a href="#6단계-오프셋을-다음-명령으로-이어-쓰는-파이프라인">6단계 — 오프셋을 다음 명령으로 이어 쓰는 파이프라인</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 03:39 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

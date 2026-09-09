@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>fsstat 출력 필드 레퍼런스 (NTFS/FAT/ext) · FOR-0043 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%94%94%EC%8A%A4%ED%81%AC%2FNTFS">디스크/NTFS</a> / FOR-0043
+      </div>
+      <header class="article-head">
+        <h1>fsstat 출력 필드 레퍼런스 (NTFS/FAT/ext)</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">디스크/NTFS</span>
+      <span class="badge badge-type">레퍼런스</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">linux</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>fsstat -o &lt;오프셋&gt; image.dd가 정상 출력을 내면 그 오프셋이 맞았다는 증거이며, 출력의 Sector Size / Cluster Size / First Cluster of MFT / Size of MFT Entries 네 값만 적어 두면 이후의 모든 오프셋 계산과 카빙 정렬이 끝난다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Sleuth Kit, fsstat, mmls, fls, icat, istat, HxD</td></tr>
+<tr><th>artifact</th><td><code>volume boot record</code> · <code>$MFT</code> · <code>$MFTMirr</code> · <code>cluster</code> · <code>sector</code> · <code>$AttrDef</code> · <code>superblock</code></td></tr>
+<tr><th>파일 경로</th><td><code>$MFTMirr</code> · <code>$Boot</code></td></tr>
+<tr><th>로그 필드</th><td><code>File System Type</code> · <code>Volume Serial Number</code> · <code>OEM Name</code> · <code>Version</code> · <code>First Cluster of MFT</code> · <code>First Cluster of MFT Mirror</code> · <code>Size of MFT Entries</code> · <code>Size of Index Records</code> · <code>Root Directory</code> · <code>Sector Size</code> · <code>Cluster Size</code> · <code>Total Cluster Range</code> · <code>Total Sector Range</code> · <code>Block Size</code> · <code>Inode Range</code></td></tr>
+<tr><th>파일 형식</th><td><code>ntfs</code> · <code>fat</code> · <code>exfat</code> · <code>ext4</code> · <code>raw</code> · <code>dd</code> · <code>e01</code></td></tr>
+<tr><th>검색 별칭</th><td>fsstat · fsstat 사용법 · 클러스터 크기 확인 · 섹터 크기 확인 · mft 위치 계산 · 파일시스템 종류 확인 · 오프셋 맞는지 확인</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>fsstat -o &lt;오프셋&gt; image.dd</code>가 정상 출력을 내면 그 오프셋이 맞았다는 증거이며, 출력의 <code>Sector Size</code> / <code>Cluster Size</code> / <code>First Cluster of MFT</code> / <code>Size of MFT Entries</code> 네 값만 적어 두면 이후의 모든 오프셋 계산과 카빙 정렬이 끝난다.</p>
+<h2 id="개념">개념</h2>
+<p><code>fsstat</code>은 파일시스템의 <strong>슈퍼블록/부트섹터 수준 메타데이터</strong>만 읽어 출력한다. 파일 목록도 내용도 보지 않으므로 수백 GB 이미지에서도 즉시 끝난다.</p>
+<p>이 도구의 실전 역할은 두 가지다.</p>
+<div class="table-wrap"><table><thead><tr><th>역할</th><th>근거</th></tr></thead><tbody><tr><td><strong>오프셋 판정기</strong></td><td>오프셋이 틀리면 <code>Cannot determine file system type</code>이 나온다. 맞으면 표가 나온다. 이 이진 판정이 시행착오의 기준이 된다</td></tr><tr><td><strong>상수 공급기</strong></td><td><code>Cluster Size</code>, <code>Size of MFT Entries</code> 등은 이후 모든 손계산(레코드 오프셋, 클러스터→바이트 환산)의 재료다</td></tr></tbody></table></div>
+<p>출력은 파일시스템 종류에 따라 섹션 구성이 달라지지만, NTFS/FAT/exFAT은 공통으로 세 섹션을 가진다.</p>
+<div class="table-wrap"><table><thead><tr><th>섹션</th><th>담는 것</th></tr></thead><tbody><tr><td><code>FILE SYSTEM INFORMATION</code></td><td>종류, 볼륨 식별자, 생성 OS 정보</td></tr><tr><td><code>METADATA INFORMATION</code></td><td>메타데이터 구조(MFT/inode/루트 디렉터리)의 위치와 범위</td></tr><tr><td><code>CONTENT INFORMATION</code></td><td>섹터/클러스터(블록) 크기와 전체 범위</td></tr></tbody></table></div>
+<h2 id="파일-경로">파일 / 경로</h2>
+<p><code>fsstat</code>은 이미지 파일을 직접 읽으며, 실제로 참조하는 것은 볼륨 시작부의 구조다.</p>
+<div class="table-wrap"><table><thead><tr><th>파일시스템</th><th>읽는 구조</th><th>볼륨 내 위치</th></tr></thead><tbody><tr><td>NTFS</td><td>볼륨 부트 레코드(VBR) + <code>$MFT</code> 앞부분 + <code>$AttrDef</code></td><td>볼륨 첫 섹터</td></tr><tr><td>FAT12/16/32</td><td>부트섹터 + BPB + FSINFO</td><td>볼륨 첫 섹터</td></tr><tr><td>exFAT</td><td>부트섹터 + 확장 BPB</td><td>볼륨 첫 섹터</td></tr><tr><td>ext2/3/4</td><td>슈퍼블록</td><td>볼륨 시작 + <code>0x400</code>(1024바이트)</td></tr></tbody></table></div>
+<p>옵션은 다섯 개뿐이다.</p>
+<div class="table-wrap"><table><thead><tr><th>옵션</th><th>의미</th></tr></thead><tbody><tr><td><code>-o offset</code></td><td>파일시스템이 시작하는 <strong>섹터</strong> 오프셋</td></tr><tr><td><code>-t</code></td><td><strong>파일시스템 타입만</strong> 출력 (스크립트용)</td></tr><tr><td><code>-f fstype</code></td><td>타입 강제. <code>-f list</code>로 지원 목록</td></tr><tr><td><code>-i imgtype</code></td><td>이미지 형식 강제. <code>-i list</code>로 지원 목록</td></tr><tr><td><code>-b size</code></td><td>하부 장치 섹터 크기(바이트). 미지정 시 이미지 형식의 값 또는 512</td></tr><tr><td><code>-v</code> / <code>-V</code></td><td>디버그 출력 / 버전</td></tr></tbody></table></div>
+<h2 id="주요-필드">주요 필드</h2>
+<h3 id="ntfs-출력">NTFS 출력</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">$ fsstat -o 206848 image.dd
+FILE SYSTEM INFORMATION
+--------------------------------------------
+File System Type: NTFS
+Volume Serial Number: 8C3A1F2D9B4E7A65
+OEM Name: NTFS
+Version: Windows XP
+
+METADATA INFORMATION
+--------------------------------------------
+First Cluster of MFT: 786432
+First Cluster of MFT Mirror: 2
+Size of MFT Entries: 1024 bytes
+Size of Index Records: 4096 bytes
+Range: 0 - 262143
+Root Directory: 5
+
+CONTENT INFORMATION
+--------------------------------------------
+Sector Size: 512
+Cluster Size: 4096
+Total Cluster Range: 0 - 5216766
+Total Sector Range: 0 - 41734143
+
+$AttrDef Attribute Values:
+$STANDARD_INFORMATION (16)   Size: 48-72   Flags: Resident
+$ATTRIBUTE_LIST (32)   Size: No Limit   Flags: Non-resident
+$FILE_NAME (48)   Size: 68-578   Flags: Resident,Index
+$DATA (128)   Size: No Limit   Flags:
+...</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>의미</th><th>어디에 쓰는가</th></tr></thead><tbody><tr><td><code>File System Type</code></td><td>파일시스템 종류</td><td><strong>오프셋이 맞았다는 증거</strong></td></tr><tr><td><code>Volume Serial Number</code></td><td>볼륨 시리얼(부트섹터의 8바이트)</td><td>LNK 파일의 볼륨 시리얼과 대조해 &quot;어느 볼륨의 파일인지&quot; 확정. 이미지 동일성 확인</td></tr><tr><td><code>OEM Name</code></td><td>부트섹터의 OEM ID 문자열</td><td>시그니처 스캔으로 볼륨을 찾을 때의 검색어(<code>NTFS    </code>) (<a href="./mbr-gpt.html">FOR-0019</a>)</td></tr><tr><td><code>Version</code></td><td>NTFS 버전에서 유추한 생성 OS</td><td>대략적 OS 세대 추정. 정밀한 근거는 아니다</td></tr><tr><td><code>First Cluster of MFT</code></td><td><code>$MFT</code>가 시작하는 <strong>클러스터 번호</strong></td><td><strong><code>$MFT</code> 물리 위치 계산의 시작점</strong></td></tr><tr><td><code>First Cluster of MFT Mirror</code></td><td><code>$MFTMirr</code> 시작 클러스터</td><td><code>$MFT</code> 앞부분 손상 시 복구 출발점</td></tr><tr><td><code>Size of MFT Entries</code></td><td>MFT 레코드 1개 크기 (보통 1024바이트)</td><td><strong>레코드 N의 오프셋 = N × 이 값</strong> (<a href="./mft-basics.html">FOR-0021</a>)</td></tr><tr><td><code>Size of Index Records</code></td><td>디렉터리 색인 레코드 크기</td><td><code>$INDEX_ALLOCATION</code> 수동 파싱 시</td></tr><tr><td><code>Range</code></td><td>유효 MFT 엔트리 번호 범위</td><td><code>icat</code>/<code>istat</code>에 넣을 주소가 범위 안인지 확인</td></tr><tr><td><code>Root Directory</code></td><td>루트 디렉터리의 메타주소 (NTFS는 <code>5</code>)</td><td><code>fls -o N image.dd 5</code></td></tr><tr><td><code>Sector Size</code></td><td>섹터 크기</td><td>섹터↔바이트 환산</td></tr><tr><td><code>Cluster Size</code></td><td><strong>클러스터 크기</strong></td><td>클러스터↔바이트 환산, <strong>카빙 정렬 단위</strong>, 슬랙 크기 계산</td></tr><tr><td><code>Total Cluster Range</code></td><td>클러스터 번호 범위</td><td>data run 값의 유효성 검증</td></tr><tr><td><code>Total Sector Range</code></td><td>섹터 번호 범위</td><td>볼륨 크기 검증</td></tr><tr><td><code>$AttrDef Attribute Values</code></td><td>속성 타입 번호와 이름 대응표</td><td><code>icat</code>의 세 토막 주소에 넣을 속성 타입 번호 확인 (<a href="./tsk-icat.html">FOR-0042</a>)</td></tr></tbody></table></div>
+<h3 id="오프셋-계산-공식">오프셋 계산 공식</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">볼륨 시작(바이트)   = 파티션 Start(섹터) × Sector Size
+$MFT 시작(볼륨 상대) = First Cluster of MFT × Cluster Size
+$MFT 시작(이미지 절대) = 볼륨 시작 + $MFT 시작(볼륨 상대)
+레코드 N 오프셋       = $MFT 시작 + N × Size of MFT Entries
+클러스터 C 오프셋     = 볼륨 시작 + C × Cluster Size</code></pre></div>
+<p>위 출력 값으로 실제 계산한 예다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">볼륨 시작        = 206848 × 512  = 105,906,176    (0x6500000)
+$MFT 볼륨 상대   = 786432 × 4096 = 3,221,225,472  (0xC0000000)
+$MFT 절대        = 105,906,176 + 3,221,225,472 = 3,327,131,648
+레코드 12345     = 3,327,131,648 + 12345 × 1024 = 3,339,772,928</code></pre></div>
+<p>HxD의 Goto에 <code>3339772928</code>(또는 <code>0xC7167000</code>)을 넣으면 그 레코드의 <code>FILE</code> 시그니처가 보인다. 안 보이면 계산이나 오프셋이 틀렸다.</p>
+<h3 id="fat-exfat-ext-출력의-차이">FAT / exFAT / ext 출력의 차이</h3>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>NTFS</th><th>FAT32</th><th>exFAT</th><th>ext4</th></tr></thead><tbody><tr><td>볼륨 식별자 필드</td><td><code>Volume Serial Number</code></td><td><code>Volume ID</code>, <code>Volume Label (Boot Sector)</code>, <code>Volume Label (Root Directory)</code></td><td><code>Volume Serial Number</code></td><td><code>Volume Name</code>, <code>Volume ID</code></td></tr><tr><td>메타데이터 구조</td><td><code>First Cluster of MFT</code>, <code>Size of MFT Entries</code></td><td>없음 (디렉터리 엔트리 방식)</td><td>없음</td><td><code>Inode Range</code>, <code>Free Inodes</code></td></tr><tr><td>루트 디렉터리 주소</td><td><code>5</code></td><td><code>2</code></td><td>구현에 따라 다름</td><td><code>2</code></td></tr><tr><td>데이터 단위 명칭</td><td><code>Cluster Size</code></td><td><code>Cluster Size</code></td><td><code>Cluster Size</code></td><td><strong><code>Block Size</code></strong></td></tr><tr><td>범위 필드</td><td><code>Total Cluster Range</code></td><td><code>Total Cluster Range</code></td><td><code>Total Cluster Range</code></td><td><strong><code>Block Range</code></strong></td></tr><tr><td>고유 추가 섹션</td><td><code>$AttrDef Attribute Values</code></td><td><code>FAT CONTENTS (in sectors)</code></td><td>—</td><td><code>BLOCK GROUP INFORMATION</code></td></tr><tr><td>마운트/시각 정보</td><td>없음</td><td>없음</td><td>없음</td><td><code>Last Written at</code>, <code>Last Checked at</code>, <code>Last Mounted at</code>, <code>Last mounted on</code>, <code>Unmounted properly</code></td></tr></tbody></table></div>
+<p>ext4 출력의 실전 포인트다.</p>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>의미</th></tr></thead><tbody><tr><td><code>Last Written at</code> / <code>Last Mounted at</code> / <code>Last Checked at</code></td><td><strong>볼륨 수준 타임스탬프.</strong> 마지막 사용 시각 추정의 근거</td></tr><tr><td><code>Last mounted on</code></td><td>마지막 마운트 경로 문자열 (<code>/</code>, <code>/mnt/data</code> 등)</td></tr><tr><td><code>Unmounted properly</code></td><td>정상 언마운트 여부. <code>No</code>면 강제 종료·전원 차단 흔적</td></tr><tr><td><code>Compat/InCompat/Read Only Compat Features</code></td><td><code>has_journal</code>, <code>extents</code>, <code>64bit</code> 등. ext3/ext4 구분 근거</td></tr><tr><td><code>Journal ID</code> / 저널 존재</td><td><code>journal</code>이 있으면 <code>$LogFile</code>에 해당하는 분석 여지</td></tr><tr><td><code>Free Inodes</code> / <code>Free Blocks</code></td><td>사용률. 비할당 영역의 규모 추정</td></tr></tbody></table></div>
+<p>FAT 계열은 <code>FAT CONTENTS (in sectors)</code> 섹션이 클러스터 체인의 할당 상태를 섹터 범위로 나열한다. 파일 하나의 조각 분포를 눈으로 보고 싶을 때 쓴다.</p>
+<p>exFAT의 세부 필드 이름은 TSK 버전에 따라 차이가 있다. <code>Sector Size</code> / <code>Cluster Size</code> / <code>Total Cluster Range</code> 세 개를 우선 읽고 나머지는 실제 출력에서 확인한다.</p>
+<h2 id="빠른-명령">빠른 명령</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">fsstat -o 2048 image.dd</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">fsstat -o 2048 image.dd | head -20              # 앞 세 섹션만 (긴 $AttrDef 를 자른다)
+fsstat -t -o 2048 image.dd                      # 타입만: ntfs / fat32 / ext4 ...
+fsstat -o 0 image.dd                            # 파티션 테이블 없는 단일 볼륨 이미지
+fsstat -o 2048 -b 4096 image.dd                 # 4Kn 이미지
+fsstat -i ewf -o 2048 image.E01                 # E01 직접
+fsstat -f list                                  # 지원 파일시스템 목록
+fsstat -f ntfs -o 2048 image.dd                 # 자동탐지 실패 시 타입 강제</code></pre></div>
+<p>필요한 값만 뽑아 변수에 담는다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">IMG=image.dd; OFF=206848
+fsstat -o $OFF $IMG | grep -E &#39;File System Type|Sector Size|Cluster Size|First Cluster of MFT|Size of MFT Entries&#39;</code></pre></div>
+<p><code>-t</code>는 오프셋 후보를 무작위로 훑을 때 유용하다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 흔한 시작 섹터 후보를 순서대로 두드린다
+for s in 0 63 64 128 2048 8192 32768 206848; do
+  printf &#39;%8s : %s\n&#39; &quot;$s&quot; &quot;$(fsstat -t -o $s image.dd 2&gt;&amp;1 | head -1)&quot;
+done</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">       0 : Cannot determine file system type
+      63 : Cannot determine file system type
+    2048 : ntfs
+  206848 : ntfs</code></pre></div>
+<p>시그니처 스캔으로 찾은 후보 섹터를 검증하는 것도 같은 방식이다 (<a href="./mbr-gpt.html">FOR-0019</a>).</p>
+<h2 id="함께-보는-artifact">함께 보는 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>fsstat에서 얻은 값</th><th>다음에 볼 것</th></tr></thead><tbody><tr><td><code>File System Type</code> 확정</td><td><code>fls -o N -r -p</code>로 전체 파일 목록 (<a href="./tsk-fls.html">FOR-0041</a>)</td></tr><tr><td><code>Root Directory</code></td><td><code>fls -o N image.dd &lt;그 주소&gt;</code>로 루트만 나열</td></tr><tr><td><code>First Cluster of MFT</code> + <code>Cluster Size</code></td><td>HxD로 <code>$MFT</code> 위치 직접 점프, 또는 <code>icat -o N image.dd 0</code>으로 추출 (<a href="./tsk-icat.html">FOR-0042</a>)</td></tr><tr><td><code>Size of MFT Entries</code></td><td>MFT 레코드 N의 오프셋 계산 (<a href="./mft-basics.html">FOR-0021</a>)</td></tr><tr><td><code>First Cluster of MFT Mirror</code></td><td><code>$MFT</code> 손상 시 <code>$MFTMirr</code>(레코드 1)로 앞부분 복구</td></tr><tr><td><code>Cluster Size</code></td><td>카빙 시 헤더 정렬 단위, 슬랙 크기 계산 (<a href="./carving-strategy.html">FOR-0045</a>)</td></tr><tr><td><code>Total Cluster Range</code></td><td><code>istat</code>의 data run 값이 범위를 벗어나면 파싱 오류 신호</td></tr><tr><td><code>Volume Serial Number</code></td><td>LNK/Jump List의 볼륨 시리얼, 레지스트리 <code>MountedDevices</code> 항목과 대조</td></tr><tr><td><code>$AttrDef</code> 속성 번호</td><td><code>icat</code>의 <code>&lt;주소&gt;-&lt;타입&gt;-&lt;ID&gt;</code> 지정</td></tr><tr><td>ext의 <code>Last mounted on</code></td><td>리눅스 이미지의 원래 마운트 경로</td></tr><tr><td><code>Cannot determine file system type</code></td><td><code>mmls</code>로 오프셋 재확인 (<a href="./tsk-mmls.html">FOR-0040</a>)</td></tr></tbody></table></div>
+<p><code>Volume Serial Number</code>를 레지스트리와 대조할 때는 주의한다. <code>MountedDevices</code>의 값 형태는 항목마다 다르며(디스크 서명 + 파티션 오프셋, 또는 볼륨 식별자) NTFS 볼륨의 부트섹터 시리얼과 항상 같은 형태가 아니다. <strong>실제 바이트를 확인하고 판단한다.</strong></p>
+<h2 id="흔한-실수">흔한 실수</h2>
+<ul><li><strong><code>Cannot determine file system type</code>을 &quot;이미지가 깨졌다&quot;로 읽는 것.</strong> 거의 항상 오프셋이 틀린 것이다. → <code>mmls</code>로 <code>Start</code>를 다시 받고, 그래도 안 되면 <code>-o 0</code>(파티션 없는 단일 볼륨)을 시도한다.</li><li><strong><code>-b</code>를 빼먹는 것.</strong> 4Kn 이미지에서 <code>mmls</code>가 준 <code>Start</code>를 512바이트 섹터로 해석해 8배 틀린 위치를 읽는다. <code>mmls</code>와 <code>fsstat</code>의 <code>-b</code>는 항상 같아야 한다.</li><li><strong><code>Cluster Size</code>와 <code>Sector Size</code>를 혼동하는 것.</strong> 클러스터 번호에 섹터 크기를 곱하면 위치가 8배 틀린다. <strong><code>First Cluster of MFT</code>는 클러스터 번호이므로 <code>Cluster Size</code>를 곱한다.</strong></li><li><strong>볼륨 상대 오프셋을 이미지 절대 오프셋으로 쓰는 것.</strong> <code>First Cluster of MFT × Cluster Size</code>는 <strong>볼륨 기준</strong>이다. HxD로 이미지를 열었다면 여기에 볼륨 시작 바이트를 더해야 한다.</li><li><strong><code>Size of MFT Entries</code>를 1024로 가정하는 것.</strong> 4K 클러스터 환경에서 4096바이트인 볼륨도 있다. 출력 값을 그대로 쓴다.</li><li><strong><code>Version: Windows XP</code>를 OS 판정 근거로 쓰는 것.</strong> NTFS 버전에서 유추한 값이며 실제 설치 OS와 다를 수 있다. OS는 레지스트리 <code>CurrentVersion</code>으로 확정한다.</li><li><strong><code>Range</code>를 무시하고 범위 밖 메타주소를 <code>icat</code>에 넣는 것.</strong> 결과가 없거나 엉뚱한 데이터가 나온다.</li><li><strong><code>$AttrDef</code> 목록 때문에 출력이 길어 앞부분을 놓치는 것.</strong> <code>head -20</code>으로 잘라 본다.</li><li><strong>ext 이미지에서 <code>Cluster Size</code>를 찾는 것.</strong> ext는 <code>Block Size</code>, <code>Block Range</code>라는 이름을 쓴다.</li><li><strong><code>fsstat</code> 성공을 &quot;파일이 온전하다&quot;로 확대 해석하는 것.</strong> 부트섹터/슈퍼블록만 읽은 것이다. <code>$MFT</code>가 손상되었는지는 <code>fls</code>가 정상 목록을 내는지로 판단한다.</li></ul>
+<h2 id="mini-example">mini example</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;이미지에서 MFT 레코드 12345 를 HxD로 직접 열어 파일 이름을 읽으세요.&quot;
+첨부: disk.dd (20 GB)
+
+1. 첫 시도 (실패):
+   $ fsstat -o 2048 disk.dd
+   Cannot determine file system type
+
+   &quot;2048은 관례적 시작 섹터&quot;라고 알고 있어서 그대로 넣었다.
+   -&gt; 이 디스크는 파티션이 두 개이고 시스템 볼륨이 두 번째였다.
+
+2. 접근 변경 — mmls 로 실제 값을 받는다
+   $ mmls -a disk.dd
+         Slot      Start        End          Length       Description
+   002:  000:000   0000002048   0000206847   0000204800   NTFS / exFAT (0x07)
+   003:  000:001   0000206848   0041940991   0041734144   NTFS / exFAT (0x07)
+
+   2048 볼륨도 목록에는 있었다. 왜 fsstat 이 실패했나?
+   $ fsstat -t -o 2048 disk.dd
+   Cannot determine file system type
+   $ fsstat -t -o 206848 disk.dd
+   ntfs
+
+   -&gt; 첫 볼륨(2048)은 100MB 복구 파티션인데 부트섹터가 비어 있었다.
+      진짜 시스템 볼륨은 206848 이다.
+
+3. 필요한 값만 뽑는다
+   $ fsstat -o 206848 disk.dd | head -20
+   File System Type: NTFS
+   Volume Serial Number: 8C3A1F2D9B4E7A65
+   OEM Name: NTFS
+   First Cluster of MFT: 786432
+   First Cluster of MFT Mirror: 2
+   Size of MFT Entries: 1024 bytes
+   Range: 0 - 262143
+   Root Directory: 5
+   Sector Size: 512
+   Cluster Size: 4096
+
+4. 두 번째 실패 — 계산에서 볼륨 시작을 빼먹었다
+   $MFT 위치를 786432 × 4096 = 3,221,225,472 로 계산해
+   HxD Goto 에 3221225472 를 넣었더니 0x00 만 보였다.
+
+   빠진 것: 이 값은 &#39;볼륨 기준&#39; 오프셋이다.
+   볼륨 시작 = 206848 × 512 = 105,906,176 을 더해야 한다.
+
+5. 다시 계산
+   $MFT 절대   = 105,906,176 + 3,221,225,472 = 3,327,131,648
+   레코드 12345 = 3,327,131,648 + 12345 × 1024 = 3,339,772,928
+
+   HxD Goto: 3339772928 (dec)
+   -&gt; 46 49 4C 45 (&quot;FILE&quot;) 시그니처 확인. 위치가 맞다.
+      $FILE_NAME 속성에서 UTF-16LE 이름을 읽는다.
+
+6. 교차검증 — TSK 로 같은 레코드를 본다
+   $ istat -o 206848 disk.dd 12345 | head
+   MFT Entry Header Values:
+   Entry: 12345      Sequence: 4
+   $FILE_NAME Attribute Values:
+   Name: quarterly_report.xlsx
+
+   -&gt; HxD 로 읽은 이름과 일치. 계산 검증 완료.
+
+정답: quarterly_report.xlsx</code></pre></div>
+<p>두 번의 실패가 이 글의 요지다. <strong><code>fsstat</code>이 실패하면 오프셋을 의심하고, <code>fsstat</code>이 준 클러스터 값을 쓸 때는 볼륨 시작 바이트를 더한다.</strong> 그리고 손계산은 항상 <code>istat</code>으로 대조한다.</p>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-032 — The Sleuth Kit 도구 문서(fsstat man page): <code>-t</code> &quot;파일시스템 타입만 출력&quot;, <code>-f</code> / <code>-i</code> / <code>-b</code> / <code>-o</code>의 정의와 기본값(섹터 크기 미지정 시 512 가정)</li><li>SRC-005 — Microsoft Learn, Master File Table: <code>$MFT</code> / <code>$MFTMirr</code>의 역할, MFT 레코드 크기와 예약 레코드 번호(루트 디렉터리 5), 클러스터 단위 저장 구조</li><li>출력 예시의 필드 이름은 TSK 버전과 파일시스템 종류에 따라 추가·변경될 수 있다. 특히 exFAT과 ext4의 세부 항목은 버전 차이가 크므로 실제 출력에서 확인할 것</li><li>예시의 볼륨 시리얼·클러스터 번호·범위 값은 설명을 위한 값이며 실제 이미지의 값은 다르다</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./tsk-mmls.html">
+    <span class="rel-id">FOR-0040 · 디스크/NTFS</span>
+    Sleuth Kit mmls 옵션과 오프셋 파이프라인
+  </a>
+  <a class="related-item" href="./mft-basics.html">
+    <span class="rel-id">FOR-0021 · 디스크/NTFS</span>
+    $MFT 기본 구조와 포렌식 활용
+  </a>
+  <a class="related-item" href="./mbr-gpt.html">
+    <span class="rel-id">FOR-0019 · 디스크/NTFS</span>
+    MBR과 GPT 파티션 테이블 직접 읽기
+  </a>
+  <a class="related-item" href="./ntfs-structure.html">
+    <span class="rel-id">FOR-0020 · 디스크/NTFS</span>
+    NTFS 핵심 구조: 부트섹터 오프셋부터 속성·data run까지
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./tsk-icat.html"><span class="rel-id">← FOR-0042</span>icat으로 파일 내용·ADS·삭제 파일 추출</a>
+<a class="related-item" href="./autopsy-timeline.html"><span class="rel-id">FOR-0044 →</span>Autopsy Timeline로 시각 축 좁히기 (Counts/Details/List)</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#개념">개념</a></li>
+<li class="toc-l2"><a href="#파일-경로">파일 / 경로</a></li>
+<li class="toc-l2"><a href="#주요-필드">주요 필드</a></li>
+<li class="toc-l3"><a href="#ntfs-출력">NTFS 출력</a></li>
+<li class="toc-l3"><a href="#오프셋-계산-공식">오프셋 계산 공식</a></li>
+<li class="toc-l3"><a href="#fat-exfat-ext-출력의-차이">FAT / exFAT / ext 출력의 차이</a></li>
+<li class="toc-l2"><a href="#빠른-명령">빠른 명령</a></li>
+<li class="toc-l2"><a href="#함께-보는-artifact">함께 보는 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-실수">흔한 실수</a></li>
+<li class="toc-l2"><a href="#mini-example">mini example</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 03:39 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

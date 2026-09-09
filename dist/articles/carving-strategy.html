@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>파일 카빙 전략: 언제 카빙하고 언제 하지 않는가 · FOR-0045 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%94%94%EC%8A%A4%ED%81%AC%2FNTFS">디스크/NTFS</a> / FOR-0045
+      </div>
+      <header class="article-head">
+        <h1>파일 카빙 전략: 언제 카빙하고 언제 하지 않는가</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">디스크/NTFS</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>카빙은 최후의 수단이다. $MFT나 $UsnJrnl에 레코드가 남아 있으면 icat으로 정확한 이름·크기·시각과 함께 꺼내는 것이 항상 먼저이고, 카빙은 그 경로가 막힌 뒤 비할당 영역에 목표 형식만 좁혀서 돌린다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Sleuth Kit, blkls, blkcalc, foremost, scalpel, photorec, binwalk, bulk_extractor, Autopsy, file, md5sum</td></tr>
+<tr><th>artifact</th><td><code>unallocated space</code> · <code>file slack</code> · <code>cluster alignment</code> · <code>fragmentation</code> · <code>file signature</code> · <code>carved file</code></td></tr>
+<tr><th>로그 필드</th><td><code>File Offset</code> · <code>Size</code> · <code>Comment</code></td></tr>
+<tr><th>파일 형식</th><td><code>jpg</code> · <code>png</code> · <code>pdf</code> · <code>zip</code> · <code>docx</code> · <code>raw</code> · <code>dd</code></td></tr>
+<tr><th>검색 별칭</th><td>카빙 · 카빙 전략 · 카빙 언제 쓰나 · 카빙 실패 · 카빙 결과가 깨짐 · 비할당 영역만 카빙 · 카빙 도구 선택 · 카빙 중복 제거</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>카빙은 <strong>최후의 수단</strong>이다. <code>$MFT</code>나 <code>$UsnJrnl</code>에 레코드가 남아 있으면 <code>icat</code>으로 정확한 이름·크기·시각과 함께 꺼내는 것이 항상 먼저이고, 카빙은 그 경로가 막힌 뒤 <strong>비할당 영역에 목표 형식만 좁혀서</strong> 돌린다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>파일시스템 메타데이터가 사라져 <code>icat</code>으로 꺼낼 수 없는 경우</li><li>포맷 후 재사용된 매체 (USB, SD 카드) 에서 이전 데이터를 건져야 하는 경우</li><li>파일시스템 자체가 인식되지 않는 raw 덤프·메모리 덤프</li><li>파일 슬랙이나 파티션 사이 미할당 구간에 데이터가 숨겨진 경우</li><li><code>icat</code> 결과가 깨져 나오는 경우 (클러스터 재할당) (<a href="./tsk-icat.html">FOR-0042</a>)</li></ul>
+<p>이 글은 <strong>도구 사용법이 아니라 의사결정</strong>을 다룬다. 개별 도구의 옵션은 각 도구 글에서 본다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li><code>fls -d</code>에 목표 파일이 <strong>이름째로 나온다</strong> → 카빙하지 않는다. <code>icat</code>이 답이다</li><li><code>fls -d</code> 결과에 <code>(realloc)</code> 표시 → 메타데이터가 재사용됨. <strong>카빙 후보</strong></li><li><code>fls</code>가 아무것도 못 낸다 / <code>fsstat</code>이 파일시스템을 못 읽는다 → <strong>카빙 확정</strong></li><li><code>mmls -A</code>의 비할당 구간이 수 GB → 그 구간만 대상으로 삼는다</li><li>지문이 &quot;복구된 파일의 개수&quot;나 &quot;이미지 안에 숨은 파일&quot;을 묻는다 → 카빙이 정답 경로</li><li>지문이 삭제 <strong>시각</strong>이나 <strong>원래 이름</strong>을 묻는다 → 카빙만으로는 답이 안 나온다. <code>$MFT</code>/<code>$J</code>가 필요하다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">fls -o 2048 -r -p -d image.dd | grep -iE &#39;\.(jpg|png|docx|pdf|zip)$&#39;</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 위에서 목표가 이름째로 나오면 -&gt; 카빙하지 말고 icat
+icat -o 2048 -r image.dd 9188 &gt; out.bin &amp;&amp; file out.bin
+
+# 안 나오거나 깨지면 -&gt; 비할당만 떼어내 목표 형식만 카빙
+blkls -o 2048 image.dd &gt; unalloc.dd
+foremost -t jpg,png,pdf -i unalloc.dd -o carved</code></pre></div>
+<p><strong>순서를 바꾸지 않는다.</strong> 이미지 전체에 모든 형식을 카빙하면 몇십 분과 수만 개의 쓰레기를 얻는다.</p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-결정-트리-카빙을-쓸지-말지">1단계 — 결정 트리: 카빙을 쓸지 말지</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">목표 파일이 있다
+  |
+  +- fls -d 에 이름이 보인다?
+  |     예 -&gt; istat 으로 $DATA 확인
+  |            +- Resident            -&gt; icat (거의 항상 성공)
+  |            +- Non-Resident, realloc 없음 -&gt; icat -r  -&gt; file 로 검증
+  |            +- (realloc) 표시      -&gt; 이름·시각만 채택, 내용은 카빙
+  |     아니오
+  |
+  +- $UsnJrnl($J) 에 레코드가 있다?
+  |     예 -&gt; 이름·삭제시각 확보 (내용은 없다) -&gt; 이름을 근거로 카빙 결과 대조
+  |     아니오
+  |
+  +- fsstat 이 파일시스템을 읽는다?
+        예   -&gt; blkls 로 비할당만 떼어 카빙
+        아니오 -&gt; 이미지 전체를 카빙 (마지막 선택지)</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>상황</th><th>우선 수단</th><th>이유</th></tr></thead><tbody><tr><td>MFT 레코드 생존</td><td><strong><code>icat</code></strong></td><td>이름·경로·크기·시각이 함께 나온다. 카빙은 이 정보를 전부 버린다</td></tr><tr><td>resident 데이터</td><td><strong><code>$MFT</code> 자체</strong></td><td>내용이 레코드 안에 있어 볼륨이 없어도 복구된다 (<a href="./mft-basics.html">FOR-0021</a>)</td></tr><tr><td><code>$J</code>에 기록</td><td><strong><code>$UsnJrnl</code> 파싱</strong></td><td>삭제 시각·원래 이름을 카빙 결과에 붙일 수 있다 (<a href="./usnjrnl-basics.html">FOR-0027</a>)</td></tr><tr><td>레코드 재사용/재할당</td><td>하이브리드</td><td>이름·시각은 메타데이터, 내용은 카빙</td></tr><tr><td>파일시스템 파괴</td><td><strong>카빙</strong></td><td>다른 수가 없다</td></tr><tr><td>목표가 &quot;개수&quot;나 &quot;숨은 파일&quot;</td><td><strong>카빙</strong></td><td>메타데이터에 없는 것을 찾는 것이 문제의 의도다</td></tr></tbody></table></div>
+<p><strong>카빙이 버리는 것을 항상 의식한다.</strong></p>
+<div class="table-wrap"><table><thead><tr><th>카빙으로 얻는 것</th><th>카빙으로 얻지 못하는 것</th></tr></thead><tbody><tr><td>파일 내용(운이 좋으면 온전히)</td><td>원래 파일 이름</td></tr><tr><td>이미지 내 오프셋</td><td>경로·부모 디렉터리</td></tr><tr><td>형식(시그니처 기준)</td><td>MACB 타임스탬프</td></tr><tr><td>대략적인 크기</td><td>소유자·권한·ADS</td></tr></tbody></table></div>
+<p>지문이 &quot;삭제 시각&quot;이나 &quot;원래 파일명&quot;을 요구하면 카빙 결과만으로는 답이 성립하지 않는다.</p>
+<h3 id="2단계-카빙-대상-선정">2단계 — 카빙 대상 선정</h3>
+<p>같은 도구라도 <strong>무엇을 입력으로 주는지</strong>가 소요 시간과 결과 품질을 결정한다.</p>
+<div class="table-wrap"><table><thead><tr><th>대상</th><th>만드는 방법</th><th>장점</th><th>단점</th></tr></thead><tbody><tr><td><strong>비할당 영역만</strong></td><td><code>blkls -o N image.dd &gt; unalloc.dd</code> (기본 동작이 비할당 블록 복사)</td><td>가장 빠르다. 살아 있는 파일이 결과에 섞이지 않는다</td><td>오프셋이 원본과 달라진다 → <code>blkcalc</code>로 환산</td></tr><tr><td><strong>파일 슬랙만</strong></td><td><code>blkls -o N -s image.dd &gt; slack.dd</code></td><td>은닉 데이터·이전 파일 잔재 전용</td><td>조각이 작아 온전한 파일은 드물다</td></tr><tr><td>이미지 전체</td><td>원본 그대로 입력</td><td>파티션 밖·테이블 손상 구간까지 포함</td><td>느리고 살아 있는 파일이 전부 중복으로 나온다</td></tr><tr><td>특정 파티션만</td><td><code>dd if=image.dd of=vol.dd bs=512 skip=&lt;Start&gt; count=&lt;Length&gt;</code></td><td>범위 한정</td><td>파티션 밖은 놓친다</td></tr><tr><td>파티션 사이 미할당</td><td><code>mmls -A</code>로 구간 확인 후 <code>dd</code>로 절단</td><td>숨긴 파티션·은닉 영역</td><td>구간 계산 실수 위험</td></tr><tr><td>볼륨 전체 블록</td><td><code>blkls -o N -e image.dd</code></td><td>메타데이터 포함 전체</td><td>이미지 전체와 사실상 같다</td></tr></tbody></table></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 비할당만 (권장 기본값)
+blkls -o 2048 image.dd &gt; unalloc.dd
+ls -lh unalloc.dd            # 원본보다 훨씬 작으면 그만큼 시간을 번 것이다
+
+# 슬랙만
+blkls -o 2048 -s image.dd &gt; slack.dd
+strings -n 8 slack.dd | head -40</code></pre></div>
+<p><code>blkls</code> 결과에서 찾은 위치는 <strong>원본 이미지의 위치가 아니다.</strong> <code>blkcalc</code>로 되돌린다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># blkls 출력의 블록 123456 이 원본 이미지에서 몇 번 블록인가
+blkcalc -o 2048 -u 123456 image.dd
+
+# 반대 방향: 원본 이미지의 블록이 비할당 이미지에서 어디인가
+blkcalc -o 2048 -d 987654 image.dd
+
+# 슬랙 이미지(blkls -s) 기준 주소를 환산
+blkcalc -o 2048 -s 4242 image.dd</code></pre></div>
+<p><code>-d</code> / <code>-s</code> / <code>-u</code> 중 <strong>정확히 하나</strong>를 반드시 준다. 원본 이미지를 인자로 줘야 한다.</p>
+<p>이 환산이 필요한 이유는 명확하다. 카빙 결과의 위치를 원본 오프셋으로 되돌려야 <code>$MFT</code>의 data run이나 <code>$UsnJrnl</code> 레코드와 대조할 수 있다. <strong>&quot;어디에서 나왔는가&quot;를 못 말하면 증거로서의 가치가 떨어진다.</strong></p>
+<h3 id="3단계-헤더푸터-기반-vs-구조-기반">3단계 — 헤더/푸터 기반 vs 구조 기반</h3>
+<div class="table-wrap"><table><thead><tr><th>방식</th><th>원리</th><th>성공 조건</th><th>실패 양상</th></tr></thead><tbody><tr><td><strong>헤더/푸터 기반</strong></td><td>시작 시그니처를 찾고 종료 시그니처(또는 최대 크기)까지 잘라낸다</td><td>파일이 <strong>연속</strong>되어 있고 푸터가 존재한다</td><td>조각화되면 중간부터 다른 파일 내용. 푸터가 없는 형식은 최대 크기만큼 잘려 거대한 파일이 나온다</td></tr><tr><td><strong>구조 기반</strong></td><td>형식 내부 구조(길이 필드, chunk, 청크 체인)를 해석해 실제 끝을 판단한다</td><td>파서가 그 형식을 안다</td><td>지원하지 않는 형식은 처리 못 한다</td></tr></tbody></table></div>
+<p>형식별 성질이다.</p>
+<div class="table-wrap"><table><thead><tr><th>형식</th><th>헤더</th><th>푸터/끝 판정</th><th>카빙 난이도</th></tr></thead><tbody><tr><td>JPEG</td><td><code>FF D8 FF</code></td><td><code>FF D9</code></td><td>낮음 (헤더/푸터 모두 있다)</td></tr><tr><td>PNG</td><td><code>89 50 4E 47 0D 0A 1A 0A</code></td><td><code>IEND</code> + CRC</td><td>낮음</td></tr><tr><td>GIF</td><td><code>GIF87a</code> / <code>GIF89a</code></td><td><code>00 3B</code></td><td>낮음</td></tr><tr><td>PDF</td><td><code>%PDF-</code></td><td><code>%%EOF</code></td><td>중간 (<code>%%EOF</code>가 여러 번 나온다)</td></tr><tr><td>ZIP / docx / xlsx / apk</td><td><code>50 4B 03 04</code></td><td>EOCD (<code>50 4B 05 06</code>)</td><td>중간 (구조 해석이 유리)</td></tr><tr><td>PE (exe/dll)</td><td><code>4D 5A</code></td><td><strong>없음</strong></td><td>높음 (헤더의 크기 필드 해석 필요)</td></tr><tr><td>SQLite</td><td><code>SQLite format 3\0</code></td><td>없음</td><td>높음 (페이지 크기·개수 해석)</td></tr><tr><td>텍스트/로그</td><td>없음</td><td>없음</td><td><strong>카빙 불가.</strong> 문자열 검색으로 접근한다</td></tr></tbody></table></div>
+<p>매직 바이트 대조는 <a href="./30sec-triage.html">FOR-0001</a>에서 정리한다.</p>
+<p><strong>푸터가 없는 형식을 헤더 기반으로 카빙하면 반드시 크기가 부풀려진다.</strong> 결과의 크기 분포가 특정 값(도구의 최대 크기 설정)에 몰려 있으면 그 형식은 전부 잘린 것이다.</p>
+<h3 id="4단계-조각화fragmentation-때문에-카빙이-실패하는-원리">4단계 — 조각화(fragmentation) 때문에 카빙이 실패하는 원리</h3>
+<p>헤더/푸터 카빙은 <strong>파일이 디스크에 연속 배치되어 있다</strong>는 가정 위에서 동작한다. 이 가정이 깨지면 결과가 조용히 오염된다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">[정상: 연속 배치]
+  클러스터  100  101  102  103  104
+  내용     [A1][A2][A3][A4][A5]        &lt;- 카빙 성공
+
+[조각화]
+  클러스터  100  101  102  103  104
+  내용     [A1][A2][B1][B2][A3]        &lt;- A 의 3번째 조각이 멀리 있다
+  카빙 결과: A1 A2 B1 B2 A3 ... 를 한 파일로 붙인다
+             앞부분만 정상, 중간부터 다른 파일 내용</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>조각화가 생기는 원인</th><th>결과</th></tr></thead><tbody><tr><td>디스크 여유 공간이 적을 때 쓰기</td><td>빈 구멍에 나눠 담긴다</td></tr><tr><td>파일을 여러 번 이어 쓰기(append)</td><td>뒤쪽 조각이 다른 위치로</td></tr><tr><td>삭제·생성 반복</td><td>자유 공간이 파편화</td></tr><tr><td>큰 파일 (수 MB 이상)</td><td>통째로 들어갈 연속 공간이 없다</td></tr></tbody></table></div>
+<p><strong>증상별 판정</strong>이 실전에서 중요하다.</p>
+<div class="table-wrap"><table><thead><tr><th>카빙 결과 증상</th><th>원인 추정</th></tr></thead><tbody><tr><td>JPEG가 위쪽 절반만 정상이고 아래가 회색/노이즈</td><td>조각화. 중간부터 다른 데이터</td></tr><tr><td>ZIP이 <code>unzip -t</code>에서 CRC 오류</td><td>조각화 또는 일부 클러스터 재할당</td></tr><tr><td>PDF가 열리지만 페이지 일부만</td><td>조각화</td></tr><tr><td>크기가 도구 최대치에 딱 맞다</td><td>푸터를 못 찾아 잘렸다</td></tr><tr><td><code>file</code>이 <code>data</code>라고 한다</td><td>헤더 오탐(다른 파일 안의 우연한 시그니처)</td></tr><tr><td>파일이 정상인데 내용이 다른 파일</td><td>헤더 위치는 맞고 데이터가 이미 덮였다</td></tr></tbody></table></div>
+<p>조각화된 파일은 헤더/푸터 카빙으로 복원할 수 없다. 이 경우의 선택지다.</p>
+<div class="table-wrap"><table><thead><tr><th>선택지</th><th>방법</th></tr></thead><tbody><tr><td>구조 기반 파서에 맡긴다</td><td>형식 내부 구조를 아는 도구로 재시도</td></tr><tr><td>메타데이터로 돌아간다</td><td><code>$MFT</code> data run으로 조각 위치를 직접 읽어 <code>dd</code>로 이어 붙인다</td></tr><tr><td>앞부분만 활용</td><td>플래그가 파일 앞쪽 텍스트/메타데이터에 있으면 조각 하나로 충분하다</td></tr><tr><td>문자열로 우회</td><td>이미지에 직접 <code>strings</code>/<code>grep -a</code>로 목표 문자열 검색</td></tr></tbody></table></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 파일 복구가 아니라 문자열이 목표라면 카빙을 건너뛴다
+grep -abo &#39;flag{&#39; image.dd | head
+strings -a -t d -n 8 unalloc.dd | grep -i &#39;flag&#39;</code></pre></div>
+<p><strong>&quot;파일을 복구해야 한다&quot;와 &quot;안에 있는 문자열을 찾아야 한다&quot;는 다른 문제다.</strong> 후자면 카빙은 우회로일 뿐 필수가 아니다.</p>
+<h3 id="5단계-클러스터-정렬-가정">5단계 — 클러스터 정렬 가정</h3>
+<p>파일시스템은 파일을 <strong>클러스터 경계</strong>에 배치한다. 따라서 삭제된 파일의 헤더는 거의 항상 클러스터 시작에 있다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">fsstat -o 2048 image.dd | grep -E &#39;Sector Size|Cluster Size&#39;
+# Sector Size: 512
+# Cluster Size: 4096</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>정렬 가정</th><th>효과</th><th>위험</th></tr></thead><tbody><tr><td>클러스터 경계만 검사</td><td>스캔 대상이 1/4096로 줄어 <strong>매우 빠르다</strong></td><td>임베디드 파일(문서 안의 이미지, ZIP 내부)을 놓친다</td></tr><tr><td>섹터 경계만 검사</td><td>빠르고 대부분의 실제 파일을 잡는다</td><td>임베디드는 여전히 놓친다</td></tr><tr><td>전 바이트 검사</td><td>임베디드까지 다 찾는다</td><td>느리고 오탐이 폭증한다</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>목표</th><th>권장 정렬</th></tr></thead><tbody><tr><td>삭제된 사용자 파일 복구</td><td><strong>클러스터 정렬</strong></td></tr><tr><td>파일 안에 숨긴 파일(스테가노·연결)</td><td><strong>전 바이트</strong> — 이때는 카빙 도구보다 <code>binwalk</code>가 맞다</td></tr><tr><td>슬랙의 잔재</td><td>정렬 무의미 (조각이므로 전 바이트)</td></tr><tr><td>메모리 덤프</td><td>전 바이트 (페이지 정렬을 기대할 수 없다)</td></tr></tbody></table></div>
+<p>정렬 옵션 이름은 도구마다 다르다. 각 도구 글에서 확인한다.</p>
+<h3 id="6단계-목표-형식을-좁혀-시간을-줄인다">6단계 — 목표 형식을 좁혀 시간을 줄인다</h3>
+<p>이것이 카빙 시간을 줄이는 <strong>가장 효과적인 단 하나의 조치</strong>다.</p>
+<div class="table-wrap"><table><thead><tr><th>지문의 표현</th><th>좁힐 형식</th></tr></thead><tbody><tr><td>&quot;사진&quot;, &quot;이미지&quot;</td><td><code>jpg,png,gif</code></td></tr><tr><td>&quot;문서&quot;</td><td><code>pdf,doc,docx,xls,xlsx</code> (docx/xlsx는 ZIP으로도 걸린다)</td></tr><tr><td>&quot;압축 파일&quot;</td><td><code>zip,rar,7z,gz</code></td></tr><tr><td>&quot;실행 파일&quot;</td><td><code>exe,dll</code></td></tr><tr><td>&quot;동영상&quot;</td><td><code>mp4,avi,mov</code></td></tr><tr><td>형식 언급 없음</td><td><strong>먼저 <code>strings</code>/<code>grep</code>로 정찰</strong>한 뒤 결정</td></tr></tbody></table></div>
+<p>형식을 모를 때는 카빙 전에 어떤 시그니처가 얼마나 있는지 센다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 어떤 형식이 실제로 있는지 개수를 먼저 센다
+for sig in $&#39;\xff\xd8\xff&#39; $&#39;\x89PNG&#39; &#39;%PDF&#39; &#39;PK\x03\x04&#39;; do
+  printf &#39;%-10s &#39; &quot;$sig&quot;
+  grep -c -a -F &quot;$(printf &quot;$sig&quot;)&quot; unalloc.dd
+done
+
+# 또는 오프셋과 함께
+grep -abo -F &quot;$(printf &#39;\xff\xd8\xff&#39;)&quot; unalloc.dd | wc -l</code></pre></div>
+<p>개수가 0인 형식을 카빙 목록에 넣는 것은 순수한 시간 낭비다.</p>
+<p>시간 예산 감각이다.</p>
+<div class="table-wrap"><table><thead><tr><th>입력</th><th>형식 범위</th><th>대략적 소요</th></tr></thead><tbody><tr><td><code>blkls</code> 비할당 (수 GB)</td><td>3~5개 형식</td><td>분 단위</td></tr><tr><td><code>blkls</code> 비할당 (수 GB)</td><td>전 형식</td><td>수십 분</td></tr><tr><td>이미지 전체 (수백 GB)</td><td>전 형식</td><td>시간 단위 — <strong>대회장에서 선택하지 않는다</strong></td></tr></tbody></table></div>
+<h3 id="7단계-도구-선택-기준">7단계 — 도구 선택 기준</h3>
+<div class="table-wrap"><table><thead><tr><th>도구</th><th>방식</th><th>강점</th><th>약점</th><th>언제 고르나</th></tr></thead><tbody><tr><td><strong>foremost</strong></td><td>헤더/푸터 + 설정 파일</td><td>형식을 <code>-t</code>로 좁히기 쉽다. 감사 로그(<code>audit.txt</code>)에 오프셋이 남는다</td><td>조각화에 약하다. 기본 지원 형식이 제한적</td><td>형식이 정해진 표준 카빙의 <strong>1차 선택</strong></td></tr><tr><td><strong>scalpel</strong></td><td>헤더/푸터 (설정 파일 필수)</td><td>설정 파일에 형식·최대 크기를 세밀히 지정. 클러스터 정렬 옵션</td><td>설정 파일을 편집해야 동작한다. 조각화에 약하다</td><td>커스텀 시그니처가 필요할 때</td></tr><tr><td><strong>photorec</strong></td><td>형식별 내부 구조 인식</td><td><strong>회수율이 가장 높다.</strong> 200개 이상 형식. 비할당만/파티션 전체 선택 가능</td><td>TUI 대화형. 원래 이름·경로 없음</td><td>&quot;최대한 많이 건져라&quot; 문제</td></tr><tr><td><strong>binwalk</strong></td><td>전 바이트 시그니처 스캔 + 추출</td><td><strong>파일 안에 붙은/숨긴 파일</strong>을 찾는 데 최적. 엔트로피 분석</td><td>디스크 이미지 대상으로는 오탐이 많다</td><td>단일 파일 안의 은닉, 펌웨어</td></tr><tr><td><strong>bulk_extractor</strong></td><td>특징(feature) 추출</td><td>이메일·URL·전화번호 등 <strong>문자열 특징</strong>을 대량 추출</td><td>파일 복구 도구가 아니다</td><td>&quot;어떤 계정/도메인이 등장했나&quot;</td></tr><tr><td><strong>Autopsy (PhotoRec Carver)</strong></td><td>GUI 통합</td><td>결과가 케이스 트리(<code>$CarvedFiles</code>)에 들어와 다른 artifact와 함께 본다</td><td>매우 느리다</td><td>이미 Autopsy로 작업 중일 때 (<a href="./autopsy-ingest.html">FOR-0018</a>)</td></tr><tr><td><strong>Sleuth Kit (<code>icat</code>/<code>blkls</code>/<code>blkcalc</code>)</strong></td><td>메타데이터 기반</td><td><strong>카빙이 아니다.</strong> 정확한 파일을 정확히 꺼낸다</td><td>메타데이터가 있어야 한다</td><td><strong>항상 먼저 시도</strong> (<a href="./tsk-icat.html">FOR-0042</a>)</td></tr></tbody></table></div>
+<p>선택 순서는 이렇다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1. icat            (메타데이터 생존)
+2. foremost -t     (형식 확정, 빠른 1차)
+3. photorec        (회수율 우선, 형식 불확실)
+4. binwalk         (파일 안의 파일)
+5. bulk_extractor  (문자열 특징이 목표)</code></pre></div>
+<h3 id="8단계-결과-검증">8단계 — 결과 검증</h3>
+<p><strong>카빙 결과는 기본적으로 신뢰하지 않는다.</strong> 다음 네 단계를 전부 통과한 것만 답으로 쓴다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">cd carved
+
+# 1) 형식 판정 — 헤더 오탐 걸러내기
+find . -type f -exec file {} + | grep -v -iE &#39;JPEG|PNG|PDF|Zip&#39; 
+
+# 2) 크기 이상치 — 0바이트와 최대치에 몰린 것
+find . -type f -printf &#39;%s %p\n&#39; | sort -n | head -20     # 너무 작다
+find . -type f -printf &#39;%s %p\n&#39; | sort -nr | head -20    # 최대치에 붙어 있다
+
+# 3) 실제로 열리는가 (형식별 구조 검사)
+for f in *.zip;  do echo &quot;== $f&quot;; unzip -t &quot;$f&quot; &gt;/dev/null 2&gt;&amp;1 &amp;&amp; echo OK || echo BAD; done
+for f in *.png;  do pngcheck &quot;$f&quot;; done
+for f in *.jpg;  do exiftool -q -q &quot;$f&quot; &gt;/dev/null 2&gt;&amp;1 &amp;&amp; echo &quot;OK $f&quot; || echo &quot;BAD $f&quot;; done
+
+# 4) 해시 — 문제에서 준 해시 또는 $MFT 대조용
+find . -type f -exec md5sum {} + &gt; carved.md5</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>검증 항목</th><th>통과 기준</th><th>실패 시</th></tr></thead><tbody><tr><td><code>file</code> 판정</td><td>기대한 형식 이름</td><td>헤더 오탐. 버린다</td></tr><tr><td>크기 0 또는 수백 바이트</td><td>형식의 최소 크기 이상</td><td>헤더만 걸린 조각</td></tr><tr><td>크기가 도구 최대치와 동일</td><td>그보다 작아야 정상</td><td>푸터 못 찾음. 잘렸다</td></tr><tr><td>구조 검사(<code>unzip -t</code>, <code>pngcheck</code>)</td><td>오류 없음</td><td>조각화. 복원 불가</td></tr><tr><td>실제 열어 보기</td><td>내용이 온전</td><td>아래쪽 손상 = 조각화</td></tr><tr><td>해시 대조</td><td><code>$MFT</code>/문제 제시 해시와 일치</td><td>부분 복구</td></tr></tbody></table></div>
+<p><strong>눈으로 열어 보는 것을 생략하지 않는다.</strong> JPEG는 위 절반만 정상인 경우가 흔하고, <code>file</code>은 그것을 정상으로 판정한다.</p>
+<h3 id="9단계-중복-결과-정리">9단계 — 중복 결과 정리</h3>
+<p>이미지 전체를 카빙하거나 여러 도구를 돌리면 같은 파일이 여러 번 나온다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) 완전 동일 파일 제거 (해시 기준)
+find carved -type f -exec md5sum {} + | sort | awk &#39;
+  { if ($1 == prev) print $2; else prev=$1 }&#39; &gt; dup.txt
+wc -l dup.txt
+# 확인 후 삭제
+# xargs -a dup.txt rm -f
+
+# 2) 해시별 개수 — 어떤 파일이 몇 번 나왔나
+find carved -type f -exec md5sum {} + | awk &#39;{print $1}&#39; | sort | uniq -c | sort -nr | head
+
+# 3) 형식·크기별 분포로 노이즈 덩어리 파악
+find carved -type f -exec file -b {} + | cut -d, -f1 | sort | uniq -c | sort -nr</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>중복의 유형</th><th>원인</th><th>처리</th></tr></thead><tbody><tr><td>해시가 완전히 같다</td><td>이미지 전체 카빙 시 할당 파일과 비할당 사본</td><td>하나만 남긴다</td></tr><tr><td>앞부분만 같고 크기가 다르다</td><td>푸터 판정 차이 (같은 헤더, 다른 종료점)</td><td><strong>큰 쪽이 아니라 구조 검사를 통과한 쪽</strong>을 남긴다</td></tr><tr><td>같은 이미지의 썸네일과 원본</td><td>EXIF 썸네일이 별도 JPEG로 카빙됨</td><td>크기로 구분</td></tr><tr><td>여러 도구의 결과</td><td>도구별 판정 차이</td><td>해시로 합집합을 만든 뒤 중복 제거</td></tr></tbody></table></div>
+<p>썸네일은 버리지 말고 확인한다. 원본이 조각화로 깨져도 <strong>EXIF 썸네일이 온전해 답이 보이는 경우</strong>가 있다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p>카빙 도구가 공통으로 남기는 것과 그 해석이다.</p>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>의미</th><th>판단</th></tr></thead><tbody><tr><td>파일명(<code>00012345.jpg</code> 등)</td><td>대개 <strong>찾은 오프셋 기반 이름</strong></td><td>원래 이름이 아니다. 절대 답으로 쓰지 않는다</td></tr><tr><td>감사 로그의 <code>File Offset</code></td><td>입력 스트림 내 위치</td><td><code>blkls</code> 입력이면 <code>blkcalc -u</code>로 원본 오프셋 환산</td></tr><tr><td>감사 로그의 <code>Size</code></td><td>잘라낸 크기</td><td>최대치에 몰려 있으면 전부 잘린 것</td></tr><tr><td>출력 폴더 구조</td><td>형식별 하위 폴더</td><td>형식 분포를 한눈에 보는 지표</td></tr><tr><td>결과 개수</td><td>—</td><td>수만 개면 <strong>범위나 형식을 잘못 잡은 것이다</strong></td></tr></tbody></table></div>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>카빙에서 얻은 것</th><th>다음 목표</th></tr></thead><tbody><tr><td>복구된 파일의 해시</td><td><code>$MFT</code>의 파일 목록과 대조해 <strong>원래 이름 추정</strong> (<a href="./mft-basics.html">FOR-0021</a>)</td></tr><tr><td>원본 이미지 오프셋(<code>blkcalc -u</code>)</td><td><code>$MFT</code> data run과 대조해 어느 파일의 클러스터였는지</td></tr><tr><td>파일 개수·형식 분포</td><td><code>$UsnJrnl</code>의 삭제 기록 개수와 대조 (<a href="./usnjrnl-basics.html">FOR-0027</a>)</td></tr><tr><td>복구된 사진</td><td>EXIF의 촬영 시각·GPS</td></tr><tr><td>복구된 문서</td><td>내부 메타데이터(작성자, 편집 시각)</td></tr><tr><td>복구된 ZIP</td><td>재귀 확인 (<code>7z l</code>), 내부 파일 목록</td></tr><tr><td>조각만 나왔다</td><td><code>$MFT</code> data run으로 조각 위치 직접 읽어 <code>dd</code>로 결합</td></tr><tr><td>문자열만 필요하다</td><td><code>grep -abo</code> / <code>strings -a -t d</code>로 직접 검색</td></tr><tr><td>카빙 실패 확정</td><td>메타데이터 경로 재검토 (<a href="./tsk-fls.html">FOR-0041</a>)</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>fls</code>를 돌려 보지 않고 바로 카빙하는 것.</strong> <code>$MFT</code>에 레코드가 남아 있으면 <code>icat</code>이 이름·시각까지 준다. <strong>가장 비싼 실수이며, 카빙에 30분을 쓴 뒤에야 알게 된다.</strong></li><li><strong>이미지 전체를 대상으로 모든 형식을 카빙하는 것.</strong> 살아 있는 파일이 전부 중복으로 나오고 시간이 폭발한다. → <code>blkls</code>로 비할당만 떼고 <code>-t</code>로 형식을 좁힌다.</li><li><strong>카빙 결과의 파일명을 원래 이름으로 답하는 것.</strong> 오프셋에서 생성된 이름이다. 원래 이름은 <code>$MFT</code>/<code>$J</code>에서만 나온다.</li><li><strong>카빙 결과에 타임스탬프가 있다고 믿는 것.</strong> 파일시스템 시각은 없다. 있는 것은 EXIF나 문서 내부 메타데이터뿐이며 그것은 파일시스템 시각과 다른 값이다.</li><li><strong><code>file</code>이 형식을 맞췄다고 복구 성공으로 판정하는 것.</strong> 헤더만 맞아도 그렇게 나온다. 반드시 구조 검사(<code>unzip -t</code>, <code>pngcheck</code>)와 실제 열기까지 한다.</li><li><strong>크기가 최대치에 몰린 결과를 그대로 제출하는 것.</strong> 푸터를 못 찾아 잘린 것이다. 형식별 최대 크기 설정을 조정해 재시도한다.</li><li><strong>조각화된 파일을 옵션으로 해결하려 하는 것.</strong> 헤더/푸터 카빙에는 조각을 이을 정보가 없다. <code>$MFT</code> data run으로 돌아가거나 앞부분만 활용한다.</li><li><strong><code>blkls</code> 결과의 오프셋을 원본 이미지 오프셋으로 쓰는 것.</strong> 다른 좌표계다. <code>blkcalc -u</code>로 환산해야 다른 artifact와 대조할 수 있다.</li><li><strong><code>blkcalc</code>에 <code>-d</code>/<code>-s</code>/<code>-u</code>를 두 개 이상 주거나 하나도 안 주는 것.</strong> 정확히 하나가 필수다. 그리고 인자로 주는 이미지는 <strong>원본</strong>이어야 한다.</li><li><strong>중복 제거를 안 해 결과 개수를 답으로 쓰는 것.</strong> &quot;복구된 파일 개수&quot;를 묻는 문제에서 중복과 헤더 오탐을 세면 틀린다. → 해시 중복 제거 + <code>file</code> 검증 후에 센다.</li><li><strong><code>binwalk</code>를 디스크 이미지에 돌리는 것.</strong> 전 바이트 스캔이라 오탐이 쏟아진다. <code>binwalk</code>는 <strong>단일 파일 안의 은닉</strong>을 볼 때 쓴다.</li><li><strong><code>bulk_extractor</code>를 파일 복구 도구로 쓰는 것.</strong> 문자열 특징 추출 도구다. 파일을 복원하지 않는다.</li><li><strong>텍스트/로그를 카빙하려 하는 것.</strong> 시그니처가 없어 카빙 대상이 아니다. <code>grep -abo</code> / <code>strings</code>로 직접 찾는다.</li><li><strong>슬랙을 무시하는 것.</strong> 작은 은닉 데이터와 이전 파일의 잔재가 여기 남는다. <code>blkls -s</code>는 몇 초면 끝난다.</li><li><strong>클러스터 크기를 확인하지 않고 정렬 옵션을 쓰는 것.</strong> <code>fsstat</code>의 <code>Cluster Size</code>가 근거다 (<a href="./tsk-fsstat.html">FOR-0043</a>).</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) 카빙 개수 vs 메타데이터 기준 삭제 파일 개수
+fls -o 2048 -r -p -d image.dd | grep -ciE &#39;\.(jpg|jpeg)$&#39;
+find carved -type f -name &#39;*.jpg&#39; -exec file -b {} + | grep -c JPEG
+
+# 2) 카빙 결과가 살아 있는 파일의 중복인지 확인
+#    (할당 파일의 해시 목록을 만들어 대조)
+find /mnt/case -type f -name &#39;*.jpg&#39; -exec md5sum {} + | awk &#39;{print $1}&#39; | sort -u &gt; alive.md5
+find carved   -type f -name &#39;*.jpg&#39; -exec md5sum {} + | awk &#39;{print $1}&#39; | sort -u &gt; carved.md5
+comm -12 alive.md5 carved.md5 | wc -l      # 겹치는 개수 = 중복 카빙
+
+# 3) 카빙 위치를 원본 오프셋으로 환산해 $MFT 와 대조
+blkcalc -o 2048 -u 123456 image.dd
+
+# 4) 두 도구의 결과를 합집합으로 비교
+find carved_foremost -type f -exec md5sum {} + | awk &#39;{print $1}&#39; | sort -u &gt; a.md5
+find carved_photorec -type f -exec md5sum {} + | awk &#39;{print $1}&#39; | sort -u &gt; b.md5
+comm -13 a.md5 b.md5 | wc -l               # photorec 만 찾은 것
+comm -23 a.md5 b.md5 | wc -l               # foremost 만 찾은 것
+
+# 5) 문자열 기준 최종 확인 — 답이 이미지에 그대로 있는지
+grep -abo &#39;flag{&#39; image.dd | head</code></pre></div>
+<p>두 도구의 결과가 크게 다르면 방식 차이(헤더/푸터 vs 구조 기반) 때문이다. <strong>회수율이 낮은 쪽을 버리지 말고 양쪽 합집합을 검증 대상으로 삼는다.</strong></p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;삭제된 사진 중 하나에 플래그가 있습니다. 찾으세요.&quot;
+첨부: photo_disk.dd (200 GB)
+
+1. 첫 시도 (실패):
+   $ foremost -i photo_disk.dd -o carved
+   (형식 지정 없음, 이미지 전체)
+
+   38분 후: carved/ 아래 파일 312,847 개.
+   jpg/ 에만 28만 개. 대부분 크기가 수백 바이트거나
+   file 판정이 &#39;data&#39;.
+
+   왜 틀렸나:
+   (a) 이미지 전체를 줬다 -&gt; 살아 있는 파일이 전부 다시 나왔다
+   (b) 형식을 안 좁혔다 -&gt; 전 형식 시그니처를 다 스캔했다
+   (c) fls 를 먼저 돌려 보지 않았다 -&gt; 카빙이 필요한지도 확인 안 했다
+
+2. 접근 변경 — 메타데이터를 먼저 본다
+   $ mmls -a photo_disk.dd
+   002:  000:000   0000002048   0419430399   0419428352   NTFS / exFAT (0x07)
+   $ fsstat -o 2048 photo_disk.dd | grep -E &#39;Type|Cluster Size&#39;
+   File System Type: NTFS
+   Cluster Size: 4096
+
+   $ fls -o 2048 -r -p -d photo_disk.dd | grep -icE &#39;\.(jpg|jpeg)$&#39;
+   3
+   $ fls -o 2048 -r -p -d photo_disk.dd | grep -iE &#39;\.(jpg|jpeg)$&#39;
+   -/r * 88401-128-1:  Users/kim/Pictures/DSC_0141.jpg
+   -/r * 88402-128-1:  Users/kim/Pictures/DSC_0142.jpg
+   r/- * 88403-128-1:  Users/kim/Pictures/DSC_0143.jpg (realloc)
+
+   삭제된 JPEG 는 3개뿐이다. 28만 개가 아니었다.
+
+3. icat 으로 3개만 꺼낸다 (카빙보다 우선)
+   $ for a in 88401 88402 88403; do
+       icat -o 2048 -r photo_disk.dd $a &gt; $a.jpg; done
+   $ file 884*.jpg
+   88401.jpg: JPEG image data, EXIF standard
+   88402.jpg: JPEG image data, EXIF standard
+   88403.jpg: data                              &lt;- 실패
+
+   2개는 정상. 88403 은 (realloc) 이었으므로 예상된 실패다.
+   $ exiftool 88401.jpg 88402.jpg | grep -i &#39;comment\|description&#39;
+   -&gt; 플래그 없음. 88403 이 목표다.
+
+4. 여기서 비로소 카빙이 필요하다 — 범위와 형식을 좁힌다
+   $ blkls -o 2048 photo_disk.dd &gt; unalloc.dd
+   $ ls -lh photo_disk.dd unalloc.dd
+   200G  photo_disk.dd
+    11G  unalloc.dd            &lt;- 대상이 1/18 로 줄었다
+
+   실제로 JPEG 가 있는지 먼저 센다
+   $ grep -c -a -F &quot;$(printf &#39;\xff\xd8\xff&#39;)&quot; unalloc.dd
+   47
+
+   $ foremost -t jpg -i unalloc.dd -o carved2
+   -&gt; 1분 40초, 51개
+
+5. 검증 — 크기와 구조로 걸러낸다
+   $ find carved2 -type f -printf &#39;%s %p\n&#39; | sort -nr | head -5
+   3145728 carved2/jpg/00418291.jpg      &lt;- 최대치에 딱 맞다 = 잘림
+   1884672 carved2/jpg/00204411.jpg
+    412160 carved2/jpg/00088155.jpg
+   $ find carved2 -type f -exec file -b {} + | sort | uniq -c
+        44 JPEG image data, EXIF standard
+         7 data                          &lt;- 헤더 오탐. 버린다
+
+   $ find carved2 -type f -exec md5sum {} + | awk &#39;{print $1}&#39; \
+       | sort | uniq -c | sort -nr | head -3
+         3 5f2a...        &lt;- 3중 중복
+         2 9c81...
+
+   중복 제거 후 실질 후보 38개.
+
+6. 눈으로 확인한다 (file 로는 못 걸러진다)
+   38개를 이미지 뷰어로 열어 훑는다.
+   -&gt; 대부분 위쪽 절반만 정상이고 아래가 노이즈 = 조각화
+   -&gt; 1개에서 사진 안에 손으로 쓴 문자열이 보였다:
+      flag{c4rv3_0nly_wh4t_y0u_must}
+
+7. 위치를 원본 오프셋으로 되돌려 근거를 만든다
+   audit.txt 의 File Offset = 1,204,224 블록 (unalloc.dd 기준)
+   $ blkcalc -o 2048 -u 1204224 photo_disk.dd
+   -&gt; 원본 이미지의 블록 번호를 얻는다
+
+   이 값이 88403 의 $MFT data run 범위 안이면
+   &quot;그 파일의 일부&quot;라고 말할 수 있다.
+   $ istat -o 2048 photo_disk.dd 88403 | tail -5
+   -&gt; data run 이 이미 다른 파일에 재할당되어 있었다.
+      즉 88403 원본은 이미 덮였고, 카빙된 것은 그 앞부분이다.
+
+정답: flag{c4rv3_0nly_wh4t_y0u_must}</code></pre></div>
+<p>1단계와 4단계를 비교한다. <strong>같은 도구로 38분에 31만 개 vs 1분 40초에 51개.</strong> 차이는 도구가 아니라 세 가지 결정이었다.</p>
+<div class="table-wrap"><table><thead><tr><th>결정</th><th>1단계(실패)</th><th>4단계(성공)</th></tr></thead><tbody><tr><td>카빙 전에 메타데이터 확인</td><td>안 함</td><td><code>fls -d</code>로 후보 3개 확인</td></tr><tr><td>입력 범위</td><td>이미지 전체 200 GB</td><td><code>blkls</code> 비할당 11 GB</td></tr><tr><td>형식 범위</td><td>전 형식</td><td><code>jpg</code> 하나</td></tr></tbody></table></div>
+<p>그리고 6단계가 마지막 교훈이다. <strong><code>file</code>이 <code>JPEG</code>라고 답한 44개 중 실제로 온전한 것은 소수였다.</strong> 눈으로 열어 보는 단계를 생략하면 답을 지나친다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>fls -o N -r -p -d</code>를 먼저 돌렸는가 — 목표가 이름째로 나오지 않는가</li><li><code>istat</code>으로 <code>$DATA</code>가 resident인지 확인했는가 (resident면 <code>$MFT</code>만으로 복구된다)</li><li><code>(realloc)</code> 표시를 확인했는가</li><li><code>$UsnJrnl:$J</code>를 파싱해 삭제 시각·원래 이름을 확보했는가</li><li><code>blkls</code>로 <strong>비할당만</strong> 떼어냈는가 — 입력 크기가 실제로 줄었는가</li><li>슬랙(<code>blkls -s</code>)도 확인했는가</li><li>목표 형식을 좁혔는가 — 그 형식의 시그니처가 실제로 존재하는지 개수를 셌는가</li><li><code>fsstat</code>의 <code>Cluster Size</code>를 확인하고 정렬 가정을 세웠는가</li><li>결과에서 <code>file</code> 판정이 <code>data</code>인 것을 버렸는가</li><li>크기가 도구 최대치에 몰린 것을 &quot;잘림&quot;으로 판정했는가</li><li>해시로 중복을 제거했는가</li><li>구조 검사(<code>unzip -t</code>, <code>pngcheck</code>, <code>exiftool</code>)를 통과했는가</li><li><strong>실제로 열어 봤는가</strong> — 위 절반만 정상인 파일을 성공으로 세지 않았는가</li><li>EXIF 썸네일이 별도로 카빙되지 않았는가 (원본이 깨졌어도 썸네일이 답일 수 있다)</li><li>조각화가 확실하면 <code>$MFT</code> data run으로 조각을 직접 이어 붙일 수 있는가</li><li>애초에 필요한 것이 파일이 아니라 문자열인가 → <code>grep -abo</code> / <code>strings -a -t d</code></li><li>카빙 위치를 <code>blkcalc -u</code>로 원본 오프셋으로 환산했는가</li><li>회수율이 부족하면 구조 기반 도구로 다시 돌렸는가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-035 — foremost / scalpel 매뉴얼: 헤더/푸터 시그니처 기반 카빙의 동작 원리, 형식 지정과 설정 파일을 통한 최대 크기·정렬 제어, 감사 로그에 오프셋과 크기가 기록되는 구조</li><li>SRC-036 — TestDisk / PhotoRec 문서(CGSecurity): 형식별 내부 구조를 인식하는 회수 방식, 비할당 영역만 대상으로 할지 파티션 전체를 볼지 선택하는 구조, 복구 파일에 원래 이름이 남지 않는다는 점</li><li>SRC-032 — The Sleuth Kit 도구 문서(blkls / blkcalc / fls / icat / fsstat man page): <code>blkls</code>의 기본 동작이 비할당 블록 복사이고 <code>-s</code>가 슬랙만, <code>-e</code>가 전체 블록이라는 정의, <code>blkcalc</code>가 <code>-d</code>/<code>-s</code>/<code>-u</code> 중 정확히 하나를 요구하며 <code>-u</code>로 비할당 이미지 주소를 원본 주소로 되돌린다는 정의(원본 이미지를 인자로 줄 것), <code>fsstat</code>의 <code>Cluster Size</code></li><li>SRC-037 — binwalk 문서: 전 바이트 시그니처 스캔과 추출, 엔트로피 분석의 용도 — 디스크 이미지가 아니라 단일 파일/펌웨어 내부의 임베디드 파일을 찾는 도구라는 위치</li><li>형식별 헤더/푸터 값은 각 형식 명세를 근거로 하며, 실제 카빙 전에 <code>xxd</code>로 대상 이미지에서 직접 확인할 것</li><li><code>bulk_extractor</code>는 문자열 특징 추출 도구로서 위치만 언급했다. 옵션과 출력 파일 구성은 별도 출처로 검증이 필요하다</li><li>예시의 카빙 개수·소요 시간·크기 값은 판단 기준을 보이기 위한 예시이며 실제 이미지와 하드웨어에 따라 크게 달라진다</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./tsk-icat.html">
+    <span class="rel-id">FOR-0042 · 디스크/NTFS</span>
+    icat으로 파일 내용·ADS·삭제 파일 추출
+  </a>
+  <a class="related-item" href="./foremost.html">
+    <span class="rel-id">FOR-0046 · 디스크/NTFS</span>
+    foremost로 파일 카빙하기: 옵션, foremost.conf, audit.txt
+  </a>
+  <a class="related-item" href="./photorec.html">
+    <span class="rel-id">FOR-0047 · 디스크/NTFS</span>
+    PhotoRec 사용법: TUI 절차, File Opt, recup_dir 해석
+  </a>
+  <a class="related-item" href="./tsk-fls.html">
+    <span class="rel-id">FOR-0041 · 디스크/NTFS</span>
+    fls로 파일 목록·삭제 항목·bodyfile 뽑기
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./autopsy-timeline.html"><span class="rel-id">← FOR-0044</span>Autopsy Timeline로 시각 축 좁히기 (Counts/Details/List)</a>
+<a class="related-item" href="./foremost.html"><span class="rel-id">FOR-0046 →</span>foremost로 파일 카빙하기: 옵션, foremost.conf, audit.txt</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-결정-트리-카빙을-쓸지-말지">1단계 — 결정 트리: 카빙을 쓸지 말지</a></li>
+<li class="toc-l3"><a href="#2단계-카빙-대상-선정">2단계 — 카빙 대상 선정</a></li>
+<li class="toc-l3"><a href="#3단계-헤더푸터-기반-vs-구조-기반">3단계 — 헤더/푸터 기반 vs 구조 기반</a></li>
+<li class="toc-l3"><a href="#4단계-조각화fragmentation-때문에-카빙이-실패하는-원리">4단계 — 조각화(fragmentation) 때문에 카빙이 실패하는 원리</a></li>
+<li class="toc-l3"><a href="#5단계-클러스터-정렬-가정">5단계 — 클러스터 정렬 가정</a></li>
+<li class="toc-l3"><a href="#6단계-목표-형식을-좁혀-시간을-줄인다">6단계 — 목표 형식을 좁혀 시간을 줄인다</a></li>
+<li class="toc-l3"><a href="#7단계-도구-선택-기준">7단계 — 도구 선택 기준</a></li>
+<li class="toc-l3"><a href="#8단계-결과-검증">8단계 — 결과 검증</a></li>
+<li class="toc-l3"><a href="#9단계-중복-결과-정리">9단계 — 중복 결과 정리</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 03:39 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>SAM hive로 로컬 사용자 계정·RID·마지막 로그온 분석 · FOR-0052 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Registry">Registry</a> / FOR-0052
+      </div>
+      <header class="article-head">
+        <h1>SAM hive로 로컬 사용자 계정·RID·마지막 로그온 분석</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Registry</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>SAM hive의 Domains\Account\Users\&lt;RID 16진수&gt; 아래 F(로그온 시각·횟수·플래그)와 V(사용자명·풀네임·홈디렉터리) 두 이진 값에 로컬 계정의 모든 메타데이터가 들어 있고, RegRipper의 samparse 플러그인이 이 두 값을 한 번에 해석해 준다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>RegRipper, RegistryExplorer, rla, FTK Imager, KAPE</td></tr>
+<tr><th>artifact</th><td><code>SAM</code> · <code>RID</code> · <code>F value</code> · <code>V value</code> · <code>SID</code> · <code>ProfileList</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Windows\System32\config\SAM</code> · <code>C:\Windows\System32\config\SOFTWARE</code></td></tr>
+<tr><th>레지스트리</th><td><code>SAM\Domains\Account\Users</code> · <code>SAM\Domains\Account\Users\Names</code> · <code>SAM\Domains\Account</code> · <code>SAM\Domains\Builtin\Aliases</code> · <code>SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList</code></td></tr>
+<tr><th>로그 필드</th><td><code>Last Login Date</code> · <code>Pwd Reset Date</code> · <code>Pwd Fail Date</code> · <code>Login Count</code> · <code>Embedded RID</code> · <code>Account Flags</code></td></tr>
+<tr><th>파일 형식</th><td><code>regf</code></td></tr>
+<tr><th>검색 별칭</th><td>sam hive · 사용자 계정 목록 · 로컬 계정 분석 · RID 500 · 계정이 몇 개인지 · 마지막 로그온 시각 · sid 사용자 매핑 · samparse</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>SAM</code> hive의 <code>Domains\Account\Users\&lt;RID 16진수&gt;</code> 아래 <code>F</code>(로그온 시각·횟수·플래그)와 <code>V</code>(사용자명·풀네임·홈디렉터리) 두 이진 값에 로컬 계정의 모든 메타데이터가 들어 있고, RegRipper의 <code>samparse</code> 플러그인이 이 두 값을 한 번에 해석해 준다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;이 PC에 계정이 몇 개인가, 이름이 무엇인가&quot;</li><li>&quot;마지막으로 로그온한 계정과 시각은?&quot;</li><li>&quot;공격자가 만든 백도어 계정이 있는가&quot; (RID가 비정상적으로 크거나 이름이 시스템 계정 흉내)</li><li>&quot;<code>C:\Users\jhkim</code> 폴더의 SID는 무엇인가&quot; → <code>NTUSER.DAT</code>, EVTX, ShellBags를 사용자에 묶는 열쇠</li><li>&quot;계정이 비활성인가, 잠겼는가, 암호가 없는가&quot;</li></ul>
+<p>계정 자격증명(해시) 추출은 이 글의 범위가 아니다. <strong>여기서는 계정 메타데이터만 다룬다.</strong></p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>첨부에 <code>SAM</code>(확장자 없음, <code>regf</code> 시그니처)이 있다</li><li>문제에 &quot;사용자&quot;, &quot;계정&quot;, &quot;누가&quot;, &quot;몇 명&quot;, &quot;SID&quot; 같은 단어가 있다</li><li>EVTX에 <code>S-1-5-21-...-1001</code> 형태의 SID만 나오고 이름이 없다 → <code>SAM</code> + <code>ProfileList</code>로 이름을 붙인다</li><li><code>C:\Users</code> 폴더 목록과 계정 목록의 개수가 다르다 → 삭제된 계정 또는 프로필 없는 계정</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">rip.exe -r &quot;C:\case\SAM&quot; -p samparse</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Username        : jhkim [1001]
+Full Name       :
+User Comment    :
+Account Type    : Default Admin User
+Account Created : 2026-03-10 04:22:07Z
+Name            : jhkim
+Last Login Date : 2026-03-14 07:11:38Z
+Pwd Reset Date  : 2026-03-10 04:22:41Z
+Pwd Fail Date   : 2026-03-14 07:10:55Z
+Login Count     : 14
+  --&gt; Normal user account</code></pre></div>
+<p>이름과 RID, 마지막 로그온, 로그온 횟수가 한 번에 나온다. SID를 완성하려면 이어서 <code>ProfileList</code>를 본다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">rip.exe -r &quot;C:\case\SOFTWARE&quot; -p profilelist</code></pre></div>
+<p><code>SAM</code>이 dirty 상태(base block의 primary/secondary sequence number 불일치)면 먼저 <code>rla</code>로 <code>SAM.LOG1</code>/<code>SAM.LOG2</code>를 반영한다 — 절차는 <a href="./registry-hive-map.html">FOR-0051</a>과 <a href="./userassist.html">FOR-0061</a>에 있다.</p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-키-구조-파악">1단계 — 키 구조 파악</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">SAM
+└── SAM
+    └── Domains
+        ├── Account          (V 값에 머신 SID가 들어 있다)
+        │   ├── Users
+        │   │   ├── 000001F4     &lt;- RID 500 (Administrator)
+        │   │   ├── 000001F5     &lt;- RID 501 (Guest)
+        │   │   ├── 000001F7     &lt;- RID 503 (DefaultAccount)
+        │   │   ├── 000003E9     &lt;- RID 1001 (일반 사용자)
+        │   │   └── Names
+        │   │       ├── Administrator
+        │   │       ├── Guest
+        │   │       └── jhkim
+        │   └── Groups
+        └── Builtin
+            └── Aliases          (Administrators 등 로컬 그룹 멤버십)</code></pre></div>
+<p>RegistryExplorer로 열면 루트 이름이 <code>SAM</code>이고 그 아래 다시 <code>SAM</code> 키가 한 번 더 나온다. RegRipper 경로 표기는 <code>SAM\Domains\Account\Users</code>처럼 앞의 hive 이름을 생략한다.</p>
+<h3 id="2단계-rid-읽기">2단계 — RID 읽기</h3>
+<p>키 이름은 <strong>RID를 8자리 16진수로 쓴 것</strong>이다. 손으로 변환한다.</p>
+<div class="table-wrap"><table><thead><tr><th>키 이름</th><th>RID(10진수)</th><th>계정</th></tr></thead><tbody><tr><td><code>000001F4</code></td><td>500</td><td>Administrator (내장 관리자)</td></tr><tr><td><code>000001F5</code></td><td>501</td><td>Guest</td></tr><tr><td><code>000001F7</code></td><td>503</td><td>DefaultAccount</td></tr><tr><td><code>000001F8</code></td><td>504</td><td>WDAGUtilityAccount (환경에 따라 존재)</td></tr><tr><td><code>000003E8</code></td><td>1000</td><td>최초로 만든 일반 사용자</td></tr><tr><td><code>000003E9</code></td><td>1001</td><td>두 번째 일반 사용자</td></tr><tr><td><code>000003EA</code></td><td>1002</td><td>세 번째 일반 사용자</td></tr></tbody></table></div>
+<p>일반 사용자 RID는 <strong>1000부터 순서대로 증가</strong>한다. 그래서 RID 자체가 <strong>계정 생성 순서</strong>를 알려준다. RID 1000이 없고 1001, 1002만 있으면 1000번 계정이 삭제된 것이다.</p>
+<p><code>Names</code> 서브키에는 사용자명이 그대로 키 이름으로 있고, 그 키의 기본값(default value)의 <strong>데이터가 아니라 타입 필드</strong>에 RID가 들어 있는 특이한 구조다. 손으로 읽지 말고 파서 출력의 <code>[RID]</code>를 쓴다.</p>
+<h3 id="3단계-f-값-고정-길이-이진-값">3단계 — <code>F</code> 값 (고정 길이 이진 값)</h3>
+<p><code>Users\&lt;RID&gt;\F</code>는 계정의 시각·카운터·플래그를 담은 고정 길이 이진 값이다. 담고 있는 항목은 다음과 같다.</p>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>의미</th><th>형식</th></tr></thead><tbody><tr><td>Last Login</td><td>마지막 대화형 로그온 성공 시각</td><td>FILETIME (UTC)</td></tr><tr><td>Password Last Set / Pwd Reset</td><td>암호를 마지막으로 설정·변경한 시각</td><td>FILETIME (UTC)</td></tr><tr><td>Account Expires</td><td>계정 만료 시각. 없으면 <code>Never</code></td><td>FILETIME (UTC)</td></tr><tr><td>Last Incorrect Password / Pwd Fail</td><td>마지막 로그온 실패 시각</td><td>FILETIME (UTC)</td></tr><tr><td>RID</td><td>이 계정의 RID (키 이름과 같아야 한다)</td><td>DWORD</td></tr><tr><td>Account Flags (ACB)</td><td>비활성·잠김·암호 만료 안 함 등</td><td>비트 플래그</td></tr><tr><td>Login Count</td><td>성공 로그온 횟수</td><td>WORD</td></tr><tr><td>Bad Password Count</td><td>연속 실패 횟수</td><td>WORD</td></tr></tbody></table></div>
+<p><strong><code>F</code> 값의 각 항목이 몇 번째 바이트인지는 문서마다 다르게 인용되므로 손으로 오프셋을 세지 않는다.</strong> <code>rip.exe -p samparse</code> 또는 RegistryExplorer의 SAM 플러그인 출력에 나온 값을 근거로 쓴다. 오프셋을 직접 확인해야 하는 상황이라면, 키 이름의 RID와 <code>F</code> 안의 RID DWORD가 일치하는 지점을 기준점으로 삼아 검증한다.</p>
+<h3 id="4단계-account-flags-acb-해석">4단계 — Account Flags (ACB) 해석</h3>
+<p>파서는 보통 텍스트로 풀어 주지만, 값이 숫자로만 보일 때의 대응표다.</p>
+<div class="table-wrap"><table><thead><tr><th>비트</th><th>의미</th><th>포렌식 해석</th></tr></thead><tbody><tr><td><code>0x0001</code></td><td>Account Disabled</td><td>비활성 계정. Guest는 보통 여기 해당</td></tr><tr><td><code>0x0002</code></td><td>Home directory required</td><td>거의 안 쓰임</td></tr><tr><td><code>0x0004</code></td><td>Password not required</td><td><strong>암호 없이 로그온 가능</strong> — 강한 의심 신호</td></tr><tr><td><code>0x0008</code></td><td>Temporary duplicate account</td><td>임시 복제 계정</td></tr><tr><td><code>0x0010</code></td><td>Normal user account</td><td>일반 계정. 대부분 여기</td></tr><tr><td><code>0x0020</code></td><td>MNS logon account</td><td>클러스터용</td></tr><tr><td><code>0x0040</code></td><td>Interdomain trust account</td><td>도메인 신뢰</td></tr><tr><td><code>0x0080</code></td><td>Workstation trust account</td><td>컴퓨터 계정</td></tr><tr><td><code>0x0100</code></td><td>Server trust account</td><td>도메인 컨트롤러 계정</td></tr><tr><td><code>0x0200</code></td><td>Password does not expire</td><td>서비스/백도어 계정에서 흔함</td></tr><tr><td><code>0x0400</code></td><td>Account auto locked</td><td>실패 누적으로 잠김</td></tr></tbody></table></div>
+<p><code>0x0004</code>(암호 불필요) + <code>0x0200</code>(암호 만료 안 함) 조합에 일반 사용자 RID가 붙어 있으면 공격자가 심은 계정을 의심한다.</p>
+<h3 id="5단계-v-값-가변-길이-이진-값">5단계 — <code>V</code> 값 (가변 길이 이진 값)</h3>
+<p><code>Users\&lt;RID&gt;\V</code>는 문자열들을 모아 둔 가변 길이 값이다. 값 앞부분이 <strong>(오프셋, 길이, 타입) 묶음의 테이블</strong>이고 그 뒤에 실제 데이터(UTF-16LE)가 붙는다.</p>
+<div class="table-wrap"><table><thead><tr><th><code>V</code>에 들어 있는 항목</th><th>비고</th></tr></thead><tbody><tr><td>사용자명 (Username)</td><td><code>Names</code> 서브키 이름과 같다</td></tr><tr><td>풀네임 (Full Name)</td><td>비어 있는 경우가 많다</td></tr><tr><td>코멘트 (Comment)</td><td>내장 계정은 기본 설명이 들어 있다</td></tr><tr><td>사용자 코멘트 (User Comment)</td><td>관리자가 넣은 메모</td></tr><tr><td>홈 디렉터리 / 홈 드라이브</td><td>도메인 환경에서 채워진다</td></tr><tr><td>스크립트 경로 / 프로필 경로</td><td>로그온 스크립트</td></tr><tr><td>허용 워크스테이션 / 로그온 허용 시간</td><td>정책</td></tr><tr><td>LM 해시 / NT 해시 위치</td><td><strong>이 글에서는 다루지 않는다</strong></td></tr></tbody></table></div>
+<p><strong>테이블의 오프셋은 값의 선두 기준이 아니라 데이터 영역 시작점 기준의 상대값이다. 기준점을 손으로 계산하면 거의 틀리므로 파서를 쓴다.</strong> 문자열만 급히 확인할 때는 <code>strings -el</code>로 UTF-16LE 문자열을 뽑아 교차확인한다.</p>
+<h3 id="6단계-sid-완성">6단계 — SID 완성</h3>
+<p>로컬 계정의 SID는 다음과 같이 조립된다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">S-1-5-21-&lt;머신 SID 3개 서브오소리티&gt;-&lt;RID&gt;
+
+예: 머신 SID  S-1-5-21-3419281148-2201972856-1043271217
+    RID 1001
+    -&gt; S-1-5-21-3419281148-2201972856-1043271217-1001</code></pre></div>
+<p>머신 SID는 <code>SAM\Domains\Account</code>의 <code>V</code> 값 안에 들어 있고, <code>SECURITY\Policy\PolAcDmS</code>에도 계정 도메인 SID로 남아 있다 (<a href="./security-hive-overview.html">FOR-0056</a>). 이진 값을 직접 자르는 대신, <strong><code>SOFTWARE\...\ProfileList</code>의 서브키 이름이 이미 완성된 SID</strong>이므로 그것을 그대로 읽는 편이 빠르고 안전하다.</p>
+<h3 id="7단계-profilelist와-대조">7단계 — <code>ProfileList</code>와 대조</h3>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">rip.exe -r &quot;C:\case\SOFTWARE&quot; -p profilelist</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Path : C:\Users\jhkim
+SID  : S-1-5-21-3419281148-2201972856-1043271217-1001
+
+Path : C:\Users\svc_backup
+SID  : S-1-5-21-3419281148-2201972856-1043271217-1003</code></pre></div>
+<p><code>SAM</code>의 RID와 <code>ProfileList</code> SID의 마지막 숫자를 맞추면 <strong>계정 ↔ 프로필 폴더</strong>가 확정된다. 이 표를 만들어 두면 이후 모든 사용자별 artifact의 소유자가 정해진다. <code>ProfileList</code>의 다른 값은 <a href="./software-installed-programs.html">FOR-0055</a>에서 다룬다.</p>
+<div class="table-wrap"><table><thead><tr><th>RID</th><th>계정명 (SAM)</th><th>SID 끝</th><th>프로필 폴더 (ProfileList)</th></tr></thead><tbody><tr><td>500</td><td>Administrator</td><td>-500</td><td>(프로필 없음 = 로그온한 적 없음)</td></tr><tr><td>1001</td><td>jhkim</td><td>-1001</td><td><code>C:\Users\jhkim</code></td></tr><tr><td>1003</td><td>svc_backup</td><td>-1003</td><td><code>C:\Users\svc_backup</code></td></tr></tbody></table></div>
+<h3 id="8단계-계정-생성-시각-추정">8단계 — 계정 생성 시각 추정</h3>
+<p><code>SAM</code>에는 &quot;생성 시각&quot; 필드가 명시적으로 없다. 그래서 다음 근거를 조합한다.</p>
+<div class="table-wrap"><table><thead><tr><th>근거</th><th>강도</th><th>설명</th></tr></thead><tbody><tr><td><code>Names\&lt;username&gt;</code> 키의 LastWrite</td><td>강</td><td>이 키는 계정 생성 때 만들어지고 이후 이름 변경이 없으면 갱신되지 않는다. RegistryExplorer/RegRipper가 이 값을 &quot;Account Created&quot;로 보여준다</td></tr><tr><td><code>Users\&lt;RID&gt;</code> 키의 LastWrite</td><td>약</td><td>로그온·암호 변경마다 갱신되므로 생성 시각이 아니다</td></tr><tr><td><code>F</code>의 Password Last Set</td><td>중</td><td>계정 생성 시 암호를 정하므로 생성 시각과 대개 같거나 직후</td></tr><tr><td>RID 순서</td><td>중</td><td>1000 → 1001 → 1002 순서대로 만들어졌다</td></tr><tr><td><code>C:\Users\&lt;name&gt;</code> 폴더의 <code>$MFT</code> 생성 시각</td><td>중</td><td>계정 생성이 아니라 <strong>첫 로그온</strong> 시각 (<a href="./mft-basics.html">FOR-0021</a>)</td></tr><tr><td>Security EVTX 4720</td><td>강</td><td>계정 생성 이벤트. 감사가 켜져 있었다면 가장 확실하다</td></tr></tbody></table></div>
+<p><code>F</code>의 Password Last Set과 <code>Names</code> 키 LastWrite가 몇 초 이내로 붙어 있으면 그 시각을 생성 시각으로 결론 낸다.</p>
+<h3 id="9단계-그룹-멤버십">9단계 — 그룹 멤버십</h3>
+<p><code>SAM\Domains\Builtin\Aliases</code> 아래 키가 로컬 그룹이고, 키 이름은 그룹 RID의 16진수다.</p>
+<div class="table-wrap"><table><thead><tr><th>키 이름</th><th>RID</th><th>그룹</th></tr></thead><tbody><tr><td><code>00000220</code></td><td>544</td><td>Administrators</td></tr><tr><td><code>00000221</code></td><td>545</td><td>Users</td></tr><tr><td><code>00000222</code></td><td>546</td><td>Guests</td></tr><tr><td><code>00000227</code></td><td>551</td><td>Backup Operators</td></tr><tr><td><code>0000022B</code></td><td>555</td><td>Remote Desktop Users</td></tr></tbody></table></div>
+<p><code>Members</code> 아래에 멤버의 SID가 들어 있다. <strong>일반 사용자 RID가 <code>00000220</code>(Administrators)에 들어 있으면 권한 상승 흔적</strong>이므로 4732(그룹에 멤버 추가) 이벤트와 대조한다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="table-wrap"><table><thead><tr><th>samparse 출력 필드</th><th>의미</th><th>주의</th></tr></thead><tbody><tr><td><code>Username [RID]</code></td><td>계정명과 RID</td><td>RID ≥ 1000 이면 사람이 만든 계정</td></tr><tr><td><code>Account Created</code></td><td><code>Names</code> 키 LastWrite 기반 추정치</td><td>명시적 필드가 아니다. 4720과 교차검증</td></tr><tr><td><code>Last Login Date</code></td><td>마지막 성공 로그온 (UTC)</td><td><code>Never</code>면 한 번도 로그온 안 함</td></tr><tr><td><code>Pwd Reset Date</code></td><td>마지막 암호 설정 (UTC)</td><td>계정 생성 시각의 근거로 쓴다</td></tr><tr><td><code>Pwd Fail Date</code></td><td>마지막 로그온 실패 (UTC)</td><td>4625와 대조</td></tr><tr><td><code>Login Count</code></td><td>성공 로그온 누적 횟수</td><td><strong>네트워크 로그온은 잘 반영되지 않는다.</strong> 0인데 4624가 있는 경우가 있다</td></tr><tr><td><code>Embedded RID</code></td><td><code>F</code> 안의 RID</td><td>키 이름과 다르면 hive 손상 또는 조작</td></tr><tr><td><code>--&gt; ...</code> 줄</td><td>ACB 플래그 텍스트</td><td><code>Password does not expire</code>, <code>Account disabled</code> 확인</td></tr><tr><td><code>Account Type</code></td><td>파서가 플래그로 추정한 분류</td><td>참고용. 실제 권한은 <code>Builtin\Aliases</code>로 확인</td></tr></tbody></table></div>
+<p>시각은 전부 FILETIME이라 <strong>UTC</strong>다. 출력 끝의 <code>Z</code>가 그 뜻이다. KST 답이 필요하면 +9시간, 변환 상수는 <code>11644473600</code>초다 (<a href="./system-timezone.html">FOR-0054</a>).</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>이 글에서 얻은 값</th><th>다음에 열 것</th><th>무엇을 확인하나</th></tr></thead><tbody><tr><td>SID (<code>...-1001</code>)</td><td><code>SOFTWARE\...\ProfileList</code></td><td>프로필 폴더 경로</td></tr><tr><td>프로필 폴더</td><td><code>C:\Users\&lt;name&gt;\NTUSER.DAT</code></td><td>그 사용자의 실행 이력 (<a href="./userassist.html">FOR-0061</a>)</td></tr><tr><td>프로필 폴더</td><td><code>...\UsrClass.dat</code></td><td>ShellBags(방문 폴더)</td></tr><tr><td>계정명 / SID</td><td>Security EVTX 4624/4625/4720/4732</td><td>로그온 경로·실패·계정 생성 (<a href="./event-4624-logon.html">FOR-0083</a>)</td></tr><tr><td>Last Login 시각</td><td>그 시각 전후의 EVTX·Prefetch</td><td>로그온 직후 무엇을 실행했나</td></tr><tr><td>프로필 폴더 생성 시각</td><td><code>$MFT</code> (<a href="./mft-basics.html">FOR-0021</a>)</td><td>첫 로그온 시점, 삭제된 프로필</td></tr><tr><td>감사 이벤트가 아예 없음</td><td><code>SECURITY\Policy\PolAdtEv</code></td><td>감사 정책이 꺼져 있었나 (<a href="./security-hive-overview.html">FOR-0056</a>)</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>RID를 10진수로 읽는 것.</strong> 키 이름 <code>000003E9</code>는 3E9번이 아니라 <strong>1001</strong>이다. 16진수 변환을 빼먹고 &quot;RID 3E9 계정&quot;이라고 답하면 오답이다.</li><li><strong><code>Login Count</code>를 실제 로그온 횟수로 단정하는 것.</strong> 대화형 로그온 위주로 증가하고 네트워크·서비스 로그온은 반영이 일정하지 않다. <code>Login Count 0</code>인데 4624가 여러 건 있는 상황이 정상적으로 발생한다. 횟수를 근거로 쓸 때는 반드시 EVTX와 대조한다.</li><li><strong><code>Users\&lt;RID&gt;</code> 키 LastWrite를 계정 생성 시각으로 쓰는 것.</strong> 로그온·암호 변경마다 갱신된다. 생성 시각은 <code>Names\&lt;username&gt;</code> 키 LastWrite와 Password Last Set으로 추정한다.</li><li><strong><code>F</code>/<code>V</code> 값의 오프셋을 기억에 의존해 손으로 세는 것.</strong> 인용되는 오프셋이 문서마다 어긋난다. 파서 출력을 근거로 쓰고, 꼭 필요하면 <code>F</code> 안의 RID DWORD로 기준점을 검증한다.</li><li><strong><code>C:\Users</code> 폴더 이름을 계정명으로 단정하는 것.</strong> 프로필 폴더는 첫 로그온 때 만들어지고 이후 계정 이름을 바꿔도 폴더명은 그대로다. 이름이 충돌하면 <code>jhkim.DESKTOP-K7P2N9</code> 같은 접미사가 붙는다. 매핑은 <code>ProfileList</code> SID로만 확정한다.</li><li><strong><code>SAM</code>에 없는 계정을 &quot;존재하지 않았다&quot;로 결론 내리는 것.</strong> 도메인 계정은 <code>SAM</code>에 없다(그 SID는 <code>S-1-5-21-&lt;도메인&gt;</code>이고 <code>ProfileList</code>에만 남는다). 삭제된 로컬 계정도 <code>SAM</code>에서 사라지지만 <code>ProfileList</code>와 <code>C:\Users</code>에는 흔적이 남는다.</li><li><strong>Administrator가 <code>Never</code>라서 관리자 활동이 없다고 보는 것.</strong> 실제 관리 작업은 RID 1000번대 계정이 Administrators 그룹에 들어가 수행하는 경우가 대부분이다. <code>Builtin\Aliases\00000220\Members</code>를 본다.</li><li><strong>시간대 보정 누락.</strong> samparse 출력은 UTC다. 문제가 로컬 시각을 요구하면 <code>SYSTEM\ControlSet001\Control\TimeZoneInformation</code>을 먼저 읽는다.</li><li><strong>트랜잭션 로그 미반영.</strong> 계정 생성/암호 변경이 종료 직전에 일어났다면 그 변경이 <code>SAM.LOG1</code>에만 있을 수 있다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<p>같은 계정 사실을 최소 두 곳에서 확인한다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) SAM — 계정 목록, RID, 마지막 로그온, 플래그
+rip.exe -r SAM -p samparse &gt; sam.txt
+
+# 2) SOFTWARE — SID와 프로필 폴더
+rip.exe -r SOFTWARE -p profilelist &gt; profiles.txt
+
+# 3) EVTX — 계정 생성(4720), 그룹 추가(4732), 로그온(4624)
+EvtxECmd.exe -f Security.evtx --csv . --csvf sec.csv
+Import-Csv sec.csv | Where-Object { $_.EventId -in 4720,4726,4732 } |
+  Select-Object TimeCreated, EventId, PayloadData1
+
+# 4) 프로필 폴더가 실제로 언제 만들어졌나
+Import-Csv mft.csv | Where-Object { $_.ParentPath -eq &#39;.\Users&#39; }</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>조합</th><th>결론</th></tr></thead><tbody><tr><td><code>SAM</code>에 있고 <code>ProfileList</code>에도 있다</td><td>로그온한 적 있는 정상 계정</td></tr><tr><td><code>SAM</code>에 있는데 <code>ProfileList</code>에 없다</td><td>만들어졌지만 로그온한 적 없다</td></tr><tr><td><code>SAM</code>에 없는데 <code>ProfileList</code>에 있다</td><td>삭제된 계정 또는 도메인 계정</td></tr><tr><td><code>SAM</code>에 있는데 4720이 없다</td><td>감사 정책이 꺼졌거나 로그가 지워졌다(1102)</td></tr></tbody></table></div>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;침해 사고 이미지에서 공격자가 만든 백도어 계정의 이름과 생성 시각(KST)을 구하세요.
+ 첨부: SAM, SOFTWARE, SYSTEM, Security.evtx&quot;
+
+1. 첫 시도 (실패):
+   rip.exe -r SAM -p samparse | Select-String &#39;Last Login&#39;
+   -&gt; Last Login 이 가장 최근인 계정은 jhkim (2026-03-14 07:11:38Z).
+      &quot;jhkim이 백도어&quot;라고 결론 냈다.
+
+   왜 틀렸나:
+   jhkim 은 RID 1001, ProfileList 에 C:\Users\jhkim 이 있고
+   프로필 폴더 생성이 2026-03-10 이다. 사고(3/14) 전부터 쓰던 정상 계정이다.
+   &quot;마지막 로그온이 최근&quot;은 백도어의 근거가 아니다.
+
+2. 피벗: RID 순서와 플래그로 다시 본다
+   rip.exe -r SAM -p samparse &gt; sam.txt
+
+     Username : Administrator [500]   Last Login : Never
+     Username : Guest [501]           --&gt; Account disabled
+     Username : DefaultAccount [503]  --&gt; Account disabled
+     Username : jhkim [1001]          Login Count : 14
+     Username : svc_helpdesk [1004]   Login Count : 1
+       Account Created : 2026-03-14 06:58:12Z
+       Pwd Reset Date  : 2026-03-14 06:58:12Z
+       --&gt; Password does not expire
+       --&gt; Normal user account
+
+   RID 1004 = 가장 나중에 만들어진 계정.
+   생성 시각이 사고 시각대(3/14 07시)와 붙어 있고
+   &quot;Password does not expire&quot; 가 붙어 있다. 이름은 서비스 계정을 흉내낸 것.
+
+3. 두 번째 확인 — 권한 상승 여부
+   RegistryExplorer 로 SAM\Domains\Builtin\Aliases\00000220\Members
+   -&gt; RID 500, 1001 외에 1004 의 SID 가 들어 있다 = Administrators 소속
+
+4. SID 완성
+   rip.exe -r SOFTWARE -p profilelist
+   -&gt; C:\Users\svc_helpdesk
+      S-1-5-21-3419281148-2201972856-1043271217-1004
+
+5. EVTX 교차검증
+   4720 (계정 생성)  2026-03-14 06:58:12Z  TargetUserName=svc_helpdesk
+   4732 (그룹 추가)  2026-03-14 06:58:20Z  Administrators
+   -&gt; SAM 의 추정 생성 시각과 초 단위로 일치
+
+6. 시간대 보정
+   SYSTEM\ControlSet001\Control\TimeZoneInformation
+     TimeZoneKeyName = Korea Standard Time  (Bias -540)
+   2026-03-14 06:58:12 UTC + 9h = 2026-03-14 15:58:12 KST
+
+정답: svc_helpdesk / 2026-03-14 15:58:12 KST</code></pre></div>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><strong>RID를 16진수에서 10진수로 바꿨는가</strong> — <code>000003E9</code> = 1001</li><li><strong>RID가 가장 큰 계정을 봤는가</strong> — 가장 최근에 만들어진 계정이다</li><li><strong>ACB 플래그를 읽었는가</strong> — <code>Password not required</code>, <code>Password does not expire</code>, <code>Account disabled</code></li><li><code>Names</code> 서브키 LastWrite로 생성 시각을 추정했는가</li><li><code>ProfileList</code>로 SID ↔ 폴더 표를 만들었는가</li><li><code>Builtin\Aliases\00000220</code>(Administrators) 멤버를 확인했는가</li><li><code>SAM</code>은 dirty가 아닌가 — <code>rla</code>로 <code>.LOG1</code>/<code>.LOG2</code> 반영</li><li>계정이 <code>SAM</code>에 없다면 → 도메인 계정 또는 삭제 계정. <code>ProfileList</code>와 <code>C:\Users</code>, EVTX 4726(삭제)으로 이동</li><li>시각을 UTC로 답하고 있지 않은가 — 문제가 KST를 요구하는지 확인</li><li>해시가 필요한 문제인가 → 이 글의 범위가 아니다. 계정 메타데이터만으로 답이 되는지 다시 읽는다</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-017 — Microsoft Learn, Windows Registry hives and file locations: <code>SAM</code> hive가 <code>HKLM\SAM</code>으로 마운트되고 파일이 <code>System32\config</code>에 있다는 점</li><li>SRC-019 — Microsoft Learn, Well-known SIDs / Security Identifiers: RID 500·501·503의 의미, 일반 사용자 RID가 1000부터 시작, 로컬 그룹 RID 544·545·546·551·555, <code>S-1-5-21-&lt;머신&gt;-&lt;RID&gt;</code> 조립 규칙, ACB 계정 플래그 비트값</li><li>SRC-004 — Eric Zimmerman 문서: RegistryExplorer의 SAM 플러그인이 <code>F</code>/<code>V</code> 값을 표로 디코딩하는 점, <code>rla</code>로 트랜잭션 로그 반영</li><li><code>F</code>/<code>V</code> 값의 개별 바이트 오프셋은 공개 문서 간 인용이 어긋나므로 이 글에서는 항목만 나열했다. 오프셋이 필요하면 파서 출력과 대조해 실제 파일에서 확인할 것</li><li>RegRipper 플러그인 이름과 출력 필드 표기는 버전에 따라 다를 수 있으므로 <code>rip.exe -l</code>로 목록을 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./registry-hive-map.html">
+    <span class="rel-id">FOR-0051 · Registry</span>
+    Registry hive 전체 지도: 루트키와 디스크상 파일 대응표
+  </a>
+  <a class="related-item" href="./software-installed-programs.html">
+    <span class="rel-id">FOR-0055 · Registry</span>
+    SOFTWARE hive로 설치 프로그램·OS 버전·ProfileList 확인
+  </a>
+  <a class="related-item" href="./security-hive-overview.html">
+    <span class="rel-id">FOR-0056 · Registry</span>
+    SECURITY hive 개요: 감사 정책·도메인 SID·LSA Secrets
+  </a>
+  <a class="related-item" href="./event-4624-logon.html">
+    <span class="rel-id">FOR-0083 · Event Log</span>
+    Event ID 4624 성공 로그온 분석: 누가 어디서 어떻게 들어왔나
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./registry-hive-map.html"><span class="rel-id">← FOR-0051</span>Registry hive 전체 지도: 루트키와 디스크상 파일 대응표</a>
+<a class="related-item" href="./system-controlset.html"><span class="rel-id">FOR-0053 →</span>SYSTEM hive ControlSet 구조와 Select 키로 활성 세트 판정</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-키-구조-파악">1단계 — 키 구조 파악</a></li>
+<li class="toc-l3"><a href="#2단계-rid-읽기">2단계 — RID 읽기</a></li>
+<li class="toc-l3"><a href="#3단계-f-값-고정-길이-이진-값">3단계 — `F` 값 (고정 길이 이진 값)</a></li>
+<li class="toc-l3"><a href="#4단계-account-flags-acb-해석">4단계 — Account Flags (ACB) 해석</a></li>
+<li class="toc-l3"><a href="#5단계-v-값-가변-길이-이진-값">5단계 — `V` 값 (가변 길이 이진 값)</a></li>
+<li class="toc-l3"><a href="#6단계-sid-완성">6단계 — SID 완성</a></li>
+<li class="toc-l3"><a href="#7단계-profilelist와-대조">7단계 — `ProfileList`와 대조</a></li>
+<li class="toc-l3"><a href="#8단계-계정-생성-시각-추정">8단계 — 계정 생성 시각 추정</a></li>
+<li class="toc-l3"><a href="#9단계-그룹-멤버십">9단계 — 그룹 멤버십</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 03:39 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

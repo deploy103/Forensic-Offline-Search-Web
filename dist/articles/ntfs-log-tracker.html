@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>NTFS Log Tracker로 $LogFile·$UsnJrnl·$MFT 한 번에 묶어 보기 · FOR-0026 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%94%94%EC%8A%A4%ED%81%AC%2FNTFS">디스크/NTFS</a> / FOR-0026
+      </div>
+      <header class="article-head">
+        <h1>NTFS Log Tracker로 $LogFile·$UsnJrnl·$MFT 한 번에 묶어 보기</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">디스크/NTFS</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>NTFS Log Tracker는 $LogFile·$UsnJrnl:$J·$MFT 세 개를 함께 입력해야 제 값을 한다 — $MFT 없이 돌리면 파일 이름만 나오고 경로가 비어서 동명 파일을 구분할 수 없다. 결과는 SQLite DB와 CSV로 나오므로 SQL이나 Timeline Explorer로 재질의한다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>NTFS Log Tracker, MFTECmd, Timeline Explorer, FTK Imager, Arsenal Image Mounter, sqlite3, DB Browser for SQLite</td></tr>
+<tr><th>artifact</th><td><code>$LogFile</code> · <code>$UsnJrnl</code> · <code>$J</code> · <code>$MFT</code> · <code>$I30</code> · <code>INDX</code> · <code>LSN</code> · <code>USN</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\$LogFile</code> · <code>C:\$MFT</code> · <code>C:\$Extend\$UsnJrnl</code> · <code>C:\$Extend\$UsnJrnl:$J</code></td></tr>
+<tr><th>로그 필드</th><td><code>LSN</code> · <code>USN</code> · <code>Transaction ID</code> · <code>Redo Operation</code> · <code>Undo Operation</code> · <code>File Name</code> · <code>Full Path</code> · <code>MFT Entry</code> · <code>Parent MFT Entry</code> · <code>Event Time</code> · <code>Event Type</code></td></tr>
+<tr><th>파일 형식</th><td><code>ntfs</code> · <code>sqlite</code> · <code>csv</code></td></tr>
+<tr><th>검색 별칭</th><td>ntfs log tracker · 로그 트래커 · logfile 파서 · usnjrnl 파서 · ntfs 로그 도구 · logfile 분석 도구 · 삭제 이력 도구</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>NTFS Log Tracker는 <code>$LogFile</code>·<code>$UsnJrnl:$J</code>·<code>$MFT</code> <strong>세 개를 함께 입력해야</strong> 제 값을 한다 — <code>$MFT</code> 없이 돌리면 파일 이름만 나오고 경로가 비어서 동명 파일을 구분할 수 없다. 결과는 SQLite DB와 CSV로 나오므로 SQL이나 Timeline Explorer로 재질의한다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;삭제된 파일의 전체 경로와 삭제 시각을 모두 확정하라&quot;</li><li>&quot;<code>$LogFile</code>을 어떻게 파싱하나&quot; (MFTECmd는 <code>$LogFile</code>을 지원하지 않는다)</li><li>&quot;이름 변경인가 다른 폴더로의 이동인가&quot;</li><li>&quot;<code>$J</code>에는 잘려 나간 구간의 사건을 복원하라&quot;</li><li>&quot;저수준 연산 수십 개를 사용자 행위 하나로 묶어 보고 싶다&quot;</li></ul>
+<p><code>$LogFile</code> 자체의 구조와 redo/undo 개념은 <a href="./logfile-basics.html">FOR-0025</a>, <code>$UsnJrnl</code>의 <code>USN_REASON</code> 플래그는 <a href="./usnjrnl-basics.html">FOR-0027</a>에서 다룬다. 이 글은 <strong>세 입력을 합쳐 사건 목록을 만들고 재질의하는 절차</strong>다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>첨부에 <code>$LogFile</code>이 있다 → 이 도구가 사실상 유일한 선택지다</li><li>첨부에 <code>$LogFile</code> + <code>$J</code> + <code>$MFT</code> 세 개가 함께 있다 → 출제자가 이 도구를 전제했다</li><li>파일 이름은 아는데 경로를 모른다 → <code>$MFT</code>를 반드시 함께 입력</li><li><code>$J</code> 파싱 결과에 사건 시각대가 없다 → <code>$LogFile</code>로 내려간다</li><li>동명 파일이 여러 개다 → 경로 없이는 답을 못 낸다</li><li>지문이 &quot;이동&quot;을 묻는다 → 부모 레코드 번호 두 개를 비교해야 한다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">MFTECmd.exe -f &#39;C:\case\$J&#39; -m &#39;C:\case\$MFT&#39; --csv &quot;C:\case\out&quot; --csvf usn.csv</code></pre></div>
+<p>먼저 <code>$J</code>만 MFTECmd로 빠르게 훑어 사건 시각대가 남아 있는지 확인한다. 남아 있으면 그것으로 끝나는 문제도 많다. 없거나 부족하면 NTFS Log Tracker로 넘어간다.</p>
+<p>NTFS Log Tracker의 최소 절차는 세 단계다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1) $MFT 를 먼저 지정한다        -&gt; 경로 복원용 참조
+2) $LogFile 을 지정해 파싱한다  -&gt; 저수준 연산이 사건으로 묶여 나온다
+3) $UsnJrnl($J) 도 파싱해 같은 결과 집합에 더한다
+그 뒤 SQLite DB / CSV 로 저장하고 Timeline Explorer 나 SQL 로 본다</code></pre></div>
+<p>버전에 따라 탭 구성과 버튼 이름이 다르다. <strong>&quot;세 파일을 준다 → 파싱한다 → DB/CSV로 저장한다&quot;는 순서만 유지하고, 실제 라벨은 화면에서 확인한다.</strong></p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-입력-3개를-준비한다">1단계 — 입력 3개를 준비한다</h3>
+<div class="table-wrap"><table><thead><tr><th>입력</th><th>왜 필요한가</th><th>없으면</th></tr></thead><tbody><tr><td><code>$LogFile</code></td><td>저수준 연산과 undo(변경 전 값)</td><td>상세 근거가 사라진다. <code>$J</code> 수준의 요약만 남는다</td></tr><tr><td><code>$Extend\$UsnJrnl:$J</code></td><td>파일 단위 사건과 긴 보존 기간</td><td>오래된 사건을 놓친다</td></tr><tr><td><code>$MFT</code></td><td><strong>부모 레코드 번호 → 경로 문자열 변환</strong></td><td>이름만 나오고 경로가 빈다. 동명 파일 구분 불가</td></tr><tr><td>(선택) <code>$I30</code> / <code>INDX</code></td><td>삭제된 색인 항목의 잔존 이름</td><td>재사용된 레코드의 이름을 놓칠 수 있다</td></tr></tbody></table></div>
+<p>추출은 이미지에서 한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 파티션 오프셋 확인
+mmls image.dd
+
+# 볼륨 루트의 메타파일 — 레코드 번호로 바로 뽑는다
+icat -o 2048 image.dd 0 &gt; &#39;$MFT&#39;
+icat -o 2048 image.dd 2 &gt; &#39;$LogFile&#39;
+
+# $J 는 $Extend 안의 ADS 다. fls 로 &quot;레코드-타입-ID&quot; 를 확인한 뒤 그대로 준다
+fls -o 2048 image.dd 11
+# -&gt; r/r 27-128-3:  $UsnJrnl:$J
+icat -o 2048 image.dd 27-128-3 &gt; &#39;$J&#39;</code></pre></div>
+<p>GUI로 뽑을 때는 FTK Imager에서 볼륨 <code>[root]</code>의 <code>$MFT</code>·<code>$LogFile</code>, 그리고 <code>$Extend</code> 폴더를 펼쳐 <code>$UsnJrnl</code>의 <code>$J</code> 항목을 각각 Export한다 (<a href="./ftk-imager-open-image.html">FOR-0016</a>). 실행 중인 시스템에서는 일반 복사가 안 되므로 이미지를 마운트해서 접근한다 (<a href="./arsenal-image-mounter.html">FOR-0017</a>).</p>
+<p><strong>추출 검산</strong>을 반드시 한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">xxd -l 4 &#39;$MFT&#39;      # 4649 4c45  -&gt; &quot;FILE&quot;
+xxd -l 4 &#39;$LogFile&#39;  # 5253 5452  -&gt; &quot;RSTR&quot;
+ls -l &#39;$J&#39;           # sparse 라서 논리 크기가 매우 클 수 있다 (정상)</code></pre></div>
+<p>시그니처가 다르면 잘못된 레코드를 뽑은 것이다. 파싱을 시도하기 전에 여기서 잡는다.</p>
+<h3 id="2단계-파싱-순서와-시간대-고정">2단계 — 파싱 순서와 시간대 고정</h3>
+<p>개념적 순서는 이렇게 지킨다.</p>
+<div class="table-wrap"><table><thead><tr><th>순서</th><th>하는 일</th><th>이유</th></tr></thead><tbody><tr><td>1</td><td>출력 시간대를 UTC나 KST 중 하나로 <strong>고정</strong>하고 메모</td><td>나중에 +9를 두 번 하는 사고를 막는다</td></tr><tr><td>2</td><td><code>$MFT</code>를 참조로 먼저 로드</td><td>이후 파싱 결과의 경로가 채워진다</td></tr><tr><td>3</td><td><code>$LogFile</code> 파싱</td><td>가장 상세. 최근 구간에 강하다</td></tr><tr><td>4</td><td><code>$J</code> 파싱</td><td>보존 기간이 길다. 과거 구간을 채운다</td></tr><tr><td>5</td><td>SQLite DB로 저장</td><td>재질의의 기반</td></tr><tr><td>6</td><td>필요한 범위만 CSV로 export</td><td>Timeline Explorer로 볼 부분만</td></tr></tbody></table></div>
+<p><code>$LogFile</code>과 <code>$J</code>를 <strong>둘 다</strong> 넣는 이유는 커버 구간이 다르기 때문이다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">시간 --&gt;  과거                                                    현재
+$UsnJrnl:$J   |=======================================|
+$LogFile                                     |========|
+              ^ $J 만 있는 구간               ^ 둘 다 있는 구간 (교차검증 가능)</code></pre></div>
+<p>두 소스가 겹치는 구간이 <strong>교차검증 구간</strong>이다. 같은 사건이 양쪽에 나오면 판정 신뢰도가 크게 올라간다. 겹치지 않는 구간은 한쪽 소스만의 진술이므로 <code>$MFT</code>의 최종 상태와 반드시 대조한다.</p>
+<h3 id="3단계-sqlite-출력-vs-csv-출력">3단계 — SQLite 출력 vs CSV 출력</h3>
+<div class="table-wrap"><table><thead><tr><th></th><th>SQLite DB</th><th>CSV</th></tr></thead><tbody><tr><td>용도</td><td><strong>재질의</strong>, 조인, 집계</td><td>눈으로 훑기, Timeline Explorer</td></tr><tr><td>대용량</td><td>강하다 (수백만 행)</td><td>100MB 넘으면 도구가 버벅인다</td></tr><tr><td>필터 표현력</td><td>SQL 전체</td><td>컬럼 필터 수준</td></tr><tr><td>두 소스 조인</td><td><code>$LogFile</code>↔<code>$J</code>를 SQL로 대조 가능</td><td>수동 대조</td></tr><tr><td>보고서용</td><td>질의 결과를 다시 CSV로</td><td>그대로 제출</td></tr></tbody></table></div>
+<p>실전은 <strong>DB로 저장 → SQL로 좁힘 → 결과만 CSV로 export → Timeline Explorer로 확인</strong>이 가장 빠르다.</p>
+<h3 id="4단계-사건-유형-판별-규칙">4단계 — 사건 유형 판별 규칙</h3>
+<p>도구가 사건 유형을 붙여 주더라도 <strong>근거를 직접 확인</strong>해야 오답을 피한다. 판별 논리는 다음과 같다.</p>
+<div class="table-wrap"><table><thead><tr><th>판정</th><th><code>$LogFile</code> 근거</th><th><code>$J</code> 근거</th></tr></thead><tbody><tr><td>파일 생성</td><td><code>InitializeFileRecordSegment</code> + <code>AddIndexEntry*</code> + <code>SetBitsInNonresidentBitMap</code></td><td><code>FileCreate</code></td></tr><tr><td>파일 쓰기</td><td><code>UpdateMappingPairs</code> + <code>SetNewAttributeSizes</code></td><td><code>DataExtend</code> / <code>DataOverwrite</code></td></tr><tr><td>파일 삭제</td><td><code>DeallocateFileRecordSegment</code> + <code>DeleteIndexEntry*</code> + <code>ClearBitsInNonresidentBitMap</code></td><td><code>FileDelete</code></td></tr><tr><td><strong>이름 변경</strong></td><td><code>DeleteIndexEntry*</code> + <code>AddIndexEntry*</code>, <strong>부모 레코드 번호가 같다</strong></td><td><code>RenameOldName</code> + <code>RenameNewName</code>, <code>ParentEntryNumber</code> 동일</td></tr><tr><td><strong>이동(같은 볼륨)</strong></td><td><code>DeleteIndexEntry*</code> + <code>AddIndexEntry*</code>, <strong>부모 레코드 번호가 다르다</strong></td><td><code>RenameOldName</code> + <code>RenameNewName</code>, <code>ParentEntryNumber</code> 변경</td></tr><tr><td>이동(다른 볼륨)</td><td>이 볼륨에서는 삭제 조합만 보인다</td><td><code>FileDelete</code> (대상 볼륨에는 <code>FileCreate</code>)</td></tr><tr><td>폴더 생성</td><td><code>InitializeFileRecordSegment</code> + <code>$INDEX_ROOT</code> <code>CreateAttribute</code></td><td><code>FileCreate</code> + <code>Directory</code> 속성</td></tr><tr><td>ADS 생성</td><td>이름 있는 <code>$DATA</code>의 <code>CreateAttribute</code></td><td><code>StreamChange</code> / <code>NamedDataExtend</code></td></tr><tr><td>타임스탬프 조작</td><td><code>$STANDARD_INFORMATION</code> 대상 <code>UpdateResidentValue</code></td><td><code>BasicInfoChange</code> 단독</td></tr></tbody></table></div>
+<p><strong>이름 변경과 이동을 가르는 것은 부모 레코드 번호 하나뿐이다.</strong> 이 한 컬럼을 확인하지 않고 도구의 라벨만 믿으면 틀린다.</p>
+<p>정렬 기준도 지킨다.</p>
+<div class="table-wrap"><table><thead><tr><th>소스</th><th>순서 기준</th><th>시각으로 정렬하면</th></tr></thead><tbody><tr><td><code>$LogFile</code></td><td><strong>LSN</strong></td><td>같은 초에 몰린 수십 건의 순서가 뒤섞인다</td></tr><tr><td><code>$UsnJrnl</code></td><td><strong>USN</strong></td><td>위와 동일</td></tr></tbody></table></div>
+<h3 id="5단계-timeline-explorer로-좁히기">5단계 — Timeline Explorer로 좁히기</h3>
+<p>CSV를 열고 다음 순서로 줄인다.</p>
+<div class="table-wrap"><table><thead><tr><th>순서</th><th>필터</th><th>남는 양의 감각</th></tr></thead><tbody><tr><td>1</td><td>시각 범위 (사건 시각 ±30분)</td><td>수십만 → 수천</td></tr><tr><td>2</td><td>사건 유형 (<code>Delete</code>/<code>Rename</code>)</td><td>수천 → 수백</td></tr><tr><td>3</td><td>경로 (사용자 폴더로 한정)</td><td>수백 → 수십</td></tr><tr><td>4</td><td>확장자</td><td>수십 → 한 자리</td></tr></tbody></table></div>
+<p>컬럼 헤더 아래 필터 입력 행에 값을 넣고, 중요한 행에 태그를 달아 두고, 마지막에 필터가 걸린 상태를 그대로 export한다. 메뉴·버튼 이름은 버전마다 다르므로 화면에서 확인한다.</p>
+<h3 id="6단계-sqlite-출력을-sql로-재질의">6단계 — SQLite 출력을 SQL로 재질의</h3>
+<p><strong>컬럼 이름을 추측하지 않는다.</strong> 스키마를 먼저 읽는다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) 테이블 목록
+sqlite3 tracker.db &quot;.tables&quot;
+
+# 2) 각 테이블의 정의
+sqlite3 tracker.db &quot;.schema&quot;
+
+# 3) 특정 테이블의 컬럼과 타입
+sqlite3 tracker.db &quot;PRAGMA table_info(&#39;&lt;테이블명&gt;&#39;);&quot;
+
+# 4) 실제 값 3행을 보고 형식을 확인한다 (특히 시각 컬럼)
+sqlite3 -header -line tracker.db &quot;SELECT * FROM &lt;테이블명&gt; LIMIT 3;&quot;</code></pre></div>
+<p>스키마를 확인한 뒤 아래 형태로 채운다. <code>&lt;...&gt;</code>는 3단계에서 읽은 실제 이름으로 바꾼다.</p>
+<div class="code-block" data-lang="sql"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-sql">-- 사건 시각대의 삭제 사건만
+SELECT &lt;시각&gt;, &lt;사건유형&gt;, &lt;경로&gt;, &lt;파일명&gt;, &lt;MFT엔트리&gt;
+FROM &lt;테이블&gt;
+WHERE &lt;사건유형&gt; LIKE &#39;%Delete%&#39;
+  AND &lt;시각&gt; BETWEEN &#39;2026-03-14 07:00:00&#39; AND &#39;2026-03-14 08:00:00&#39;
+ORDER BY &lt;LSN 또는 USN&gt;;</code></pre></div>
+<div class="code-block" data-lang="sql"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-sql">-- 특정 파일의 전체 생애 (MFT 엔트리 번호로 추적 — 이름이 바뀌어도 따라간다)
+SELECT &lt;LSN&gt;, &lt;시각&gt;, &lt;사건유형&gt;, &lt;파일명&gt;, &lt;부모엔트리&gt;
+FROM &lt;테이블&gt;
+WHERE &lt;MFT엔트리&gt; = 128441
+ORDER BY &lt;LSN&gt;;</code></pre></div>
+<div class="code-block" data-lang="sql"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-sql">-- 이름 변경 짝을 부모 엔트리까지 함께 — rename 인가 move 인가
+SELECT &lt;시각&gt;, &lt;사건유형&gt;, &lt;파일명&gt;, &lt;부모엔트리&gt;
+FROM &lt;테이블&gt;
+WHERE &lt;사건유형&gt; LIKE &#39;%Rename%&#39; OR &lt;사건유형&gt; LIKE &#39;%IndexEntry%&#39;
+ORDER BY &lt;LSN&gt;;</code></pre></div>
+<div class="code-block" data-lang="sql"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-sql">-- 시간대별 사건 밀도 = 사용자 활동이 몰린 구간 찾기
+SELECT substr(&lt;시각&gt;, 1, 13) AS hour, COUNT(*) AS n
+FROM &lt;테이블&gt;
+GROUP BY hour ORDER BY n DESC LIMIT 20;</code></pre></div>
+<div class="code-block" data-lang="sql"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-sql">-- 결과를 CSV 로 빼기
+.headers on
+.mode csv
+.output deleted.csv
+SELECT ... ;
+.output stdout</code></pre></div>
+<h3 id="7단계-도구가-없을-때의-대안">7단계 — 도구가 없을 때의 대안</h3>
+<div class="table-wrap"><table><thead><tr><th>대상</th><th>대안</th><th>얻는 것 / 잃는 것</th></tr></thead><tbody><tr><td><code>$J</code></td><td><code>MFTECmd.exe -f &quot;$J&quot; -m &quot;$MFT&quot; --csv . --csvf usn.csv</code></td><td><strong>얻음</strong>: 사건 목록 + 경로. <strong>잃음</strong>: <code>$LogFile</code>의 상세와 undo</td></tr><tr><td><code>$LogFile</code></td><td><code>LogFileParser</code> (별도 도구)</td><td>저수준 연산 CSV. 사건 묶기는 직접</td></tr><tr><td><code>$LogFile</code></td><td><code>strings -e l &#39;$LogFile&#39;</code> 결과를 <code>rg</code>로 필터</td><td>이름 조각만. 순서·대상 레코드 없음</td></tr><tr><td><code>$MFT</code></td><td><code>MFTECmd.exe -f &quot;$MFT&quot; --csv . --csvf mft.csv</code></td><td>경로 복원용 조인 테이블 확보</td></tr><tr><td>전체</td><td>Autopsy 타임라인</td><td>파일시스템 시각 기반. <code>$LogFile</code> 연산은 안 나온다</td></tr></tbody></table></div>
+<p><code>-m &quot;$MFT&quot;</code>가 핵심이다. 이것 없이 <code>$J</code>를 파싱하면 NTFS Log Tracker를 <code>$MFT</code> 없이 돌린 것과 같은 문제(경로 없음)가 생긴다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 대안 경로 전체 — $J + $MFT 만으로 삭제 사건 목록 만들기
+MFTECmd.exe -f &#39;C:\case\$MFT&#39; --csv &quot;C:\case\out&quot; --csvf mft.csv
+MFTECmd.exe -f &#39;C:\case\$J&#39; -m &#39;C:\case\$MFT&#39; --csv &quot;C:\case\out&quot; --csvf usn.csv
+
+Import-Csv C:\case\out\usn.csv |
+  Where-Object { $_.UpdateReasons -match &#39;FileDelete&#39; -and $_.ParentPath -match &#39;Users&#39; } |
+  Select-Object Usn, UpdateTimestamp, ParentPath, FileName, EntryNumber |
+  Sort-Object Usn</code></pre></div>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p>컬럼 이름은 버전에 따라 다르다. <strong>의미 기준</strong>으로 대응시켜 읽는다.</p>
+<div class="table-wrap"><table><thead><tr><th>개념</th><th><code>$LogFile</code> 쪽에서</th><th><code>$UsnJrnl</code> 쪽에서</th><th>읽는 법</th></tr></thead><tbody><tr><td>순서</td><td><code>LSN</code></td><td><code>USN</code></td><td><strong>정렬은 항상 이 값으로</strong></td></tr><tr><td>시각</td><td>트랜잭션/페이지 시각</td><td><code>UpdateTimestamp</code></td><td>FILETIME(UTC). KST면 +9</td></tr><tr><td>사건 유형</td><td><code>Redo Operation</code> + <code>Undo Operation</code></td><td><code>UpdateReasons</code> 플래그</td><td>4단계 표로 판정</td></tr><tr><td>묶음 키</td><td><code>Transaction ID</code></td><td><code>Usn</code> 인접 + <code>CLOSE</code> 플래그</td><td>사용자 행위 1건의 경계</td></tr><tr><td>대상 파일</td><td><code>MFT Entry</code> (+ 시퀀스)</td><td><code>EntryNumber</code> + <code>SequenceNumber</code></td><td><strong>둘 다</strong> 같아야 같은 파일</td></tr><tr><td>대상 이름</td><td>undo/redo 데이터 안의 <code>$FILE_NAME</code></td><td><code>FileName</code></td><td>경로는 포함되지 않는다</td></tr><tr><td>부모</td><td>색인 대상 <code>MFT Entry</code></td><td><code>ParentEntryNumber</code></td><td><strong>rename vs move 판정 키</strong></td></tr><tr><td>경로</td><td><code>$MFT</code> 조인 결과</td><td><code>$MFT</code> 조인 결과</td><td><code>$MFT</code> 없으면 빈다</td></tr><tr><td>대상 속성</td><td><code>Target Attribute</code></td><td>—</td><td><code>$SI</code>면 timestomp 후보</td></tr><tr><td>클러스터</td><td><code>Target VCN</code> / <code>Target LCN</code></td><td>—</td><td>카빙 대상 위치</td></tr></tbody></table></div>
+<p><code>Full Path</code> 계열 컬럼이 비어 있다면 <strong>거의 항상 <code>$MFT</code>를 안 준 것</strong>이다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>여기서 얻은 것</th><th>다음 목표</th><th>확인할 것</th></tr></thead><tbody><tr><td>삭제 사건 + 경로</td><td><code>$MFT</code> (<a href="./mft-basics.html">FOR-0021</a>)</td><td>레코드가 남았는가, MACB는 무엇인가</td></tr><tr><td><code>MFT Entry</code> 번호</td><td><code>icat -o &lt;off&gt; image.dd &lt;n&gt;</code></td><td>내용 복구 시도</td></tr><tr><td>undo의 옛 타임스탬프</td><td><code>$SI</code> vs <code>$FN</code> (<a href="./si-vs-fn-timestamps.html">FOR-0024</a>)</td><td>조작 전 값 확정</td></tr><tr><td><code>BasicInfoChange</code> 시각</td><td><code>$SI</code>의 <code>LastRecordChange0x10</code></td><td>두 값 일치 → timestomp 확정</td></tr><tr><td>해제된 클러스터(LCN)</td><td>미할당 영역 카빙</td><td>내용이 아직 남았는가</td></tr><tr><td>사건 시각</td><td>EVTX <code>4688</code>/<code>4104</code> (<a href="./event-4624-logon.html">FOR-0083</a>)</td><td>어느 프로세스·세션이 유발했나</td></tr><tr><td>아카이브 생성/삭제</td><td>Prefetch (압축 도구), 브라우저 History (<a href="./chrome-history.html">FOR-0191</a>)</td><td>유출 경로</td></tr><tr><td>실행 파일 생성</td><td>Prefetch / Amcache / UserAssist (<a href="./userassist.html">FOR-0061</a>)</td><td>실행 여부와 횟수</td></tr><tr><td>이동 목적지 부모</td><td>그 폴더의 <code>$INDEX_ALLOCATION</code></td><td>다른 항목도 함께 옮겼나</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>$MFT</code>를 안 주고 돌리는 것.</strong> 경로 컬럼이 비고 이름만 남는다. <code>report.docx</code>가 볼륨에 다섯 개 있으면 답을 특정할 수 없다. 이 도구를 쓰는 이유의 절반이 경로 복원이다.</li><li><strong><code>$LogFile</code>만 넣고 <code>$J</code>를 빼는 것.</strong> <code>$LogFile</code>은 보존 기간이 짧다. 며칠 전 사건이면 비어 있다. 두 소스의 커버 구간이 다르므로 항상 함께 넣는다.</li><li><strong><code>$UsnJrnl</code>을 통째로 주고 <code>$J</code>를 안 주는 것.</strong> 데이터는 ADS <code>:$J</code>에 있다. <code>$UsnJrnl</code> 본체만 export하면 사실상 빈 파일이다.</li><li><strong>도구가 붙인 사건 라벨을 그대로 답으로 쓰는 것.</strong> rename과 move는 <strong>부모 레코드 번호</strong>로만 갈린다. 라벨이 <code>Rename</code>이어도 부모가 바뀌었으면 이동이다.</li><li><strong>시각으로 정렬하는 것.</strong> 같은 초에 수십~수백 레코드가 몰린다. 순서는 <code>LSN</code>(<code>$LogFile</code>)과 <code>USN</code>(<code>$J</code>)이 정한다.</li><li><strong>저수준 연산 1건을 사용자 행위 1건으로 세는 것.</strong> 파일 하나 삭제에 레코드가 수십 개 나온다. <code>Transaction ID</code>로 묶어야 &quot;삭제 1건&quot;이 된다. 안 묶고 세면 건수가 수십 배로 부풀려진다.</li><li><strong><code>EntryNumber</code>만으로 파일을 동일시하는 것.</strong> MFT 레코드 슬롯은 재사용된다. <code>SequenceNumber</code>까지 같아야 같은 파일이다. 특히 삭제가 잦은 폴더에서 오판이 생긴다.</li><li><strong>시간대를 두 번 변환하는 것.</strong> 도구의 시간대 설정을 KST로 두고 결과에 다시 +9를 하면 18시간이 틀어진다. 파싱 시작 전에 시간대를 고정하고 그 값을 적어 둔다. FILETIME은 1601-01-01 UTC 기준 100ns이고 Unix와 11644473600초 차이다.</li><li><strong>SQLite 컬럼 이름을 추측해 SQL을 짜는 것.</strong> <code>.tables</code>와 <code>.schema</code>를 먼저 읽는다. 없는 컬럼을 쓰면 에러가 나고, 있는데 의미가 다르면 조용히 틀린 답이 나온다.</li><li><strong>결과가 많다고 CSV를 Excel로 여는 것.</strong> 행 한계에서 잘리고 시각 컬럼 서식이 망가진다. SQLite로 좁히고 Timeline Explorer로 확인한다.</li><li><strong><code>$LogFile</code>에 기록이 없다는 것을 &quot;그 일이 없었다&quot;로 읽는 것.</strong> 원형 버퍼라 이미 덮였을 수 있다 (<a href="./logfile-basics.html">FOR-0025</a>).</li><li><strong>추출 검산을 건너뛰는 것.</strong> <code>$MFT</code>는 <code>FILE</code>, <code>$LogFile</code>은 <code>RSTR</code>로 시작해야 한다. 엉뚱한 레코드를 뽑아 놓고 &quot;파서가 이상하다&quot;고 시간을 버리는 경우가 많다.</li><li><strong><code>$I30</code>/<code>INDX</code>를 안 보는 것.</strong> 레코드가 재사용돼 <code>$MFT</code>에서 사라진 파일의 이름이 부모 폴더 색인 슬랙에 남아 있을 수 있다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) 같은 사건이 $J 에도 있는가 (독립 소스 확인)
+Import-Csv C:\case\out\usn.csv |
+  Where-Object { $_.EntryNumber -eq &#39;128441&#39; } |
+  Select-Object Usn, UpdateTimestamp, UpdateReasons, FileName | Sort-Object Usn
+
+# 2) $MFT 의 최종 상태와 맞는가
+Import-Csv C:\case\out\mft.csv |
+  Where-Object { $_.EntryNumber -eq &#39;128441&#39; } |
+  Select-Object InUse, FileName, ParentPath, FileSize, Created0x10, LastRecordChange0x10
+
+# 3) 휴지통 경유였는지
+RBCmd.exe -d &#39;C:\case\$Recycle.Bin&#39; --csv &quot;C:\case\out&quot;</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 4) 레코드 원본에서 속성 확인
+istat -o 2048 image.dd 128441
+
+# 5) 파서를 못 믿을 때 이름 존재 여부만 raw 확인
+strings -e l &#39;$LogFile&#39; | rg -i &#39;customer_db&#39;</code></pre></div>
+<p>세 소스(<code>$LogFile</code>·<code>$J</code>·<code>$MFT</code>)의 시각이 서로 몇 초 이내로 정합하면 판정이 확정된다. 크게 어긋나면 <strong>시간대 설정</strong>을 먼저 의심한다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;내부 문서가 외부로 나갔습니다. 유출된 파일의 전체 경로와 삭제 시각,
+ 그리고 그 파일이 이동된 것인지 이름만 바뀐 것인지 판정하세요.
+ 첨부: $LogFile, $J, $MFT&quot;
+
+1. 추출 검산
+   xxd -l 4 &#39;$MFT&#39;      -&gt; 4649 4c45   &quot;FILE&quot;  OK
+   xxd -l 4 &#39;$LogFile&#39;  -&gt; 5253 5452   &quot;RSTR&quot;  OK
+
+2. 첫 시도 (실패):
+   NTFS Log Tracker 에 $LogFile 만 지정해 파싱했다.
+   결과에서 삭제 사건을 필터하니 이름은 나왔다.
+
+   Event Type   File Name        Full Path
+   ------------ ---------------- ---------
+   Delete       report.docx      (빈칸)
+   Delete       report.docx      (빈칸)
+   Delete       report.docx      (빈칸)
+
+   report.docx 3건이 전부 경로가 비어 있다. 어느 것이 유출본인지 알 수 없다.
+
+   왜 틀렸나: $LogFile 에는 부모 &quot;레코드 번호&quot;만 들어 있다.
+   경로 문자열로 바꾸려면 $MFT 가 있어야 한다.
+
+3. 접근 변경 — $MFT 를 먼저 지정하고 다시 파싱, $J 도 함께 넣는다
+   결과:
+
+   Source    LSN/USN     Time(UTC)             Event    Full Path
+   --------- ----------- --------------------- -------- -----------------------------------
+   $LogFile  0x1a4b1200  2026-03-14 07:31:04   Create   \Users\jhkim\Documents\report.docx
+   $LogFile  0x1a4b2c10  2026-03-14 07:38:41   IdxDel   \Users\jhkim\Documents\report.docx
+   $LogFile  0x1a4b2c88  2026-03-14 07:38:41   IdxAdd   \Users\jhkim\Documents\quarter.docx
+   $J        0x4a1b8c0   2026-03-14 07:39:52   Delete   \Users\jhkim\Documents\quarter.docx
+   $LogFile  ...          (해당 구간 없음)
+   $J        0x4a08110   2026-03-01 09:12:33   Delete   \Windows\Temp\report.docx
+   $J        0x49f2200   2026-02-11 14:03:07   Delete   \Users\Public\report.docx
+
+   -&gt; 나머지 두 report.docx 는 사건과 무관한 과거 삭제였다.
+      3월 1일과 2월 11일 건은 $LogFile 에 없다 (이미 덮였다).
+      두 소스를 함께 넣어야 이 판단이 가능했다.
+
+4. 두 번째 실수와 정정 — 도구 라벨을 믿었다
+   IdxDel/IdxAdd 짝을 보고 &quot;이동&quot; 이라고 답했다.
+   부모 레코드 번호를 확인하지 않은 판정이다.
+
+   SELECT &lt;LSN&gt;, &lt;사건유형&gt;, &lt;파일명&gt;, &lt;부모엔트리&gt;
+   FROM &lt;테이블&gt; WHERE &lt;MFT엔트리&gt; = 128441 ORDER BY &lt;LSN&gt;;
+
+   LSN         사건유형                     파일명           부모엔트리
+   ----------- ---------------------------- ---------------- ----------
+   0x1a4b1200  InitializeFileRecordSegment  report.docx      9114
+   0x1a4b2c10  DeleteIndexEntryAllocation   report.docx      9114
+   0x1a4b2c88  AddIndexEntryAllocation      quarter.docx     9114     &lt;-- 부모가 같다
+   0x1a4b3a40  DeallocateFileRecordSegment  quarter.docx     9114
+
+   부모 엔트리가 둘 다 9114 다. -&gt; 이동이 아니라 이름 변경이다.
+
+5. Transaction ID 로 묶어 사건 수를 바로잡는다
+   원시 행은 41건이었지만 Transaction ID 로 묶으면 3건이다.
+     T1 07:31:04  생성
+     T2 07:38:41  이름 변경 (report.docx -&gt; quarter.docx)
+     T3 07:39:52  삭제
+
+6. $J 로 독립 확증
+   Import-Csv usn.csv | Where-Object { $_.EntryNumber -eq &#39;128441&#39; } |
+     Sort-Object Usn | Format-Table Usn, UpdateTimestamp, UpdateReasons, FileName
+
+   0x4a1a840  2026-03-14 07:38:41Z  RenameOldName        report.docx
+   0x4a1a9c0  2026-03-14 07:38:41Z  RenameNewName|Close  quarter.docx
+   0x4a1b8c0  2026-03-14 07:39:52Z  FileDelete|Close     quarter.docx
+
+   RenameOldName/RenameNewName 짝의 ParentEntryNumber 도 9114 로 동일.
+   $LogFile 판정과 일치한다. 확정.
+
+7. $MFT 최종 상태
+   Import-Csv mft.csv | Where-Object { $_.EntryNumber -eq &#39;128441&#39; }
+   -&gt; InUse=False, FileName=quarter.docx, ParentPath=.\Users\jhkim\Documents
+   $MFT 에는 최종 이름만 남아 있다. 원래 이름은 로그에서만 나온다.
+
+8. 시간대
+   07:39:52 UTC = 16:39:52 KST
+
+정답: \Users\jhkim\Documents\report.docx (EntryNumber 128441)
+      2026-03-14 16:38:41 KST 에 quarter.docx 로 이름 변경 (같은 폴더, 이동 아님)
+      2026-03-14 16:39:52 KST 삭제</code></pre></div>
+<p>2단계와 4단계가 두 번의 실패다. <strong><code>$MFT</code>를 안 줘서 경로가 비었고, 부모 레코드 번호를 안 봐서 rename을 move로 오판했다.</strong> 세 파일을 모두 넣고 부모 엔트리 컬럼을 확인하는 것 — 이 두 가지가 이 도구의 사용법 전부라고 봐도 된다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>$MFT</code>를 입력에 넣었는가 — 경로가 비면 100% 이것이다</li><li><code>$UsnJrnl</code> 본체가 아니라 ADS <code>:$J</code>를 넣었는가</li><li>추출 검산을 했는가 — <code>$MFT</code>는 <code>FILE</code>, <code>$LogFile</code>은 <code>RSTR</code></li><li><code>$LogFile</code>과 <code>$J</code>를 <strong>둘 다</strong> 넣었는가 — 커버 구간이 다르다</li><li>정렬을 <code>LSN</code>/<code>USN</code>으로 했는가, 시각으로 하고 있지 않은가</li><li>rename인지 move인지 <strong>부모 레코드 번호</strong>로 확인했는가</li><li><code>Transaction ID</code>로 묶어 사건 수를 셌는가</li><li><code>EntryNumber</code> + <code>SequenceNumber</code> 둘 다로 파일을 특정했는가</li><li>시간대를 파싱 전에 고정하고, 변환을 두 번 하지 않았는가</li><li>SQL을 짜기 전에 <code>.tables</code> / <code>.schema</code>를 읽었는가</li><li><code>$LogFile</code>에 사건이 없으면 → 이미 덮였을 가능성. <code>$J</code>와 <code>$MFT</code>, <code>INDX</code> 슬랙으로 전환</li><li>도구를 못 쓰는 상황이면 → <code>MFTECmd -f &quot;$J&quot; -m &quot;$MFT&quot;</code>로 최소한 사건 목록은 만든다</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-005 — Microsoft Learn, Master File Table: <code>$MFT</code>의 부모 레코드 참조 구조 — 경로 복원에 <code>$MFT</code>가 필요한 이유</li><li>SRC-013 — Microsoft Learn, Change Journals: <code>$UsnJrnl</code>이 <code>$Extend\$UsnJrnl:$J</code> ADS에 있고 <code>USN_REASON</code> 플래그로 사건을 표현한다는 근거</li><li>SRC-004 — Eric Zimmerman 문서: 대안 경로인 MFTECmd의 <code>-f</code>/<code>-m</code> 옵션과 <code>$J</code> 파싱 시 경로 복원, Timeline Explorer 사용법</li><li><strong>NTFS Log Tracker의 화면 구성·탭 이름·버튼 라벨·출력 컬럼명·SQLite 테이블 스키마는 버전에 따라 다르므로 실제 화면에서 확인할 것.</strong> 이 글의 절차는 &quot;세 입력을 준다 → 파싱한다 → DB/CSV로 저장한다 → 재질의한다&quot;는 개념 단계로 서술했다. 번들 버전은 <code>tools/manifest.json</code> 기준 v1.9다</li><li>SQL 예시의 <code>&lt;...&gt;</code> 자리 이름은 반드시 <code>.tables</code> / <code>.schema</code> / <code>PRAGMA table_info()</code> 로 확인한 실제 이름으로 바꿔 쓸 것</li><li><code>$LogFile</code> 연산 이름의 표기는 파서·NTFS 버전에 따라 다르다. 판정은 <code>$UsnJrnl</code>·<code>$MFT</code>와 교차검증할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./logfile-basics.html">
+    <span class="rel-id">FOR-0025 · 디스크/NTFS</span>
+    $LogFile 기본: NTFS 트랜잭션 로그의 RSTR/RCRD와 redo·undo
+  </a>
+  <a class="related-item" href="./usnjrnl-basics.html">
+    <span class="rel-id">FOR-0027 · 디스크/NTFS</span>
+    $UsnJrnl($J)로 삭제·생성·이름변경 흔적 복원하기
+  </a>
+  <a class="related-item" href="./logfile-usnjrnl-crosscheck.html">
+    <span class="rel-id">FOR-0029 · 디스크/NTFS</span>
+    $LogFile과 $UsnJrnl 교차검증: 한쪽에만 기록이 있을 때 무엇을 믿나
+  </a>
+  <a class="related-item" href="./filename-change-traces.html">
+    <span class="rel-id">FOR-0039 · 디스크/NTFS</span>
+    파일명 변경 흔적 추적: $UsnJrnl RENAME 쌍으로 원래 이름 찾기
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./logfile-basics.html"><span class="rel-id">← FOR-0025</span>$LogFile 기본: NTFS 트랜잭션 로그의 RSTR/RCRD와 redo·undo</a>
+<a class="related-item" href="./usnjrnl-basics.html"><span class="rel-id">FOR-0027 →</span>$UsnJrnl($J)로 삭제·생성·이름변경 흔적 복원하기</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-입력-3개를-준비한다">1단계 — 입력 3개를 준비한다</a></li>
+<li class="toc-l3"><a href="#2단계-파싱-순서와-시간대-고정">2단계 — 파싱 순서와 시간대 고정</a></li>
+<li class="toc-l3"><a href="#3단계-sqlite-출력-vs-csv-출력">3단계 — SQLite 출력 vs CSV 출력</a></li>
+<li class="toc-l3"><a href="#4단계-사건-유형-판별-규칙">4단계 — 사건 유형 판별 규칙</a></li>
+<li class="toc-l3"><a href="#5단계-timeline-explorer로-좁히기">5단계 — Timeline Explorer로 좁히기</a></li>
+<li class="toc-l3"><a href="#6단계-sqlite-출력을-sql로-재질의">6단계 — SQLite 출력을 SQL로 재질의</a></li>
+<li class="toc-l3"><a href="#7단계-도구가-없을-때의-대안">7단계 — 도구가 없을 때의 대안</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 03:39 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

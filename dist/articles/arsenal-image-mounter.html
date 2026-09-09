@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Arsenal Image Mounter로 이미지를 실제 디스크처럼 마운트하기 · FOR-0017 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%94%94%EC%8A%A4%ED%81%AC%2FNTFS">디스크/NTFS</a> / FOR-0017
+      </div>
+      <header class="article-head">
+        <h1>Arsenal Image Mounter로 이미지를 실제 디스크처럼 마운트하기</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">디스크/NTFS</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>Arsenal Image Mounter는 이미지를 볼륨이 아니라 디스크 장치 수준으로 마운트해 드라이브 문자를 붙여 주므로, 이미지 형식을 직접 못 읽는 도구(RegistryExplorer, ChromeCacheView, WinPrefetchView 등)에 그대로 경로를 넘길 수 있게 해 준다 — 반드시 Read only 또는 Write temporary로 마운트한다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Arsenal Image Mounter, FTK Imager, RegistryExplorer, KAPE, EvtxECmd</td></tr>
+<tr><th>artifact</th><td><code>E01</code> · <code>RAW</code> · <code>VHD</code> · <code>VHDX</code> · <code>VMDK</code> · <code>VDI</code> · <code>mounted volume</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Windows\System32\config</code> · <code>C:\Users</code></td></tr>
+<tr><th>파일 형식</th><td><code>e01</code> · <code>ex01</code> · <code>raw</code> · <code>dd</code> · <code>vhd</code> · <code>vhdx</code> · <code>vmdk</code> · <code>vdi</code></td></tr>
+<tr><th>검색 별칭</th><td>arsenal · arsenal image mounter · 이미지 마운트 · 이미지 마운트하기 · vmdk 열기 · vhd 열기 · 디스크 마운트 · 드라이브로 붙이기</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>Arsenal Image Mounter는 이미지를 <strong>볼륨이 아니라 디스크 장치 수준으로</strong> 마운트해 드라이브 문자를 붙여 주므로, 이미지 형식을 직접 못 읽는 도구(RegistryExplorer, ChromeCacheView, WinPrefetchView 등)에 그대로 경로를 넘길 수 있게 해 준다 — 반드시 <strong>Read only</strong> 또는 <strong>Write temporary</strong>로 마운트한다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li><code>.VMDK</code> / <code>.VHD</code> / <code>.VHDX</code> / <code>.VDI</code> 가 첨부되어 FTK Imager로 바로 열기 어려운 경우</li><li>분석 도구가 이미지 형식을 모르고 <strong>폴더 경로만 받는</strong> 경우</li><li>KAPE로 이미지에서 artifact를 일괄 수집하고 싶은 경우</li><li>탐색기로 파일 구조를 직접 둘러봐야 하는 경우</li><li>파티션 테이블·볼륨 구성을 Windows 디스크 관리 화면에서 확인하고 싶은 경우</li></ul>
+<p>FTK Imager도 <code>File &gt; Image Mounting</code> 기능이 있지만, Arsenal은 <strong>가상 SCSI 디스크 어댑터 드라이버</strong>로 붙기 때문에 Windows가 진짜 디스크로 인식한다. 이 차이가 도구 호환성을 크게 벌린다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>확장자가 <code>.vmdk</code>, <code>.vhd</code>, <code>.vhdx</code>, <code>.vdi</code> — 가상 머신 디스크</li><li><code>.E01</code> / <code>.raw</code> 인데 쓰려는 도구가 이미지를 못 읽는다</li><li>파일이 <code>disk-flat.vmdk</code> + <code>disk.vmdk</code> 처럼 <strong>디스크립터와 데이터가 분리</strong>되어 있다 → 디스크립터(<code>disk.vmdk</code>)를 지정한다</li><li>VM 스냅샷 체인(<code>disk-000001.vmdk</code>)이 있다 → 최신 스냅샷을 지정해야 최종 상태가 보인다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1. Arsenal Image Mounter 실행 (관리자 권한)
+2. Mount disk image... 클릭
+3. 이미지 파일 선택
+4. 마운트 옵션에서 Read only 또는 Write temporary 선택
+5. OK -&gt; 드라이브 문자 확인 (예: E:)
+6. 작업 종료 후 목록에서 선택 &gt; Remove</code></pre></div>
+<p>관리자 권한이 필요하다. 드라이버를 로드하기 때문이다.</p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-마운트-모드-세-가지의-차이-가장-중요">1단계 — 마운트 모드 세 가지의 차이 (가장 중요)</h3>
+<div class="table-wrap"><table><thead><tr><th>모드</th><th>원본 이미지</th><th>쓰기 결과</th><th>언제 쓰나</th></tr></thead><tbody><tr><td><strong>Read only</strong></td><td>변경 없음</td><td>쓰기 자체가 거부됨</td><td><strong>기본값. 대부분 이것</strong></td></tr><tr><td><strong>Write temporary</strong></td><td>변경 없음</td><td>별도 차이(differencing) 파일에 저장, 언마운트 시 폐기</td><td>Windows가 볼륨에 쓰려 할 때 (아래 참고)</td></tr><tr><td>Write original</td><td><strong>원본이 변경됨</strong></td><td>이미지 파일에 직접 기록</td><td>증거물에는 <strong>절대 사용하지 않는다</strong></td></tr></tbody></table></div>
+<p><strong><code>Write temporary</code>가 실무의 기본값이 되는 경우가 많다.</strong> Windows는 NTFS 볼륨을 붙일 때 저널 복구·<code>$LogFile</code> 처리 등으로 볼륨에 쓰려고 시도하는데, <code>Read only</code>에서는 이 때문에 마운트가 실패하거나 볼륨이 인식되지 않을 수 있다. <code>Write temporary</code>는 원본을 건드리지 않으면서 이 쓰기를 흡수한다.</p>
+<p>증거물 원본 보존이 최우선이면 다음 순서로 시도한다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Read only 로 시도
+  └ 볼륨이 안 붙거나 오류 -&gt; Write temporary 로 재시도
+      └ 그래도 안 되면 이미지가 손상되었거나 파일시스템이 손상된 상태</code></pre></div>
+<p><code>Write original</code>은 선택 화면에서 눈에 보이는 곳에 있으므로 <strong>잘못 누르지 않도록 주의한다.</strong> 이미지 사본으로 작업하는 습관이 안전장치가 된다.</p>
+<h3 id="2단계-마운트되는-형식">2단계 — 마운트되는 형식</h3>
+<div class="table-wrap"><table><thead><tr><th>형식</th><th>확장자</th><th>지정할 파일</th></tr></thead><tbody><tr><td>EnCase</td><td><code>.E01</code>, <code>.Ex01</code></td><td>첫 조각(<code>.E01</code>)만</td></tr><tr><td>RAW / dd</td><td><code>.raw</code>, <code>.dd</code>, <code>.001</code>, <code>.img</code>, <code>.bin</code></td><td>첫 조각만</td></tr><tr><td>VMware</td><td><code>.vmdk</code></td><td><strong>디스크립터</strong> <code>.vmdk</code> (<code>-flat.vmdk</code>가 아니라)</td></tr><tr><td>Hyper-V</td><td><code>.vhd</code>, <code>.vhdx</code></td><td>해당 파일</td></tr><tr><td>VirtualBox</td><td><code>.vdi</code></td><td>해당 파일</td></tr></tbody></table></div>
+<p>VMware 스냅샷 체인이 있을 때는 <strong>가장 최신 스냅샷의 <code>.vmdk</code></strong> 를 지정한다. 부모 디스크는 자동으로 따라 붙는다. 원본 상태를 보려면 최초 <code>.vmdk</code>를 지정한다.</p>
+<h3 id="3단계-마운트-후-확인">3단계 — 마운트 후 확인</h3>
+<p>마운트가 끝나면 Arsenal 창에 디스크 목록이 나온다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Disk #  Size      Image file            Mode              Volumes
+2       237 GB    C:\case\pc01.E01      Write temporary   E: (NTFS, 236 GB), F: (FAT32, 100 MB)</code></pre></div>
+<p>여러 파티션이 있으면 <strong>파티션마다 드라이브 문자</strong>가 붙는다. 어느 것이 Windows 볼륨인지는 크기와 파일시스템으로 판단한다.</p>
+<p>드라이브 문자가 안 붙었다면:</p>
+<div class="table-wrap"><table><thead><tr><th>증상</th><th>원인과 대응</th></tr></thead><tbody><tr><td>디스크는 붙었는데 드라이브 문자가 없다</td><td><code>diskmgmt.msc</code>(디스크 관리)에서 수동으로 드라이브 문자 할당</td></tr><tr><td>볼륨이 &quot;RAW&quot;로 표시된다</td><td>파일시스템이 손상됐거나 암호화(BitLocker). FTK Imager로 직접 파싱</td></tr><tr><td>파티션이 아예 안 보인다</td><td>파티션 테이블 손상. <code>mmls</code>로 오프셋을 찾아 다른 경로로 접근 (<a href="./mbr-gpt.html">FOR-0019</a>)</td></tr><tr><td>BitLocker 잠금</td><td>복구 키/암호가 있으면 <code>manage-bde -unlock</code></td></tr></tbody></table></div>
+<h3 id="4단계-마운트한-볼륨으로-무엇을-하나">4단계 — 마운트한 볼륨으로 무엇을 하나</h3>
+<p>여기가 Arsenal을 쓰는 이유다.</p>
+<div class="table-wrap"><table><thead><tr><th>도구</th><th>마운트 없이는</th><th>마운트 후</th></tr></thead><tbody><tr><td>RegistryExplorer</td><td>hive를 미리 추출해야 함</td><td><code>E:\Windows\System32\config\SYSTEM</code> 직접 열기</td></tr><tr><td>RegRipper</td><td>동일</td><td><code>rip.exe -r E:\Users\jhkim\NTUSER.DAT -p userassist</code></td></tr><tr><td>EvtxECmd</td><td>동일</td><td><code>EvtxECmd.exe -d E:\Windows\System32\winevt\Logs --csv out</code></td></tr><tr><td>WinPrefetchView</td><td>동일</td><td><code>E:\Windows\Prefetch</code> 폴더 지정</td></tr><tr><td>ChromeCacheView</td><td>동일</td><td><code>E:\Users\jhkim\...\Cache</code> 폴더 지정</td></tr><tr><td>KAPE</td><td>이미지 대상 불가</td><td><code>kape.exe --tsource E: --target !SANS_Triage --tdest C:\out</code></td></tr><tr><td>exiftool / rg / 7-Zip</td><td>경로 필요</td><td>볼륨 전체 재귀 스캔</td></tr><tr><td>yara</td><td>동일</td><td><code>yara -r rules.yar E:\</code></td></tr></tbody></table></div>
+<p>KAPE 조합이 특히 강력하다. 이미지를 마운트하고 KAPE 타깃 하나로 주요 artifact 전체를 한 번에 수집할 수 있다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 마운트된 E: 에서 주요 artifact 일괄 수집
+kape.exe --tsource E: --tdest C:\case\kape_out --target !SANS_Triage --vhdx case01</code></pre></div>
+<h3 id="5단계-마운트해도-못-꺼내는-파일-반드시-알아야-할-한계">5단계 — 마운트해도 못 꺼내는 파일 (반드시 알아야 할 한계)</h3>
+<p><strong>마운트된 볼륨에서 탐색기나 <code>copy</code>로 다음 파일을 복사할 수 없다.</strong> Windows NTFS 드라이버가 잠근다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">$MFT, $MFTMirr, $LogFile, $Extend\$UsnJrnl:$J, $Bitmap, $Secure, $Boot</code></pre></div>
+<p>해결책은 <strong>마운트된 볼륨을 FTK Imager로 <code>Logical Drive</code>로 다시 여는 것</strong>이다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">FTK Imager &gt; File &gt; Add Evidence Item &gt; Logical Drive &gt; E:
+  -&gt; [root] 에서 $MFT / $Extend\$UsnJrnl:$J Export 가능</code></pre></div>
+<p>또는 애초에 원본 이미지를 FTK Imager의 <code>Image File</code>로 열어 꺼낸다 (<a href="./ftk-imager-open-image.html">FOR-0016</a>). <strong>NTFS 메타파일이 필요하면 Arsenal 마운트를 우회하는 편이 빠르다.</strong></p>
+<p>정리하면 역할 분담은 이렇다.</p>
+<div class="table-wrap"><table><thead><tr><th>필요한 것</th><th>도구</th></tr></thead><tbody><tr><td>NTFS 메타파일(<code>$MFT</code>, <code>$J</code>, <code>$LogFile</code>)</td><td>FTK Imager (<code>Image File</code>)</td></tr><tr><td>일반 파일·폴더, 도구에 경로 넘기기</td><td>Arsenal 마운트</td></tr><tr><td>VMDK/VHD/VDI 형식</td><td>Arsenal 마운트 → 필요하면 FTK Imager로 <code>Logical Drive</code></td></tr></tbody></table></div>
+<h3 id="6단계-언마운트">6단계 — 언마운트</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Arsenal 창에서 해당 디스크 선택 &gt; Remove</code></pre></div>
+<p>언마운트하지 않고 프로그램을 닫으면 드라이버가 디스크를 계속 붙들고 있을 수 있다. <code>Write temporary</code>의 차이 파일도 이때 정리된다. <strong>작업이 끝나면 반드시 Remove한다.</strong></p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p>Arsenal 메인 창의 컬럼이다.</p>
+<div class="table-wrap"><table><thead><tr><th>컬럼</th><th>의미</th><th>확인 포인트</th></tr></thead><tbody><tr><td><code>Disk #</code></td><td>Windows가 부여한 디스크 번호</td><td><code>diskmgmt.msc</code>에서 같은 번호로 보인다</td></tr><tr><td><code>Size</code></td><td>디스크 전체 크기</td><td>원본 디스크 크기와 일치해야 한다</td></tr><tr><td><code>Image file</code></td><td>마운트한 이미지 경로</td><td>여러 개 마운트 시 구분</td></tr><tr><td><code>Mode</code></td><td>마운트 모드</td><td><strong><code>Write original</code>이면 즉시 Remove</strong></td></tr><tr><td><code>Volumes</code></td><td>붙은 드라이브 문자와 파일시스템</td><td>비어 있으면 4단계의 문제 해결로</td></tr></tbody></table></div>
+<p><code>diskmgmt.msc</code>를 함께 열어 두면 파티션 배치와 미할당 영역을 시각적으로 확인할 수 있다 — 숨긴 파티션 탐지에 유용하다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>마운트 후 확인한 것</th><th>다음 목표</th></tr></thead><tbody><tr><td>사용자 폴더 목록</td><td>각 프로필의 <code>NTUSER.DAT</code> → UserAssist (<a href="./userassist.html">FOR-0061</a>)</td></tr><tr><td><code>Windows\System32\winevt\Logs</code></td><td>EvtxECmd로 일괄 변환 → 4624/4688 (<a href="./event-4624-logon.html">FOR-0083</a>)</td></tr><tr><td><code>Windows\Prefetch</code></td><td>실행 이력</td></tr><tr><td>브라우저 프로필 폴더</td><td><code>History*</code> → sqlite3 (<a href="./chrome-history.html">FOR-0191</a>)</td></tr><tr><td>파티션이 예상보다 적다</td><td><code>mmls</code> / 디스크 관리로 미할당 영역 확인 (<a href="./mbr-gpt.html">FOR-0019</a>)</td></tr><tr><td>볼륨이 RAW로 보인다</td><td>BitLocker/암호화 또는 파일시스템 손상</td></tr><tr><td>NTFS 메타파일 필요</td><td>FTK Imager <code>Logical Drive</code> 재오픈 (<a href="./ftk-imager-open-image.html">FOR-0016</a>)</td></tr><tr><td>전체 파일 목록 필요</td><td><code>$MFT</code> 파싱 (<a href="./mft-basics.html">FOR-0021</a>)</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>Write original</code>로 마운트하는 것.</strong> 원본 이미지가 변경되어 해시가 깨지고 증거 가치를 잃는다. 실수 방지를 위해 항상 이미지 <strong>사본</strong>으로 작업한다.</li><li><strong><code>Read only</code>가 실패했을 때 원인을 오해하는 것.</strong> 이미지 문제가 아니라 Windows가 볼륨에 쓰려는 것이 원인인 경우가 많다. <code>Write temporary</code>로 재시도한다.</li><li><strong>마운트된 볼륨에서 <code>$MFT</code>를 복사하려는 것.</strong> 잠겨서 실패한다. FTK Imager로 우회한다. <strong>이것이 가장 자주 겪는 막힘 지점이다.</strong></li><li><strong><code>-flat.vmdk</code>를 지정하는 것.</strong> 디스크립터인 <code>.vmdk</code>를 지정해야 한다.</li><li><strong>스냅샷 체인에서 부모 디스크를 지정하는 것.</strong> 최신 상태가 아니라 스냅샷 이전 상태가 보인다. 목적에 따라 골라야 한다.</li><li><strong>관리자 권한 없이 실행하는 것.</strong> 드라이버를 못 로드해 마운트가 실패한다.</li><li><strong>작업 후 Remove하지 않는 것.</strong> 디스크가 붙어 있어 이미지 파일이 잠기고, 다른 도구가 접근하지 못한다.</li><li><strong>마운트된 드라이브에 백신·인덱싱이 붙는 것.</strong> Windows Search나 백신이 볼륨을 스캔하면 <code>Write temporary</code>의 차이 파일이 커지고 접근 시각이 바뀔 수 있다. 분석용 시스템에서는 미리 비활성화한다.</li><li><strong>마운트한 볼륨의 파일 시각을 그대로 신뢰하는 것.</strong> 탐색기는 로컬 시간대로 표시한다. 증거물의 시간대와 다르므로 <code>$MFT</code> 파서의 UTC 값으로 재확인한다.</li><li><strong>여러 이미지를 동시에 마운트하고 드라이브 문자를 혼동하는 것.</strong> <code>Image file</code> 컬럼으로 매번 확인한다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1) Arsenal 로 마운트 후 탐색기에서 파일 개수/크기 확인
+2) 같은 이미지를 FTK Imager 의 Image File 로 열어 비교
+3) $MFT 를 꺼내 MFTECmd 로 파싱한 전체 목록과 대조
+4) 디스크 관리(diskmgmt.msc)의 파티션 배치와 mmls 출력 대조</code></pre></div>
+<p>1)과 3)의 파일 개수가 크게 다르면 <strong>삭제 파일</strong>(마운트에서는 안 보이고 <code>$MFT</code>에는 남음) 때문이다. 이것은 정상이며, 오히려 그 차이가 조사 대상이다.</p>
+<p>4)에서 파티션 개수가 다르면 파��션 테이블에만 존재하고 실제로는 붙지 않는 볼륨이 있다는 뜻이다 — 암호화나 손상을 의심한다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;VM 이미지에서 사용자가 실행한 프로그램 목록과 마지막 실행 시각을 구하세요.&quot;
+첨부: win10.vmdk (디스크립터), win10-flat.vmdk (60 GB)
+
+1. FTK Imager 로 시도 (실패한 접근)
+   File &gt; Add Evidence Item &gt; Image File &gt; win10.vmdk
+   -&gt; 형식을 인식하지 못했다.
+
+2. 접근 변경 — Arsenal 로 마운트
+   관리자 권한으로 Arsenal Image Mounter 실행
+   Mount disk image... &gt; win10.vmdk (flat 이 아니라 디스크립터)
+   모드: Read only
+   -&gt; &quot;볼륨을 마운트할 수 없습니다&quot; 오류
+
+3. Write temporary 로 재시도
+   -&gt; 성공. E: (NTFS, 59 GB) 붙음
+      Windows 가 $LogFile 복구를 위해 쓰기를 시도하던 것이 원인이었다.
+
+4. Prefetch 로 실행 이력
+   WinPrefetchView 실행 &gt; Options &gt; Advanced Options
+     Prefetch 폴더: E:\Windows\Prefetch
+   -&gt; 142개 .pf 파일. 실행 파일명 / Run Count / Last Run Time 확인
+
+   또는 CLI:
+   PECmd.exe -d E:\Windows\Prefetch --csv C:\case\out --csvf pf.csv
+
+5. UserAssist 로 &quot;사용자가 직접 실행한&quot; 것만 (FOR-0061)
+   rla.exe -f E:\Users\jhkim\NTUSER.DAT --out C:\case\clean
+   rip.exe -r C:\case\clean\NTUSER.DAT -p userassist
+
+   2026-03-14 07:38:05Z
+     C:\Users\jhkim\Downloads\dump_tool.exe (3)
+
+6. 교차검증 — $MFT 로 파일 생성 시각
+   여기서 막혔다: E:\$MFT 를 복사하려니 &quot;다른 프로세스가 사용 중&quot;
+
+7. 우회 — FTK Imager 로 마운트된 볼륨을 Logical Drive 로 열기
+   FTK Imager &gt; Add Evidence Item &gt; Logical Drive &gt; E:
+   -&gt; [root] &gt; $MFT 를 Export 성공
+
+   MFTECmd.exe -f &quot;$MFT&quot; --csv out --csvf mft.csv
+   -&gt; dump_tool.exe  Created0x10 = 2026-03-14 07:36:44Z
+      (다운로드 시각. 실행보다 81초 앞선다)
+
+8. 시간대 보정
+   rip.exe -r C:\case\clean\SYSTEM -p timezone -&gt; Korea Standard Time
+   07:38:05 UTC = 16:38:05 KST
+
+정답: dump_tool.exe 등 3회 실행, 마지막 2026-03-14 16:38:05 KST</code></pre></div>
+<p>2→3단계(<code>Read only</code> 실패 → <code>Write temporary</code> 성공)와 6→7단계(마운트로는 <code>$MFT</code>를 못 꺼내 FTK Imager로 우회)가 Arsenal 사용의 두 가지 핵심 함정이다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><strong>관리자 권한</strong>으로 실행했는가</li><li><code>Read only</code>가 실패했다면 <strong><code>Write temporary</code>로 재시도</strong>했는가</li><li>VMDK인 경우 <code>-flat.vmdk</code>가 아니라 <strong>디스크립터 <code>.vmdk</code></strong> 를 지정했는가</li><li>스냅샷 체인에서 의도한 시점의 파일을 지정했는가</li><li>드라이브 문자가 안 붙었는가 → <code>diskmgmt.msc</code>에서 수동 할당</li><li>볼륨이 RAW로 보이는가 → BitLocker/암호화/파일시스템 손상 확인</li><li><code>$MFT</code>가 잠겨 있는가 → <strong>FTK Imager로 <code>Logical Drive</code> 재오픈</strong></li><li>파티션이 예상보다 적은가 → <code>mmls</code>로 미할당 영역 확인</li><li>이미지 파일이 잠겨 다른 도구가 못 여는가 → Arsenal에서 <code>Remove</code></li><li>파일 시각이 이상한가 → 탐색기는 로컬 시간대. <code>$MFT</code> 파서의 UTC로 재확인</li><li>원본이 변경되었을까 우려되는가 → 이미지 해시를 재계산해 마운트 전 값과 비교</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-005 — Microsoft Learn, Master File Table: NTFS 메타파일이 볼륨 마운트 시 잠기는 이유의 배경</li><li>SRC-004 — Eric Zimmerman 문서: 마운트된 볼륨을 입력으로 받는 도구들(RegistryExplorer, EvtxECmd, PECmd, KAPE)의 사용법</li><li>마운트 모드 명칭과 화면 구성은 Arsenal Image Mounter 버전에 따라 다를 수 있으므로 실제 화면에서 확인할 것. 일부 고급 기능은 유료 버전 전용이다</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./ftk-imager-open-image.html">
+    <span class="rel-id">FOR-0016 · 디스크/NTFS</span>
+    FTK Imager로 디스크 이미지 열고 필요한 artifact만 꺼내기
+  </a>
+  <a class="related-item" href="./mbr-gpt.html">
+    <span class="rel-id">FOR-0019 · 디스크/NTFS</span>
+    MBR과 GPT 파티션 테이블 직접 읽기
+  </a>
+  <a class="related-item" href="./mft-basics.html">
+    <span class="rel-id">FOR-0021 · 디스크/NTFS</span>
+    $MFT 기본 구조와 포렌식 활용
+  </a>
+  <a class="related-item" href="./autopsy-ingest.html">
+    <span class="rel-id">FOR-0018 · 디스크/NTFS</span>
+    Autopsy로 이미지 ingest 시작하고 결과 트리 읽기
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./ftk-imager-open-image.html"><span class="rel-id">← FOR-0016</span>FTK Imager로 디스크 이미지 열고 필요한 artifact만 꺼내기</a>
+<a class="related-item" href="./autopsy-ingest.html"><span class="rel-id">FOR-0018 →</span>Autopsy로 이미지 ingest 시작하고 결과 트리 읽기</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-마운트-모드-세-가지의-차이-가장-중요">1단계 — 마운트 모드 세 가지의 차이 (가장 중요)</a></li>
+<li class="toc-l3"><a href="#2단계-마운트되는-형식">2단계 — 마운트되는 형식</a></li>
+<li class="toc-l3"><a href="#3단계-마운트-후-확인">3단계 — 마운트 후 확인</a></li>
+<li class="toc-l3"><a href="#4단계-마운트한-볼륨으로-무엇을-하나">4단계 — 마운트한 볼륨으로 무엇을 하나</a></li>
+<li class="toc-l3"><a href="#5단계-마운트해도-못-꺼내는-파일-반드시-알아야-할-한계">5단계 — 마운트해도 못 꺼내는 파일 (반드시 알아야 할 한계)</a></li>
+<li class="toc-l3"><a href="#6단계-언마운트">6단계 — 언마운트</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 03:39 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

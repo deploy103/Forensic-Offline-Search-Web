@@ -350,6 +350,7 @@ function buildSearchIndex(articles) {
       tl: fm.tools,
       pr: fm.protocols,
       af: fm.artifact,
+      pt: fm.primary_terms,
       ex: dedupe(exactTerms(fm)),
       kw: fm.keywords,
       sy: fm.symptom_keywords,

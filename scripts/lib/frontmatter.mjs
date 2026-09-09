@@ -35,6 +35,7 @@ const LIST_KEYS = new Set([
   'tshark_fields',
   'log_fields',
   'file_formats',
+  'primary_terms',
   'keywords',
   'aliases',
   'symptom_keywords',

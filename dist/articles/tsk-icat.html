@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>icat으로 파일 내용·ADS·삭제 파일 추출 · FOR-0042 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%94%94%EC%8A%A4%ED%81%AC%2FNTFS">디스크/NTFS</a> / FOR-0042
+      </div>
+      <header class="article-head">
+        <h1>icat으로 파일 내용·ADS·삭제 파일 추출</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">디스크/NTFS</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">linux</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>icat -o &lt;오프셋&gt; image.dd &lt;메타주소&gt;는 지정한 파일의 내용을 표준출력으로 뱉으므로 반드시 리다이렉트해서 받고, ADS나 특정 속성을 노릴 때는 fls가 보여 준 &lt;주소&gt;-&lt;속성타입&gt;-&lt;ID&gt; 세 토막 주소를 그대로 넣는다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Sleuth Kit, icat, istat, fls, tsk_recover, file, strings, md5sum, xxd</td></tr>
+<tr><th>artifact</th><td><code>metadata address</code> · <code>$DATA</code> · <code>alternate data stream</code> · <code>Zone.Identifier</code> · <code>file slack</code> · <code>deleted file</code></td></tr>
+<tr><th>파일 경로</th><td><code>setup.exe:Zone.Identifier</code> · <code>$Extend\$UsnJrnl:$J</code></td></tr>
+<tr><th>regex</th><td><code>[0-9]+-[0-9]+-[0-9]+</code></td></tr>
+<tr><th>로그 필드</th><td><code>Type</code> · <code>Resident</code> · <code>Non-Resident</code> · <code>size</code> · <code>init_size</code></td></tr>
+<tr><th>파일 형식</th><td><code>ntfs</code> · <code>raw</code> · <code>dd</code> · <code>e01</code></td></tr>
+<tr><th>검색 별칭</th><td>icat · icat 사용법 · 이미지에서 파일 꺼내기 · 삭제 파일 복구 icat · ads 추출 · 슬랙 추출 · $MFT 뽑기 · icat 결과가 이상하다</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>icat -o &lt;오프셋&gt; image.dd &lt;메타주소&gt;</code>는 지정한 파일의 내용을 표준출력으로 뱉으므로 반드시 리다이렉트해서 받고, ADS나 특정 속성을 노릴 때는 <code>fls</code>가 보여 준 <code>&lt;주소&gt;-&lt;속성타입&gt;-&lt;ID&gt;</code> 세 토막 주소를 그대로 넣는다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>이미지 전체를 마운트하지 않고 <strong>파일 하나만</strong> 꺼내야 하는 경우</li><li><code>$MFT</code>, <code>$LogFile</code>, <code>$UsnJrnl:$J</code>, EVTX, 레지스트리 hive 등 <strong>잠긴 시스템 파일</strong>을 꺼내야 하는 경우</li><li>삭제된 파일의 내용을 복구해야 하는 경우</li><li><strong>ADS(대체 데이터 스트림)</strong> 에 숨긴 데이터를 꺼내야 하는 경우</li><li>파일 슬랙에 남은 잔여 데이터를 봐야 하는 경우</li><li>목록에서 골라낸 수십~수백 개를 스크립트로 일괄 추출해야 하는 경우</li></ul>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li><code>fls</code> 출력에 목표 파일의 메타주소가 보인다 → 바로 <code>icat</code> (<a href="./tsk-fls.html">FOR-0041</a>)</li><li>같은 메타주소에 속성 ID가 다른 줄이 두 개 있다 → <strong>ADS 문제다</strong></li><li>파일 이름에 <code>:</code>가 들어 있다 (<code>notes.txt:hidden</code>) → ADS</li><li>삭제 항목인데 <code>(realloc)</code> 표시가 있다 → 내용 복구 기대치 낮음. 카빙 준비 (<a href="./carving-strategy.html">FOR-0045</a>)</li><li><code>istat</code>에서 <code>$DATA</code>가 <code>Resident</code>다 → 레코드 안에 내용이 있어 추출이 거의 확실하다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">icat -o 2048 image.dd 9188 &gt; out.bin</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">fls -o 2048 -r -p image.dd | grep -i &#39;flag&#39;      # 1) 주소 찾기
+istat -o 2048 image.dd 9188                      # 2) 속성·크기 확인
+icat -o 2048 image.dd 9188 &gt; out.bin             # 3) 추출
+file out.bin &amp;&amp; md5sum out.bin &amp;&amp; xxd -l 32 out.bin   # 4) 검증</code></pre></div>
+<p><strong>리다이렉트를 잊으면 바이너리가 터미널을 망가뜨린다.</strong> 실수했으면 <code>reset</code>으로 되돌린다.</p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-인자-형식-메타주소의-세-가지-형태">1단계 — 인자 형식: 메타주소의 세 가지 형태</h3>
+<div class="table-wrap"><table><thead><tr><th>형태</th><th>의미</th><th>예</th></tr></thead><tbody><tr><td><code>&lt;주소&gt;</code></td><td>기본 <code>$DATA</code> 스트림</td><td><code>icat -o 2048 image.dd 9188</code></td></tr><tr><td><code>&lt;주소&gt;-&lt;속성타입&gt;</code></td><td>속성 타입 지정</td><td><code>icat -o 2048 image.dd 9188-128</code></td></tr><tr><td><code>&lt;주소&gt;-&lt;속성타입&gt;-&lt;ID&gt;</code></td><td>같은 타입이 여러 개일 때 ID까지 지정</td><td><code>icat -o 2048 image.dd 9188-128-5</code></td></tr></tbody></table></div>
+<p><code>fls</code>/<code>istat</code>의 출력이 이미 이 형식이므로 <strong>복붙하면 된다.</strong></p>
+<p>자주 쓰는 속성 타입 번호:</p>
+<div class="table-wrap"><table><thead><tr><th>10진</th><th>16진</th><th>속성</th><th>의미</th></tr></thead><tbody><tr><td><code>16</code></td><td><code>0x10</code></td><td><code>$STANDARD_INFORMATION</code></td><td>MACB 타임스탬프</td></tr><tr><td><code>48</code></td><td><code>0x30</code></td><td><code>$FILE_NAME</code></td><td>이름 + 두 번째 MACB 세트</td></tr><tr><td><code>128</code></td><td><code>0x80</code></td><td><strong><code>$DATA</code></strong></td><td>실제 내용. <strong>ADS도 여기 들어간다</strong></td></tr><tr><td><code>144</code></td><td><code>0x90</code></td><td><code>$INDEX_ROOT</code></td><td>디렉터리 색인</td></tr><tr><td><code>160</code></td><td><code>0xA0</code></td><td><code>$INDEX_ALLOCATION</code></td><td>디렉터리 색인(비상주)</td></tr></tbody></table></div>
+<p>NTFS 파일시스템 메타파일도 같은 방식으로 꺼낸다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">icat -o 2048 image.dd 0  &gt; MFT.bin        # $MFT
+icat -o 2048 image.dd 2  &gt; LogFile.bin    # $LogFile
+icat -o 2048 image.dd 6  &gt; Bitmap.bin     # $Bitmap
+icat -o 2048 image.dd 7  &gt; Boot.bin       # $Boot (부트섹터)</code></pre></div>
+<p><code>$UsnJrnl</code>의 <code>$J</code>는 <code>$Extend\$UsnJrnl</code>의 ADS다. <code>fls</code>로 주소와 속성 ID를 먼저 확인하고 세 토막 주소로 꺼낸다 (<a href="./usnjrnl-basics.html">FOR-0027</a>).</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">fls -o 2048 -r -p image.dd | grep -i &#39;UsnJrnl&#39;
+# r/r 42-128-2:   $Extend/$UsnJrnl:$Max
+# r/r 42-128-4:   $Extend/$UsnJrnl:$J
+icat -o 2048 image.dd 42-128-4 &gt; UsnJrnl_J.bin</code></pre></div>
+<p><code>$J</code>는 앞부분이 sparse(0으로 채워진 구멍)라 파일 크기가 매우 크게 나온다. 실제 내용만 필요하면 뒤에서 다룰 <code>-h</code>를 고려한다.</p>
+<h3 id="2단계-옵션-전체">2단계 — 옵션 전체</h3>
+<div class="table-wrap"><table><thead><tr><th>옵션</th><th>의미</th><th>실전 용도</th></tr></thead><tbody><tr><td><code>-o offset</code></td><td>파일시스템 시작 <strong>섹터</strong> 오프셋</td><td><code>mmls</code>의 <code>Start</code></td></tr><tr><td><code>-s</code></td><td><strong>슬랙 공간을 출력에 포함</strong></td><td>파일 끝 잔여 데이터 확인</td></tr><tr><td><code>-r</code></td><td>파일이 삭제된 경우 <strong>복구 기법 사용</strong></td><td>삭제 파일 추출 시</td></tr><tr><td><code>-h</code></td><td>sparse 파일의 구멍을 건너뛴다 (절대 위치 정보가 사라진다)</td><td><code>$J</code>처럼 앞이 비어 있는 거대 파일</td></tr><tr><td><code>-f fstype</code></td><td>파일시스템 타입 강제. <code>-f list</code></td><td>자동탐지 실패 시</td></tr><tr><td><code>-i imgtype</code></td><td>이미지 형식 강제. <code>-i list</code></td><td>E01/split</td></tr><tr><td><code>-b size</code></td><td>하부 장치 섹터 크기</td><td>4Kn = <code>4096</code></td></tr><tr><td><code>-v</code> / <code>-V</code></td><td>디버그 출력 / 버전</td><td>진단</td></tr></tbody></table></div>
+<p><code>-s</code>와 <code>-h</code>의 차이를 헷갈리지 않는다.</p>
+<div class="table-wrap"><table><thead><tr><th>옵션</th><th>출력 크기</th><th>쓰는 상황</th></tr></thead><tbody><tr><td>(없음)</td><td>논리 크기 그대로</td><td>정상 추출. <strong>해시 비교는 이 상태로 한다</strong></td></tr><tr><td><code>-s</code></td><td>논리 크기 + 슬랙</td><td>파일 끝에 이전 파일의 잔재가 있는지 볼 때</td></tr><tr><td><code>-h</code></td><td>구멍을 뺀 크기</td><td>sparse 파일의 실제 데이터만</td></tr></tbody></table></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 슬랙에 다른 파일의 흔적이 있는지
+icat -o 2048 image.dd 9188 &gt; logical.bin
+icat -o 2048 -s image.dd 9188 &gt; with_slack.bin
+ls -l logical.bin with_slack.bin
+cmp -l logical.bin with_slack.bin | head          # 차이가 시작되는 지점 = 슬랙 시작
+strings -n 6 with_slack.bin | tail -20            # 슬랙 쪽 문자열</code></pre></div>
+<h3 id="3단계-fls-istat-icat-워크플로">3단계 — fls → istat → icat 워크플로</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">IMG=image.dd; OFF=2048
+
+# 1) 목록에서 후보 찾기
+fls -o $OFF -r -p $IMG | grep -iE &#39;flag|secret|password&#39;
+
+# 2) 주소 확정 후 속성 구조 확인 (이 단계를 건너뛰면 ADS 를 놓친다)
+istat -o $OFF $IMG 9188
+
+# 3) 추출
+icat -o $OFF $IMG 9188 &gt; out.bin
+
+# 4) 검증
+file out.bin
+ls -l out.bin
+md5sum out.bin
+xxd -l 32 out.bin
+strings -n 6 out.bin | head</code></pre></div>
+<p><code>istat</code> 출력에서 확인할 것:</p>
+<div class="table-wrap"><table><thead><tr><th>보이는 것</th><th>의미</th></tr></thead><tbody><tr><td><code>$DATA ... Resident</code></td><td>내용이 MFT 레코드 안에 있다. <strong>삭제되어도 추출 성공 가능성이 높다</strong></td></tr><tr><td><code>$DATA ... Non-Resident</code> + data run 목록</td><td>클러스터에 있다. 그 클러스터가 재할당되지 않았는지가 관건</td></tr><tr><td><code>$DATA</code>가 <strong>두 개 이상</strong></td><td>ADS 존재. 각각의 <code>(128-N)</code> ID를 확인한다</td></tr><tr><td><code>size</code> vs <code>init_size</code></td><td>초기화된 크기가 더 작으면 뒷부분은 0으로 읽힌다</td></tr><tr><td><code>Flags: Compressed</code> / <code>Sparse</code></td><td>압축·희소 파일. TSK 처리 결과를 반드시 <code>file</code>로 검증</td></tr></tbody></table></div>
+<h3 id="4단계-ads-추출">4단계 — ADS 추출</h3>
+<p><code>fls</code>는 ADS를 같은 메타주소의 다른 속성 ID로 보여 준다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">$ fls -o 2048 -r -p image.dd | grep -i &#39;notes.txt&#39;
+r/r 49-128-1:   Users/kim/notes.txt
+r/r 49-128-5:   Users/kim/notes.txt:hidden</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">icat -o 2048 image.dd 49        &gt; notes.txt        # 기본 스트림 (= 49-128-1)
+icat -o 2048 image.dd 49-128-5  &gt; hidden.bin       # ADS
+file hidden.bin</code></pre></div>
+<p><strong>메타주소만 주면 항상 기본 <code>$DATA</code> 스트림이 나온다.</strong> ADS를 꺼내려면 세 토막 주소가 필수다.</p>
+<p>실전에서 자주 만나는 ADS:</p>
+<div class="table-wrap"><table><thead><tr><th>스트림</th><th>내용</th><th>포렌식 의미</th></tr></thead><tbody><tr><td><code>&lt;파일&gt;:Zone.Identifier</code></td><td><code>[ZoneTransfer]</code> 섹션의 <code>ZoneId</code></td><td><code>ZoneId=3</code> = 인터넷에서 다운로드됨. <code>HostUrl</code>/<code>ReferrerUrl</code>이 있으면 출처까지 나온다</td></tr><tr><td><code>&lt;파일&gt;:SmartScreen</code></td><td>SmartScreen 판정 결과</td><td>실행 파일 다운로드 흔적</td></tr><tr><td>임의 이름 스트림</td><td>사용자가 숨긴 데이터</td><td><strong>CTF의 전형적인 은닉 위치</strong></td></tr></tbody></table></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 다운로드 출처 확인
+fls -o 2048 -r -p image.dd | grep -i &#39;Zone.Identifier&#39;
+# r/r 8123-128-3:  Users/kim/Downloads/setup.exe:Zone.Identifier
+icat -o 2048 image.dd 8123-128-3</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">[ZoneTransfer]
+ZoneId=3
+ReferrerUrl=https://example.org/download
+HostUrl=https://cdn.example.org/setup.exe</code></pre></div>
+<p>Zone.Identifier가 붙은 파일은 브라우저 다운로드 기록과 대조한다 (<a href="./chrome-history.html">FOR-0191</a>).</p>
+<p>ADS 후보를 한 번에 훑는 방법:</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 이름에 콜론이 있는 항목 = ADS
+fls -o 2048 -r -p image.dd | grep &#39;:.*:&#39; | grep -v &#39;^d&#39;
+
+# 같은 메타주소가 두 번 이상 나오는 항목 = 스트림이 여러 개
+fls -o 2048 -r -p image.dd | grep -oE &#39;^[a-z-]/[a-z-] \*? *[0-9]+&#39; \
+  | grep -oE &#39;[0-9]+$&#39; | sort | uniq -d</code></pre></div>
+<h3 id="5단계-삭제-파일-추출과-그-한계">5단계 — 삭제 파일 추출과 그 한계</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">fls -o 2048 -r -p -d image.dd | grep -i &#39;\.docx$&#39;
+# -/r * 9188-128-1:  Users/kim/Documents/report.docx
+
+icat -o 2048 -r image.dd 9188 &gt; recovered.docx
+file recovered.docx</code></pre></div>
+<p><code>-r</code>은 &quot;파일이 삭제된 경우 복구 기법을 사용한다&quot;는 옵션이다. <strong>성공을 보장하지 않는다.</strong></p>
+<div class="table-wrap"><table><thead><tr><th>삭제 파일의 상태</th><th>추출 결과</th><th>대응</th></tr></thead><tbody><tr><td>resident (약 700바이트 이하)</td><td>거의 항상 정상</td><td>그대로 사용</td></tr><tr><td>non-resident, 클러스터 미재할당</td><td>정상</td><td>해시·<code>file</code>로 검증</td></tr><tr><td>non-resident, <strong>클러스터 일부 재할당</strong></td><td>앞부분만 맞고 뒤가 다른 파일 내용</td><td>헤더는 살아 있으니 카빙과 병행</td></tr><tr><td>non-resident, 전부 재할당</td><td>전혀 다른 데이터 또는 0</td><td>카빙으로 전환 (<a href="./carving-strategy.html">FOR-0045</a>)</td></tr><tr><td><code>(realloc)</code> 표시</td><td>메타데이터부터 다른 파일의 것</td><td>이름만 증거로 쓰고 내용은 카빙</td></tr><tr><td>data run이 없다</td><td>크기 0 또는 파서가 못 읽음</td><td><code>istat</code>으로 확인, <code>$MFT</code> resident 여부 재확인 (<a href="./mft-basics.html">FOR-0021</a>)</td></tr></tbody></table></div>
+<p><strong>추출했다고 복구된 것이 아니다.</strong> 반드시 다음을 확인한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) 형식이 맞는가
+file recovered.docx
+
+# 2) 크기가 fls/istat 의 논리 크기와 같은가
+ls -l recovered.docx
+istat -o 2048 image.dd 9188 | grep -i size
+
+# 3) 헤더 매직이 맞는가
+xxd -l 8 recovered.docx        # docx 라면 50 4B 03 04 (PK..)
+
+# 4) 실제로 열리는가 (형식별 구조 검사)
+unzip -t recovered.docx        # OOXML 은 ZIP</code></pre></div>
+<p><code>file</code>이 <code>data</code>라고 하거나 헤더 매직이 안 맞으면 그 추출은 실패다. 시간을 더 쓰지 말고 카빙으로 넘어간다.</p>
+<h3 id="6단계-대량-추출-스크립트">6단계 — 대량 추출 스크립트</h3>
+<p>목록에서 골라낸 항목을 한꺼번에 뽑는다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">#!/bin/bash
+IMG=image.dd; OFF=2048; OUT=extracted
+mkdir -p &quot;$OUT&quot;
+
+# 삭제된 문서·이미지만 추출한다
+fls -o &quot;$OFF&quot; -r -p -d &quot;$IMG&quot; \
+  | grep -iE &#39;\.(docx|xlsx|pdf|jpg|png|zip|txt)$&#39; \
+  | while IFS= read -r line; do
+      addr=$(printf &#39;%s&#39; &quot;$line&quot; | grep -oE &#39;[0-9]+-[0-9]+-[0-9]+&#39; | head -1)
+      name=$(printf &#39;%s&#39; &quot;$line&quot; | awk -F&#39;\t&#39; &#39;{print $2}&#39; | tr &#39;/&#39; &#39;_&#39;)
+      [ -z &quot;$addr&quot; ] &amp;&amp; continue
+      [ -z &quot;$name&quot; ] &amp;&amp; name=&quot;unknown&quot;
+      icat -o &quot;$OFF&quot; -r &quot;$IMG&quot; &quot;$addr&quot; &gt; &quot;$OUT/${addr}__${name}&quot; 2&gt;/dev/null
+    done
+
+# 결과 요약
+for f in &quot;$OUT&quot;/*; do printf &#39;%-40s %8s  %s\n&#39; \
+  &quot;$(basename &quot;$f&quot;)&quot; &quot;$(stat -c%s &quot;$f&quot;)&quot; &quot;$(file -b &quot;$f&quot; | cut -c1-40)&quot;; done</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>스크립트의 포인트</th><th>이유</th></tr></thead><tbody><tr><td>주소를 <code>grep -oE</code>로 뽑는다</td><td>삭제 항목의 <code>*</code>가 컬럼을 밀어 <code>awk &#39;{print $2}&#39;</code>가 틀린다</td></tr><tr><td>파일명에 주소를 접두로 붙인다</td><td>같은 이름이 여러 개 나와도 덮어쓰지 않는다</td></tr><tr><td>경로의 <code>/</code>를 <code>_</code>로 치환</td><td>하위 디렉터리 생성 없이 평평하게 저장</td></tr><tr><td><code>2&gt;/dev/null</code></td><td>복구 불가 항목의 에러로 루프가 지저분해지는 것을 막는다</td></tr><tr><td>마지막에 <code>file</code>로 일괄 검증</td><td><strong><code>data</code>나 크기 0인 것은 실패한 추출이다</strong></td></tr></tbody></table></div>
+<p><code>fls</code> 출력에서 주소와 이름 사이는 탭이다. 구현·버전에 따라 다를 수 있으니 한 번 확인한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">fls -o 2048 -r -p -d image.dd | head -3 | cat -A</code></pre></div>
+<p>전체를 한 번에 복구하려면 <code>tsk_recover</code>가 더 간단하다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tsk_recover -o 2048 image.dd out/          # 기본: 비할당(삭제) 파일 복구
+tsk_recover -o 2048 -a image.dd out_alloc/ # 할당된 파일만
+tsk_recover -o 2048 -e image.dd out_all/   # 전부</code></pre></div>
+<p>단 <code>tsk_recover</code>는 <strong>기본 <code>$DATA</code> 스트림만</strong> 처리한다. ADS가 목표라면 <code>icat</code>을 직접 써야 한다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p><code>icat</code>은 필드가 없는 도구다. 판단은 <strong>추출된 바이트</strong>로 한다.</p>
+<div class="table-wrap"><table><thead><tr><th>확인</th><th>명령</th><th>정상 판정</th></tr></thead><tbody><tr><td>형식</td><td><code>file out.bin</code></td><td>기대한 형식 이름이 나온다</td></tr><tr><td>헤더 매직</td><td><code>xxd -l 16 out.bin</code></td><td><code>50 4B 03 04</code>(ZIP/OOXML), <code>FF D8 FF</code>(JPEG), <code>89 50 4E 47</code>(PNG), <code>25 50 44 46</code>(PDF), <code>4D 5A</code>(PE) (<a href="./30sec-triage.html">FOR-0001</a>)</td></tr><tr><td>크기</td><td><code>ls -l</code> vs <code>istat</code>의 <code>size</code></td><td>일치</td></tr><tr><td>내용</td><td><code>strings -n 6 out.bin | head</code></td><td>의미 있는 문자열</td></tr><tr><td>UTF-16 문자열</td><td><code>strings -el out.bin | head</code></td><td>Windows 문서·레지스트리</td></tr><tr><td>무결성</td><td><code>md5sum</code> / <code>sha256sum</code></td><td>문제에서 준 해시와 대조</td></tr><tr><td>크기 0</td><td><code>ls -l</code></td><td><strong>추출 실패다.</strong> <code>istat</code>으로 원인 확인</td></tr></tbody></table></div>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>icat으로 얻은 것</th><th>다음 목표</th></tr></thead><tbody><tr><td><code>$MFT</code> (주소 0)</td><td>MFTECmd / analyzeMFT로 전체 파일 타임라인 (<a href="./mft-basics.html">FOR-0021</a>)</td></tr><tr><td><code>$UsnJrnl:$J</code></td><td>삭제·이름변경 이력 (<a href="./usnjrnl-basics.html">FOR-0027</a>)</td></tr><tr><td><code>Zone.Identifier</code> ADS</td><td>다운로드 출처 URL → 브라우저 기록 (<a href="./chrome-history.html">FOR-0191</a>)</td></tr><tr><td>EVTX 파일</td><td>EvtxECmd → 로그온 분석 (<a href="./event-4624-logon.html">FOR-0083</a>)</td></tr><tr><td>레지스트리 hive</td><td>RegistryExplorer / RegRipper (<a href="./userassist.html">FOR-0061</a>)</td></tr><tr><td>추출 실패(<code>data</code>, 크기 0)</td><td>카빙 전략 재수립 (<a href="./carving-strategy.html">FOR-0045</a>)</td></tr><tr><td>슬랙에서 나온 문자열</td><td>이전 파일의 잔재 → 카빙 대상 확정</td></tr><tr><td>추출한 ZIP/문서</td><td>내부 재귀 확인(<code>7z l</code>, <code>binwalk</code>)</td></tr><tr><td>크기·형식이 이상하다</td><td><code>istat</code>으로 속성·data run 재확인</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>리다이렉트를 잊는 것.</strong> <code>icat</code>은 표준출력으로 바이너리를 쏟는다. 터미널이 깨지면 <code>reset</code>. → 항상 <code>&gt; 파일</code>을 붙인다.</li><li><strong>메타주소만 주고 ADS를 놓치는 것.</strong> 주소만 주면 기본 <code>$DATA</code>만 나온다. <code>fls</code>에서 같은 주소의 다른 속성 ID가 있는지 반드시 확인한다. <strong>CTF에서 가장 자주 놓치는 지점이다.</strong></li><li><strong>추출 성공을 복구 성공으로 착각하는 것.</strong> <code>icat</code>은 에러 없이 쓰레기를 뱉을 수 있다. → <code>file</code> + 헤더 매직 + 크기 비교 세 개를 항상 돌린다.</li><li><strong><code>-r</code>이 마법이라고 믿는 것.</strong> 클러스터가 재할당되었으면 무슨 옵션을 줘도 원본은 없다. <code>(realloc)</code> 표시를 보면 즉시 카빙으로 전환한다.</li><li><strong><code>-s</code>로 뽑은 파일을 해시 비교에 쓰는 것.</strong> 슬랙이 붙어 크기와 해시가 원본과 달라진다. → 해시는 옵션 없이 뽑은 것으로 비교한다.</li><li><strong><code>-b</code>(섹터 크기)와 <code>-i</code>(이미지 형식)를 <code>mmls</code>에만 주는 것.</strong> TSK는 명령마다 독립이다. 4Kn·E01이면 <code>icat</code>에도 같이 준다 (<a href="./tsk-mmls.html">FOR-0040</a>).</li><li><strong><code>awk &#39;{print $2}&#39;</code>로 주소를 뽑아 루프를 돌리는 것.</strong> 삭제 항목의 <code>*</code> 때문에 <code>*</code>가 주소 자리에 들어가 전부 실패한다.</li><li><strong>크기 0으로 나온 결과를 &quot;빈 파일&quot;로 결론 내는 것.</strong> resident 파일을 파서가 못 읽었거나 오프셋이 틀린 경우가 많다. <code>istat</code>으로 속성을 직접 본다.</li><li><strong>sparse 파일(<code>$J</code> 등)을 그대로 받아 디스크를 채우는 것.</strong> 논리 크기가 수십 GB일 수 있다. <code>istat</code>으로 크기를 먼저 확인하고 <code>-h</code>를 고려한다.</li><li><strong>압축(Compressed) NTFS 파일의 추출 결과를 검증 없이 쓰는 것.</strong> 처리 결과가 형식에 맞는지 <code>file</code>로 확인한다.</li><li><strong>대량 추출에서 파일명 충돌을 방치하는 것.</strong> 같은 이름이 여러 경로에 있으면 서로 덮어쓴다. → 주소를 파일명 접두로 붙인다.</li><li><strong><code>tsk_recover</code>로 ADS까지 나왔다고 가정하는 것.</strong> 기본 스트림만 처리한다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) 논리 크기 일치 확인
+istat -o 2048 image.dd 9188 | grep -iE &#39;size|resident&#39;
+ls -l out.bin
+
+# 2) 형식·매직 확인
+file out.bin
+xxd -l 16 out.bin
+
+# 3) 같은 파일을 다른 경로로 꺼내 비교
+#    (Arsenal 로 마운트한 볼륨에서 일반 복사한 것과 해시 대조)
+md5sum out.bin
+md5sum /mnt/case/Users/kim/Documents/report.docx
+
+# 4) 슬랙 포함 여부에 따른 차이
+icat -o 2048    image.dd 9188 | wc -c
+icat -o 2048 -s image.dd 9188 | wc -c
+
+# 5) 스트림이 몇 개인지 두 방법으로
+istat -o 2048 image.dd 49 | grep -c &#39;DATA&#39;
+fls -o 2048 -r -p image.dd | grep -c &#39;49-128-&#39;</code></pre></div>
+<p><code>icat</code> 결과와 마운트 후 일반 복사본의 해시가 같으면 추출 경로가 검증된 것이다 (<a href="./arsenal-image-mounter.html">FOR-0017</a>).</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;사용자의 메모 파일에 아무것도 없어 보입니다. 숨겨진 내용을 찾으세요.&quot;
+첨부: ws01.dd (10 GB)
+
+1. 오프셋과 목록
+   $ mmls -a ws01.dd
+   002:  000:000   0000206848   0020971519   0020764672   NTFS / exFAT (0x07)
+   $ fsstat -o 206848 ws01.dd | head -3
+   File System Type: NTFS
+   -&gt; 오프셋 확정
+
+   $ fls -o 206848 -r -p ws01.dd | grep -i &#39;notes&#39;
+   r/r 49-128-1:   Users/kim/Documents/notes.txt
+   r/r 49-128-5:   Users/kim/Documents/notes.txt:hidden
+
+2. 첫 시도 (실패):
+   $ icat -o 206848 ws01.dd 49 &gt; notes.txt
+   $ cat notes.txt
+   회의 일정 정리
+   - 월: 주간보고
+   - 수: 코드리뷰
+
+   평범한 메모다. 여기서 &quot;이 파일은 관계없다&quot;고 판단하고
+   다른 파일을 뒤지기 시작했다.  -&gt; 30분을 버렸다.
+
+3. 왜 틀렸나
+   fls 출력에 같은 메타주소 49 가 두 줄 있었다.
+     49-128-1  기본 $DATA
+     49-128-5  두 번째 $DATA  = ADS
+   icat 에 주소(49)만 주면 항상 기본 스트림만 나온다.
+
+4. 접근 변경 — istat 으로 속성 구조를 먼저 본다
+   $ istat -o 206848 ws01.dd 49
+   MFT Entry Header Values:
+   Entry: 49        Sequence: 2
+   ...
+   Attributes:
+   Type: $STANDARD_INFORMATION (16-0)   Resident   size: 72
+   Type: $FILE_NAME (48-2)              Resident   size: 90
+   Type: $DATA (128-1)                  Resident   size: 61
+   Type: $DATA (128-5)   Name: hidden   Non-Resident  size: 4096
+
+   -&gt; $DATA 가 두 개. 두 번째가 4096바이트다.
+
+5. ADS 추출
+   $ icat -o 206848 ws01.dd 49-128-5 &gt; hidden.bin
+   $ file hidden.bin
+   hidden.bin: PNG image data, 320 x 96, 8-bit/color RGBA, non-interlaced
+   $ xxd -l 8 hidden.bin
+   00000000: 8950 4e47 0d0a 1a0a                      .PNG....
+
+   -&gt; 메모 파일 뒤에 PNG 를 숨겨 두었다.
+   $ cp hidden.bin hidden.png    # 열어 보면 플래그 이미지
+
+6. 같은 방법으로 다른 은닉도 훑는다
+   $ fls -o 206848 -r -p ws01.dd | grep &#39;:.*:&#39;
+   r/r 8123-128-3:  Users/kim/Downloads/setup.exe:Zone.Identifier
+
+   $ icat -o 206848 ws01.dd 8123-128-3
+   [ZoneTransfer]
+   ZoneId=3
+   HostUrl=https://cdn.example.org/setup.exe
+   -&gt; setup.exe 는 인터넷 다운로드. 출처 URL 확보 (부가 점수)
+
+7. 검증
+   $ md5sum hidden.bin
+   $ ls -l hidden.bin        # 4096 = istat 의 size 와 일치
+
+정답: hidden.png 안의 flag{4ds_1s_th3_r34l_str34m}</code></pre></div>
+<p>핵심은 2→4단계다. <strong><code>icat</code>에 주소만 주면 기본 스트림만 나온다.</strong> <code>fls</code>에서 같은 주소가 두 번 보이거나 이름에 <code>:</code>가 있으면 무조건 <code>istat</code>으로 속성 목록을 먼저 확인한다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li>리다이렉트(<code>&gt; 파일</code>)를 했는가</li><li><code>-o</code> 값이 <code>fsstat</code>으로 검증된 값인가 (<a href="./tsk-fsstat.html">FOR-0043</a>)</li><li>4Kn·E01이면 <code>-b</code> / <code>-i</code>를 <code>icat</code>에도 주었는가</li><li><code>istat</code>으로 속성 목록을 확인했는가 — <code>$DATA</code>가 몇 개인가</li><li>같은 메타주소에 속성 ID가 다른 줄이 있는가 → ADS를 세 토막 주소로 추출</li><li>이름에 <code>:</code>가 포함된 항목을 전부 훑었는가</li><li><code>file</code>과 헤더 매직으로 형식을 검증했는가</li><li>크기가 <code>istat</code>의 논리 크기와 일치하는가</li><li>크기 0이 나왔다면 resident 여부와 오프셋을 재확인했는가</li><li>삭제 파일이면 <code>-r</code>을 주었는가, 그리고 <code>(realloc)</code> 표시가 없었는가</li><li>파일 끝 잔재를 봐야 하면 <code>-s</code>를 시도했는가</li><li>sparse 파일이면 논리 크기를 먼저 확인했는가 (<code>-h</code> 고려)</li><li>추출이 계속 실패하면 카빙으로 전환할 시점인가 (<a href="./carving-strategy.html">FOR-0045</a>)</li><li>대량 추출에서 파일명이 서로 덮어쓰이지 않았는가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-032 — The Sleuth Kit 도구 문서(icat / istat / fls man page): <code>-h</code> &quot;sparse 파일의 구멍을 건너뛴다&quot;, <code>-r</code> &quot;파일이 삭제된 경우 복구 기법 사용&quot;, <code>-s</code> &quot;슬랙 공간을 출력에 포함&quot;, <code>-o</code>가 섹터 단위라는 정의</li><li>SRC-005 — Microsoft Learn, Master File Table: 속성 타입 번호(<code>0x10</code>/<code>0x30</code>/<code>0x80</code>/<code>0x90</code>)와 resident / non-resident <code>$DATA</code>의 의미</li><li>SRC-081 — Microsoft Learn, File Streams / Alternate Data Streams: 하나의 파일이 여러 <code>$DATA</code> 스트림을 가질 수 있다는 정의와 <code>파일명:스트림명</code> 표기, <code>Zone.Identifier</code>의 존재</li><li><code>&lt;주소&gt;-&lt;속성타입&gt;-&lt;ID&gt;</code> 형태의 메타주소 지정은 man page가 명시하지 않지만 <code>fls</code>/<code>istat</code> 출력이 그 형식이며 모든 TSK 도구가 받아들인다. 실제 이미지에서 <code>istat</code>으로 속성 ID를 확인한 뒤 사용할 것</li><li><code>tsk_recover</code>의 옵션과 ADS 처리 범위는 버전에 따라 다를 수 있으므로 <code>tsk_recover -V</code>와 도움말로 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./tsk-fls.html">
+    <span class="rel-id">FOR-0041 · 디스크/NTFS</span>
+    fls로 파일 목록·삭제 항목·bodyfile 뽑기
+  </a>
+  <a class="related-item" href="./carving-strategy.html">
+    <span class="rel-id">FOR-0045 · 디스크/NTFS</span>
+    파일 카빙 전략: 언제 카빙하고 언제 하지 않는가
+  </a>
+  <a class="related-item" href="./mft-basics.html">
+    <span class="rel-id">FOR-0021 · 디스크/NTFS</span>
+    $MFT 기본 구조와 포렌식 활용
+  </a>
+  <a class="related-item" href="./file-slack.html">
+    <span class="rel-id">FOR-0034 · 디스크/NTFS</span>
+    File Slack(RAM slack / drive slack) 계산과 추출
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./tsk-fls.html"><span class="rel-id">← FOR-0041</span>fls로 파일 목록·삭제 항목·bodyfile 뽑기</a>
+<a class="related-item" href="./tsk-fsstat.html"><span class="rel-id">FOR-0043 →</span>fsstat 출력 필드 레퍼런스 (NTFS/FAT/ext)</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-인자-형식-메타주소의-세-가지-형태">1단계 — 인자 형식: 메타주소의 세 가지 형태</a></li>
+<li class="toc-l3"><a href="#2단계-옵션-전체">2단계 — 옵션 전체</a></li>
+<li class="toc-l3"><a href="#3단계-fls-istat-icat-워크플로">3단계 — fls → istat → icat 워크플로</a></li>
+<li class="toc-l3"><a href="#4단계-ads-추출">4단계 — ADS 추출</a></li>
+<li class="toc-l3"><a href="#5단계-삭제-파일-추출과-그-한계">5단계 — 삭제 파일 추출과 그 한계</a></li>
+<li class="toc-l3"><a href="#6단계-대량-추출-스크립트">6단계 — 대량 추출 스크립트</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 03:39 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

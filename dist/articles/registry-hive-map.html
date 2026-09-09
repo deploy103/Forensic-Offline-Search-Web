@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Registry hive 전체 지도: 루트키와 디스크상 파일 대응표 · FOR-0051 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Registry">Registry</a> / FOR-0051
+      </div>
+      <header class="article-head">
+        <h1>Registry hive 전체 지도: 루트키와 디스크상 파일 대응표</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Registry</span>
+      <span class="badge badge-type">레퍼런스</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>Windows 레지스트리는 하나의 파일이 아니라 여러 개의 regf 형식 hive 파일이며, 목적(계정·시간대·설치 프로그램·사용자 활동·탐색기 흔적)에 따라 열어야 할 파일이 정해져 있으므로 문제를 읽고 hive를 먼저 고르는 것이 레지스트리 분석의 첫 단계다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>RegistryExplorer, RegRipper, rla, FTK Imager, KAPE, HxD, xxd / hexdump</td></tr>
+<tr><th>artifact</th><td><code>Registry hive</code> · <code>SAM</code> · <code>SYSTEM</code> · <code>SOFTWARE</code> · <code>SECURITY</code> · <code>DEFAULT</code> · <code>NTUSER.DAT</code> · <code>UsrClass.dat</code> · <code>Amcache.hve</code> · <code>regf</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Windows\System32\config\SAM</code> · <code>C:\Windows\System32\config\SYSTEM</code> · <code>C:\Windows\System32\config\SOFTWARE</code> · <code>C:\Windows\System32\config\SECURITY</code> · <code>C:\Windows\System32\config\DEFAULT</code> · <code>C:\Windows\System32\config\BCD-Template</code> · <code>C:\Users\&lt;user&gt;\NTUSER.DAT</code> · <code>C:\Users\&lt;user&gt;\AppData\Local\Microsoft\Windows\UsrClass.dat</code> · <code>C:\Windows\AppCompat\Programs\Amcache.hve</code></td></tr>
+<tr><th>레지스트리</th><td><code>HKLM\SAM</code> · <code>HKLM\SYSTEM</code> · <code>HKLM\SOFTWARE</code> · <code>HKLM\SECURITY</code> · <code>HKU\.DEFAULT</code> · <code>HKCU</code> · <code>HKCU\Software\Classes</code> · <code>HKCR</code> · <code>HKCC</code></td></tr>
+<tr><th>로그 필드</th><td><code>LastWrite</code> · <code>primary sequence number</code> · <code>secondary sequence number</code> · <code>root key offset</code></td></tr>
+<tr><th>파일 형식</th><td><code>regf</code> · <code>hve</code></td></tr>
+<tr><th>검색 별칭</th><td>레지스트리 hive · hive 파일 어디 · 레지스트리 파일 위치 · NTUSER.DAT 위치 · config 폴더 · hive 종류 · HKLM 어느 파일</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>Windows 레지스트리는 하나의 파일이 아니라 여러 개의 <code>regf</code> 형식 hive 파일이며, 목적(계정·시간대·설치 프로그램·사용자 활동·탐색기 흔적)에 따라 열어야 할 파일이 정해져 있으므로 <strong>문제를 읽고 hive를 먼저 고르는 것</strong>이 레지스트리 분석의 첫 단계다.</p>
+<h2 id="개념">개념</h2>
+<p>레지스트리의 논리 트리(<code>HKLM\...</code>)는 실행 중인 커널이 여러 hive 파일을 마운트해 합쳐 만든 <strong>뷰</strong>다. 이미지에서 파일만 꺼내면 그 뷰가 없으므로, 오프라인 분석에서는 항상 &quot;어느 파일의 어느 키&quot;로 생각한다.</p>
+<ul><li>hive 파일 1개 = 트리 1개. 확장자는 대개 없다(<code>SYSTEM</code>, <code>SAM</code>) 또는 <code>.DAT</code>/<code>.hve</code></li><li>파일 선두 4바이트가 <code>regf</code>(<code>72 65 67 66</code>)이면 레지스트리 hive다</li><li>선두 4096바이트(<code>0x1000</code>)가 base block(헤더), 그 뒤부터 실제 키/값 데이터(hive bin)</li><li>키는 <code>nk</code> 레코드, 값은 <code>vk</code> 레코드로 저장된다. <strong>타임스탬프는 키(<code>nk</code>)에만 있고 값(<code>vk</code>)에는 없다</strong></li></ul>
+<h3 id="base-block에서-바로-쓰는-필드">base block에서 바로 쓰는 필드</h3>
+<div class="table-wrap"><table><thead><tr><th>오프셋</th><th>내용</th><th>포렌식 용도</th></tr></thead><tbody><tr><td><code>0x00</code></td><td>시그니처 <code>regf</code></td><td>hive 여부 판정</td></tr><tr><td><code>0x04</code></td><td>primary sequence number</td><td>아래 dirty 판정</td></tr><tr><td><code>0x08</code></td><td>secondary sequence number</td><td>아래 dirty 판정</td></tr><tr><td><code>0x0C</code></td><td>헤더 기록 시각 (FILETIME, UTC)</td><td>hive가 마지막으로 정리된 시점</td></tr><tr><td><code>0x24</code></td><td>root key offset</td><td>파서가 루트를 찾는 값</td></tr><tr><td><code>0x30</code></td><td>hive 파일 경로 (UTF-16LE, 64바이트)</td><td>이 hive가 원래 어디 있었는지</td></tr><tr><td><code>0x1FC</code></td><td>체크섬</td><td>손상 판정</td></tr></tbody></table></div>
+<p><strong>primary와 secondary sequence number가 다르면 그 hive는 정상 종료되지 않은 상태(dirty)이고, 최신 변경이 <code>.LOG1</code>/<code>.LOG2</code>에만 있다.</strong> 이때 <code>rla</code>로 로그를 반영하지 않으면 마지막 활동을 놓친다. 트랜잭션 로그 반영 절차는 <a href="./userassist.html">FOR-0061</a>에서 다룬다.</p>
+<h2 id="파일-경로">파일 / 경로</h2>
+<h3 id="시스템-hive-cwindowssystem32config">시스템 hive (<code>C:\Windows\System32\config\</code>)</h3>
+<div class="table-wrap"><table><thead><tr><th>파일</th><th>마운트되는 루트키</th><th>무엇이 들어 있나</th></tr></thead><tbody><tr><td><code>SAM</code></td><td><code>HKLM\SAM</code></td><td>로컬 사용자/그룹 계정 메타데이터</td></tr><tr><td><code>SYSTEM</code></td><td><code>HKLM\SYSTEM</code></td><td>ControlSet, 서비스, 시간대, 장치, MountedDevices</td></tr><tr><td><code>SOFTWARE</code></td><td><code>HKLM\SOFTWARE</code></td><td>설치 프로그램, OS 버전, ProfileList, 자동실행</td></tr><tr><td><code>SECURITY</code></td><td><code>HKLM\SECURITY</code></td><td>감사 정책, 도메인 SID, LSA Secrets</td></tr><tr><td><code>DEFAULT</code></td><td><code>HKU\.DEFAULT</code></td><td>프로필이 없는 컨텍스트(<code>SYSTEM</code> 계정)의 사용자 설정</td></tr><tr><td><code>BCD-Template</code></td><td>(마운트 안 됨)</td><td>부트 설정 <strong>템플릿</strong>. 실제 부팅에 쓰이는 BCD 저장소가 아니다</td></tr></tbody></table></div>
+<p><code>config</code> 폴더에는 같은 이름의 <code>.LOG1</code>, <code>.LOG2</code>, 그리고 <code>RegBack</code> 폴더(구버전 백업)가 함께 있다. <strong>hive를 꺼낼 때 로그 파일도 같은 폴더로 함께 꺼낸다.</strong></p>
+<h3 id="사용자-hive">사용자 hive</h3>
+<div class="table-wrap"><table><thead><tr><th>파일</th><th>마운트되는 루트키</th><th>무엇이 들어 있나</th></tr></thead><tbody><tr><td><code>C:\Users\&lt;user&gt;\NTUSER.DAT</code></td><td><code>HKCU</code> (= <code>HKU\&lt;SID&gt;</code>)</td><td>UserAssist, RecentDocs, Run, TypedPaths, TypedURLs</td></tr><tr><td><code>C:\Users\&lt;user&gt;\AppData\Local\Microsoft\Windows\UsrClass.dat</code></td><td><code>HKCU\Software\Classes</code> (= <code>HKU\&lt;SID&gt;_Classes</code>)</td><td><strong>ShellBags</strong>(BagMRU/Bags), 사용자별 파일 연결</td></tr></tbody></table></div>
+<h3 id="파일이-없는-루트키">파일이 없는 루트키</h3>
+<div class="table-wrap"><table><thead><tr><th>루트키</th><th>실체</th></tr></thead><tbody><tr><td><code>HKCR</code></td><td><code>HKLM\SOFTWARE\Classes</code> + <code>HKCU\Software\Classes</code>(=<code>UsrClass.dat</code>)를 합친 가상 뷰</td></tr><tr><td><code>HKCC</code></td><td><code>HKLM\SYSTEM\CurrentControlSet\Hardware Profiles\Current</code> 로 가는 링크</td></tr><tr><td><code>HKLM\HARDWARE</code></td><td>부팅 때 메모리에만 만들어지는 휘발성 hive. <strong>디스크에 파일이 없다</strong></td></tr><tr><td><code>HKLM\SYSTEM\CurrentControlSet</code></td><td>부팅 때 만들어지는 심볼릭 링크. 오프라인 hive에는 없다 (<a href="./system-controlset.html">FOR-0053</a>)</td></tr></tbody></table></div>
+<h3 id="hive-형식이지만-레지스트리-트리가-아닌-파일">hive 형식이지만 레지스트리 트리가 아닌 파일</h3>
+<div class="table-wrap"><table><thead><tr><th>파일</th><th>내용</th></tr></thead><tbody><tr><td><code>C:\Windows\AppCompat\Programs\Amcache.hve</code></td><td>실행/설치된 프로그램의 경로·SHA-1·크기·컴파일 시각</td></tr><tr><td><code>C:\Windows\System32\config\BBI</code>, <code>ELAM</code>, <code>DRIVERS</code> 등</td><td>환경에 따라 존재하는 보조 hive</td></tr></tbody></table></div>
+<p><code>Amcache.hve</code>는 <code>regf</code> 파일이므로 RegistryExplorer로 그냥 열린다.</p>
+<h2 id="주요-필드">주요 필드</h2>
+<h3 id="목적별-인덱스-이걸-알고-싶으면-이-hive">목적별 인덱스 — &quot;이걸 알고 싶으면 이 hive&quot;</h3>
+<div class="table-wrap"><table><thead><tr><th>알고 싶은 것</th><th>열 hive</th><th>대표 키</th></tr></thead><tbody><tr><td>사용자 계정 목록, RID, 마지막 로그온</td><td><code>SAM</code></td><td><code>SAM\Domains\Account\Users</code> (<a href="./sam-user-accounts.html">FOR-0052</a>)</td></tr><tr><td>시간대 (모든 시각 보정의 전제)</td><td><code>SYSTEM</code></td><td><code>Control\TimeZoneInformation</code> (<a href="./system-timezone.html">FOR-0054</a>)</td></tr><tr><td>컴퓨터 이름</td><td><code>SYSTEM</code></td><td><code>Control\ComputerName\ComputerName</code></td></tr><tr><td>서비스 / 드라이버 / 악성 서비스</td><td><code>SYSTEM</code></td><td><code>Services\&lt;name&gt;</code></td></tr><tr><td>USB 연결 이력</td><td><code>SYSTEM</code></td><td><code>Enum\USBSTOR</code>, 루트의 <code>MountedDevices</code></td></tr><tr><td>실행 이력 (Shimcache)</td><td><code>SYSTEM</code></td><td><code>Control\Session Manager\AppCompatCache</code></td></tr><tr><td>실행 이력 (해시 포함)</td><td><code>Amcache.hve</code></td><td><code>Root\InventoryApplicationFile</code></td></tr><tr><td>OS 버전 / 설치 시각</td><td><code>SOFTWARE</code></td><td><code>Microsoft\Windows NT\CurrentVersion</code> (<a href="./software-installed-programs.html">FOR-0055</a>)</td></tr><tr><td>설치된 프로그램 목록</td><td><code>SOFTWARE</code></td><td><code>Microsoft\Windows\CurrentVersion\Uninstall</code></td></tr><tr><td>SID ↔ 프로필 폴더 매핑</td><td><code>SOFTWARE</code></td><td><code>Microsoft\Windows NT\CurrentVersion\ProfileList</code></td></tr><tr><td>감사 정책 / 도메인 가입</td><td><code>SECURITY</code></td><td><code>Policy\PolAdtEv</code>, <code>Policy\PolPrDmN</code> (<a href="./security-hive-overview.html">FOR-0056</a>)</td></tr><tr><td>사용자가 직접 실행한 프로그램</td><td><code>NTUSER.DAT</code></td><td><code>...\Explorer\UserAssist</code> (<a href="./userassist.html">FOR-0061</a>)</td></tr><tr><td>최근 열어본 문서</td><td><code>NTUSER.DAT</code></td><td><code>...\Explorer\RecentDocs</code></td></tr><tr><td>주소창에 입력한 경로/URL</td><td><code>NTUSER.DAT</code></td><td><code>...\Explorer\TypedPaths</code>, <code>...\TypedURLs</code></td></tr><tr><td>탐색기로 방문한 폴더 (ShellBags)</td><td><code>UsrClass.dat</code></td><td><code>Local Settings\Software\Microsoft\Windows\Shell\BagMRU</code></td></tr><tr><td>사용자별 자동실행</td><td><code>NTUSER.DAT</code></td><td><code>Software\Microsoft\Windows\CurrentVersion\Run</code></td></tr></tbody></table></div>
+<h3 id="lastwrite-시각의-의미와-한계">LastWrite 시각의 의미와 한계</h3>
+<div class="table-wrap"><table><thead><tr><th>사실</th><th>설명</th></tr></thead><tbody><tr><td>단위</td><td>FILETIME (1601-01-01 UTC 기준 100ns). <strong>항상 UTC</strong></td></tr><tr><td>대상</td><td><strong>키에만 붙는다.</strong> 값 하나하나에는 시각이 없다</td></tr><tr><td>의미</td><td>그 키의 값이 마지막으로 추가/변경/삭제된 시각</td></tr><tr><td>한계 1</td><td>값이 10개인 키에서 <strong>어느 값이 그때 바뀐 것인지 알 수 없다</strong></td></tr><tr><td>한계 2</td><td>하위 키가 바뀌어도 부모 키의 LastWrite는 갱신되지 않는다</td></tr><tr><td>한계 3</td><td>이전 변경 이력이 없다. 마지막 1회뿐이다</td></tr><tr><td>한계 4</td><td>값 데이터 안에 별도 FILETIME이 있으면(UserAssist의 Last Executed 등) <strong>그쪽이 더 정확하다</strong></td></tr></tbody></table></div>
+<p>값이 하나뿐인 키(예: <code>USBSTOR\&lt;device&gt;</code> 아래 인스턴스 키)에서는 LastWrite가 그 값의 시각과 사실상 같아지므로 &quot;USB를 마지막에 꽂은 시각&quot; 같은 결론에 쓸 수 있다.</p>
+<h2 id="빠른-명령">빠른 명령</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">xxd -l 16 SYSTEM</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">00000000: 7265 6766 2900 0000 2900 0000 ....   (&quot;regf&quot; = 레지스트리 hive)</code></pre></div>
+<p>primary(<code>0x04</code>)와 secondary(<code>0x08</code>)가 둘 다 <code>0x29</code>로 같으므로 이 hive는 clean이다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) 트랜잭션 로그를 폴더 단위로 일괄 반영
+rla.exe -d &quot;C:\case\config&quot; --out &quot;C:\case\clean&quot;
+
+# 2) 어떤 hive인지 모르는 파일을 RegRipper로 판정 (루트키 이름이 찍힌다)
+rip.exe -r &quot;C:\case\unknown.dat&quot; -p profilelist
+
+# 3) 라이브 시스템에서 hive 저장 (관리자 권한 필요)
+reg save HKLM\SYSTEM C:\out\SYSTEM
+reg save HKLM\SOFTWARE C:\out\SOFTWARE
+reg save HKLM\SAM C:\out\SAM</code></pre></div>
+<p>이미지에서 꺼내는 방법은 상황별로 다르다.</p>
+<div class="table-wrap"><table><thead><tr><th>상황</th><th>방법</th></tr></thead><tbody><tr><td>E01/RAW 이미지</td><td>FTK Imager로 열고 <code>Windows\System32\config</code> 폴더 → Export Files (<a href="./ftk-imager-open-image.html">FOR-0016</a>)</td></tr><tr><td>이미지 마운트 후</td><td>Arsenal Image Mounter로 마운트 → 탐색기로 복사 (<a href="./arsenal-image-mounter.html">FOR-0017</a>)</td></tr><tr><td>라이브 시스템</td><td>KAPE의 <code>RegistryHives</code> 타깃, 또는 위 <code>reg save</code></td></tr><tr><td>Linux / Sleuth Kit</td><td><code>fls -o &lt;offset&gt; -r image.dd | grep -i ntuser</code> → <code>icat</code>으로 추출</td></tr></tbody></table></div>
+<h2 id="함께-보는-artifact">함께 보는 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>이 글에서 얻은 것</th><th>다음에 열 것</th><th>무엇을 확인하나</th></tr></thead><tbody><tr><td>hive 목록 확보</td><td><code>SYSTEM\Select</code></td><td>활성 ControlSet 번호 (<a href="./system-controlset.html">FOR-0053</a>)</td></tr><tr><td>활성 ControlSet</td><td><code>Control\TimeZoneInformation</code></td><td>모든 시각 보정 기준 (<a href="./system-timezone.html">FOR-0054</a>)</td></tr><tr><td><code>SAM</code>의 RID/사용자명</td><td><code>SOFTWARE\...\ProfileList</code></td><td>SID ↔ <code>C:\Users\&lt;name&gt;</code> 매핑</td></tr><tr><td>프로필 폴더 이름</td><td>해당 <code>NTUSER.DAT</code>, <code>UsrClass.dat</code></td><td>사용자별 활동</td></tr><tr><td>프로그램 경로</td><td><code>Amcache.hve</code>, Prefetch</td><td>실행 사실과 해시</td></tr><tr><td>hive 파일 자체의 생성/수정 시각</td><td><code>$MFT</code> (<a href="./mft-basics.html">FOR-0021</a>)</td><td>hive가 언제 디스크에 생겼는지, 반포렌식 흔적</td></tr></tbody></table></div>
+<h2 id="흔한-실수">흔한 실수</h2>
+<ul><li><strong><code>CurrentControlSet</code> 경로를 오프라인 hive에 그대로 입력하는 것.</strong> 그 키는 부팅 때 만들어지는 링크라 파일에 없다. <code>Select\Current</code> 값을 읽어 <code>ControlSet001</code> 같은 실제 이름으로 바꿔야 한다.</li><li><strong><code>.LOG1</code>/<code>.LOG2</code>를 빼놓고 hive만 추출하는 것.</strong> dirty hive의 최신 변경은 로그에만 있다. <code>rla</code>를 거치지 않으면 &quot;마지막 실행&quot;, &quot;마지막 USB 연결&quot; 같은 답이 틀린다.</li><li><strong><code>BCD-Template</code>을 부트 설정으로 읽는 것.</strong> 이름 그대로 템플릿이다. 실제 부트 구성은 시스템 예약 파티션의 <code>\Boot\BCD</code>에 있다.</li><li><strong>ShellBags를 <code>NTUSER.DAT</code>에서 찾는 것.</strong> Windows 7 이후 <code>BagMRU</code>는 <code>UsrClass.dat</code>에 있다. <code>NTUSER.DAT</code>만 열고 &quot;없다&quot;고 결론 내리는 사고가 흔하다.</li><li><strong>키 LastWrite를 &quot;값이 만들어진 시각&quot;으로 단정하는 것.</strong> 키 단위 시각이므로 값이 여러 개면 어느 값 때문인지 알 수 없다. 값 데이터에 자체 타임스탬프가 있으면 그것을 쓴다.</li><li><strong>LastWrite를 로컬 시각으로 읽는 것.</strong> FILETIME이므로 UTC다. KST 답을 요구하면 +9시간 한다. Unix epoch와의 차이는 <code>11644473600</code>초다.</li><li><strong><code>HKLM\HARDWARE</code>나 <code>HKCC</code>에 해당하는 파일을 찾아 헤매는 것.</strong> 휘발성이라 디스크에 없다. 하드웨어 정보가 필요하면 <code>SYSTEM\ControlSet001\Enum</code>이나 메모리 덤프로 간다.</li><li><strong>사용자가 여러 명인데 프로필 하나만 보는 것.</strong> <code>C:\Users</code> 아래 모든 폴더의 <code>NTUSER.DAT</code>과 <code>UsrClass.dat</code>을 세어 보고 시작한다.</li></ul>
+<h2 id="mini-example">mini example</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;압축을 풀었더니 확장자 없는 파일 5개(SAM, SECURITY, SOFTWARE, SYSTEM, DEFAULT)와
+ ntuser.dat 1개가 들어 있습니다. 이 PC의 컴퓨터 이름과 마지막에 로그온한
+ 로컬 사용자를 구하세요.&quot;
+
+1. 파일 정체 확인
+   for f in *; do xxd -l 4 &quot;$f&quot;; done
+   -&gt; 전부 7265 6766 (&quot;regf&quot;) = 레지스트리 hive 6개
+
+2. 첫 시도 (실패):
+   RegistryExplorer로 SYSTEM을 열고
+   SYSTEM\CurrentControlSet\Control\ComputerName\ComputerName 으로 이동
+   -&gt; CurrentControlSet 이라는 키가 트리에 없다.
+      &quot;hive가 손상됐나?&quot; 하고 다른 hive를 뒤지느라 시간을 버렸다.
+
+   왜 틀렸나:
+   CurrentControlSet 은 부팅 시 커널이 만드는 휘발성 심볼릭 링크다.
+   디스크 파일에는 ControlSet001 / ControlSet002 만 존재한다.
+
+3. 피벗: Select 키로 활성 ControlSet 판정
+   SYSTEM\Select
+     Current      = 1
+     LastKnownGood= 1
+   -&gt; 활성은 ControlSet001
+
+   SYSTEM\ControlSet001\Control\ComputerName\ComputerName
+     ComputerName = DESKTOP-K7P2N9
+   (같은 부모의 ActiveComputerName 은 휘발성이라 없을 수 있다)
+
+4. 두 번째로 틀린 판단:
+   &quot;마지막 로그온&quot;을 NTUSER.DAT 의 LastWrite 로 답하려 했다.
+   -&gt; NTUSER.DAT 은 로그오프/종료 시점에도 갱신되므로 로그온 시각이 아니다.
+      SAM 의 F 값에 계정별 마지막 로그온 시각이 있으므로 그쪽이 근거다.
+
+5. rip.exe -r SAM -p samparse
+     Username : jhkim  [1001]
+     Last Login Date : 2026-03-14 07:11:38Z
+     Username : Administrator [500]
+     Last Login Date : Never
+
+6. UTC -&gt; KST 보정
+   2026-03-14 07:11:38 UTC + 9h = 2026-03-14 16:11:38 KST
+
+정답: DESKTOP-K7P2N9 / jhkim (2026-03-14 16:11:38 KST)</code></pre></div>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-017 — Microsoft Learn, Windows Registry hives and file locations: 루트키와 <code>System32\config</code> 파일 대응, <code>HKCR</code>/<code>HKCC</code>가 가상 뷰라는 점</li><li>SRC-027 — Libyal libregf, REGF 포맷 문서: <code>regf</code> 시그니처, base block 오프셋, sequence number로 dirty 판정, <code>nk</code> 키에만 LastWrite가 있다는 점</li><li>SRC-004 — Eric Zimmerman 문서: <code>rla</code>의 로그 반영, RegistryExplorer로 <code>Amcache.hve</code> 등 임의 regf 열기</li><li><code>config</code> 폴더의 보조 hive 구성과 도구 메뉴 경로는 Windows 버전·도구 버전에 따라 다를 수 있으므로 실제 화면에서 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./system-controlset.html">
+    <span class="rel-id">FOR-0053 · Registry</span>
+    SYSTEM hive ControlSet 구조와 Select 키로 활성 세트 판정
+  </a>
+  <a class="related-item" href="./userassist.html">
+    <span class="rel-id">FOR-0061 · Registry</span>
+    UserAssist로 사용자가 직접 실행한 프로그램 찾기
+  </a>
+  <a class="related-item" href="./sam-user-accounts.html">
+    <span class="rel-id">FOR-0052 · Registry</span>
+    SAM hive로 로컬 사용자 계정·RID·마지막 로그온 분석
+  </a>
+  <a class="related-item" href="./software-installed-programs.html">
+    <span class="rel-id">FOR-0055 · Registry</span>
+    SOFTWARE hive로 설치 프로그램·OS 버전·ProfileList 확인
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./ntfs-artifact-timeline.html"><span class="rel-id">← FOR-0050</span>NTFS artifact 종합 타임라인 만들기: $MFT·$J·EVTX·Prefetch를 한 축에</a>
+<a class="related-item" href="./sam-user-accounts.html"><span class="rel-id">FOR-0052 →</span>SAM hive로 로컬 사용자 계정·RID·마지막 로그온 분석</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#개념">개념</a></li>
+<li class="toc-l3"><a href="#base-block에서-바로-쓰는-필드">base block에서 바로 쓰는 필드</a></li>
+<li class="toc-l2"><a href="#파일-경로">파일 / 경로</a></li>
+<li class="toc-l3"><a href="#시스템-hive-cwindowssystem32config">시스템 hive (`C:\Windows\System32\config\`)</a></li>
+<li class="toc-l3"><a href="#사용자-hive">사용자 hive</a></li>
+<li class="toc-l3"><a href="#파일이-없는-루트키">파일이 없는 루트키</a></li>
+<li class="toc-l3"><a href="#hive-형식이지만-레지스트리-트리가-아닌-파일">hive 형식이지만 레지스트리 트리가 아닌 파일</a></li>
+<li class="toc-l2"><a href="#주요-필드">주요 필드</a></li>
+<li class="toc-l3"><a href="#목적별-인덱스-이걸-알고-싶으면-이-hive">목적별 인덱스 — &quot;이걸 알고 싶으면 이 hive&quot;</a></li>
+<li class="toc-l3"><a href="#lastwrite-시각의-의미와-한계">LastWrite 시각의 의미와 한계</a></li>
+<li class="toc-l2"><a href="#빠른-명령">빠른 명령</a></li>
+<li class="toc-l2"><a href="#함께-보는-artifact">함께 보는 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-실수">흔한 실수</a></li>
+<li class="toc-l2"><a href="#mini-example">mini example</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 03:39 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>
