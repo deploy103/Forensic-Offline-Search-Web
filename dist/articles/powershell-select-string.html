@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>PowerShell Select-String으로 로그 검색하기 (Windows용 grep) · FOR-0121 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%A1%9C%EA%B7%B8%2FRegex">로그/Regex</a> / FOR-0121
+      </div>
+      <header class="article-head">
+        <h1>PowerShell Select-String으로 로그 검색하기 (Windows용 grep)</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">로그/Regex</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>Select-String은 Windows 기본 탑재 grep이며, -Pattern에 .NET 정규식을 넣고 -Context로 앞뒤 줄을 함께 뽑으면 대회장에서 별도 툴 설치 없이 로그 분석을 끝낼 수 있다 — 단 기본이 대소문자 무시라는 점이 grep과 다르다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>PowerShell, Select-String, Get-Content, Timeline Explorer</td></tr>
+<tr><th>artifact</th><td><code>access.log</code> · <code>auth.log</code> · <code>text log</code> · <code>CSV log</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\inetpub\logs\LogFiles</code> · <code>C:\Windows\System32\LogFiles</code></td></tr>
+<tr><th>regex</th><td><code>(?&lt;ip&gt;\d{1,3}(?:\.\d{1,3}){3})</code> · <code>&quot;(?&lt;method&gt;GET|POST|PUT|DELETE) (?&lt;uri&gt;[^ ]+)</code> · <code>Failed password for (?:invalid user )?(?&lt;user&gt;\S+) from (?&lt;ip&gt;\S+)</code></td></tr>
+<tr><th>로그 필드</th><td><code>LineNumber</code> · <code>Filename</code> · <code>Line</code> · <code>Matches</code> · <code>Context</code></td></tr>
+<tr><th>파일 형식</th><td><code>log</code> · <code>csv</code> · <code>txt</code> · <code>json</code></td></tr>
+<tr><th>검색 별칭</th><td>파워쉘 grep · powershell 로그 검색 · sls · select-string · 윈도우에서 grep · grep 대신 · 파워쉘 정규식</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>Select-String</code>은 Windows 기본 탑재 grep이며, <code>-Pattern</code>에 .NET 정규식을 넣고 <code>-Context</code>로 앞뒤 줄을 함께 뽑으면 대회장에서 별도 툴 설치 없이 로그 분석을 끝낼 수 있다 — 단 <strong>기본이 대소문자 무시</strong>라는 점이 grep과 다르다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>대회장 PC가 Windows이고 WSL/ripgrep을 못 쓰는 상황</li><li>수만 줄 <code>access.log</code>에서 공격 IP와 최초 요청 시각을 찾아야 하는 상황</li><li>매칭된 줄만이 아니라 <strong>줄 번호</strong>와 <strong>앞뒤 문맥</strong>이 필요한 상황</li><li>정규식 캡처 그룹으로 필드를 뽑아 집계까지 해야 하는 상황</li></ul>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>첨부가 <code>.log</code>, <code>.txt</code>, <code>.csv</code> 텍스트다</li><li>문제 지문에 &quot;접속 로그&quot;, &quot;몇 번&quot;, &quot;최초&quot;, &quot;가장 많이&quot; 같은 집계 표현</li><li>파일 크기가 수 MB~수백 MB → GUI 편집기로 열면 안 된다</li><li>로그 첫 줄의 형식(Apache combined / syslog / JSON / CSV)이 이후 정규식을 결정한다</li></ol>
+<p>로그를 만나면 무조건 <strong>첫 3줄과 마지막 3줄</strong>을 먼저 본다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Get-Content .\access.log -TotalCount 3
+Get-Content .\access.log -Tail 3
+(Get-Content .\access.log).Count      # 총 줄 수</code></pre></div>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Select-String -Path .\access.log -Pattern &#39;POST|cmd=|/admin|\.php|union|select&#39; -CaseSensitive:$false</code></pre></div>
+<p>IP 빈도 상위 10개:</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Select-String -Path .\access.log -Pattern &#39;^\S+&#39; |
+  ForEach-Object { $_.Matches[0].Value } |
+  Group-Object | Sort-Object Count -Descending | Select-Object -First 10 Count, Name</code></pre></div>
+<p>출력 예시:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Count Name
+----- ----
+ 1842 203.0.113.77
+  311 192.168.10.24
+   96 198.51.100.5</code></pre></div>
+<p>1위가 나머지와 자릿수 차이로 벌어지면 그것이 공격자다.</p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-옵션-6개만-외운다">1단계 — 옵션 6개만 외운다</h3>
+<div class="table-wrap"><table><thead><tr><th>옵션</th><th>하는 일</th><th>grep 대응</th></tr></thead><tbody><tr><td><code>-Pattern</code></td><td>.NET 정규식 (배열도 가능 = OR)</td><td><code>-E</code></td></tr><tr><td><code>-Path</code> / <code>-LiteralPath</code></td><td>대상 파일. 와일드카드 가능</td><td>파일 인자</td></tr><tr><td><code>-SimpleMatch</code></td><td>정규식이 아니라 <strong>문자 그대로</strong> 검색</td><td><code>-F</code></td></tr><tr><td><code>-CaseSensitive</code></td><td>대소문자 구분 <strong>(안 주면 무시)</strong></td><td>기본이 반대</td></tr><tr><td><code>-Context 2,3</code></td><td>앞 2줄, 뒤 3줄 함께 출력</td><td><code>-B 2 -A 3</code></td></tr><tr><td><code>-NotMatch</code></td><td>매칭되지 <strong>않는</strong> 줄만</td><td><code>-v</code></td></tr><tr><td><code>-AllMatches</code></td><td>한 줄 안의 모든 매칭 반환</td><td><code>-o</code></td></tr><tr><td><code>-List</code></td><td>파일당 첫 매칭 1건만</td><td><code>-l</code> 유사</td></tr><tr><td><code>-Quiet</code></td><td>매칭 여부만 <code>$true</code>/<code>$false</code></td><td><code>-q</code></td></tr></tbody></table></div>
+<p>별칭은 <code>sls</code>다. 타이핑을 줄이려면 <code>sls -Path x.log -Pattern &#39;y&#39;</code>.</p>
+<blockquote><p><strong>grep과 가장 다른 점</strong>: <code>Select-String</code>은 기본이 <strong>대소문자 무시</strong>다. <code>-CaseSensitive</code>를 명시하지 않으면 <code>Flag</code>와 <code>flag</code>가 모두 걸린다. 이 차이가 CTF에서 오답을 만드는 흔한 원인이다.</p></blockquote>
+<h3 id="2단계-정규식은-net-문법">2단계 — 정규식은 .NET 문법</h3>
+<p>grep(POSIX)이 아니라 .NET이므로 다음이 그대로 된다.</p>
+<div class="table-wrap"><table><thead><tr><th>기능</th><th>문법</th><th>예</th></tr></thead><tbody><tr><td>명명 캡처</td><td><code>(?&lt;name&gt;...)</code></td><td><code>(?&lt;ip&gt;\d{1,3}(?:\.\d{1,3}){3})</code></td></tr><tr><td>비캡처 그룹</td><td><code>(?:...)</code></td><td>`(?:GET</td><td>POST)`</td></tr><tr><td>전방탐색</td><td><code>(?=...)</code> / <code>(?!...)</code></td><td><code>flag(?=\{)</code></td></tr><tr><td>후방탐색</td><td><code>(?&lt;=...)</code> / <code>(?&lt;!...)</code></td><td><code>(?&lt;=user=)\w+</code></td></tr><tr><td>게으른 수량자</td><td><code>*?</code> <code>+?</code></td><td><code>&quot;.*?&quot;</code></td></tr><tr><td>유니코드 속성</td><td><code>\p{L}</code>, <code>\p{Hangul}</code></td><td>한글 포함 여부</td></tr><tr><td>인라인 옵션</td><td><code>(?i)</code> <code>(?m)</code> <code>(?s)</code></td><td><code>(?i)flag</code></td></tr></tbody></table></div>
+<p>후방탐색이 되기 때문에 <code>awk</code>/<code>cut</code> 없이 값만 뽑을 수 있다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># user= 뒤의 값만 추출
+Select-String -Path .\app.log -Pattern &#39;(?&lt;=user=)[\w.\-]+&#39; -AllMatches |
+  ForEach-Object { $_.Matches.Value } | Sort-Object -Unique</code></pre></div>
+<h3 id="3단계-캡처-그룹으로-표를-만든다">3단계 — 캡처 그룹으로 표를 만든다</h3>
+<p><code>Select-String</code>의 출력은 문자열이 아니라 <strong><code>MatchInfo</code> 객체</strong>다. 여기서 값을 꺼내 표로 바꾸는 것이 PowerShell의 진짜 강점이다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$re = &#39;^(?&lt;ip&gt;\S+) \S+ \S+ \[(?&lt;time&gt;[^\]]+)\] &quot;(?&lt;method&gt;\S+) (?&lt;uri&gt;\S+) [^&quot;]*&quot; (?&lt;status&gt;\d{3}) (?&lt;size&gt;\S+)&#39;
+
+Select-String -Path .\access.log -Pattern $re |
+  ForEach-Object {
+    $g = $_.Matches[0].Groups
+    [pscustomobject]@{
+      Line   = $_.LineNumber
+      Ip     = $g[&#39;ip&#39;].Value
+      Time   = $g[&#39;time&#39;].Value
+      Method = $g[&#39;method&#39;].Value
+      Uri    = $g[&#39;uri&#39;].Value
+      Status = [int]$g[&#39;status&#39;].Value
+    }
+  } |
+  Where-Object { $_.Status -ge 200 -and $_.Method -eq &#39;POST&#39; } |
+  Sort-Object Line | Format-Table -AutoSize</code></pre></div>
+<p>객체가 되면 <code>Where-Object</code>, <code>Group-Object</code>, <code>Sort-Object</code>, <code>Export-Csv</code>가 전부 쓸 수 있다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 상태 코드별 개수
+... | Group-Object Status | Select-Object Count, Name
+
+# 특정 IP의 요청 흐름만 CSV로
+... | Where-Object { $_.Ip -eq &#39;203.0.113.77&#39; } | Export-Csv attacker.csv -NoTypeInformation -Encoding UTF8</code></pre></div>
+<h3 id="4단계--context로-공격-전후를-본다">4단계 — <code>-Context</code>로 공격 전후를 본다</h3>
+<p>공격 요청 한 줄만 봐서는 성공 여부를 모른다. 앞뒤를 함께 본다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">sls -Path .\access.log -Pattern &#39;cmd=|/shell\.php&#39; -Context 2,3</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">  access.log:8841:203.0.113.77 - - [14/Mar/2026:07:19:02 +0900] &quot;GET /admin/ HTTP/1.1&quot; 403 199
+  access.log:8842:203.0.113.77 - - [14/Mar/2026:07:19:44 +0900] &quot;POST /upload.php HTTP/1.1&quot; 200 87
+&gt; access.log:8843:203.0.113.77 - - [14/Mar/2026:07:20:15 +0900] &quot;GET /uploads/shell.php?cmd=id HTTP/1.1&quot; 200 42
+  access.log:8844:203.0.113.77 - - [14/Mar/2026:07:20:31 +0900] &quot;GET /uploads/shell.php?cmd=whoami HTTP/1.1&quot; 200 38
+  access.log:8845:203.0.113.77 - - [14/Mar/2026:07:21:07 +0900] &quot;GET /uploads/shell.php?cmd=cat+/etc/passwd HTTP/1.1&quot; 200 1841</code></pre></div>
+<p><code>&gt;</code>가 매칭 줄, 나머지가 문맥이다. 8842의 <code>POST /upload.php 200</code>이 업로드 성공 지점이고, 8843부터 웹셸 실행이 시작됐다는 흐름이 한눈에 보인다.</p>
+<h3 id="5단계-큰-파일과-인코딩">5단계 — 큰 파일과 인코딩</h3>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 여러 파일 한 번에 (파일명이 출력에 포함된다)
+sls -Path .\logs\*.log -Pattern &#39;Failed password&#39;
+
+# 재귀 검색
+Get-ChildItem -Recurse -Include *.log | sls -Pattern &#39;flag\{&#39;
+
+# UTF-8 로그에서 한글이 깨질 때
+sls -Path .\app.log -Pattern &#39;실패&#39; -Encoding utf8
+
+# 파이프라인으로 스트리밍 (수 GB 파일에서 메모리 절약)
+Get-Content .\huge.log -ReadCount 1000 | sls -Pattern &#39;ERROR&#39;</code></pre></div>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p><code>MatchInfo</code> 객체의 속성이다.</p>
+<div class="table-wrap"><table><thead><tr><th>속성</th><th>내용</th><th>쓰는 곳</th></tr></thead><tbody><tr><td><code>LineNumber</code></td><td>파일 내 줄 번호 (1부터)</td><td>&quot;몇 번째 줄&quot; 문제의 정답</td></tr><tr><td><code>Filename</code></td><td>파일 이름만</td><td>다중 파일 검색 시 출처 구분</td></tr><tr><td><code>Path</code></td><td>전체 경로</td><td>위와 동일</td></tr><tr><td><code>Line</code></td><td>매칭된 줄 전체</td><td>원문 확인</td></tr><tr><td><code>Matches</code></td><td><code>Match</code> 객체 배열</td><td><code>.Groups[&#39;name&#39;].Value</code>로 캡처 접근</td></tr><tr><td><code>Matches[0].Value</code></td><td>매칭된 문자열</td><td>값만 필요할 때</td></tr><tr><td><code>Matches[0].Index</code></td><td>줄 안에서의 위치</td><td>오프셋 계산</td></tr><tr><td><code>Context.PreContext</code></td><td>앞 줄 배열</td><td><code>-Context</code> 사용 시</td></tr><tr><td><code>Context.PostContext</code></td><td>뒤 줄 배열</td><td>위와 동일</td></tr><tr><td><code>Pattern</code></td><td>매칭된 패턴</td><td><code>-Pattern</code>을 배열로 준 경우 어느 패턴이 걸렸는지</td></tr></tbody></table></div>
+<p><code>-Pattern</code>에 배열을 주면 어느 패턴에 걸렸는지 분류할 수 있다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">sls -Path .\access.log -Pattern &#39;union.*select&#39;, &#39;\.\./\.\.&#39;, &#39;cmd=&#39;, &#39;&lt;script&#39; |
+  Group-Object Pattern | Select-Object Count, Name</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Count Name
+----- ----
+   47 union.*select
+   12 ../..
+  219 cmd=
+    3 &lt;script</code></pre></div>
+<p>공격 유형별 시도 횟수가 바로 나온다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>로그에서 얻은 것</th><th>다음 목표</th></tr></thead><tbody><tr><td>공격 IP</td><td>pcap의 <code>ip.addr == &lt;IP&gt;</code> — 실제 페이로드</td></tr><tr><td>업로드된 파일명</td><td><code>$MFT</code> (<a href="./mft-basics.html">FOR-0021</a>) — 디스크상 생성 시각</td></tr><tr><td>계정 이름</td><td>EVTX 4624/4625 (<a href="./event-4624-logon.html">FOR-0083</a>) — 로그온 성공 여부</td></tr><tr><td>요청 시각</td><td>그 시각 ±5분의 모든 로그와 artifact</td></tr><tr><td>User-Agent</td><td>도구 식별 (sqlmap, curl, python-requests, nikto)</td></tr><tr><td>Base64 문자열</td><td>디코딩 → 명령/URL/자격증명</td></tr><tr><td>응답 크기 급증</td><td>데이터 유출 성공 지점</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>대소문자.</strong> grep 습관대로 두면 <code>-CaseSensitive</code> 없이 대소문자 무시로 동작한다. flag 문자열을 정확히 찾을 때는 반드시 명시한다.</li><li><strong><code>Matches</code>가 배열이라는 점.</strong> <code>-AllMatches</code> 없이도 <code>Matches</code>는 배열이다. <code>$_.Matches.Value</code>는 여러 값을 반환할 수 있으니 단일 값이 필요하면 <code>$_.Matches[0].Value</code>.</li><li><strong><code>-AllMatches</code> 미사용.</strong> 한 줄에 IP가 2개 있으면 기본 동작은 첫 것만 준다. 전부 필요하면 <code>-AllMatches</code>.</li><li><strong>정규식 안의 <code>\</code>.</strong> PowerShell 문자열은 <strong>작은따옴표</strong>를 쓰면 이스케이프 지옥을 피한다. <code>&#39;\d{1,3}&#39;</code>은 되지만 <code>&quot;\d{1,3}&quot;</code>도 대개 되고, <code>&quot;$&quot;</code>처럼 <code>$</code>가 들어가면 큰따옴표에서 변수로 해석된다. <strong>정규식은 항상 작은따옴표.</strong></li><li><strong>인코딩.</strong> UTF-8 로그를 기본 인코딩으로 읽으면 한글이 깨진다. <code>-Encoding utf8</code>. Windows PowerShell 5.1과 PowerShell 7의 기본 인코딩이 다르다.</li><li><strong><code>-SimpleMatch</code>를 잊는 것.</strong> <code>192.168.1.1</code>을 검색할 때 <code>.</code>은 정규식에서 아무 문자다. 문자 그대로 찾으려면 <code>-SimpleMatch</code>.</li><li><strong><code>Get-Content</code>로 전체를 메모리에 올리는 것.</strong> <code>(Get-Content huge.log)</code>는 파일 전체를 배열로 만든다. <code>Select-String -Path</code>는 스트리밍이므로 큰 파일에 안전하다.</li><li><strong>줄 번호를 0부터 세는 것.</strong> <code>LineNumber</code>는 1부터다.</li><li><strong><code>Format-Table</code>을 파이프 중간에 두는 것.</strong> 서식 객체로 변해 이후 <code>Where-Object</code>가 동작하지 않는다. 항상 마지막에.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<p>같은 결론을 다른 도구로 확인한다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># PowerShell
+sls -Path .\access.log -Pattern &#39;^203\.0\.113\.77&#39; | Measure-Object | Select-Object Count</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># ripgrep (있다면)
+rg -c &#39;^203\.0\.113\.77&#39; access.log
+
+# grep + wc
+grep -c &#39;^203\.0\.113\.77&#39; access.log
+
+# awk — 필드 기준이라 정규식 오탐이 없다
+awk &#39;$1==&quot;203.0.113.77&quot;&#39; access.log | wc -l</code></pre></div>
+<p>네 숫자가 같아야 한다. 다르면 정규식이 의도보다 넓게(또는 좁게) 잡힌 것이다. 특히 <code>^203\.0\.113\.77</code>은 <code>203.0.113.770</code>도 잡을 수 있으므로 <code>awk</code>의 필드 완전 일치가 기준값이 된다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;웹 서버 access.log에서 공격자 IP와 웹셸 업로드에 성공한 시각을 구하세요.&quot;
+첨부: access.log (41,882줄)
+
+1. 형식 확인
+   Get-Content .\access.log -TotalCount 1
+   -&gt; 203.0.113.77 - - [14/Mar/2026:07:19:02 +0900] &quot;GET /admin/ HTTP/1.1&quot; 403 199
+      =&gt; Apache combined 형식, 시간대 +0900 (KST)
+
+2. IP 빈도
+   sls -Path .\access.log -Pattern &#39;^\S+&#39; |
+     ForEach-Object { $_.Matches[0].Value } |
+     Group-Object | Sort-Object Count -Descending | Select-Object -First 5
+
+   Count Name
+    1842 203.0.113.77      &lt;- 압도적
+     311 192.168.10.24
+      96 198.51.100.5
+
+3. 첫 시도 (실패):
+   sls -Path .\access.log -Pattern &#39;shell&#39;
+   -&gt; 0건. 파일명이 shell이 아니었다.
+
+4. 접근 변경 — 공격자 IP의 POST 요청만
+   $re = &#39;^(?&lt;ip&gt;\S+).*\[(?&lt;time&gt;[^\]]+)\] &quot;(?&lt;m&gt;\S+) (?&lt;uri&gt;\S+)[^&quot;]*&quot; (?&lt;st&gt;\d{3})&#39;
+   sls -Path .\access.log -Pattern $re |
+     ForEach-Object { $g=$_.Matches[0].Groups
+       [pscustomobject]@{L=$_.LineNumber;Ip=$g[&#39;ip&#39;].Value;T=$g[&#39;time&#39;].Value
+                         M=$g[&#39;m&#39;].Value;U=$g[&#39;uri&#39;].Value;S=$g[&#39;st&#39;].Value} } |
+     Where-Object { $_.Ip -eq &#39;203.0.113.77&#39; -and $_.M -eq &#39;POST&#39; } |
+     Format-Table -AutoSize
+
+   L     Ip            T                          M    U           S
+   8842  203.0.113.77  14/Mar/2026:07:19:44 +0900 POST /upload.php 200
+   8901  203.0.113.77  14/Mar/2026:07:31:20 +0900 POST /upload.php 403
+
+   POST 200이 한 건. 이것이 업로드 성공.
+
+5. 확증 — 그 직후 무엇을 요청했나
+   sls -Path .\access.log -Pattern &#39;upload\.php&#39; -Context 0,4
+
+   &gt; 8842: POST /upload.php ... 200 87
+     8843: GET /uploads/av4tar.php?cmd=id ... 200 42
+     8844: GET /uploads/av4tar.php?cmd=whoami ... 200 38
+
+   웹셸 이름은 av4tar.php 였다. 3단계에서 &#39;shell&#39;로 찾은 것이 실패한 이유.
+
+6. 교차검증
+   awk &#39;$1==&quot;203.0.113.77&quot; &amp;&amp; $6==&quot;\&quot;POST&quot;&#39; access.log
+   -&gt; 같은 2건 확인
+
+정답: IP 203.0.113.77 / 업로드 성공 시각 2026-03-14 07:19:44 (KST)</code></pre></div>
+<p>3단계의 실패가 교훈이다. <strong>파일명을 추측하지 말고 시간 흐름(<code>-Context</code>)으로 찾는다.</strong></p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>Get-Content -TotalCount 1</code>로 <strong>로그 형식</strong>을 확인했는가 — 형식이 정규식을 결정한다</li><li><code>-CaseSensitive</code> 유무를 의도대로 줬는가</li><li><code>-Context 2,3</code>으로 앞뒤를 봤는가 — 성공/실패 판정은 문맥에 있다</li><li>정규식을 작은따옴표로 감쌌는가</li><li><code>-Encoding utf8</code>이 필요한가 (한글 깨짐)</li><li><code>-AllMatches</code>가 필요한가 (한 줄 다중 매칭)</li><li>상태 코드로 성공만 걸렀는가 (<code>200</code>, <code>302</code> vs <code>403</code>, <code>404</code>)</li><li>응답 크기(<code>size</code>) 급증 지점이 있는가 — 유출 성공 신호</li><li>User-Agent를 봤는가 — 자동화 도구 식별</li><li><code>Group-Object</code>로 집계했는가 — 눈으로 세면 틀린다</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-007 — Microsoft Learn, Select-String: 전체 파라미터와 <code>MatchInfo</code> 속성</li><li>SRC-015 — GNU grep manual: <code>-B</code>/<code>-A</code>/<code>-v</code>/<code>-F</code> 대응 관계 확인용</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./event-4624-logon.html">
+    <span class="rel-id">FOR-0083 · Event Log</span>
+    Event ID 4624 성공 로그온 분석: 누가 어디서 어떻게 들어왔나
+  </a>
+  <a class="related-item" href="./ipv4-regex.html">
+    <span class="rel-id">FOR-0128 · 로그/Regex</span>
+    IPv4 주소 regex: 느슨한 패턴과 엄격한 패턴 골라 쓰기
+  </a>
+  <a class="related-item" href="./usnjrnl-basics.html">
+    <span class="rel-id">FOR-0027 · 디스크/NTFS</span>
+    $UsnJrnl($J)로 삭제·생성·이름변경 흔적 복원하기
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./event-4624-logon.html"><span class="rel-id">← FOR-0083</span>Event ID 4624 성공 로그온 분석: 누가 어디서 어떻게 들어왔나</a>
+<a class="related-item" href="./ipv4-regex.html"><span class="rel-id">FOR-0128 →</span>IPv4 주소 regex: 느슨한 패턴과 엄격한 패턴 골라 쓰기</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-옵션-6개만-외운다">1단계 — 옵션 6개만 외운다</a></li>
+<li class="toc-l3"><a href="#2단계-정규식은-net-문법">2단계 — 정규식은 .NET 문법</a></li>
+<li class="toc-l3"><a href="#3단계-캡처-그룹으로-표를-만든다">3단계 — 캡처 그룹으로 표를 만든다</a></li>
+<li class="toc-l3"><a href="#4단계--context로-공격-전후를-본다">4단계 — `-Context`로 공격 전후를 본다</a></li>
+<li class="toc-l3"><a href="#5단계-큰-파일과-인코딩">5단계 — 큰 파일과 인코딩</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 02:32 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

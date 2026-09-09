@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>$UsnJrnl($J)로 삭제·생성·이름변경 흔적 복원하기 · FOR-0027 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%94%94%EC%8A%A4%ED%81%AC%2FNTFS">디스크/NTFS</a> / FOR-0027
+      </div>
+      <header class="article-head">
+        <h1>$UsnJrnl($J)로 삭제·생성·이름변경 흔적 복원하기</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">디스크/NTFS</span>
+      <span class="badge badge-type">레퍼런스</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>$Extend\$UsnJrnl의 $J 스트림은 볼륨의 모든 파일 변경을 시간순으로 기록하므로, MFT에서 이미 사라진 파일의 이름과 삭제 시각까지 남아 있는 유일한 artifact다 — USN_REASON의 FileDelete/RenameOldName만 걸러도 사건 흐름이 나온다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>MFTECmd, NTFS Log Tracker, FTK Imager, Arsenal Image Mounter, Timeline Explorer, fsutil</td></tr>
+<tr><th>artifact</th><td><code>$UsnJrnl</code> · <code>$J</code> · <code>$Max</code> · <code>USN_RECORD</code> · <code>USN Journal</code> · <code>$Extend</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\$Extend\$UsnJrnl</code> · <code>C:\$Extend\$UsnJrnl:$J</code> · <code>$Extend\$UsnJrnl:$Max</code></td></tr>
+<tr><th>regex</th><td><code>FileDelete</code> · <code>RenameOldName|RenameNewName</code> · <code>\.(zip|7z|rar|exe|ps1)$</code></td></tr>
+<tr><th>로그 필드</th><td><code>Usn</code> · <code>UpdateTimestamp</code> · <code>UpdateReasons</code> · <code>FileName</code> · <code>EntryNumber</code> · <code>ParentEntryNumber</code> · <code>SequenceNumber</code> · <code>FileAttributes</code></td></tr>
+<tr><th>파일 형식</th><td><code>ntfs</code></td></tr>
+<tr><th>검색 별칭</th><td>usnjrnl · usn 저널 · $J · 삭제 파일 · 삭제 흔적 찾기 · 파일 지운 기록 · 이름 바꾼 기록 · change journal</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>$Extend\$UsnJrnl</code>의 <code>$J</code> 스트림은 볼륨의 모든 파일 변경을 시간순으로 기록하므로, <strong>MFT에서 이미 사라진 파일의 이름과 삭제 시각까지 남아 있는 유일한 artifact</strong>다 — <code>USN_REASON</code>의 <code>FileDelete</code>/<code>RenameOldName</code>만 걸러도 사건 흐름이 나온다.</p>
+<h2 id="개념">개념</h2>
+<p>NTFS의 Change Journal(변경 저널)은 파일이 생성·수정·삭제·이름변경될 때마다 레코드 하나를 추가하는 <strong>append-only 로그</strong>다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">$Extend\$UsnJrnl
+  ├─ :$J     ← 저널 레코드 본문 (분석 대상)
+  └─ :$Max   ← 저널 최대 크기·할당 정보 (메타데이터)</code></pre></div>
+<p><code>$J</code>와 <code>$Max</code>는 <strong>ADS(대체 데이터 스트림)</strong> 이다. 그래서 파일 목록에 <code>$UsnJrnl</code>만 보이고 실제 데이터는 <code>$UsnJrnl:$J</code>에 있다.</p>
+<p><code>$MFT</code>와의 결정적 차이:</p>
+<div class="table-wrap"><table><thead><tr><th></th><th><code>$MFT</code></th><th><code>$UsnJrnl:$J</code></th></tr></thead><tbody><tr><td>기록 방식</td><td>파일당 <strong>현재 상태 1개</strong></td><td>변경마다 <strong>레코드 1개 추가</strong></td></tr><tr><td>삭제된 파일</td><td>레코드가 남지만 <strong>재사용되면 소실</strong></td><td>삭제 사건 자체가 기록됨</td></tr><tr><td>이름 변경</td><td>최종 이름만</td><td><strong>변경 전·후 이름 모두</strong></td></tr><tr><td>시간 정보</td><td>MACB 8개</td><td>변경 시각 1개 (변경마다)</td></tr><tr><td>순서</td><td>없음</td><td><strong>USN 번호로 완전한 순서</strong></td></tr></tbody></table></div>
+<p>즉 <code>$MFT</code>는 &quot;지금 무엇이 있나&quot;, <code>$J</code>는 &quot;무슨 일이 있었나&quot;에 답한다. 삭제 관련 문제에서는 <code>$J</code>가 우선이다.</p>
+<p><code>$J</code>는 <strong>sparse 파일</strong>이다. 논리 크기가 수십 GB로 보이더라도 실제 할당은 보통 수십~수백 MB다. 오래된 레코드는 앞쪽부터 잘려 나가므로 <strong>보존 기간이 유한하다</strong>(활동량에 따라 며칠~몇 주).</p>
+<h2 id="파일-경로">파일 / 경로</h2>
+<div class="table-wrap"><table><thead><tr><th>상황</th><th>추출 방법</th></tr></thead><tbody><tr><td>디스크 이미지 (E01/RAW)</td><td>FTK Imager → 볼륨 → <code>[root]</code> → <code>$Extend</code> → <code>$UsnJrnl</code> 선택 → <code>Export Files</code>. <code>$J</code> 스트림이 별도 항목으로 보인다</td></tr><tr><td>이미지 마운트</td><td>Arsenal Image Mounter로 마운트 후 FTK Imager</td></tr><tr><td>라이브 시스템</td><td>KAPE (<code>!SANS_Triage</code> 타깃에 포함), 또는 관리자 권한 <code>fsutil</code></td></tr><tr><td>Sleuth Kit</td><td><code>fls -o &lt;offset&gt; image.dd</code>로 <code>$Extend</code> 레코드 번호 확인 후 <code>icat -o &lt;offset&gt; image.dd &lt;num&gt;-128-&lt;id&gt;</code></td></tr></tbody></table></div>
+<p>CTF에서는 대개 <code>$J</code>(또는 <code>UsnJrnl_$J</code>) 파일 하나만 첨부된다.</p>
+<p>라이브 시스템에서 저널 상태만 빠르게 보려면:</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">REM 관리자 권한 필요
+fsutil usn queryjournal C:</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">USN 저널 ID        : 0x01dc7f8e2a3b4c5d
+첫 USN             : 0x0000000012340000
+다음 USN           : 0x00000000567a1b20
+최소 USN           : 0x0000000012340000
+최대 USN           : 0x00000000ffffffff
+최대 크기          : 0x0000000002000000    (32 MB)
+할당 델타          : 0x0000000000400000</code></pre></div>
+<p><code>최대 크기</code>가 작을수록 오래된 기록이 빨리 사라진다.</p>
+<h2 id="주요-필드">주요 필드</h2>
+<p>파서(MFTECmd / NTFS Log Tracker)가 내놓는 컬럼이다.</p>
+<div class="table-wrap"><table><thead><tr><th>컬럼</th><th>의미</th><th>실전 활용</th></tr></thead><tbody><tr><td><code>Usn</code></td><td><strong>저널 내 오프셋 겸 순번</strong></td><td>값이 작을수록 과거. 시각이 같을 때 순서 판정의 기준</td></tr><tr><td><code>UpdateTimestamp</code></td><td>변경 시각 (FILETIME, <strong>UTC</strong>)</td><td>타임라인의 축</td></tr><tr><td><code>UpdateReasons</code></td><td><strong>무슨 일이 있었나</strong> (비트 플래그, 아래 표)</td><td>가장 중요한 필터 대상</td></tr><tr><td><code>FileName</code></td><td>대상 파일 이름 (<strong>경로 없음</strong>)</td><td>검색 대상</td></tr><tr><td><code>EntryNumber</code></td><td>대상의 MFT 레코드 번호</td><td><code>$MFT</code>와 조인하는 키</td></tr><tr><td><code>SequenceNumber</code></td><td>레코드 재사용 횟수</td><td><code>EntryNumber</code>가 같아도 값이 다르면 다른 파일</td></tr><tr><td><code>ParentEntryNumber</code></td><td>부모 디렉터리의 MFT 레코드 번호</td><td><strong>전체 경로 복원의 열쇠</strong></td></tr><tr><td><code>ParentSequenceNumber</code></td><td>부모의 재사용 횟수</td><td>위와 동일</td></tr><tr><td><code>FileAttributes</code></td><td>파일 속성</td><td><code>Directory</code> 여부, <code>Hidden</code>, <code>Archive</code></td></tr><tr><td><code>SourceInfo</code></td><td>변경 유발 주체</td><td>백업·복제 소프트웨어가 유발한 변경 구분</td></tr><tr><td><code>SecurityId</code></td><td>보안 기술자 ID</td><td>권한 변경 추적</td></tr></tbody></table></div>
+<p><code>FileName</code>에 <strong>경로가 없다</strong>는 점이 중요하다. 경로가 필요하면 <code>ParentEntryNumber</code>를 <code>$MFT</code>의 <code>EntryNumber</code>와 조인해야 한다.</p>
+<h3 id="usnreason-플래그">USN_REASON 플래그</h3>
+<div class="table-wrap"><table><thead><tr><th>값</th><th>이름</th><th>의미</th></tr></thead><tbody><tr><td><code>0x00000001</code></td><td><code>DATA_OVERWRITE</code></td><td>기존 데이터 덮어쓰기</td></tr><tr><td><code>0x00000002</code></td><td><code>DATA_EXTEND</code></td><td>데이터 추가 (파일 커짐)</td></tr><tr><td><code>0x00000004</code></td><td><code>DATA_TRUNCATION</code></td><td>데이터 잘림</td></tr><tr><td><code>0x00000010</code></td><td><code>NAMED_DATA_OVERWRITE</code></td><td><strong>ADS</strong> 데이터 덮어쓰기</td></tr><tr><td><code>0x00000020</code></td><td><code>NAMED_DATA_EXTEND</code></td><td>ADS 데이터 추가</td></tr><tr><td><code>0x00000040</code></td><td><code>NAMED_DATA_TRUNCATION</code></td><td>ADS 데이터 잘림</td></tr><tr><td><code>0x00000100</code></td><td><strong><code>FILE_CREATE</code></strong></td><td><strong>파일/디렉터리 생성</strong></td></tr><tr><td><code>0x00000200</code></td><td><strong><code>FILE_DELETE</code></strong></td><td><strong>파일/디렉터리 삭제</strong></td></tr><tr><td><code>0x00000400</code></td><td><code>EA_CHANGE</code></td><td>확장 속성 변경</td></tr><tr><td><code>0x00000800</code></td><td><code>SECURITY_CHANGE</code></td><td>권한/소유자 변경</td></tr><tr><td><code>0x00001000</code></td><td><strong><code>RENAME_OLD_NAME</code></strong></td><td><strong>이름 변경 — 변경 전 이름</strong></td></tr><tr><td><code>0x00002000</code></td><td><strong><code>RENAME_NEW_NAME</code></strong></td><td><strong>이름 변경 — 변경 후 이름</strong></td></tr><tr><td><code>0x00004000</code></td><td><code>INDEXABLE_CHANGE</code></td><td>색인 대상 여부 변경</td></tr><tr><td><code>0x00008000</code></td><td><code>BASIC_INFO_CHANGE</code></td><td><strong>타임스탬프/속성 변경 (timestomp 신호)</strong></td></tr><tr><td><code>0x00010000</code></td><td><code>HARD_LINK_CHANGE</code></td><td>하드링크 변경</td></tr><tr><td><code>0x00020000</code></td><td><code>COMPRESSION_CHANGE</code></td><td>압축 속성 변경</td></tr><tr><td><code>0x00040000</code></td><td><code>ENCRYPTION_CHANGE</code></td><td>암호화 속성 변경</td></tr><tr><td><code>0x00080000</code></td><td><code>OBJECT_ID_CHANGE</code></td><td>오브젝트 ID 변경</td></tr><tr><td><code>0x00100000</code></td><td><code>REPARSE_POINT_CHANGE</code></td><td>재분석 지점 변경 (심볼릭 링크 등)</td></tr><tr><td><code>0x00200000</code></td><td><code>STREAM_CHANGE</code></td><td>ADS 추가/삭제</td></tr><tr><td><code>0x00400000</code></td><td><code>TRANSACTED_CHANGE</code></td><td>TxF 트랜잭션 변경</td></tr><tr><td><code>0x80000000</code></td><td><code>CLOSE</code></td><td><strong>핸들 닫힘 — 그 변경 묶음의 종료 표시</strong></td></tr></tbody></table></div>
+<p>플래그는 <strong>OR로 합쳐진다.</strong> 파서는 보통 <code>FileCreate|Close</code> 처럼 문자열로 풀어 준다.</p>
+<h3 id="사건-유형별-시그니처">사건 유형별 시그니처</h3>
+<div class="table-wrap"><table><thead><tr><th>실제로 일어난 일</th><th><code>$J</code>에 남는 패턴</th></tr></thead><tbody><tr><td>파일 새로 만들고 씀</td><td><code>FileCreate</code> → <code>DataExtend</code> → `DataExtend\</td><td>Close`</td></tr><tr><td>파일 삭제</td><td>`FileDelete\</td><td>Close<code> (직전에 </code>DataTruncation` 등이 붙을 수 있음)</td></tr><tr><td>이름 변경</td><td><code>RenameOldName</code> → `RenameNewName\</td><td>Close` (<strong>두 레코드가 짝</strong>)</td></tr><tr><td>휴지통으로 이동</td><td><code>RenameOldName</code>/<code>RenameNewName</code> + <code>$Recycle.Bin</code> 하위의 <code>$I</code>/<code>$R</code> 생성</td></tr><tr><td>덮어쓰기(안티포렌식)</td><td><code>DataOverwrite</code> 반복 → <code>FileDelete</code></td></tr><tr><td>파일 복사</td><td>원본 없음, 대상에 <code>FileCreate</code> + <code>DataExtend</code></td></tr><tr><td>파일 이동(같은 볼륨)</td><td><code>RenameOldName</code>/<code>RenameNewName</code> (<code>ParentEntryNumber</code>가 바뀐다)</td></tr><tr><td>파일 이동(다른 볼륨)</td><td>원본 볼륨 <code>FileDelete</code> + 대상 볼륨 <code>FileCreate</code></td></tr><tr><td>timestomp</td><td><code>BasicInfoChange</code> 단독</td></tr><tr><td>ADS로 숨김</td><td><code>StreamChange</code>, <code>NamedDataExtend</code></td></tr></tbody></table></div>
+<p><strong>이름 변경은 <code>RenameOldName</code>과 <code>RenameNewName</code>이 같은 <code>EntryNumber</code>로 연속해 나타난다.</strong> 변경 전 이름을 찾을 때 이 짝을 본다.</p>
+<h2 id="빠른-명령">빠른 명령</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">REM MFTECmd — $J 파싱 (가장 빠름)
+MFTECmd.exe -f &quot;C:\case\$J&quot; --csv &quot;C:\case\out&quot; --csvf usn.csv
+
+REM $MFT와 함께 주면 경로를 복원해 준다
+MFTECmd.exe -f &quot;C:\case\$J&quot; -m &quot;C:\case\$MFT&quot; --csv &quot;C:\case\out&quot; --csvf usn.csv</code></pre></div>
+<p><code>-m</code>으로 <code>$MFT</code>를 함께 넘기면 <code>ParentPath</code>가 채워진다. <strong>경로가 필요하면 항상 함께 준다.</strong></p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">REM 삭제된 항목만
+Import-Csv out\usn.csv |
+  Where-Object { $_.UpdateReasons -match &#39;FileDelete&#39; } |
+  Select-Object UpdateTimestamp, FileName, ParentPath, EntryNumber |
+  Sort-Object UpdateTimestamp
+
+REM 특정 확장자의 삭제
+Import-Csv out\usn.csv |
+  Where-Object { $_.UpdateReasons -match &#39;FileDelete&#39; -and $_.FileName -match &#39;\.(zip|7z|rar|xlsx|docx)$&#39; }
+
+REM 이름 변경 짝 찾기
+Import-Csv out\usn.csv |
+  Where-Object { $_.UpdateReasons -match &#39;Rename&#39; } |
+  Select-Object Usn, UpdateTimestamp, UpdateReasons, FileName, EntryNumber |
+  Sort-Object Usn
+
+REM 특정 시간대의 모든 변경
+Import-Csv out\usn.csv |
+  Where-Object { $_.UpdateTimestamp -ge &#39;2026-03-14 07:20:00&#39; -and
+                 $_.UpdateTimestamp -le &#39;2026-03-14 07:30:00&#39; } |
+  Sort-Object Usn | Format-Table UpdateTimestamp, UpdateReasons, FileName
+
+REM timestomp 후보
+Import-Csv out\usn.csv |
+  Where-Object { $_.UpdateReasons -match &#39;BasicInfoChange&#39; -and
+                 $_.UpdateReasons -notmatch &#39;Data|Create|Delete&#39; }</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># Linux/CLI에서 CSV 처리
+rg &#39;FileDelete&#39; usn.csv | rg -i &#39;\.(zip|exe|ps1)&#39; | head -20
+
+# 확장자별 삭제 개수
+rg &#39;FileDelete&#39; usn.csv | awk -F, &#39;{print $NF}&#39; | sort | uniq -c | sort -nr | head
+
+# 특정 파일의 전체 생애
+rg -i &#39;secret&#39; usn.csv</code></pre></div>
+<p>GUI로는 <strong>NTFS Log Tracker</strong>가 <code>$LogFile</code>·<code>$J</code>·<code>$MFT</code>를 함께 읽어 사건 단위로 묶어 보여 준다. 결과 CSV는 Timeline Explorer로 열어 필터링한다.</p>
+<h2 id="함께-보는-artifact">함께 보는 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th><code>$J</code>에서 얻은 것</th><th>함께 볼 것</th><th>확인할 것</th></tr></thead><tbody><tr><td>삭제된 파일 이름</td><td><code>$MFT</code> (<a href="./mft-basics.html">FOR-0021</a>)</td><td>레코드가 남아 있는가, MACB 시각</td></tr><tr><td>삭제 시각</td><td><code>$LogFile</code></td><td>같은 트랜잭션의 상세 (보존 기간은 더 짧다)</td></tr><tr><td>삭제 시각</td><td><code>$Recycle.Bin</code>의 <code>$I</code>/<code>$R</code></td><td>휴지통 경유였는가, 원래 경로</td></tr><tr><td><code>ParentEntryNumber</code></td><td><code>$MFT</code>의 <code>EntryNumber</code></td><td>전체 경로 복원</td></tr><tr><td>파일 이름</td><td>Prefetch / Amcache / UserAssist (<a href="./userassist.html">FOR-0061</a>)</td><td>그 파일이 실행되었는가</td></tr><tr><td>파일 이름</td><td>LNK / Jump List / RecentDocs</td><td>사용자가 열었는가</td></tr><tr><td>시각</td><td>EVTX 4688 (<a href="./event-4624-logon.html">FOR-0083</a>)</td><td>어떤 프로세스가 그 변경을 유발했는가</td></tr><tr><td>압축 파일 생성</td><td>브라우저 Downloads (<a href="./chrome-history.html">FOR-0191</a>)</td><td>어디서 받았는가 / 어디로 보냈는가</td></tr><tr><td><code>BasicInfoChange</code> 단독</td><td><code>$MFT</code>의 <code>$SI</code> vs <code>$FN</code> 시각</td><td>timestomp 확정</td></tr></tbody></table></div>
+<h2 id="흔한-실수">흔한 실수</h2>
+<ul><li><strong><code>$UsnJrnl</code>만 추출하고 <code>$J</code>를 놓치는 것.</strong> 데이터는 ADS인 <code>:$J</code>에 있다. FTK Imager에서 <code>$J</code> 항목을 따로 선택해야 한다.</li><li><strong><code>$J</code>의 논리 크기에 놀라는 것.</strong> sparse 파일이라 수십 GB로 표시되지만 실제 데이터는 훨씬 작다. 그대로 export하면 앞쪽이 0으로 채워진 큰 파일이 나오는데, 파서는 이를 정상 처리한다.</li><li><strong>경로를 기대하는 것.</strong> <code>FileName</code>은 이름만이다. 경로는 <code>-m $MFT</code>로 조인해야 나온다.</li><li><strong><code>EntryNumber</code>만으로 파일을 동일시하는 것.</strong> MFT 레코드는 재사용된다. <code>SequenceNumber</code>까지 같아야 같은 파일이다.</li><li><strong><code>FileDelete</code>만 보는 것.</strong> 안티포렌식은 <code>DataOverwrite</code> 반복이나 <code>RenameOldName</code>(다른 이름으로 위장) 형태로 나타난다.</li><li><strong><code>RenameNewName</code>만 보고 원래 이름을 놓치는 것.</strong> 직전 <code>RenameOldName</code> 레코드에 원래 이름이 있다.</li><li><strong>시간대.</strong> <code>UpdateTimestamp</code>는 FILETIME(UTC)다. MFTECmd CSV도 UTC로 출력한다. KST 답이 필요하면 +9시간.</li><li><strong>저널 보존 한계를 무시하는 것.</strong> <code>$J</code>에 없다면 정말 없었던 것이 아니라 <strong>이미 잘려 나갔을</strong> 수 있다. <code>fsutil usn queryjournal</code>의 <code>첫 USN</code>이 그 경계다.</li><li><strong><code>$J</code>가 비활성된 볼륨.</strong> 저널은 볼륨별 설정이다. USB나 일부 서버 볼륨에서는 꺼져 있을 수 있다.</li><li><strong><code>CLOSE</code> 플래그를 별개 사건으로 세는 것.</strong> 같은 변경의 종료 표시다. 사건 수를 셀 때 중복이 된다.</li><li><strong><code>Usn</code> 순서를 무시하고 타임스탬프만 정렬하는 것.</strong> 같은 초에 여러 변경이 몰리면 타임스탬프로는 순서를 알 수 없다. <code>Usn</code>이 정확한 순서다.</li></ul>
+<h2 id="mini-example">mini example</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;휴지통에는 없는데 유출된 압축파일이 있었다고 합니다.
+ 파일 이름과 삭제 시각, 그리고 원래 이름을 구하세요.&quot;
+첨부: $J, $MFT
+
+1. 파싱 (경로 복원을 위해 $MFT를 함께)
+   MFTECmd.exe -f &quot;$J&quot; -m &quot;$MFT&quot; --csv out --csvf usn.csv
+   -&gt; 412,880 레코드
+
+2. 첫 시도 (실패):
+   Import-Csv out\usn.csv | Where-Object { $_.FileName -match &#39;\.zip$&#39; }
+   -&gt; 1,204건. 대부분 브라우저 캐시와 설치 파일. 특정이 안 된다.
+
+3. 접근 변경 — 삭제 사건만, 사용자 폴더로 한정
+   Import-Csv out\usn.csv |
+     Where-Object { $_.UpdateReasons -match &#39;FileDelete&#39; -and
+                    $_.ParentPath -match &#39;Users\\jhkim&#39; -and
+                    $_.FileName -match &#39;\.(zip|7z|rar)$&#39; } |
+     Select-Object Usn, UpdateTimestamp, FileName, ParentPath |
+     Sort-Object Usn
+
+   Usn        UpdateTimestamp           FileName            ParentPath
+   0x4a1b8c0  2026-03-14 07:39:52Z      report_final.7z     .\Users\jhkim\Documents
+
+   1건. 이것이 후보.
+
+4. 이 파일의 전체 생애 추적 — EntryNumber로 검색
+   먼저 EntryNumber 확인 -&gt; 128441
+
+   Import-Csv out\usn.csv |
+     Where-Object { $_.EntryNumber -eq 128441 } |
+     Select-Object Usn, UpdateTimestamp, UpdateReasons, FileName |
+     Sort-Object Usn
+
+   Usn        UpdateTimestamp        UpdateReasons                FileName
+   0x4a11200  2026-03-14 07:31:04Z   FileCreate                   customer_db_2026.7z
+   0x4a11340  2026-03-14 07:31:04Z   FileCreate|DataExtend        customer_db_2026.7z
+   0x4a115a0  2026-03-14 07:33:18Z   DataExtend|Close             customer_db_2026.7z
+   0x4a1a840  2026-03-14 07:38:41Z   RenameOldName                customer_db_2026.7z   &lt;-- 원래 이름
+   0x4a1a9c0  2026-03-14 07:38:41Z   RenameNewName|Close          report_final.7z       &lt;-- 위장 이름
+   0x4a1b8c0  2026-03-14 07:39:52Z   FileDelete|Close             report_final.7z
+
+   완전한 사건 흐름:
+     07:31:04  customer_db_2026.7z 생성
+     07:33:18  쓰기 완료 (2분 14초간 압축)
+     07:38:41  report_final.7z 로 이름 변경 (위장)
+     07:39:52  삭제
+
+5. 교차검증 — $MFT
+   Import-Csv mft.csv | Where-Object { $_.EntryNumber -eq 128441 }
+   -&gt; InUse=False, FileName=report_final.7z, FileSize=284,113,920
+
+   $MFT에는 최종 이름(report_final.7z)만 남아 있다.
+   원래 이름 customer_db_2026.7z 는 $J 에서만 나온다. &lt;- $J를 봐야 하는 이유
+
+6. 교차검증 — 휴지통
+   RBCmd.exe -d &quot;$Recycle.Bin&quot; --csv .
+   -&gt; 해당 파일 없음. 즉 Shift+Delete(직접 삭제)였다.
+      문제 지문의 &quot;휴지통에는 없다&quot;와 일치.
+
+7. pivot — 어떻게 유출됐나
+   같은 시간대(07:33~07:39) $J 전체를 훑는다
+   Import-Csv out\usn.csv |
+     Where-Object { $_.UpdateTimestamp -ge &#39;2026-03-14 07:33:00&#39; -and
+                    $_.UpdateTimestamp -le &#39;2026-03-14 07:40:00&#39; } |
+     Sort-Object Usn | Format-Table UpdateTimestamp, UpdateReasons, FileName
+
+   07:35:12  FileCreate|Close   rclone.conf
+   07:35:40  FileCreate|Close   rclone.exe
+   -&gt; 클라우드 업로드 도구가 같은 시간대에 생성됨
+
+정답: report_final.7z (원래 이름 customer_db_2026.7z),
+      삭제 시각 2026-03-14 07:39:52 UTC = 16:39:52 KST</code></pre></div>
+<p>4단계가 이 artifact의 존재 이유다. <strong><code>$MFT</code>만 봤다면 최종 이름만 알고 &quot;원래 이름&quot;에 답할 수 없었다.</strong> <code>RenameOldName</code>/<code>RenameNewName</code> 짝이 위장을 드러냈다.</p>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-013 — Microsoft Learn, Change Journals: <code>USN_RECORD</code> 구조와 <code>USN_REASON_*</code> 플래그 값</li><li>SRC-004 — Eric Zimmerman 문서: MFTECmd의 <code>$J</code> 파싱과 <code>-m</code> 옵션(경로 복원), CSV 컬럼</li><li>SRC-014 — Microsoft Learn, File Times: <code>UpdateTimestamp</code>가 FILETIME(UTC)임의 근거</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./mft-basics.html">
+    <span class="rel-id">FOR-0021 · 디스크/NTFS</span>
+    $MFT 기본 구조와 포렌식 활용
+  </a>
+  <a class="related-item" href="./30sec-triage.html">
+    <span class="rel-id">FOR-0001 · 트리아지</span>
+    포렌식 문제 파일을 받았을 때 30초 트리아지
+  </a>
+  <a class="related-item" href="./userassist.html">
+    <span class="rel-id">FOR-0061 · Registry</span>
+    UserAssist로 사용자가 직접 실행한 프로그램 찾기
+  </a>
+  <a class="related-item" href="./event-4624-logon.html">
+    <span class="rel-id">FOR-0083 · Event Log</span>
+    Event ID 4624 성공 로그온 분석: 누가 어디서 어떻게 들어왔나
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./mft-basics.html"><span class="rel-id">← FOR-0021</span>$MFT 기본 구조와 포렌식 활용</a>
+<a class="related-item" href="./userassist.html"><span class="rel-id">FOR-0061 →</span>UserAssist로 사용자가 직접 실행한 프로그램 찾기</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#개념">개념</a></li>
+<li class="toc-l2"><a href="#파일-경로">파일 / 경로</a></li>
+<li class="toc-l2"><a href="#주요-필드">주요 필드</a></li>
+<li class="toc-l3"><a href="#usnreason-플래그">USN_REASON 플래그</a></li>
+<li class="toc-l3"><a href="#사건-유형별-시그니처">사건 유형별 시그니처</a></li>
+<li class="toc-l2"><a href="#빠른-명령">빠른 명령</a></li>
+<li class="toc-l2"><a href="#함께-보는-artifact">함께 보는 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-실수">흔한 실수</a></li>
+<li class="toc-l2"><a href="#mini-example">mini example</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 02:32 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

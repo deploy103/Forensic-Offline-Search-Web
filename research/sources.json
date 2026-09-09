@@ -1,0 +1,117 @@
+{
+  "note": "출처 레지스트리. 글의 source_ids가 여기의 id를 가리킨다. url은 대회장에서 접속하기 위한 것이 아니라 사후 재검증용이다. tier 1=공식 벤더 문서, 2=도구 제작자 문서, 3=표준/RFC, 4=신뢰도 높은 포렌식 커뮤니티 문서.",
+  "sources": [
+    {
+      "id": "SRC-001",
+      "title": "Microsoft Learn — Event 4624 (An account was successfully logged on)",
+      "url": "https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10-security-auditing/event-4624",
+      "tier": 1,
+      "topics": ["event log", "4624", "logon type", "logon id"]
+    },
+    {
+      "id": "SRC-002",
+      "title": "Wireshark — Display Filter Reference",
+      "url": "https://www.wireshark.org/docs/dfref/",
+      "tier": 1,
+      "topics": ["wireshark", "display filter", "http", "dns", "tcp"]
+    },
+    {
+      "id": "SRC-003",
+      "title": "Wireshark User's Guide (Statistics, Follow Stream, Export Objects)",
+      "url": "https://www.wireshark.org/docs/wsug_html_chunked/",
+      "tier": 1,
+      "topics": ["wireshark", "protocol hierarchy", "conversations", "export objects"]
+    },
+    {
+      "id": "SRC-004",
+      "title": "Eric Zimmerman — Command line / GUI tool documentation",
+      "url": "https://ericzimmerman.github.io/",
+      "tier": 2,
+      "topics": ["evtxecmd", "registryexplorer", "rbcmd", "appcompatcacheparser", "mftecmd"]
+    },
+    {
+      "id": "SRC-005",
+      "title": "Microsoft Learn — Master File Table (NTFS)",
+      "url": "https://learn.microsoft.com/en-us/windows/win32/fileio/master-file-table",
+      "tier": 1,
+      "topics": ["ntfs", "$mft", "mft record", "attribute"]
+    },
+    {
+      "id": "SRC-006",
+      "title": "Volatility 3 documentation",
+      "url": "https://volatility3.readthedocs.io/",
+      "tier": 2,
+      "topics": ["volatility", "pslist", "psscan", "windows.info", "memory"]
+    },
+    {
+      "id": "SRC-007",
+      "title": "Microsoft Learn — Select-String (PowerShell Utility module)",
+      "url": "https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/select-string",
+      "tier": 1,
+      "topics": ["powershell", "select-string", "regex", "log analysis"]
+    },
+    {
+      "id": "SRC-008",
+      "title": "Chromium source — components/history/core/browser (History DB schema)",
+      "url": "https://source.chromium.org/chromium/chromium/src/+/main:components/history/core/browser/",
+      "tier": 1,
+      "topics": ["chrome", "history", "urls", "visits", "webkit timestamp"]
+    },
+    {
+      "id": "SRC-009",
+      "title": "Forensics Wiki — UserAssist",
+      "url": "https://forensicswiki.xyz/wiki/index.php?title=UserAssist",
+      "tier": 4,
+      "topics": ["registry", "userassist", "rot13", "ntuser.dat"]
+    },
+    {
+      "id": "SRC-010",
+      "title": "Wireshark — tshark man page",
+      "url": "https://www.wireshark.org/docs/man-pages/tshark.html",
+      "tier": 1,
+      "topics": ["tshark", "-T fields", "-Y", "-z", "export-objects"]
+    },
+    {
+      "id": "SRC-011",
+      "title": "SQLite — File format / built-in date and time functions",
+      "url": "https://www.sqlite.org/lang_datefunc.html",
+      "tier": 1,
+      "topics": ["sqlite", "timestamp", "datetime", "unixepoch"]
+    },
+    {
+      "id": "SRC-012",
+      "title": "IANA / RFC 791 — Internet Protocol (IPv4 addressing)",
+      "url": "https://www.rfc-editor.org/rfc/rfc791",
+      "tier": 3,
+      "topics": ["ipv4", "regex", "dotted quad"]
+    },
+    {
+      "id": "SRC-013",
+      "title": "Microsoft Learn — Change Journals ($UsnJrnl)",
+      "url": "https://learn.microsoft.com/en-us/windows/win32/fileio/change-journals",
+      "tier": 1,
+      "topics": ["ntfs", "$usnjrnl", "usn reason", "deleted file"]
+    },
+    {
+      "id": "SRC-014",
+      "title": "Microsoft Learn — File Times (FILETIME, 100ns since 1601-01-01 UTC)",
+      "url": "https://learn.microsoft.com/en-us/windows/win32/sysinfo/file-times",
+      "tier": 1,
+      "topics": ["filetime", "timestamp", "timezone", "1601"]
+    },
+    {
+      "id": "SRC-015",
+      "title": "GNU grep manual / ripgrep user guide",
+      "url": "https://www.gnu.org/software/grep/manual/grep.html",
+      "tier": 1,
+      "topics": ["grep", "ripgrep", "regex", "log analysis"]
+    },
+    {
+      "id": "SRC-016",
+      "title": "MITRE ATT&CK — T1059.001 PowerShell",
+      "url": "https://attack.mitre.org/techniques/T1059/001/",
+      "tier": 4,
+      "topics": ["powershell", "encodedcommand", "suspicious command"]
+    }
+  ]
+}

@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>IPv4 주소 regex: 느슨한 패턴과 엄격한 패턴 골라 쓰기 · FOR-0128 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%A1%9C%EA%B7%B8%2FRegex">로그/Regex</a> / FOR-0128
+      </div>
+      <header class="article-head">
+        <h1>IPv4 주소 regex: 느슨한 패턴과 엄격한 패턴 골라 쓰기</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">로그/Regex</span>
+      <span class="badge badge-type">레퍼런스</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>로그에서 IP를 뽑을 때는 먼저 느슨한 [0-9]{1,3}(\.[0-9]{1,3}){3}로 후보를 전부 긁고, 오탐(버전 번호·타임스탬프·잘린 IP)이 섞여 문제가 될 때만 옥텟 범위를 검증하는 엄격한 패턴으로 바꾼다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>grep, ripgrep, PowerShell, Python, awk, tshark</td></tr>
+<tr><th>artifact</th><td><code>access.log</code> · <code>auth.log</code> · <code>syslog</code> · <code>firewall log</code> · <code>memory strings</code></td></tr>
+<tr><th>프로토콜</th><td>IPv4, TCP, UDP</td></tr>
+<tr><th>Wireshark 필터</th><td><code>ip.addr == 203.0.113.77</code> · <code>ip.src == 10.0.0.0/8</code></td></tr>
+<tr><th>tshark field</th><td><code>ip.src</code> · <code>ip.dst</code></td></tr>
+<tr><th>regex</th><td><code>[0-9]{1,3}(\.[0-9]{1,3}){3}</code> · <code>\b(?:\d{1,3}\.){3}\d{1,3}\b</code> · <code>(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])</code> · <code>\b(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\b</code> · <code>(?&lt;![\d.])(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?![\d.])</code> · <code>\b(?:10|127|169\.254|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.</code></td></tr>
+<tr><th>파일 형식</th><td><code>log</code> · <code>txt</code> · <code>csv</code></td></tr>
+<tr><th>검색 별칭</th><td>ip 정규식 · regex ip · ipv4 정규식 · ip 주소 찾기 · grep ip · 아이피 추출 · ip 뽑기</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>로그에서 IP를 뽑을 때는 먼저 느슨한 <code>[0-9]{1,3}(\.[0-9]{1,3}){3}</code>로 후보를 전부 긁고, 오탐(버전 번호·타임스탬프·잘린 IP)이 섞여 문제가 될 때만 옥텟 범위를 검증하는 엄격한 패턴으로 바꾼다.</p>
+<h2 id="개념">개념</h2>
+<p>IPv4는 0–255 범위의 정수 4개를 점으로 이은 표기(dotted quad)다. 정규식은 이 &quot;0–255&quot;를 표현할 방법이 없으므로 <strong>네 구간으로 나눈 대안(alternation)</strong> 으로 흉내낸다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])
+ 250-255  200-249    100-199    0-99</code></pre></div>
+<p>이 조각 하나가 &quot;한 옥텟&quot;이다. 점으로 3번 반복하고 마지막에 한 번 더 붙이면 완성된다.</p>
+<p>포렌식에서는 두 가지 패턴을 <strong>목적에 따라 골라 쓰는 것</strong>이 정답이다.</p>
+<div class="table-wrap"><table><thead><tr><th></th><th>느슨한 패턴</th><th>엄격한 패턴</th></tr></thead><tbody><tr><td>목적</td><td>후보 전부 회수 (재현율 우선)</td><td>정확한 추출 (정밀도 우선)</td></tr><tr><td>길이</td><td>짧아서 손으로 칠 수 있다</td><td>길어서 복붙해야 한다</td></tr><tr><td>오탐</td><td>있음 (<code>999.1.1.1</code>, <code>1.2.3.4.5</code>)</td><td>거의 없음</td></tr><tr><td>쓰는 곳</td><td>초기 탐색, <code>strings</code> 결과, 메모리 덤프</td><td>최종 목록화, 자동 집계</td></tr></tbody></table></div>
+<p>초기 탐색에서 엄격한 패턴을 쓰면 <strong>잘린 IP나 변형 표기를 놓친다.</strong> 순서를 지키는 것이 중요하다.</p>
+<h2 id="파일-경로">파일 / 경로</h2>
+<p>IP가 나오는 대표적인 곳이다.</p>
+<div class="table-wrap"><table><thead><tr><th>대상</th><th>경로/형식</th><th>IP가 있는 위치</th></tr></thead><tbody><tr><td>Apache/Nginx access log</td><td><code>access.log</code></td><td><strong>1번째 필드</strong> (또는 <code>X-Forwarded-For</code>)</td></tr><tr><td>Linux auth log</td><td><code>/var/log/auth.log</code>, <code>/var/log/secure</code></td><td><code>from &lt;IP&gt;</code></td></tr><tr><td>syslog</td><td><code>/var/log/syslog</code>, <code>/var/log/messages</code></td><td>메시지 본문</td></tr><tr><td>Windows EVTX 4624/4625</td><td><code>Security.evtx</code></td><td><code>IpAddress</code> 필드</td></tr><tr><td>IIS log</td><td><code>C:\inetpub\logs\LogFiles\W3SVC*\*.log</code></td><td><code>c-ip</code>, <code>s-ip</code> 필드</td></tr><tr><td>메모리 덤프</td><td><code>*.raw</code>, <code>*.mem</code></td><td><code>strings</code> 결과 전체</td></tr><tr><td>pcap</td><td><code>*.pcapng</code></td><td><code>ip.src</code> / <code>ip.dst</code></td></tr><tr><td>방화벽/프록시 로그</td><td>벤더별</td><td><code>src=</code>, <code>dst=</code></td></tr></tbody></table></div>
+<h2 id="주요-필드">주요 필드</h2>
+<h3 id="패턴-1-느슨한-후보-수집-가장-많이-쓴다">패턴 1 — 느슨한 후보 수집 (가장 많이 쓴다)</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">[0-9]{1,3}(\.[0-9]{1,3}){3}</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>값</th></tr></thead><tbody><tr><td>매칭됨</td><td><code>10.0.0.1</code>, <code>203.0.113.77</code>, <code>192.168.1.100</code>, <code>0.0.0.0</code>, <code>255.255.255.255</code></td></tr><tr><td>매칭 안 됨</td><td><code>10.0.0</code>, <code>2001:db8::1</code>, <code>10.0.0.a</code></td></tr><tr><td><strong>오탐</strong></td><td><code>999.999.999.999</code>, <code>1.2.3.4.5</code>의 일부, 소프트웨어 버전 <code>10.1.2.3</code></td></tr></tbody></table></div>
+<h3 id="패턴-2-경계를-붙인-느슨한-패턴">패턴 2 — 경계를 붙인 느슨한 패턴</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">\b(?:\d{1,3}\.){3}\d{1,3}\b</code></pre></div>
+<p><code>\b</code>가 앞뒤에 붙어 문자열 중간의 숫자 덩어리를 덜 잡는다. 다만 <strong><code>1.2.3.4.5</code>에서 <code>1.2.3.4</code>를 여전히 잡는다</strong> — <code>.</code>은 단어 문자가 아니므로 <code>\b</code>가 경계로 성립한다.</p>
+<h3 id="패턴-3-엄격한-옥텟-검증-최종-목록화용">패턴 3 — 엄격한 옥텟 검증 (최종 목록화용)</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">\b(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\b</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>값</th></tr></thead><tbody><tr><td>매칭됨</td><td><code>0.0.0.0</code>, <code>10.0.0.1</code>, <code>192.168.1.1</code>, <code>255.255.255.255</code></td></tr><tr><td>매칭 안 됨</td><td><code>256.1.1.1</code>, <code>999.999.999.999</code>, <code>01.02.03.04</code>(선행 0)</td></tr><tr><td>남은 오탐</td><td><code>1.2.3.4.5</code>에서 <code>1.2.3.4</code></td></tr></tbody></table></div>
+<h3 id="패턴-4-완전-엄격-lookaround-사용-오탐-거의-0">패턴 4 — 완전 엄격 (lookaround 사용, 오탐 거의 0)</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">(?&lt;![\d.])(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?![\d.])</code></pre></div>
+<p><code>(?&lt;![\d.])</code> / <code>(?![\d.])</code>가 앞뒤에 숫자나 점이 오는 것을 금지하므로 <code>1.2.3.4.5</code>와 <code>192.168.1.1000</code>을 완전히 배제한다.</p>
+<blockquote><p><strong>주의</strong>: lookaround는 <strong><code>grep -E</code>에서 동작하지 않는다.</strong> <code>grep -P</code>(PCRE), <code>rg -P</code>, PowerShell(.NET), Python(<code>re</code>)에서만 쓸 수 있다. 이 제약이 도구 선택을 좌우한다.</p></blockquote>
+<h3 id="패턴-5-사설특수-ip만-또는-제외">패턴 5 — 사설/특수 IP만 (또는 제외)</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">\b(?:10|127|169\.254|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>대역</th><th>의미</th></tr></thead><tbody><tr><td><code>10.0.0.0/8</code></td><td>사설 (RFC 1918)</td></tr><tr><td><code>172.16.0.0/12</code></td><td>사설 (RFC 1918)</td></tr><tr><td><code>192.168.0.0/16</code></td><td>사설 (RFC 1918)</td></tr><tr><td><code>127.0.0.0/8</code></td><td>루프백</td></tr><tr><td><code>169.254.0.0/16</code></td><td>링크 로컬 (DHCP 실패)</td></tr></tbody></table></div>
+<p>&quot;외부에서 들어온 접속만 보고 싶다&quot;면 이 패턴으로 <code>-v</code> / <code>-NotMatch</code> 하면 된다.</p>
+<h2 id="빠른-명령">빠른 명령</h2>
+<h3 id="grep-ripgrep">grep / ripgrep</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) 후보 전부, 값만 출력
+grep -Eo &#39;[0-9]{1,3}(\.[0-9]{1,3}){3}&#39; access.log
+
+# 2) 빈도 상위 10 — 공격자 찾기 기본기
+grep -Eo &#39;[0-9]{1,3}(\.[0-9]{1,3}){3}&#39; access.log | sort | uniq -c | sort -nr | head -10
+
+# 3) 엄격한 옥텟 검증 (grep -E로 가능)
+grep -Eo &#39;\b(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3}\b&#39; access.log
+
+# 4) lookaround까지 (PCRE 필요)
+grep -Po &#39;(?&lt;![\d.])(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?![\d.])&#39; access.log
+
+# 5) ripgrep — 기본은 느슨, -P로 PCRE2 활성화
+rg -o &#39;\b(?:\d{1,3}\.){3}\d{1,3}\b&#39; access.log
+rg -oP &#39;(?&lt;![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])&#39; access.log
+
+# 6) 사설 IP 제외 = 외부 접속만
+grep -Eo &#39;[0-9]{1,3}(\.[0-9]{1,3}){3}&#39; access.log |
+  grep -Ev &#39;^(10\.|127\.|169\.254\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)&#39; |
+  sort | uniq -c | sort -nr
+
+# 7) 필드 위치가 확실하면 정규식보다 awk가 정확하다
+awk &#39;{print $1}&#39; access.log | sort | uniq -c | sort -nr | head</code></pre></div>
+<h3 id="powershell">PowerShell</h3>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 후보 전부 + 빈도
+Select-String -Path .\access.log -Pattern &#39;\d{1,3}(\.\d{1,3}){3}&#39; -AllMatches |
+  ForEach-Object { $_.Matches.Value } |
+  Group-Object | Sort-Object Count -Descending | Select-Object -First 10 Count, Name
+
+# 엄격 + lookaround (.NET이므로 그대로 동작)
+$re = &#39;(?&lt;![\d.])(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?![\d.])&#39;
+Select-String -Path .\access.log -Pattern $re -AllMatches |
+  ForEach-Object { $_.Matches.Value } | Sort-Object -Unique
+
+# 사설 IP 제외
+... | Where-Object { $_ -notmatch &#39;^(10\.|127\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)&#39; }
+
+# 유효성 검증은 정규식보다 .NET 파서가 확실하다
+&#39;999.1.1.1&#39;, &#39;10.0.0.1&#39; | ForEach-Object {
+  [pscustomobject]@{ Value = $_; Valid = [System.Net.IPAddress]::TryParse($_, [ref]$null) }
+}</code></pre></div>
+<h3 id="python">Python</h3>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import re
+from collections import Counter
+import ipaddress
+
+LOOSE  = re.compile(r&#39;(?&lt;![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])&#39;)
+STRICT = re.compile(
+    r&#39;(?&lt;![\d.])&#39;
+    r&#39;(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}&#39;
+    r&#39;(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)&#39;
+    r&#39;(?![\d.])&#39;
+)
+
+text = open(&#39;access.log&#39;, encoding=&#39;utf-8&#39;, errors=&#39;replace&#39;).read()
+
+# 1) 후보 수집 후 표준 라이브러리로 검증하는 것이 가장 확실하다
+valid = []
+for cand in LOOSE.findall(text):
+    try:
+        ip = ipaddress.IPv4Address(cand)
+    except ipaddress.AddressValueError:
+        continue          # 999.1.1.1, 01.02.03.04 등 탈락
+    valid.append(ip)
+
+# 2) 빈도 상위
+for ip, n in Counter(valid).most_common(10):
+    print(f&#39;{n:6d}  {ip}&#39;)
+
+# 3) 공인 IP만 (사설/루프백/링크로컬 제외)
+external = [ip for ip in valid if ip.is_global]
+
+# 4) 특정 대역에 속하는지
+net = ipaddress.ip_network(&#39;192.168.10.0/24&#39;)
+inside = [ip for ip in valid if ip in net]</code></pre></div>
+<p><strong>정규식으로 유효성까지 검증하려 하지 말고, 느슨하게 뽑아 <code>ipaddress</code>/<code>IPAddress.TryParse</code>에 넘기는 것이 가장 짧고 정확하다.</strong></p>
+<h2 id="함께-보는-artifact">함께 보는 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>IP를 얻은 뒤</th><th>다음 목표</th></tr></thead><tbody><tr><td>공격 IP 확정</td><td>pcap: <code>ip.addr == &lt;IP&gt;</code> → Follow TCP Stream</td></tr><tr><td>공격 IP 확정</td><td>EVTX 4624/4625의 <code>IpAddress</code> (<a href="./event-4624-logon.html">FOR-0083</a>)</td></tr><tr><td>내부 IP 확정</td><td>DHCP 로그, ARP 테이블, <code>NetworkList</code> 레지스트리</td></tr><tr><td>대역이 낯설다</td><td>문제 지문의 네트워크 구성도 재확인</td></tr><tr><td>도메인도 함께</td><td>DNS 응답에서 IP↔도메인 매핑</td></tr><tr><td>시각 + IP</td><td>그 시각의 모든 로그를 IP로 재검색</td></tr></tbody></table></div>
+<h2 id="흔한-실수">흔한 실수</h2>
+<ul><li><strong>정규식으로 0–255를 검증하려 애쓰는 것.</strong> 느슨하게 뽑고 언어의 IP 파서로 검증하는 편이 짧고 정확하다.</li><li><strong><code>\d{1,3}(\.\d{1,3}){3}</code>에 경계를 안 붙이는 것.</strong> 버전 문자열 <code>nginx/1.20.1.3</code>, 타임스탬프 <code>2026.03.14.07</code> 같은 것이 섞인다.</li><li><strong><code>grep -E</code>에서 lookaround를 쓰는 것.</strong> <code>-E</code>는 POSIX ERE로 lookaround가 없다. <code>-P</code>가 필요하고, 일부 배포판의 <code>grep</code>은 <code>-P</code>가 컴파일되어 있지 않다. <code>rg -P</code>가 더 안전하다.</li><li><strong><code>.</code>을 이스케이프하지 않는 것.</strong> <code>\d{1,3}.\d{1,3}</code>의 <code>.</code>은 아무 문자다. <code>10a0b0c1</code>도 매칭된다.</li><li><strong>선행 0 표기를 놓치는 것.</strong> <code>010.001.001.001</code>은 엄격 패턴에서 탈락하지만 실제 로그에 등장할 수 있다. <code>ipaddress</code> 모듈은 Python 3.9+에서 선행 0을 <strong>거부</strong>한다.</li><li><strong><code>X-Forwarded-For</code>를 무시하는 것.</strong> 프록시 뒤 로그에서 1번 필드는 프록시 IP다. 진짜 클라이언트는 <code>X-Forwarded-For</code> 헤더에 있고, 쉼표로 여러 개가 들어온다.</li><li><strong>IPv6 로그에서 IPv4 패턴만 돌리는 것.</strong> <code>::ffff:192.0.2.1</code> 같은 매핑 표기와 순수 IPv6를 모두 놓친다.</li><li><strong>필드 위치가 확실한데 정규식을 쓰는 것.</strong> <code>awk &#39;{print $1}&#39;</code>이 오탐 0이고 더 빠르다. 정규식은 위치가 불확실할 때의 도구다.</li><li><strong>빈도만 보고 결론 내리는 것.</strong> 정상 모니터링 봇이 1위인 경우가 흔하다. User-Agent와 요청 URI를 함께 본다.</li></ul>
+<h2 id="mini-example">mini example</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;침해된 서버의 auth.log에서 SSH 무차별 대입을 시도한 IP와 시도 횟수를 구하세요.&quot;
+첨부: auth.log (128,441줄)
+
+1. 형식 확인
+   $ head -2 auth.log
+   Mar 14 07:11:02 web01 sshd[2841]: Failed password for invalid user admin from 203.0.113.77 port 51234 ssh2
+   Mar 14 07:11:04 web01 sshd[2843]: Failed password for root from 203.0.113.77 port 51240 ssh2
+
+2. 느슨하게 IP 전부 + 빈도
+   $ grep -Eo &#39;[0-9]{1,3}(\.[0-9]{1,3}){3}&#39; auth.log | sort | uniq -c | sort -nr | head -5
+      9821 203.0.113.77
+       412 198.51.100.5
+        88 192.168.10.24
+        12 127.0.0.1
+
+3. 문제: 9821에는 성공/실패/기타 메시지가 섞여 있다.
+   &quot;Failed password&quot; 줄로 먼저 좁힌 뒤 IP를 뽑아야 한다.
+
+   $ grep &#39;Failed password&#39; auth.log |
+       grep -Eo &#39;from [0-9]{1,3}(\.[0-9]{1,3}){3}&#39; |
+       awk &#39;{print $2}&#39; | sort | uniq -c | sort -nr | head -3
+      4903 203.0.113.77
+       201 198.51.100.5
+         4 192.168.10.24
+
+4. 캡처 그룹으로 사용자 이름까지 함께 (Python)
+   &gt;&gt;&gt; import re
+   &gt;&gt;&gt; pat = re.compile(r&#39;Failed password for (?:invalid user )?(?P&lt;user&gt;\S+) &#39;
+   ...                  r&#39;from (?P&lt;ip&gt;(?:\d{1,3}\.){3}\d{1,3})&#39;)
+   &gt;&gt;&gt; from collections import Counter
+   &gt;&gt;&gt; c = Counter()
+   &gt;&gt;&gt; for line in open(&#39;auth.log&#39;):
+   ...     m = pat.search(line)
+   ...     if m: c[(m[&#39;ip&#39;], m[&#39;user&#39;])] += 1
+   &gt;&gt;&gt; c.most_common(5)
+   [((&#39;203.0.113.77&#39;,&#39;root&#39;), 1841), ((&#39;203.0.113.77&#39;,&#39;admin&#39;), 902),
+    ((&#39;203.0.113.77&#39;,&#39;test&#39;), 411), ((&#39;198.51.100.5&#39;,&#39;root&#39;), 201), ...]
+
+5. 성공한 로그온이 있는지 (핵심)
+   $ grep &#39;Accepted password&#39; auth.log | grep &#39;203.0.113.77&#39;
+   Mar 14 07:18:39 web01 sshd[3901]: Accepted password for svc_backup from 203.0.113.77 port 52890 ssh2
+
+   -&gt; 4903회 실패 후 07:18:39에 svc_backup으로 성공.
+
+6. 교차검증 — 필드 기준
+   $ awk &#39;/Failed password/ {for(i=1;i&lt;=NF;i++) if($i==&quot;from&quot;) print $(i+1)}&#39; auth.log |
+       sort | uniq -c | sort -nr | head -1
+      4903 203.0.113.77
+   정규식 결과와 일치.
+
+정답: 203.0.113.77, 실패 4,903회 (07:18:39에 svc_backup 계정으로 성공)</code></pre></div>
+<p>3단계가 핵심이다. <strong>IP를 먼저 뽑고 세면 안 되고, 관심 있는 이벤트로 줄을 먼저 좁힌 다음 IP를 뽑아야 한다.</strong></p>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-012 — RFC 791: IPv4 주소 구조 및 옥텟 범위</li><li>SRC-015 — GNU grep manual: <code>-E</code>(ERE) vs <code>-P</code>(PCRE) 지원 범위, lookaround 제약</li><li>SRC-007 — Microsoft Learn, Select-String: .NET 정규식이 lookaround를 지원한다는 근거</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./powershell-select-string.html">
+    <span class="rel-id">FOR-0121 · 로그/Regex</span>
+    PowerShell Select-String으로 로그 검색하기 (Windows용 grep)
+  </a>
+  <a class="related-item" href="./30sec-triage.html">
+    <span class="rel-id">FOR-0001 · 트리아지</span>
+    포렌식 문제 파일을 받았을 때 30초 트리아지
+  </a>
+  <a class="related-item" href="./wireshark-30sec-triage.html">
+    <span class="rel-id">FOR-0146 · Network/PCAP</span>
+    Wireshark 30초 트리아지: pcap을 받고 처음 할 다섯 가지
+  </a>
+  <a class="related-item" href="./http-post-find.html">
+    <span class="rel-id">FOR-0158 · Network/PCAP</span>
+    pcap에서 HTTP POST 찾아 본문·자격증명·업로드 파일 뽑기
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./powershell-select-string.html"><span class="rel-id">← FOR-0121</span>PowerShell Select-String으로 로그 검색하기 (Windows용 grep)</a>
+<a class="related-item" href="./wireshark-30sec-triage.html"><span class="rel-id">FOR-0146 →</span>Wireshark 30초 트리아지: pcap을 받고 처음 할 다섯 가지</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#개념">개념</a></li>
+<li class="toc-l2"><a href="#파일-경로">파일 / 경로</a></li>
+<li class="toc-l2"><a href="#주요-필드">주요 필드</a></li>
+<li class="toc-l3"><a href="#패턴-1-느슨한-후보-수집-가장-많이-쓴다">패턴 1 — 느슨한 후보 수집 (가장 많이 쓴다)</a></li>
+<li class="toc-l3"><a href="#패턴-2-경계를-붙인-느슨한-패턴">패턴 2 — 경계를 붙인 느슨한 패턴</a></li>
+<li class="toc-l3"><a href="#패턴-3-엄격한-옥텟-검증-최종-목록화용">패턴 3 — 엄격한 옥텟 검증 (최종 목록화용)</a></li>
+<li class="toc-l3"><a href="#패턴-4-완전-엄격-lookaround-사용-오탐-거의-0">패턴 4 — 완전 엄격 (lookaround 사용, 오탐 거의 0)</a></li>
+<li class="toc-l3"><a href="#패턴-5-사설특수-ip만-또는-제외">패턴 5 — 사설/특수 IP만 (또는 제외)</a></li>
+<li class="toc-l2"><a href="#빠른-명령">빠른 명령</a></li>
+<li class="toc-l3"><a href="#grep-ripgrep">grep / ripgrep</a></li>
+<li class="toc-l3"><a href="#powershell">PowerShell</a></li>
+<li class="toc-l3"><a href="#python">Python</a></li>
+<li class="toc-l2"><a href="#함께-보는-artifact">함께 보는 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-실수">흔한 실수</a></li>
+<li class="toc-l2"><a href="#mini-example">mini example</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 02:32 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

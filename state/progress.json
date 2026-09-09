@@ -1,0 +1,49 @@
+{
+  "target": 300,
+  "completed": 11,
+  "verified": 11,
+  "in_progress": [],
+  "last_completed_id": "FOR-0214",
+  "current_phase": "skeleton-done",
+  "last_commit": null,
+  "last_updated_kst": "2026-09-10 02:41 KST",
+  "blockers": [
+    "gh CLI 미설치 — private GitHub repo 생성/push 불가. git init/commit 은 로컬에서 진행 중."
+  ],
+  "next_actions": [
+    "Phase 2 Critical 100 시작: Windows 라인 FOR-0016 ~ FOR-0020 (FTK Imager / Arsenal / Autopsy / MBR GPT / NTFS 구조)",
+    "이어서 FOR-0022 ~ FOR-0026, FOR-0028 ~ FOR-0032 로 디스크/NTFS 35개 채우기",
+    "Network 라인 FOR-0147 ~ FOR-0152 병행",
+    "Log/Regex 라인 FOR-0111 ~ FOR-0117 병행",
+    "5개마다 build + validate + search-test + smoke-offline + DEVELOPMENT_LOG + progress.json + commit"
+  ],
+  "phase_notes": {
+    "skeleton": "완료. 빌드 파이프라인, 오프라인 검색, 필터, 관련글, file:// 동작, no-CDN 검증까지 통과.",
+    "sample_articles": [
+      "FOR-0001 트리아지 (troubleshooting/basic)",
+      "FOR-0021 디스크/NTFS (reference/basic)",
+      "FOR-0027 디스크/NTFS (reference/intermediate)",
+      "FOR-0061 Registry (guide/intermediate)",
+      "FOR-0083 Event Log (guide/intermediate)",
+      "FOR-0121 로그/Regex (guide/intermediate)",
+      "FOR-0128 로그/Regex (reference/intermediate)",
+      "FOR-0146 Network/PCAP (guide/intermediate)",
+      "FOR-0158 Network/PCAP (guide/intermediate)",
+      "FOR-0191 브라우저/웹 (reference/intermediate)",
+      "FOR-0214 메모리 (guide/intermediate)"
+    ],
+    "sample_selection_reason": "11개 카테고리 중 7개, 3가지 type, basic/intermediate 두 난이도를 모두 태워 UI·검색·필터·관련글을 실제 데이터로 검증했다. 숫자 순서가 아닌 이유는 Phase 1 목적이 뼈대 검증이기 때문이며, validate 의 id sequence gap 경고는 Phase 3에서 순서대로 채우면 해소된다."
+  },
+  "validation_snapshot": {
+    "as_of_kst": "2026-09-10 02:41 KST",
+    "articles": 11,
+    "validate_errors": 0,
+    "validate_warnings": 2,
+    "search_queries_total": 195,
+    "search_queries_active": 159,
+    "search_queries_passed": 159,
+    "search_queries_pending": 36,
+    "smoke_offline": "pass",
+    "search_index_kb": 155.1
+  }
+}

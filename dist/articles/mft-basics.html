@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>$MFT 기본 구조와 포렌식 활용 · FOR-0021 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%94%94%EC%8A%A4%ED%81%AC%2FNTFS">디스크/NTFS</a> / FOR-0021
+      </div>
+      <header class="article-head">
+        <h1>$MFT 기본 구조와 포렌식 활용</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">디스크/NTFS</span>
+      <span class="badge badge-type">레퍼런스</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>$MFT는 NTFS 볼륨의 모든 파일과 디렉터리를 1개 레코드씩 기록한 색인이며, 삭제된 파일의 이름·크기·타임스탬프까지 남아 있기 때문에 &quot;이 디스크에 무엇이 있었는가&quot;를 한 번에 답해 주는 첫 번째 artifact다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>FTK Imager, MFTECmd, analyzeMFT, Autopsy, Sleuth Kit, HxD, Arsenal Image Mounter</td></tr>
+<tr><th>artifact</th><td><code>$MFT</code> · <code>MFT record</code> · <code>$STANDARD_INFORMATION</code> · <code>$FILE_NAME</code> · <code>$DATA</code> · <code>$BITMAP</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\$MFT</code> · <code>\.\C:\$MFT</code> · <code>$MFT</code> · <code>$MFTMirr</code></td></tr>
+<tr><th>로그 필드</th><td><code>EntryNumber</code> · <code>SequenceNumber</code> · <code>ParentEntryNumber</code> · <code>FileName</code> · <code>InUse</code> · <code>IsDirectory</code> · <code>FileSize</code></td></tr>
+<tr><th>파일 형식</th><td><code>ntfs</code></td></tr>
+<tr><th>검색 별칭</th><td>mft · 엠에프티 · 마스터 파일 테이블 · NTFS 파일 목록 · 파일 전체 목록 뽑기 · master file table</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>$MFT</code>는 NTFS 볼륨의 모든 파일과 디렉터리를 1개 레코드씩 기록한 색인이며, 삭제된 파일의 이름·크기·타임스탬프까지 남아 있기 때문에 &quot;이 디스크에 무엇이 있었는가&quot;를 한 번에 답해 주는 첫 번째 artifact다.</p>
+<h2 id="개념">개념</h2>
+<p>NTFS는 자기 자신을 파일로 관리한다. <code>$MFT</code> 역시 파일이고, 그 자신이 MFT의 0번 레코드다.</p>
+<ul><li>레코드 1개 크기는 보통 <strong>1024바이트</strong> (부트섹터의 <code>clusters per MFT record</code> 값으로 결정)</li><li>레코드는 <code>FILE</code> (<code>46 49 4C 45</code>) 시그니처로 시작한다</li><li>레코드 = 헤더 + <strong>속성(attribute) 목록</strong></li><li>파일을 삭제해도 레코드는 즉시 지워지지 않는다. 헤더의 flag에서 <code>in use</code> 비트만 내려간다 → <strong>삭제 파일 정보가 그대로 남는다</strong></li></ul>
+<p>예약된 앞부분 레코드(0~15번)는 NTFS 메타파일이다.</p>
+<div class="table-wrap"><table><thead><tr><th>레코드 번호</th><th>파일</th><th>용도</th></tr></thead><tbody><tr><td>0</td><td><code>$MFT</code></td><td>MFT 자신</td></tr><tr><td>1</td><td><code>$MFTMirr</code></td><td>MFT 앞부분 백업 (MFT 손상 시 사용)</td></tr><tr><td>2</td><td><code>$LogFile</code></td><td>트랜잭션 로그</td></tr><tr><td>3</td><td><code>$Volume</code></td><td>볼륨 이름/버전</td></tr><tr><td>5</td><td><code>.</code> (루트)</td><td>볼륨 루트 디렉터리</td></tr><tr><td>6</td><td><code>$Bitmap</code></td><td>클러스터 할당 비트맵</td></tr><tr><td>7</td><td><code>$Boot</code></td><td>부트섹터</td></tr><tr><td>9</td><td><code>$Secure</code></td><td>보안 기술자</td></tr></tbody></table></div>
+<h2 id="파일-경로">파일 / 경로</h2>
+<p><code>$MFT</code>는 볼륨 루트에 있지만 실행 중인 Windows에서는 일반 복사가 불가능하다.</p>
+<div class="table-wrap"><table><thead><tr><th>상황</th><th>추출 방법</th></tr></thead><tbody><tr><td>디스크 이미지 (E01/RAW)</td><td>FTK Imager로 열고 볼륨 루트 → <code>$MFT</code> → Export Files</td></tr><tr><td>이미지 마운트</td><td>Arsenal Image Mounter로 마운트 후 FTK Imager로 추출</td></tr><tr><td>라이브 시스템</td><td>KAPE, 또는 FTK Imager의 <code>Add Physical Drive</code></td></tr><tr><td>Linux/Sleuth Kit</td><td><code>icat -o &lt;offset&gt; image.dd 0 &gt; \$MFT</code></td></tr></tbody></table></div>
+<p>CTF에서는 대개 <code>$MFT</code> 파일 하나만 따로 첨부된다. 이때 파일 시그니처는 <code>FILE</code>로 시작한다 (<a href="./30sec-triage.html">FOR-0001</a>).</p>
+<h2 id="주요-필드">주요 필드</h2>
+<p>파서(MFTECmd / analyzeMFT)가 CSV로 뱉는 컬럼 중 실전에서 쓰는 것만 정리한다.</p>
+<div class="table-wrap"><table><thead><tr><th>컬럼</th><th>의미</th><th>왜 중요한가</th></tr></thead><tbody><tr><td><code>EntryNumber</code></td><td>MFT 레코드 번호</td><td>파일의 고유 ID. <code>fls</code>/<code>icat</code>에 그대로 넣는다</td></tr><tr><td><code>SequenceNumber</code></td><td>레코드 재사용 횟수</td><td>값이 크면 그 슬롯이 여러 번 재사용됨 = 삭제/생성 반복</td></tr><tr><td><code>InUse</code></td><td>사용 중 여부</td><td><code>False</code> = <strong>삭제된 파일</strong></td></tr><tr><td><code>ParentEntryNumber</code></td><td>부모 디렉터리 레코드 번호</td><td>전체 경로 재구성의 핵심</td></tr><tr><td><code>ParentPath</code> / <code>FileName</code></td><td>경로와 이름</td><td>검색 대상</td></tr><tr><td><code>IsDirectory</code></td><td>디렉터리 여부</td><td>필터링용</td></tr><tr><td><code>FileSize</code></td><td>논리 크기</td><td>0인데 이름이 있으면 resident 또는 잘린 파일</td></tr><tr><td><code>Created0x10</code> / <code>Created0x30</code></td><td>$SI / $FN 생성 시각</td><td><strong>불일치 = timestomp 의심</strong></td></tr><tr><td><code>LastModified0x10</code> / <code>0x30</code></td><td>수정 시각</td><td>위와 동일</td></tr><tr><td><code>LastRecordChange0x10</code> / <code>0x30</code></td><td>MFT 엔트리 변경 시각</td><td>사용자가 조작하기 가장 어려운 값</td></tr><tr><td><code>LastAccess0x10</code> / <code>0x30</code></td><td>접근 시각</td><td>Win7+ 기본 갱신 비활성인 경우 많음</td></tr><tr><td><code>HasAds</code> / <code>si&lt;fn</code></td><td>ADS 존재 / 타임스탬프 역전</td><td>은닉·조작 신호</td></tr></tbody></table></div>
+<h3 id="핵심-속성">핵심 속성</h3>
+<div class="table-wrap"><table><thead><tr><th>속성 타입</th><th>이름</th><th>내용</th></tr></thead><tbody><tr><td><code>0x10</code></td><td><code>$STANDARD_INFORMATION</code></td><td>MACB 타임스탬프, 파일 속성, USN</td></tr><tr><td><code>0x30</code></td><td><code>$FILE_NAME</code></td><td>파일 이름 + <strong>두 번째 MACB 세트</strong> + 부모 레코드 번호</td></tr><tr><td><code>0x80</code></td><td><code>$DATA</code></td><td>실제 내용. 작으면 레코드 안에 들어간다(resident)</td></tr><tr><td><code>0x90</code> / <code>0xA0</code></td><td><code>$INDEX_ROOT</code> / <code>$INDEX_ALLOCATION</code></td><td>디렉터리 색인</td></tr><tr><td><code>0xB0</code></td><td><code>$BITMAP</code></td><td>색인 할당 비트맵</td></tr></tbody></table></div>
+<p><code>0x10</code>과 <code>0x30</code>이 <strong>각각 4개씩, 총 8개의 타임스탬프</strong>를 가진다는 점이 timestomp 탐지의 근거다. 흔한 조작 도구는 <code>$SI</code>만 바꾸고 <code>$FN</code>은 그대로 둔다.</p>
+<h3 id="resident-vs-non-resident">resident vs non-resident</h3>
+<ul><li><strong>resident</strong>: <code>$DATA</code>가 레코드 내부에 저장됨. 대략 700바이트 이하 파일. → <code>$MFT</code> 하나만 있어도 <strong>파일 내용을 복구할 수 있다</strong></li><li><strong>non-resident</strong>: <code>$DATA</code>가 클러스터 런(data run) 목록으로 저장됨. 내용 복구에는 볼륨 전체가 필요하다</li></ul>
+<p>작은 텍스트 파일에 flag가 들어 있는 문제는 <code>$MFT</code>만으로 풀린다.</p>
+<h2 id="빠른-명령">빠른 명령</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">REM Eric Zimmerman MFTECmd — 가장 빠르고 컬럼이 풍부하다
+MFTECmd.exe -f &quot;C:\case\$MFT&quot; --csv &quot;C:\case\out&quot; --csvf mft.csv
+
+REM 특정 파일만 보기
+MFTECmd.exe -f &quot;C:\case\$MFT&quot; --csv &quot;C:\case\out&quot; --csvf mft.csv --de 12345</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># analyzeMFT (Python)
+analyzeMFT.py -f &#39;$MFT&#39; -o mft.csv
+
+# Sleuth Kit — 이미지에서 직접, 삭제 파일 포함 전체 목록
+mmls image.dd                       # 파티션 오프셋 확인
+fls -o 2048 -r -p image.dd          # -r 재귀, -p 전체 경로
+istat -o 2048 image.dd 12345        # 레코드 12345 상세
+icat -o 2048 image.dd 12345 &gt; out   # 내용 추출</code></pre></div>
+<p>CSV가 나오면 검색은 텍스트 도구로 한다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 삭제된 xlsx만
+Import-Csv mft.csv | Where-Object { $_.InUse -eq &#39;False&#39; -and $_.Extension -eq &#39;.xlsx&#39; } |
+  Select-Object FileName, ParentPath, Created0x10, FileSize</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 특정 시각대(2026-03-14)에 생성된 항목
+rg &#39;2026-03-14&#39; mft.csv | rg -v &#39;True,True&#39;
+
+# 확장자별 개수
+awk -F, &#39;{print $NF}&#39; mft.csv | sort | uniq -c | sort -nr | head</code></pre></div>
+<h2 id="함께-보는-artifact">함께 보는 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>목적</th><th>함께 볼 것</th></tr></thead><tbody><tr><td>삭제 시각과 이유</td><td><code>$UsnJrnl</code> (USN_REASON_FILE_DELETE), <code>$LogFile</code></td></tr><tr><td>휴지통 경유 삭제</td><td><code>$Recycle.Bin</code> 의 <code>$I</code>/<code>$R</code> 파일</td></tr><tr><td>실행 여부</td><td>Prefetch, Amcache, Shimcache</td></tr><tr><td>사용자가 열었는지</td><td>UserAssist, RecentDocs, LNK, Jump List (<a href="./userassist.html">FOR-0061</a>)</td></tr><tr><td>다운로드 출처</td><td>브라우저 History/Downloads (<a href="./chrome-history.html">FOR-0191</a>)</td></tr><tr><td>Zone.Identifier ADS</td><td><code>HasAds = True</code> 인 항목</td></tr></tbody></table></div>
+<h2 id="흔한-실수">흔한 실수</h2>
+<ul><li><strong><code>FileSize</code>가 0인 것을 빈 파일로 단정하는 것.</strong> resident 파일이거나 파서가 <code>$DATA</code>를 못 읽은 경우가 있다. <code>istat</code>으로 속성을 직접 확인한다.</li><li><strong><code>$SI</code> 타임스탬프만 보는 것.</strong> MFTECmd CSV에서 <code>0x10</code>만 보고 결론 내리면 timestomp에 그대로 속는다. <code>0x30</code>과 항상 비교한다.</li><li><strong>시간대를 UTC로 두고 KST 문제를 푸는 것.</strong> MFT 타임스탬프는 FILETIME(UTC 기준)이다. 파서는 보통 UTC로 출력한다. 문제가 KST를 요구하면 +9시간 한다.</li><li><strong><code>InUse=False</code>를 &quot;복구 가능&quot;으로 착각하는 것.</strong> 레코드는 남았지만 데이터 클러스터는 재할당되었을 수 있다. 내용이 필요하면 카빙으로 넘어간다.</li><li><strong><code>$MFTMirr</code>를 무시하는 것.</strong> <code>$MFT</code> 앞부분이 손상된 경우 <code>$MFTMirr</code>에서 레코드 0~3을 복구할 수 있다.</li><li><strong>레코드 번호 재사용을 놓치는 것.</strong> <code>SequenceNumber</code>가 다르면 같은 <code>EntryNumber</code>라도 <strong>다른 파일</strong>이다.</li></ul>
+<h2 id="mini-example">mini example</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;$MFT만 제공됩니다. 삭제된 텍스트 파일의 내용을 찾으세요.&quot;
+
+1. file &#39;$MFT&#39;
+   -&gt; data          (매직 없음. 하지만 xxd로 확인)
+   xxd -l 16 &#39;$MFT&#39;
+   -&gt; 00000000: 4649 4c45 ...   (&quot;FILE&quot; = MFT 레코드 확인)
+
+2. MFTECmd.exe -f &quot;$MFT&quot; --csv out --csvf mft.csv
+
+3. 삭제 + txt 검색
+   Import-Csv out\mft.csv |
+     Where-Object { $_.InUse -eq &#39;False&#39; -and $_.Extension -eq &#39;.txt&#39; } |
+     Select-Object EntryNumber, FileName, FileSize, Created0x10
+
+   EntryNumber FileName      FileSize Created0x10
+   ----------- --------      -------- -----------
+   84213       secret.txt    118      2026-03-14 07:22:41
+
+4. FileSize 118바이트 = resident 확실 -&gt; 레코드 안에 내용이 있다
+
+5. MFTECmd.exe -f &quot;$MFT&quot; --csv out --csvf one.csv --de 84213
+   또는 HxD로 오프셋 계산: 84213 * 1024 = 86,234,112 (0x52 4E 00 0)
+   해당 위치에서 $DATA(0x80) 속성 뒤의 118바이트를 읽는다
+
+6. 내용: flag{res1dent_d4ta_in_mft}
+
+정답: flag{res1dent_d4ta_in_mft}</code></pre></div>
+<p>레코드 오프셋 = <code>EntryNumber × 레코드 크기(보통 1024)</code>. 이 계산 하나로 HxD에서 바로 점프할 수 있다.</p>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-005 — Microsoft Learn, Master File Table: 레코드 구조와 예약 레코드</li><li>SRC-014 — Microsoft Learn, File Times: FILETIME은 1601-01-01 UTC 기준 100ns 단위</li><li>SRC-004 — Eric Zimmerman 문서: MFTECmd 옵션 및 CSV 컬럼 정의</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./30sec-triage.html">
+    <span class="rel-id">FOR-0001 · 트리아지</span>
+    포렌식 문제 파일을 받았을 때 30초 트리아지
+  </a>
+  <a class="related-item" href="./userassist.html">
+    <span class="rel-id">FOR-0061 · Registry</span>
+    UserAssist로 사용자가 직접 실행한 프로그램 찾기
+  </a>
+  <a class="related-item" href="./usnjrnl-basics.html">
+    <span class="rel-id">FOR-0027 · 디스크/NTFS</span>
+    $UsnJrnl($J)로 삭제·생성·이름변경 흔적 복원하기
+  </a>
+  <a class="related-item" href="./wireshark-30sec-triage.html">
+    <span class="rel-id">FOR-0146 · Network/PCAP</span>
+    Wireshark 30초 트리아지: pcap을 받고 처음 할 다섯 가지
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./30sec-triage.html"><span class="rel-id">← FOR-0001</span>포렌식 문제 파일을 받았을 때 30초 트리아지</a>
+<a class="related-item" href="./usnjrnl-basics.html"><span class="rel-id">FOR-0027 →</span>$UsnJrnl($J)로 삭제·생성·이름변경 흔적 복원하기</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#개념">개념</a></li>
+<li class="toc-l2"><a href="#파일-경로">파일 / 경로</a></li>
+<li class="toc-l2"><a href="#주요-필드">주요 필드</a></li>
+<li class="toc-l3"><a href="#핵심-속성">핵심 속성</a></li>
+<li class="toc-l3"><a href="#resident-vs-non-resident">resident vs non-resident</a></li>
+<li class="toc-l2"><a href="#빠른-명령">빠른 명령</a></li>
+<li class="toc-l2"><a href="#함께-보는-artifact">함께 보는 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-실수">흔한 실수</a></li>
+<li class="toc-l2"><a href="#mini-example">mini example</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 02:32 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>포렌식 문제 파일을 받았을 때 30초 트리아지 · FOR-0001 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%ED%8A%B8%EB%A6%AC%EC%95%84%EC%A7%80">트리아지</a> / FOR-0001
+      </div>
+      <header class="article-head">
+        <h1>포렌식 문제 파일을 받았을 때 30초 트리아지</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">트리아지</span>
+      <span class="badge badge-type">트러블슈팅</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>확장자를 믿지 말고 file + 첫 64바이트 hex + strings 세 가지를 먼저 돌려서 &quot;무슨 파일인가&quot;를 확정한 뒤, 그 파일 종류에 맞는 전용 툴 한 개만 연다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>file, HxD, strings, exiftool, binwalk, DIE, 7-Zip</td></tr>
+<tr><th>파일 형식</th><td><code>pcap</code> · <code>pcapng</code> · <code>evtx</code> · <code>regf</code> · <code>sqlite</code> · <code>e01</code> · <code>zip</code> · <code>png</code> · <code>jpeg</code> · <code>pdf</code></td></tr>
+<tr><th>검색 별칭</th><td>30초 트리아지 · 문제 파일 받았을 때 · 뭐부터 해야 하나 · 파일 종류 모를 때 · 처음 시작 · first look</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>확장자를 믿지 말고 <code>file</code> + 첫 64바이트 hex + <code>strings</code> 세 가지를 먼저 돌려서 &quot;무슨 파일인가&quot;를 확정한 뒤, 그 파일 종류에 맞는 전용 툴 한 개만 연다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>첨부파일이 <code>evidence</code>, <code>dump</code>, <code>challenge.bin</code> 처럼 확장자가 없거나 거짓인 경우</li><li>첨부가 여러 개라서 어느 것부터 볼지 결정해야 하는 경우</li><li>문제 지문이 &quot;분석하시오&quot; 한 줄뿐이라 방향이 없는 경우</li></ul>
+<p>CTF 포렌식에서 가장 많이 낭비되는 시간은 잘못된 툴을 여는 데 쓰는 시간이다. 30초를 써서 파일 종류를 확정하면 나머지 절차가 전부 결정된다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li><strong>파일 크기</strong> — 수 MB면 문서/이미지/pcap, 수백 MB~수 GB면 디스크 이미지 또는 메모리 덤프</li><li><strong>파일 이름</strong> — <code>*.E01</code>, <code>*.raw</code>, <code>*.mem</code>, <code>*.pcapng</code>, <code>Security.evtx</code>, <code>NTUSER.DAT</code> 처럼 이름 자체가 정답인 경우가 많다</li><li><strong>첫 4~8바이트</strong> — 이름과 확장자가 모두 거짓이어도 매직 바이트는 거짓말하지 않는다</li><li><strong>문제 지문의 명사</strong> — &quot;사용자&quot;, &quot;USB&quot;, &quot;접속&quot;, &quot;다운로드&quot; 같은 단어가 어떤 artifact를 봐야 하는지 알려준다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">file target.bin
+xxd -l 64 target.bin
+strings -n 8 target.bin | head -40</code></pre></div>
+<p>Windows에서 <code>file</code>/<code>xxd</code>가 없을 때:</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Format-Hex -Path .\target.bin -Count 64
+Select-String -Path .\target.bin -Pattern &#39;flag|http|\.exe&#39; -Encoding Byte -AllMatches | Select-Object -First 20</code></pre></div>
+<p>GUI만 쓸 수 있으면 HxD로 열어 좌상단 16바이트만 읽는다. Detect It Easy(DIE)는 실행 파일/패커 판정에 특히 빠르다.</p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-매직-바이트로-종류-확정">1단계 — 매직 바이트로 종류 확정</h3>
+<div class="table-wrap"><table><thead><tr><th>매직 바이트 (hex)</th><th>ASCII</th><th>종류</th><th>다음에 열 툴</th></tr></thead><tbody><tr><td><code>D4 C3 B2 A1</code> / <code>A1 B2 C3 D4</code></td><td>—</td><td>pcap (libpcap)</td><td>Wireshark</td></tr><tr><td><code>4D 3C B2 A1</code></td><td>—</td><td>pcap, 나노초 정밀도</td><td>Wireshark</td></tr><tr><td><code>0A 0D 0D 0A</code></td><td>—</td><td>pcapng</td><td>Wireshark</td></tr><tr><td><code>45 6C 66 46 69 6C 65 00</code></td><td><code>ElfFile\0</code></td><td>Windows EVTX</td><td>EvtxECmd</td></tr><tr><td><code>72 65 67 66</code></td><td><code>regf</code></td><td>Registry hive</td><td>RegistryExplorer</td></tr><tr><td><code>53 51 4C 69 74 65 20 66</code></td><td><code>SQLite f</code></td><td>SQLite DB</td><td>DB Browser / sqlite3</td></tr><tr><td><code>46 49 4C 45</code></td><td><code>FILE</code></td><td>NTFS MFT 레코드</td><td>analyzeMFT / MFTECmd</td></tr><tr><td><code>45 56 46 09 0D 0A FF 00</code></td><td><code>EVF</code></td><td>EnCase E01 이미지</td><td>FTK Imager / Arsenal</td></tr><tr><td><code>50 4B 03 04</code></td><td><code>PK..</code></td><td>ZIP (docx/xlsx/apk/jar 포함)</td><td>7-Zip</td></tr><tr><td><code>D0 CF 11 E0 A1 B1 1A E1</code></td><td>—</td><td>구형 Office (doc/xls/msi)</td><td>oledump / Metadata++</td></tr><tr><td><code>25 50 44 46</code></td><td><code>%PDF</code></td><td>PDF</td><td>pdf 도구 / HxD</td></tr><tr><td><code>89 50 4E 47 0D 0A 1A 0A</code></td><td><code>.PNG</code></td><td>PNG</td><td>zsteg / pngcheck</td></tr><tr><td><code>FF D8 FF</code></td><td>—</td><td>JPEG</td><td>exiftool / steghide</td></tr><tr><td><code>4D 5A</code></td><td><code>MZ</code></td><td>Windows PE (exe/dll)</td><td>DIE / strings</td></tr><tr><td><code>7F 45 4C 46</code></td><td><code>.ELF</code></td><td>Linux 실행 파일</td><td>file / strings</td></tr><tr><td><code>1F 8B</code></td><td>—</td><td>gzip</td><td>gunzip</td></tr><tr><td><code>37 7A BC AF 27 1C</code></td><td><code>7z</code></td><td>7-Zip 아카이브</td><td>7-Zip</td></tr><tr><td><code>52 61 72 21 1A 07</code></td><td><code>Rar!</code></td><td>RAR</td><td>7-Zip</td></tr><tr><td>매직 없음, 크기 수 GB</td><td>—</td><td>RAW 디스크/메모리 덤프</td><td>mmls → Autopsy / Volatility 3</td></tr></tbody></table></div>
+<h3 id="2단계-종류가-정해지면-그-라인만-판다">2단계 — 종류가 정해지면 그 라인만 판다</h3>
+<ul><li><strong>pcap/pcapng</strong> → Wireshark: Statistics &gt; Protocol Hierarchy 부터 (<a href="./wireshark-30sec-triage.html">FOR-0146</a>)</li><li><strong>디스크 이미지</strong> → FTK Imager로 열고 파티션·사용자 폴더 확인</li><li><strong>메모리 덤프</strong> → <code>windows.info</code> 로 프로파일 확인 후 <code>windows.pslist</code> (<a href="./volatility-pslist.html">FOR-0214</a>)</li><li><strong>Registry hive</strong> → RegistryExplorer, 사용자 활동이면 NTUSER.DAT의 UserAssist (<a href="./userassist.html">FOR-0061</a>)</li><li><strong>EVTX</strong> → EvtxECmd로 CSV 변환 후 4624/4688/7045 검색</li><li><strong>이미지/오디오 단독</strong> → 스테가노 라인 (exiftool → strings → zsteg/steghide)</li></ul>
+<h3 id="3단계-strings로-공짜-단서-회수">3단계 — <code>strings</code>로 공짜 단서 회수</h3>
+<p><code>strings</code> 결과에서 다음이 보이면 바로 방향이 정해진다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">strings -n 8 target.bin | grep -Ei &#39;flag|password|http://|https://|\.php|C:\\\\Users|/home/&#39;</code></pre></div>
+<ul><li><code>C:\Users\&lt;이름&gt;\</code> → Windows 사용자 이름 확보</li><li><code>http://...</code> → 네트워크/브라우저 라인</li><li><code>flag{</code>, <code>FLAG{</code> → 운이 좋으면 여기서 끝난다</li><li>Base64처럼 보이는 긴 문자열 → 디코딩 후보</li></ul>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p><code>file</code> 출력에서 실제로 쓸 정보는 다음이다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">$ file evidence
+evidence: pcapng capture file - version 1.0
+
+$ file dump.bin
+dump.bin: data</code></pre></div>
+<ul><li>구체적인 포맷명이 나오면 그대로 신뢰한다.</li><li><code>data</code>라고만 나오면 <strong>매직 바이트가 없는 RAW</strong>라는 뜻이다. 디스크 이미지, 메모리 덤프, 암호화된 파일, 잘린 파일 중 하나다. 크기로 1차 판단하고 <code>mmls</code>/<code>windows.info</code>를 각각 시도한다.</li><li><code>file</code>이 확장자와 다른 답을 주면 <strong>확장자가 거짓</strong>이다. 이것 자체가 문제의 정답인 경우도 있다.</li></ul>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>1단계에서 확인된 것</th><th>다음 목표</th></tr></thead><tbody><tr><td>Windows 사용자 이름</td><td><code>NTUSER.DAT</code> → UserAssist / RecentDocs</td></tr><tr><td>URL / 도메인</td><td>브라우저 History → pcap 대조</td></tr><tr><td>실행 파일 이름</td><td>Prefetch → Amcache → EVTX 4688</td></tr><tr><td>삭제 파일 언급</td><td><code>$UsnJrnl</code> → <code>$Recycle.Bin</code></td></tr><tr><td>시간 값 하나</td><td>그 시각 ±5분의 모든 artifact</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>확장자를 믿는 것.</strong> <code>.jpg</code>인데 실제로는 ZIP인 경우가 CTF에서 매우 흔하다. 항상 hex를 본다.</li><li><strong>큰 파일을 GUI로 먼저 여는 것.</strong> 4 GB 덤프를 HxD로 열면 시간만 잃는다. <code>file</code>/<code>xxd -l 64</code>는 크기와 무관하게 즉시 끝난다.</li><li><strong>매직 바이트가 파일 중간에 있는 경우를 놓치는 것.</strong> 앞에 패딩이나 다른 파일이 붙어 있을 수 있다. <code>binwalk target.bin</code>으로 내부 시그니처를 전체 스캔한다.</li><li><strong>pcap의 엔디언 혼동.</strong> <code>D4 C3 B2 A1</code>과 <code>A1 B2 C3 D4</code>는 같은 pcap의 엔디언 차이일 뿐이다. 둘 다 Wireshark로 열린다.</li><li><strong><code>strings</code> 기본값이 ASCII만이라는 점.</strong> 한글/UTF-16 문자열은 <code>strings -el</code>(16비트 리틀엔디언)을 추가로 돌려야 보인다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<p>같은 결론을 두 가지 방법으로 확인한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) 시그니처 기반
+file target.bin
+
+# 2) 내부 시그니처 전체 스캔 — 앞부분이 위조되어도 잡힌다
+binwalk target.bin
+
+# 3) 엔트로피 — 0.99에 가까우면 암호화/압축, 낮으면 평문 구조
+binwalk -E target.bin</code></pre></div>
+<p>GUI에서는 DIE(Detect It Easy)가 <code>file</code>과 다른 판정을 내리는지 비교하면 위조 여부를 빠르게 안다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;직원 PC에서 수집한 자료입니다. 유출된 파일 이름을 찾으세요.&quot;
+첨부: artifact_01 (확장자 없음, 12 MB)
+
+1. file artifact_01
+   -&gt; &quot;artifact_01: data&quot;          (매직 없음. RAW 후보)
+
+2. xxd -l 64 artifact_01
+   -&gt; 00000000: 0a0d 0d0a ...      (0A 0D 0D 0A = pcapng!)
+   file이 못 잡은 이유: 헤더 앞에 4바이트 쓰레기가 붙어 있었음
+
+3. binwalk artifact_01
+   -&gt; 4  0x4  pcapng capture file  (오프셋 4에서 시작 확인)
+
+4. dd if=artifact_01 of=fixed.pcapng bs=1 skip=4
+   -&gt; Wireshark로 정상 오픈
+
+5. Statistics &gt; Protocol Hierarchy
+   -&gt; FTP 존재 확인
+
+6. 필터: ftp.request.command == &quot;STOR&quot;
+   -&gt; STOR 고객명단_2026.xlsx
+
+정답: 고객명단_2026.xlsx</code></pre></div>
+<p>핵심은 2단계였다. <code>file</code>이 <code>data</code>라고 답했을 때 포기하지 않고 hex를 직접 본 것이 결정적이었다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>binwalk target.bin</code> — 파일 안에 다른 파일이 숨어 있는가</li><li><code>strings -el target.bin</code> — UTF-16 문자열을 놓쳤는가</li><li>파일 <strong>끝</strong> 64바이트도 본다 (<code>xxd | tail -4</code>) — 뒤에 붙은 ZIP/주석이 흔하다</li><li>크기가 512 또는 4096의 배수인가 — 디스크 이미지/섹터 단위 데이터 신호</li><li>엔트로피가 0.99 부근인가 — 암호나 패스워드를 찾는 문제로 방향 전환</li><li>여러 첨부 중 <strong>가장 작은 파일</strong>을 먼저 본다 — 설명/힌트 파일인 경우가 많다</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-005 — Microsoft Learn, Master File Table (NTFS 시그니처 <code>FILE</code>)</li><li>SRC-014 — Microsoft Learn, File Times (FILETIME 기준 시각)</li><li>매직 바이트 값은 대상 파일을 HxD/<code>xxd</code>로 직접 열어 재확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./mft-basics.html">
+    <span class="rel-id">FOR-0021 · 디스크/NTFS</span>
+    $MFT 기본 구조와 포렌식 활용
+  </a>
+  <a class="related-item" href="./wireshark-30sec-triage.html">
+    <span class="rel-id">FOR-0146 · Network/PCAP</span>
+    Wireshark 30초 트리아지: pcap을 받고 처음 할 다섯 가지
+  </a>
+  <a class="related-item" href="./chrome-history.html">
+    <span class="rel-id">FOR-0191 · 브라우저/웹</span>
+    Chrome History DB 구조: urls / visits / downloads 읽기
+  </a>
+  <a class="related-item" href="./volatility-pslist.html">
+    <span class="rel-id">FOR-0214 · 메모리</span>
+    Volatility 3 windows.pslist로 메모리 덤프의 프로세스 목록 읽기
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<span></span>
+<a class="related-item" href="./mft-basics.html"><span class="rel-id">FOR-0021 →</span>$MFT 기본 구조와 포렌식 활용</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-매직-바이트로-종류-확정">1단계 — 매직 바이트로 종류 확정</a></li>
+<li class="toc-l3"><a href="#2단계-종류가-정해지면-그-라인만-판다">2단계 — 종류가 정해지면 그 라인만 판다</a></li>
+<li class="toc-l3"><a href="#3단계-strings로-공짜-단서-회수">3단계 — `strings`로 공짜 단서 회수</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 02:32 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>
