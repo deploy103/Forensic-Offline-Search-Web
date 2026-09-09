@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>EventRecordID로 이벤트 순서 확정하기: 같은 초의 인과와 번호 gap 판독 · FOR-0103 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Event%20Log">Event Log</a> / FOR-0103
+      </div>
+      <header class="article-head">
+        <h1>EventRecordID로 이벤트 순서 확정하기: 같은 초의 인과와 번호 gap 판독</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Event Log</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>EventRecordID 는 EVTX 파일(채널) 하나 안에서만 1부터 단조 증가하는 시퀀스이므로, 같은 초에 몰린 이벤트의 인과 순서는 TimeCreated 로는 알 수 없고 EventRecordID 로만 확정된다 — 번호의 빈 구간(gap)은 롤오버·로그 삭제·파일 손상 중 하나이고, 번호가 갑자기 낮아지면 로그가 지워지고 새 파일로 다시 시작된 것이다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>EvtxECmd, Timeline Explorer, PowerShell, wevtutil, Event Viewer</td></tr>
+<tr><th>artifact</th><td><code>EventRecordID</code> · <code>EVTX</code> · <code>ElfFile</code> · <code>ElfChnk</code> · <code>EVTX chunk</code> · <code>Security.evtx</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Windows\System32\winevt\Logs</code> · <code>C:\Windows\System32\winevt\Logs\Security.evtx</code></td></tr>
+<tr><th>regex</th><td><code>&lt;EventRecordID&gt;(\d+)&lt;/EventRecordID&gt;</code></td></tr>
+<tr><th>로그 필드</th><td><code>EventRecordID</code> · <code>EventRecordId</code> · <code>RecordId</code> · <code>TimeCreated</code> · <code>SystemTime</code> · <code>ChunkNumber</code> · <code>Channel</code></td></tr>
+<tr><th>파일 형식</th><td><code>evtx</code> · <code>csv</code></td></tr>
+<tr><th>검색 별칭</th><td>EventRecordID · 이벤트 레코드 번호 · 같은 초 순서 · 이벤트 순서 정하기 · 레코드 번호 비어 있음 · 로그 지운 구간 · evtx 손상</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>EventRecordID</code> 는 EVTX 파일(채널) 하나 안에서만 1부터 단조 증가하는 시퀀스이므로, <strong>같은 초에 몰린 이벤트의 인과 순서는 <code>TimeCreated</code> 로는 알 수 없고 <code>EventRecordID</code> 로만 확정된다</strong> — 번호의 빈 구간(gap)은 롤오버·로그 삭제·파일 손상 중 하나이고, 번호가 갑자기 낮아지면 로그가 지워지고 새 파일로 다시 시작된 것이다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;A가 먼저인가 B가 먼저인가&quot;를 물어보는 문제인데 두 이벤트의 <code>TimeCreated</code> 가 <strong>같은 초</strong>다</li><li>로그온(4624) 직후 프로세스 생성(4688)이 같은 초에 있어 &quot;로그온 후 실행&quot;인지 &quot;실행 후 로그온&quot;인지 판정해야 한다</li><li>특정 시각 구간의 이벤트가 사라진 것 같은데, 삭제인지 롤오버인지 구분해야 한다</li><li>&quot;이 로그는 언제부터 언제까지를 담고 있는가&quot;를 근거와 함께 답해야 한다 (없다는 사실을 증거로 쓰려면 이 계산이 먼저다)</li><li>EVTX 파일이 손상되어 파서가 중간에 멈춘다 — 어디까지 읽혔는지 번호로 확인해야 한다</li></ul>
+<p><code>TimeCreated</code> 의 <code>SystemTime</code> 은 100ns 정밀도를 가지지만, <strong>도구가 CSV로 내보낼 때 초 단위로 잘려 나오는 경우가 많다.</strong> 잘린 시각으로 정렬하면 같은 초 안의 순서는 정렬 알고리즘이 정하는 임의 순서가 된다. 그래서 순번이 필요하다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>정답 후보 두 이벤트의 시각이 초까지 동일하다 → <code>EventRecordID</code> 비교 확정</li><li>시간순 서술을 요구하는데 이벤트가 초당 수십 개다 → 시각 + 번호 이중 정렬</li><li>&quot;언제 로그를 지웠나&quot; / &quot;지운 구간을 추정하라&quot; → 번호 gap과 번호 급락</li><li>파서가 <code>n</code> 건만 읽고 끝났다 → 마지막으로 읽힌 번호와 파일 크기 대조</li><li>여러 채널을 합쳐 놓았다 → <strong>채널별로 번호가 독립</strong>이므로 채널 컬럼 없이는 정렬 자체가 무의미</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">EvtxECmd.exe -f &#39;C:\case\Security.evtx&#39; --csv &#39;C:\case\out&#39; --csvf sec.csv</code></pre></div>
+<p>CSV가 나오면 <strong>시각 다음에 번호</strong>로 이중 정렬한다. 이 두 줄이 이 글의 전부다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Import-Csv &#39;C:\case\out\sec.csv&#39; |
+  Sort-Object { $_.Channel }, { [datetime]$_.TimeCreated }, { [int64]$_.EventRecordId } |
+  Format-Table EventRecordId, TimeCreated, Channel, EventId, UserName, MapDescription</code></pre></div>
+<p>CSV 없이 원본 EVTX만 있을 때:</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Get-WinEvent -Path &#39;C:\case\Security.evtx&#39; -Oldest |
+  Select-Object RecordId, TimeCreated, Id, ProviderName |
+  Sort-Object RecordId | Format-Table -AutoSize</code></pre></div>
+<p><code>Get-WinEvent -Path</code> 는 기본이 <strong>최신순</strong>이다. <code>-Oldest</code> 를 빠뜨리면 화면 순서가 실제 발생 순서의 역순이 되어 그대로 오답이 된다.</p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-eventrecordid-의-성질-확정">1단계 — EventRecordID 의 성질 확정</h3>
+<p>원본 XML의 위치는 <code>Event/System/EventRecordID</code> 다. 표기가 도구마다 달라지므로 표로 고정한다.</p>
+<div class="table-wrap"><table><thead><tr><th>표기</th><th>어디서 보이나</th><th>비고</th></tr></thead><tbody><tr><td><code>EventRecordID</code></td><td>원본 EVTX XML (<code>wevtutil qe ... /f:xml</code>, Event Viewer의 XML 탭)</td><td><strong>정식 이름.</strong> <code>ID</code> 가 대문자</td></tr><tr><td><code>EventRecordId</code></td><td>EvtxECmd CSV 컬럼</td><td>마지막 <code>d</code> 가 소문자. 컬럼명은 버전에 따라 다를 수 있다</td></tr><tr><td><code>RecordId</code></td><td><code>Get-WinEvent</code> 가 돌려주는 객체의 속성</td><td>.NET <code>EventRecord</code> 의 속성명</td></tr><tr><td><code>EventRecordNumber</code></td><td>일부 서드파티 파서</td><td>같은 값을 가리킨다</td></tr></tbody></table></div>
+<p>성질:</p>
+<div class="table-wrap"><table><thead><tr><th>성질</th><th>내용</th><th>실전 의미</th></tr></thead><tbody><tr><td>범위</td><td><strong>채널(= evtx 파일) 단위</strong></td><td>Security의 1,000번과 System의 1,000번은 무관</td></tr><tr><td>증가 방향</td><td>기록되는 순서대로 단조 증가 (1부터)</td><td>작을수록 과거</td></tr><tr><td>재사용</td><td>없음. 같은 파일에서 같은 번호가 두 번 나오지 않는다</td><td>중복 행이 보이면 CSV를 두 번 합친 것</td></tr><tr><td>크기</td><td>64비트 정수</td><td>문자열 정렬하면 <code>9</code> &gt; <code>10</code> 이 된다. 반드시 <code>[int64]</code> 캐스팅</td></tr><tr><td>초기화</td><td>로그를 지우면(1102/104) 새 파일이 만들어지고 <strong>1부터 다시 시작</strong></td><td>번호 급락의 원인</td></tr><tr><td>롤오버</td><td>파일이 꽉 차면 오래된 레코드부터 밀려난다. 번호는 계속 커진다</td><td>첫 레코드 번호가 1이 아니면 이미 밀려난 것</td></tr></tbody></table></div>
+<h3 id="2단계-같은-초-순서-확정">2단계 — 같은 초 순서 확정</h3>
+<p>시각으로 1차 정렬, 번호로 2차 정렬한다. 순서를 반대로 하면 안 된다 — 채널이 섞여 있으면 번호 우선 정렬이 채널 간 순서를 조작해 버린다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 사건 시각 07:19:0x 초 안에 몰린 이벤트의 실제 순서
+Import-Csv &#39;C:\case\out\sec.csv&#39; |
+  Where-Object { $_.Channel -eq &#39;Security&#39; -and $_.TimeCreated -like &#39;2026-03-14 07:19:0*&#39; } |
+  Sort-Object { [int64]$_.EventRecordId } |
+  Format-Table EventRecordId, TimeCreated, EventId, UserName, MapDescription</code></pre></div>
+<p>출력 예시:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">EventRecordId TimeCreated            EventId UserName    MapDescription
+1184571       2026-03-14 07:19:02Z   4624    svc_backup  Logon Type 10 (RemoteInteractive)
+1184572       2026-03-14 07:19:02Z   4672    svc_backup  Special privileges assigned
+1184573       2026-03-14 07:19:02Z   4688    svc_backup  cmd.exe
+1184574       2026-03-14 07:19:02Z   4688    svc_backup  powershell.exe</code></pre></div>
+<p>네 이벤트가 모두 <code>07:19:02Z</code> 다. 시각만으로는 &quot;관리자 권한이 로그온보다 먼저 부여됐다&quot;는 불가능한 서술이 나올 수 있다. 번호가 4624 → 4672 → 4688 순서를 확정한다.</p>
+<p>원본 XML에서 직접 100ns 정밀도의 시각을 꺼내 검증할 수도 있다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Get-WinEvent -Path &#39;C:\case\Security.evtx&#39; -Oldest -FilterXPath &#39;*[System[(EventID=4688)]]&#39; |
+  ForEach-Object {
+    $x = [xml]$_.ToXml()
+    [pscustomobject]@{
+      RecordId   = $_.RecordId
+      SystemTime = $x.Event.System.TimeCreated.SystemTime
+      EventId    = $_.Id
+    }
+  } | Format-Table -AutoSize</code></pre></div>
+<p><code>SystemTime</code> 은 <code>2026-03-14T07:19:02.4718235Z</code> 처럼 소수부까지 나온다. <strong>여기서도 두 이벤트의 소수부가 동일하면 번호가 유일한 근거다.</strong></p>
+<h3 id="3단계-gap번호-불연속-탐지">3단계 — gap(번호 불연속) 탐지</h3>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$ids = Import-Csv &#39;C:\case\out\sec.csv&#39; |
+  Where-Object { $_.Channel -eq &#39;Security&#39; } |
+  ForEach-Object { [int64]$_.EventRecordId } |
+  Sort-Object
+
+for ($i = 1; $i -lt $ids.Count; $i++) {
+  $d = $ids[$i] - $ids[$i - 1]
+  if ($d -ne 1) {
+    &#39;{0} -&gt; {1} : {2} records missing&#39; -f $ids[$i - 1], $ids[$i], ($d - 1)
+  }
+}</code></pre></div>
+<p>출력 예시:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1184610 -&gt; 1185204 : 593 records missing</code></pre></div>
+<p>gap이 나왔다면 <strong>원인을 반드시 하나로 확정한다.</strong> 원인별 판별표다.</p>
+<div class="table-wrap"><table><thead><tr><th>gap의 원인</th><th>판별 근거</th><th>추가 확인</th></tr></thead><tbody><tr><td>롤오버</td><td>파일 <strong>앞부분</strong>(첫 레코드 번호 &gt; 1)에서만 잘린다. 중간 gap은 만들지 않는다</td><td>첫 레코드 번호와 파일 크기</td></tr><tr><td>로그 삭제</td><td>삭제 후에는 번호가 <strong>1로 재시작</strong>한다. 같은 파일 안의 중간 gap이 아니다</td><td>1102(Security 감사 로그 지움), 104(다른 채널 지움)</td></tr><tr><td>선택적 레코드 제거(도구 사용)</td><td>파일 <strong>중간</strong>에 gap이 있으면서 시각은 연속</td><td>청크 헤더의 첫/마지막 레코드 번호와 실제 레코드 대조</td></tr><tr><td>파일 손상</td><td>파서가 특정 청크에서 오류를 뱉고 그 구간이 통째로 빈다</td><td>EvtxECmd 콘솔 경고, <code>ChunkNumber</code> 컬럼의 불연속</td></tr><tr><td>필터 걸린 CSV</td><td><code>--inc</code> 로 특정 이벤트만 뽑았다</td><td><strong>가장 흔한 착각.</strong> 필터 없이 다시 뽑아 비교</td></tr></tbody></table></div>
+<p><strong>필터 걸린 CSV로 gap을 판정하는 것이 이 절차의 최대 오답 경로다.</strong> <code>--inc 4624,4688</code> 로 뽑은 CSV는 당연히 번호가 촘촘히 빈다. gap 판정은 항상 <strong>필터 없는 전체 CSV</strong>로 한다.</p>
+<h3 id="4단계-번호-급락-로그가-지워지고-새로-시작됐다">4단계 — 번호 급락 = 로그가 지워지고 새로 시작됐다</h3>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 번호가 앞 행보다 작아지는 지점을 찾는다 (기록 순서대로 읽었을 때)
+$rows = Import-Csv &#39;C:\case\out\sec.csv&#39; |
+  Where-Object { $_.Channel -eq &#39;Security&#39; } |
+  Sort-Object { [datetime]$_.TimeCreated }
+
+for ($i = 1; $i -lt $rows.Count; $i++) {
+  if ([int64]$rows[$i].EventRecordId -lt [int64]$rows[$i - 1].EventRecordId) {
+    &#39;{0} : {1} -&gt; {2}  (RESET)&#39; -f $rows[$i].TimeCreated, $rows[$i - 1].EventRecordId, $rows[$i].EventRecordId
+  }
+}</code></pre></div>
+<p>시각은 앞으로 가는데 번호가 뒤로 가는 지점은 <strong>파일이 교체된 지점</strong>이다. 실전에서 이런 조합이 나온다.</p>
+<div class="table-wrap"><table><thead><tr><th>관찰</th><th>해석</th></tr></thead><tbody><tr><td>마지막 번호 1,185,204 → 다음 번호 1</td><td>로그 전체 삭제. 1102 또는 104가 새 파일의 <strong>1번 또는 2번 레코드</strong>로 남는다</td></tr><tr><td>새 파일의 1번 레코드가 1102 자체</td><td>지운 행위만 남고 그 이전은 전부 소실</td></tr><tr><td>새 파일의 1번 레코드가 1102가 아니다</td><td>백업/보관 파일(<code>Archive-Security-*.evtx</code>)이 별도로 있는지 확인</td></tr><tr><td>번호가 1이 아니라 중간값에서 시작</td><td>삭제가 아니라 <strong>일부만 추출한 파일</strong>(CTF 출제자가 잘라 낸 것)</td></tr></tbody></table></div>
+<p><code>1102</code> 는 Security 채널의 &quot;감사 로그를 지웠다&quot;, <code>104</code> 는 <code>Microsoft-Windows-Eventlog</code> 공급자가 System 채널에 남기는 &quot;로그 파일을 지웠다&quot;다. 지워진 채널 이름은 104의 payload에 들어간다.</p>
+<h3 id="5단계-로그-보존-구간-계산">5단계 — 로그 보존 구간 계산</h3>
+<p>&quot;그 시각에는 로그가 없었다&quot;를 근거 있게 말하려면 첫/마지막 레코드의 번호와 시각이 필요하다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$rows = Import-Csv &#39;C:\case\out\sec.csv&#39; |
+  Where-Object { $_.Channel -eq &#39;Security&#39; } |
+  Sort-Object { [int64]$_.EventRecordId }
+
+[pscustomobject]@{
+  FirstRecordId = $rows[0].EventRecordId
+  FirstTimeUTC  = $rows[0].TimeCreated
+  LastRecordId  = $rows[-1].EventRecordId
+  LastTimeUTC   = $rows[-1].TimeCreated
+  RecordCount   = $rows.Count
+  SpanHours     = [math]::Round((([datetime]$rows[-1].TimeCreated) - ([datetime]$rows[0].TimeCreated)).TotalHours, 2)
+} | Format-List</code></pre></div>
+<p>출력 예시와 해석:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">FirstRecordId : 1102841
+FirstTimeUTC  : 2026-03-12 22:04:11
+LastRecordId  : 1185204
+LastTimeUTC   : 2026-03-14 07:45:11
+RecordCount   : 82364
+SpanHours     : 33.68</code></pre></div>
+<ul><li>첫 번호가 1이 아니다 → <strong>롤오버가 이미 일어났다.</strong> 2026-03-12 22:04:11Z 이전은 관측 불가</li><li><code>LastRecordId - FirstRecordId + 1 = 82,364</code> 가 <code>RecordCount</code> 와 일치 → <strong>중간 gap 없음</strong>. 불일치하면 그 차이가 사라진 레코드 수다</li><li>관측 구간: 2026-03-12 22:04Z ~ 2026-03-14 07:45Z. KST로는 2026-03-13 07:04 ~ 2026-03-14 16:45</li></ul>
+<p><strong>EVTX 내부 <code>SystemTime</code> 은 UTC다.</strong> EvtxECmd CSV도 UTC로 출력한다. 답을 KST로 요구하면 <strong>+9시간</strong>을 더한다. 위 구간을 KST로 쓰지 않고 UTC로 제출하면 9시간 어긋난 답이 된다.</p>
+<p>로그 크기 설정도 함께 본다. 롤오버 여부의 확증이다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 라이브 시스템에서 채널의 최대 크기와 보존 정책
+wevtutil gl Security</code></pre></div>
+<p>오프라인 이미지라면 <code>SYSTEM</code> hive의 <code>ControlSet00X\Services\EventLog\Security</code> 아래 <code>MaxSize</code> 값을 본다. 기본값은 Windows 버전에 따라 다르므로 <strong>실제 값을 읽어서</strong> 인용한다.</p>
+<h3 id="6단계-채널이-다르면-번호로-비교할-수-없다">6단계 — 채널이 다르면 번호로 비교할 수 없다</h3>
+<p>이 절이 이 글에서 가장 자주 틀리는 부분이다.</p>
+<div class="table-wrap"><table><thead><tr><th>비교 대상</th><th>번호 비교 가능?</th><th>대안</th></tr></thead><tbody><tr><td>Security의 4624 ↔ Security의 4688</td><td>가능</td><td>그대로 <code>EventRecordId</code></td></tr><tr><td>Security의 4688 ↔ PowerShell/Operational의 4104</td><td><strong>불가능</strong></td><td>시각(소수부까지) + 인과 규칙</td></tr><tr><td>Security의 4624 ↔ TerminalServices의 21</td><td><strong>불가능</strong></td><td>시각 + <code>SessionID</code>/계정 일치</td></tr><tr><td>같은 채널의 백업 파일 ↔ 현재 파일</td><td>조건부</td><td>같은 파일 계보라면 번호 연속. 지운 뒤라면 불연속</td></tr></tbody></table></div>
+<p>채널 간 순서는 <strong>필연적 인과</strong>로 정한다.</p>
+<div class="table-wrap"><table><thead><tr><th>관계</th><th>필연적 순서</th></tr></thead><tbody><tr><td>4624(로그온) → 그 <code>TargetLogonId</code> 를 가진 모든 이벤트</td><td>로그온이 먼저</td></tr><tr><td>4688(프로세스 생성) → 그 프로세스가 남긴 4104/Sysmon 이벤트</td><td>생성이 먼저</td></tr><tr><td>7045(서비스 설치) → 4624 Type 5(서비스 로그온)</td><td>설치가 먼저</td></tr><tr><td>1102(로그 지움) → 같은 채널의 다른 이벤트</td><td>1102 이후 번호는 재시작된 파일의 것</td></tr></tbody></table></div>
+<p>디스크 artifact와의 순서 판정은 별도 문제다. <code>$MFT</code>/<code>$J</code> 축과 EVTX 축을 하나로 합치는 방법은 <a href="./ntfs-artifact-timeline.html">FOR-0050</a>에 있다. 이 글은 EVTX 안에서의 순서만 다룬다.</p>
+<h3 id="7단계-청크-구조와-손상-시-부분-복구">7단계 — 청크 구조와 손상 시 부분 복구</h3>
+<p>EVTX는 <strong>고정 크기 블록</strong> 구조다. 손상되어도 살아 있는 블록은 그대로 읽힌다.</p>
+<div class="table-wrap"><table><thead><tr><th>구조</th><th>크기</th><th>시그니처</th><th>담고 있는 것</th></tr></thead><tbody><tr><td>파일 헤더</td><td>4,096바이트</td><td><code>ElfFile\x00</code></td><td>첫/마지막 청크 번호, 다음 레코드 식별자, dirty 플래그</td></tr><tr><td>청크</td><td>65,536바이트 (64KB)</td><td><code>ElfChnk\x00</code></td><td>청크 헤더 + 그 청크에 속한 이벤트 레코드들</td></tr><tr><td>청크 헤더</td><td>청크 앞부분</td><td>—</td><td>그 청크의 <strong>첫/마지막 레코드 번호와 식별자</strong></td></tr><tr><td>이벤트 레코드</td><td>가변</td><td><code>2A 2A 00 00</code></td><td>레코드 식별자, 시각, BinXML 본문</td></tr></tbody></table></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 파일 시그니처 확인 (ElfFile 이 보여야 정상 EVTX)
+Format-Hex -Path &#39;C:\case\Security.evtx&#39; -Count 64</code></pre></div>
+<p>손상 대응 순서:</p>
+<ol><li><code>EvtxECmd.exe -f ...</code> 를 그냥 돌린다. 파서가 <strong>읽을 수 있는 레코드만</strong> 뽑고 오류를 콘솔에 남긴다. 이것만으로 대부분 해결된다</li><li>마지막으로 읽힌 <code>EventRecordId</code> 를 확인한다. 파일 크기 / 65,536 으로 총 청크 수를 추정해 어느 지점에서 멈췄는지 본다</li><li>청크 단위로 남아 있으므로, 손상 구간 <strong>이후</strong>의 청크에도 유효한 레코드가 있을 수 있다. 파서가 첫 오류에서 멈췄다면 파일을 잘라 뒤쪽만 따로 넣어 본다</li><li>파일 헤더의 dirty 플래그가 서 있으면 로그 서비스가 정상 종료되지 않은 것이다. 마지막 청크의 레코드가 헤더에 반영되지 않았을 수 있다</li></ol>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 총 청크 수 추정 (헤더 4096바이트 제외)
+$len = (Get-Item &#39;C:\case\Security.evtx&#39;).Length
+[math]::Floor(($len - 4096) / 65536)</code></pre></div>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="table-wrap"><table><thead><tr><th>컬럼 / 필드</th><th>읽는 법</th></tr></thead><tbody><tr><td><code>EventRecordId</code></td><td><strong>채널 내부의 순번.</strong> <code>[int64]</code> 로 캐스팅해서 정렬</td></tr><tr><td><code>TimeCreated</code></td><td>UTC. CSV에서는 초 단위로 잘려 나올 수 있다</td></tr><tr><td><code>Channel</code></td><td>번호 비교의 유효 범위. <strong>이 컬럼 없이 합친 CSV는 정렬 불가</strong></td></tr><tr><td><code>ChunkNumber</code></td><td>그 레코드가 있던 청크 번호. 손상 구간 특정에 쓴다 (컬럼 존재 여부는 버전에 따라 다르다)</td></tr><tr><td><code>SourceFile</code></td><td>어느 evtx 파일에서 왔는지. 여러 파일을 합쳤을 때 채널 판정 보조</td></tr><tr><td><code>RecordNumber</code></td><td>일부 EvtxECmd 버전이 함께 내보내는 별도 순번. <code>EventRecordId</code> 와 값이 다를 수 있으므로 <strong>하나를 정해서 끝까지 쓴다</strong></td></tr><tr><td><code>EventId</code></td><td>이벤트 종류. 번호와 무관</td></tr></tbody></table></div>
+<p><code>Get-Member</code> 로 실제 컬럼명을 먼저 확인하고 스크립트를 맞춘다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Import-Csv &#39;C:\case\out\sec.csv&#39; | Select-Object -First 1 | Get-Member -MemberType NoteProperty</code></pre></div>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>여기서 얻은 것</th><th>다음 목표</th><th>무엇을 확인하나</th></tr></thead><tbody><tr><td>확정된 이벤트 순서</td><td>4624의 <code>TargetLogonId</code> (<a href="./event-4624-logon.html">FOR-0083</a>)</td><td>그 순서 안의 세션 활동 전체</td></tr><tr><td>중간 gap</td><td>1102 / 104 / 4719 / 1100</td><td>삭제·정책변경·서비스중지 중 무엇인가</td></tr><tr><td>번호 1로 재시작</td><td>재시작 직전 시각</td><td>삭제 시점 확정</td></tr><tr><td>첫 레코드 번호 &gt; 1</td><td><code>MaxSize</code> 설정, 백업 evtx 파일</td><td>관측 구간 하한 확정</td></tr><tr><td>관측 구간 밖의 사건</td><td><code>$MFT</code> / <code>$J</code> / Prefetch (<a href="./ntfs-artifact-timeline.html">FOR-0050</a>)</td><td>로그 없이 그 시각을 메운다</td></tr><tr><td>손상 청크</td><td>같은 시각의 다른 채널</td><td>같은 사건의 중복 기록</td></tr><tr><td>특정 번호 구간</td><td>원본 XML (<code>wevtutil qe</code>)</td><td>CSV에서 잘린 필드 원본 확인</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>EventRecordId</code> 를 문자열로 정렬하는 것.</strong> <code>1184571</code> 과 <code>999999</code> 를 문자열 비교하면 <code>999999</code> 가 더 크다고 나온다. → CSV의 모든 값은 문자열이다. <code>[int64]$_.EventRecordId</code> 로 캐스팅한다.</li><li><strong>채널 간에 번호를 비교하는 것.</strong> 번호는 파일별로 독립 증가한다. Security 1,000번이 System 999번보다 나중이라는 근거는 없다. → 채널로 먼저 그룹핑하고, 채널 간 순서는 시각과 인과로 정한다.</li><li><strong>필터 걸린 CSV로 gap을 판정하는 것.</strong> <code>--inc</code> 나 <code>Where-Object</code> 로 걸러낸 결과는 원래 번호가 빈다. → gap 판정은 필터 없는 전체 CSV에서만 한다.</li><li><strong>gap을 무조건 &quot;로그 삭제&quot;로 읽는 것.</strong> 삭제는 gap을 만들지 않고 <strong>번호를 1로 되돌린다.</strong> 중간 gap은 손상 또는 선택적 제거의 신호다. → 위 3단계 판별표로 원인을 하나로 좁힌다.</li><li><strong>번호가 1부터 시작하지 않는 것을 삭제로 읽는 것.</strong> 롤오버가 정상 동작이다. → <code>MaxSize</code> 와 첫 레코드 시각을 함께 제시해 롤오버임을 증명한다.</li><li><strong><code>Get-WinEvent -Path</code> 에서 <code>-Oldest</code> 를 빠뜨리는 것.</strong> 기본이 최신순이라 화면 순서가 역순이다. 그대로 &quot;첫 이벤트&quot;라고 쓰면 실제로는 마지막 이벤트다. → <code>-Oldest</code> 를 붙이거나 <code>Sort-Object RecordId</code> 를 반드시 건다.</li><li><strong><code>TimeCreated</code> 만으로 인과를 서술하는 것.</strong> CSV의 시각은 초 단위로 잘려 나오는 경우가 많다. 같은 초 안에서는 정렬이 임의 순서다. → 시각 + 번호 이중 정렬을 습관으로 한다.</li><li><strong>UTC/KST 혼동.</strong> EVTX <code>SystemTime</code> 은 UTC이고 Event Viewer는 로컬 시간대로 변환해 보여준다. 같은 레코드가 두 화면에서 다른 시각으로 보인다. → 축은 UTC로 고정하고 답을 낼 때만 +9시간.</li><li><strong>여러 evtx를 합친 CSV에 <code>Channel</code> 컬럼을 남기지 않는 것.</strong> 정렬 근거가 사라진다. → 합칠 때 <code>Channel</code> 과 <code>SourceFile</code> 을 반드시 보존한다.</li><li><strong>번호 중복 행을 그냥 두는 것.</strong> 같은 채널에서 같은 번호가 두 번 나오면 CSV를 두 번 이어 붙인 것이다. → <code>Sort-Object EventRecordId -Unique</code> 로 확인한다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) 번호 연속성: 이론상 개수와 실제 개수가 같은가
+$ids = Import-Csv &#39;C:\case\out\sec.csv&#39; |
+  Where-Object { $_.Channel -eq &#39;Security&#39; } |
+  ForEach-Object { [int64]$_.EventRecordId } | Sort-Object
+&#39;span={0} count={1} missing={2}&#39; -f ($ids[-1] - $ids[0] + 1), $ids.Count, (($ids[-1] - $ids[0] + 1) - $ids.Count)
+
+# 2) 중복 번호 확인 (CSV 이중 병합 사고)
+$ids | Group-Object | Where-Object { $_.Count -gt 1 } | Select-Object Name, Count
+
+# 3) 삭제·정책변경·서비스중지 이벤트가 gap 시각과 맞는가
+Import-Csv &#39;C:\case\out\sec.csv&#39; |
+  Where-Object { $_.EventId -in 1102,104,1100,4719 } |
+  Select-Object EventRecordId, TimeCreated, Channel, EventId, UserName |
+  Sort-Object { [datetime]$_.TimeCreated }
+
+# 4) 원본 XML 에서 같은 번호의 레코드를 직접 확인
+wevtutil qe &#39;C:\case\Security.evtx&#39; /lf:true /q:&quot;*[System[(EventRecordID=1184573)]]&quot; /f:xml
+
+# 5) 100ns 정밀도 시각으로 번호 순서를 재확인
+Get-WinEvent -Path &#39;C:\case\Security.evtx&#39; -Oldest |
+  Where-Object { $_.RecordId -ge 1184571 -and $_.RecordId -le 1184574 } |
+  ForEach-Object {
+    $x = [xml]$_.ToXml()
+    [pscustomobject]@{ RecordId = $_.RecordId; SystemTime = $x.Event.System.TimeCreated.SystemTime; Id = $_.Id }
+  } | Format-Table -AutoSize</code></pre></div>
+<p>4번의 <code>wevtutil</code> XPath는 <code>EventRecordID</code> (대문자 ID)로 써야 한다. CSV 컬럼명(<code>EventRecordId</code>)을 그대로 넣으면 아무것도 안 나온다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;침해 호스트의 Security.evtx 입니다.
+ (1) 공격자가 관리자 권한을 얻은 것은 RDP 로그온 전인가 후인가
+ (2) 로그가 지워진 구간의 길이를 추정하세요
+ 첨부: Security.evtx&quot;
+
+1. EvtxECmd.exe -f &#39;C:\case\Security.evtx&#39; --csv &#39;C:\case\out&#39; --csvf sec.csv
+   -&gt; 82,364 행
+
+2. 첫 시도 (실패):
+   Import-Csv out\sec.csv |
+     Where-Object { $_.EventId -in 4624,4672 } |
+     Sort-Object TimeCreated |
+     Format-Table TimeCreated, EventId, UserName
+
+   TimeCreated            EventId UserName
+   2026-03-14 07:19:02Z   4672    svc_backup
+   2026-03-14 07:19:02Z   4624    svc_backup
+
+   -&gt; &quot;4672 가 먼저&quot; 라고 읽고 &quot;권한 상승 후 로그온&quot; 이라고 답했다. 오답.
+
+   무엇이 틀렸나:
+     두 행의 TimeCreated 가 초까지 동일하다.
+     Sort-Object TimeCreated 는 동률일 때 원래 순서를 보장하지 않는다.
+     CSV 의 시각은 초 단위로 잘려 있어 소수부 비교도 불가능했다.
+
+3. 접근 변경 — EventRecordId 로 정렬
+   Import-Csv out\sec.csv |
+     Where-Object { $_.EventId -in 4624,4672 -and $_.TimeCreated -like &#39;*07:19:02*&#39; } |
+     Sort-Object { [int64]$_.EventRecordId } |
+     Format-Table EventRecordId, TimeCreated, EventId, UserName
+
+   EventRecordId TimeCreated            EventId UserName
+   1184571       2026-03-14 07:19:02Z   4624    svc_backup
+   1184572       2026-03-14 07:19:02Z   4672    svc_backup
+
+   -&gt; 4624 가 1184571, 4672 가 1184572.
+      로그온이 먼저이고 그 로그온에 특수 권한이 부여된 것이다. (1) 해결: 로그온 후.
+
+   원본 XML 로 확증:
+     RecordId 1184571 SystemTime 2026-03-14T07:19:02.4718235Z
+     RecordId 1184572 SystemTime 2026-03-14T07:19:02.4903117Z
+   소수부까지 순서가 일치한다.
+
+4. 두 번째 문제 — gap 을 찾는다
+   $ids = Import-Csv out\sec.csv | Where-Object { $_.Channel -eq &#39;Security&#39; } |
+            ForEach-Object { [int64]$_.EventRecordId } | Sort-Object
+   &#39;span={0} count={1}&#39; -f ($ids[-1]-$ids[0]+1), $ids.Count
+   -&gt; span=82364 count=82364
+
+   중간 gap 이 없다. &quot;로그를 안 지웠다&quot; 로 결론? 아니다.
+
+5. 두 번째 실패 — 번호 급락을 안 봤다
+   시각순으로 읽으면서 번호가 뒤로 가는 지점을 찾는다.
+
+   $rows = Import-Csv out\sec.csv | Where-Object { $_.Channel -eq &#39;Security&#39; } |
+             Sort-Object { [datetime]$_.TimeCreated }
+   for ($i=1; $i -lt $rows.Count; $i++) {
+     if ([int64]$rows[$i].EventRecordId -lt [int64]$rows[$i-1].EventRecordId) {
+       &#39;{0} : {1} -&gt; {2}&#39; -f $rows[$i].TimeCreated, $rows[$i-1].EventRecordId, $rows[$i].EventRecordId
+     }
+   }
+   -&gt; 아무것도 안 나온다.
+
+   그래서 첫 레코드를 봤다.
+   $rows[0] : EventRecordId=1102841  TimeCreated=2026-03-12 22:04:11Z
+   -&gt; 첫 번호가 1 이 아니다. 이 파일은 롤오버된 파일이다.
+      즉 &quot;지운 흔적&quot;은 이 파일 안에 없고, 이 파일 자체가 삭제 이후의 파일도 아니다.
+
+6. 1102 를 직접 찾는다
+   Import-Csv out\sec.csv | Where-Object { $_.EventId -eq 1102 } |
+     Select-Object EventRecordId, TimeCreated, UserName
+
+   EventRecordId TimeCreated            UserName
+   1185204       2026-03-14 07:45:11Z   svc_backup
+
+   1185204 = LastRecordId. 즉 1102 가 이 파일의 마지막 레코드다.
+   =&gt; 07:45:11Z 에 로그를 지웠고, 그 이후에 만들어진 새 파일은 첨부에 없다.
+      우리가 가진 것은 삭제 직전까지의 파일(백업본)이다.
+
+7. 보존 구간과 삭제 구간 계산
+   FirstRecordId 1102841  2026-03-12 22:04:11Z  (= 2026-03-13 07:04:11 KST)
+   LastRecordId  1185204  2026-03-14 07:45:11Z  (= 2026-03-14 16:45:11 KST)
+   중간 gap 0 -&gt; 이 33.68시간은 온전하다.
+
+   삭제 구간 = 07:45:11Z 이후. 이미지 획득 시각이 08:30:00Z 였다면
+   07:45:11Z ~ 08:30:00Z 의 약 45분이 Security 채널에서 소실된 구간이다.
+   그 45분은 System 채널의 104, PowerShell/Operational, $J 로 메운다.
+
+정답:
+ (1) 로그온(4624, RecId 1184571)이 먼저, 권한 부여(4672, RecId 1184572)가 나중
+ (2) 2026-03-14 07:45:11Z(16:45:11 KST) 이후 약 45분이 소실. 근거는 1102 가
+     파일의 마지막 레코드이고 그 이후 번호가 이 파일에 없다는 것</code></pre></div>
+<p>두 번의 교정이 핵심이다. <strong>① 같은 초는 시각으로 정렬하면 안 된다</strong> — 번호가 유일한 근거다. <strong>② gap이 없다고 삭제가 없는 것은 아니다</strong> — 삭제는 gap이 아니라 번호 재시작 또는 &quot;1102가 마지막 레코드&quot;라는 형태로 나타난다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>[int64]</code> 캐스팅을 했는가 — 문자열 정렬은 조용히 틀린다</li><li><code>Channel</code> 로 먼저 그룹핑했는가 — 채널 간 번호 비교는 무효</li><li>필터 없는 전체 CSV로 gap을 봤는가</li><li>첫 레코드 번호가 1인가 — 아니면 롤오버된 파일이다</li><li>마지막 레코드가 1102/104인가 — 삭제 직전 파일이라는 뜻이다</li><li>시각순으로 읽을 때 번호가 뒤로 가는 지점이 있는가 — 파일 교체 지점</li><li><code>Get-WinEvent -Path</code> 에 <code>-Oldest</code> 를 붙였는가</li><li><code>span = last - first + 1</code> 과 실제 행 수가 같은가 — 차이가 사라진 레코드 수</li><li>같은 번호가 두 번 나오는가 — CSV 이중 병합 사고</li><li>원본 XML의 <code>SystemTime</code> 소수부로 확증했는가</li><li><code>wevtutil</code> XPath에 <code>EventRecordID</code>(대문자 ID)를 썼는가</li><li>파일 시그니처가 <code>ElfFile</code> 인가 — 아니면 EVTX가 아니거나 헤더가 깨졌다</li><li>답을 UTC로 낼지 KST(+9시간)로 낼지 지문을 다시 읽었는가</li><li>관측 구간 밖의 사건이라면 디스크 artifact로 넘어갔는가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-026 — Libyal libevtx, EVTX 파일 포맷 문서: 파일 헤더(<code>ElfFile</code>, 4,096바이트)와 청크(<code>ElfChnk</code>, 65,536바이트) 구조, 청크 헤더가 담는 첫/마지막 레코드 번호와 식별자, 이벤트 레코드 시그니처, 레코드 식별자가 파일 단위로 단조 증가한다는 근거</li><li>SRC-022 — Microsoft Learn, 고급 보안 감사 정책 설정: 1102(감사 로그 지움), 104(로그 파일 지움), 1100(이벤트 로깅 서비스 종료), 4719(감사 정책 변경)의 정의</li><li>SRC-004 — Eric Zimmerman 문서: EvtxECmd의 <code>-f</code> <code>-d</code> <code>--csv</code> <code>--csvf</code> <code>--inc</code> 옵션과 CSV 컬럼(<code>EventRecordId</code>, <code>Channel</code>, <code>ChunkNumber</code>, <code>SourceFile</code>, <code>Payload</code>) 구성, Timeline Explorer 사용</li><li>CSV 컬럼명(<code>EventRecordId</code> vs <code>RecordNumber</code>, <code>ChunkNumber</code> 존재 여부)은 EvtxECmd 버전에 따라 다르므로 <code>Get-Member</code> 로 실제 헤더를 확인할 것</li><li>채널의 <code>MaxSize</code> 기본값은 Windows 버전과 정책에 따라 다르므로 <code>wevtutil gl &lt;채널&gt;</code> 또는 <code>SYSTEM</code> hive의 실제 값을 읽어서 인용할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./event-4624-logon.html">
+    <span class="rel-id">FOR-0083 · Event Log</span>
+    Event ID 4624 성공 로그온 분석: 누가 어디서 어떻게 들어왔나
+  </a>
+  <a class="related-item" href="./merge-evtx-csv.html">
+    <span class="rel-id">FOR-0107 · Event Log</span>
+    여러 EVTX를 하나의 CSV로 합치기: 채널 통합·컬럼 정규화·sqlite 조인
+  </a>
+  <a class="related-item" href="./windows-log-ctf-walkthrough.html">
+    <span class="rel-id">FOR-0110 · Event Log</span>
+    Windows 로그 종합 CTF 풀이: RDP 침입부터 로그 삭제까지 4채널 추적
+  </a>
+  <a class="related-item" href="./evtx-analysis-order.html">
+    <span class="rel-id">FOR-0081 · Event Log</span>
+    EVTX 분석 순서: winevt\Logs 채널 우선순위와 30초 트리아지
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./sysmon-event-13-registry-set.html"><span class="rel-id">← FOR-0102</span>Sysmon Event ID 13 RegistryEvent: 레지스트리를 바꾼 프로세스 특정</a>
+<a class="related-item" href="./logon-id-session-linking.html"><span class="rel-id">FOR-0104 →</span>Logon ID로 세션 전체 조립하기: TargetLogonId·SubjectLogonId 조인 절차</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-eventrecordid-의-성질-확정">1단계 — EventRecordID 의 성질 확정</a></li>
+<li class="toc-l3"><a href="#2단계-같은-초-순서-확정">2단계 — 같은 초 순서 확정</a></li>
+<li class="toc-l3"><a href="#3단계-gap번호-불연속-탐지">3단계 — gap(번호 불연속) 탐지</a></li>
+<li class="toc-l3"><a href="#4단계-번호-급락-로그가-지워지고-새로-시작됐다">4단계 — 번호 급락 = 로그가 지워지고 새로 시작됐다</a></li>
+<li class="toc-l3"><a href="#5단계-로그-보존-구간-계산">5단계 — 로그 보존 구간 계산</a></li>
+<li class="toc-l3"><a href="#6단계-채널이-다르면-번호로-비교할-수-없다">6단계 — 채널이 다르면 번호로 비교할 수 없다</a></li>
+<li class="toc-l3"><a href="#7단계-청크-구조와-손상-시-부분-복구">7단계 — 청크 구조와 손상 시 부분 복구</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>WordWheelQuery로 탐색기 검색창에 입력한 검색어 복원 · FOR-0070 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Registry">Registry</a> / FOR-0070
+      </div>
+      <header class="article-head">
+        <h1>WordWheelQuery로 탐색기 검색창에 입력한 검색어 복원</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Registry</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>WordWheelQuery의 값 0, 1, 2 ... 는 사용자가 탐색기(파일 탐색기) 검색창에 입력한 검색 문자열을 UTF-16LE 이진값으로 담고, MRUListEx가 그 순서를 앞에서부터 최신순으로 알려준다. &quot;무엇을 찾으려 했는가&quot; = 사용자 의도를 그대로 보여주는 직접 증거다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>RegRipper, RegistryExplorer, RECmd, rla, HxD, FTK Imager, KAPE</td></tr>
+<tr><th>artifact</th><td><code>WordWheelQuery</code> · <code>MRUListEx</code> · <code>NTUSER.DAT</code> · <code>Windows.edb</code> · <code>keyword_search_terms</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Users\&lt;user&gt;\NTUSER.DAT</code> · <code>C:\ProgramData\Microsoft\Search\Data\Applications\Windows\Windows.edb</code> · <code>C:\Users\&lt;user&gt;\AppData\Local\Google\Chrome\User Data\Default\History</code></td></tr>
+<tr><th>레지스트리</th><td><code>NTUSER.DAT\Software\Microsoft\Windows\CurrentVersion\Explorer\WordWheelQuery</code> · <code>HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\WordWheelQuery</code></td></tr>
+<tr><th>로그 필드</th><td><code>MRUListEx</code> · <code>MRU Position</code> · <code>LastWrite</code></td></tr>
+<tr><th>파일 형식</th><td><code>regf</code></td></tr>
+<tr><th>검색 별칭</th><td>wordwheelquery · 탐색기에서 검색한 단어 · 윈도우 검색 기록 · 무엇을 검색했나 · 검색창 입력 기록 · 파일 검색 흔적 · 검색어 복원</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>WordWheelQuery</code>의 값 <code>0</code>, <code>1</code>, <code>2</code> ... 는 사용자가 <strong>탐색기(파일 탐색기) 검색창에 입력한 검색 문자열</strong>을 UTF-16LE 이진값으로 담고, <code>MRUListEx</code>가 그 순서를 앞에서부터 최신순으로 알려준다. &quot;무엇을 찾으려 했는가&quot; = 사용자 의도를 그대로 보여주는 직접 증거다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;피의자가 무엇을 찾으려 했는가&quot; — 검색어 자체가 목적의 진술이다</li><li>&quot;특정 인물·계좌·파일명을 알고 있었는가&quot; — 그 문자열을 검색했다면 알고 있었다</li><li>&quot;자료를 어떻게 특정해 수집했는가&quot; — 검색어가 수집 기준을 드러낸다</li><li>&quot;삭제한 파일의 원래 이름은 무엇이었나&quot; — 검색어에 파일명이 남는 경우가 있다</li></ul>
+<p><code>RecentDocs</code>는 열어본 결과를, ShellBags는 탐색한 경로를 보여준다. <code>WordWheelQuery</code>만이 <strong>행위 이전의 의도</strong>를 보여준다. 검색어는 반박이 어려운 진술성 증거라 배점이 큰 문제에 자주 나온다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>첨부에 <code>NTUSER.DAT</code>이 있고 지문에 &quot;검색&quot;, &quot;찾으려&quot;, &quot;무엇을 찾았는가&quot;, &quot;키워드&quot;</li><li>지문에 사람 이름·계좌번호·프로젝트명이 등장하고 그 인지 여부가 쟁점인 상황</li><li>레지스트리 값 이름이 <code>0</code>, <code>1</code>, <code>2</code>이고 데이터가 이진값인데 <code>MRUListEx</code>가 함께 있다</li><li>hex 뷰에서 글자 사이에 <code>00</code>이 규칙적으로 끼어 있다 → UTF-16LE 문자열이다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">rip.exe -r &quot;C:\case\NTUSER.DAT&quot; -p wordwheelquery</code></pre></div>
+<p>GUI라면 RegistryExplorer로 <code>NTUSER.DAT</code>을 열고 다음 경로로 이동한다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">NTUSER.DAT\Software\Microsoft\Windows\CurrentVersion\Explorer\WordWheelQuery</code></pre></div>
+<p>RegistryExplorer는 값을 선택하면 하단에 hex와 함께 문자열 해석을 보여준다. 값이 이진값이라 <strong>RegRipper 출력이나 파서 해석을 보는 것이 가장 빠르다.</strong></p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-hive-확보와-로그-반영">1단계 — hive 확보와 로그 반영</h3>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">rla.exe -f &quot;C:\case\NTUSER.DAT&quot; --out &quot;C:\case\clean&quot;
+rip.exe -r &quot;C:\case\clean\NTUSER.DAT&quot; -p wordwheelquery &gt; wwq.txt</code></pre></div>
+<p><code>NTUSER.DAT</code>, <code>NTUSER.DAT.LOG1</code>, <code>NTUSER.DAT.LOG2</code>를 같은 폴더에 함께 꺼낸 뒤 replay한다. 검색은 세션 중 수시로 발생하므로 <strong>마지막 검색어가 트랜잭션 로그에만 남기 쉽다.</strong></p>
+<h3 id="2단계-키-구조">2단계 — 키 구조</h3>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>내용</th></tr></thead><tbody><tr><td>키</td><td><code>NTUSER.DAT\Software\Microsoft\Windows\CurrentVersion\Explorer\WordWheelQuery</code></td></tr><tr><td>값 이름</td><td><code>0</code>, <code>1</code>, <code>2</code> ... (등록 순번)</td></tr><tr><td>값 타입</td><td><code>REG_BINARY</code></td></tr><tr><td>값 데이터</td><td><strong>UTF-16LE 널종료 문자열</strong> = 검색어</td></tr><tr><td><code>MRUListEx</code></td><td><code>REG_BINARY</code>. 4바이트 리틀엔디언 DWORD 배열. 앞이 최신, 끝은 <code>FF FF FF FF</code></td></tr><tr><td>시각</td><td>개별 값에는 없음. <strong>키 LastWrite 하나뿐</strong></td></tr><tr><td>대상</td><td>파일 탐색기 검색창 입력 (Windows 7 이후)</td></tr></tbody></table></div>
+<p>값 이름의 숫자는 <strong>등록 순번</strong>이고 최근순이 아니다. 순서는 오직 <code>MRUListEx</code>가 정한다. <a href="./recentdocs.html">FOR-0062</a>의 <code>RecentDocs</code>와 완전히 같은 MRU 구조다.</p>
+<h3 id="3단계-mrulistex-읽기">3단계 — MRUListEx 읽기</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">MRUListEx (16 바이트):
+02 00 00 00  00 00 00 00  01 00 00 00  FF FF FF FF
+
+해석: 2 -&gt; 0 -&gt; 1 -&gt; (끝)
+      값 이름 &quot;2&quot; 의 검색어가 가장 최근</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>바이트</th><th>값</th><th>의미</th></tr></thead><tbody><tr><td><code>0x00</code>–<code>0x03</code></td><td><code>02 00 00 00</code></td><td>MRU 1위 = 값 이름 <code>2</code></td></tr><tr><td><code>0x04</code>–<code>0x07</code></td><td><code>00 00 00 00</code></td><td>MRU 2위 = 값 이름 <code>0</code></td></tr><tr><td><code>0x08</code>–<code>0x0B</code></td><td><code>01 00 00 00</code></td><td>MRU 3위 = 값 이름 <code>1</code></td></tr><tr><td><code>0x0C</code>–<code>0x0F</code></td><td><code>FF FF FF FF</code></td><td>배열 종료 표시</td></tr></tbody></table></div>
+<p>항목 개수는 <code>(MRUListEx 전체 길이 − 4) / 4</code>다. 마지막 4바이트는 데이터가 아니다.</p>
+<h3 id="4단계-값-데이터-수동-hex-확인">4단계 — 값 데이터 수동 hex 확인</h3>
+<p>파서 출력을 신뢰하되, hex로도 직접 확인할 수 있어야 한다. UTF-16LE는 ASCII 글자마다 뒤에 <code>00</code>이 붙고, 문자열 끝은 <code>00 00</code>이다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">값 이름: 2
+데이터:
+73 00 61 00 6C 00 61 00 72 00 79 00 00 00
+s     a     l     a     r     y     (종료)
+
+-&gt; 검색어 &quot;salary&quot;</code></pre></div>
+<p>한글은 2바이트 코드 유닛이 그대로 리틀엔디언으로 들어간다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">값 이름: 0
+데이터:
+00 B3 78 C6 44 BE 00 00
+
+00 B3 -&gt; U+B300 대
+78 C6 -&gt; U+C678 외
+44 BE -&gt; U+BE44 비
+00 00 -&gt; 종료
+
+-&gt; 검색어 &quot;대외비&quot;</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">값 이름: 1
+데이터:
+40 AE A0 CC 18 C2 00 00
+
+40 AE -&gt; U+AE40 김
+A0 CC -&gt; U+CCA0 철
+18 C2 -&gt; U+C218 수
+
+-&gt; 검색어 &quot;김철수&quot;</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>확인 절차</th><th>방법</th></tr></thead><tbody><tr><td>1. hex 확보</td><td>RegistryExplorer에서 값 선택 → 하단 hex 패널, 또는 HxD로 hive 직접 열기</td></tr><tr><td>2. 인코딩 지정</td><td>1바이트가 아니라 <strong>UTF-16LE(UTF-16 Little Endian)</strong> 로 표시 전환</td></tr><tr><td>3. 종료 위치</td><td><code>00 00</code>(2바이트 널)까지가 한 문자열</td></tr><tr><td>4. 한글 검증</td><td>2바이트를 역순으로 붙여 코드포인트를 만든 뒤 문자 대조</td></tr><tr><td>5. 순서 확정</td><td><code>MRUListEx</code>의 DWORD 순서로 값 이름을 나열</td></tr></tbody></table></div>
+<h3 id="5단계-출력-읽기">5단계 — 출력 읽기</h3>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">rip.exe -r &quot;C:\case\clean\NTUSER.DAT&quot; -p wordwheelquery</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">WordWheelQuery
+Software\Microsoft\Windows\CurrentVersion\Explorer\WordWheelQuery
+LastWrite Time: 2026-03-14 07:29:51Z
+
+MRUListEx = 2,0,1,3
+  2 = salary
+  0 = 대외비
+  1 = 김철수
+  3 = 110-234-567890</code></pre></div>
+<p>읽는 순서는 이렇다.</p>
+<ol><li><code>MRUListEx</code> 1위가 <code>2</code> → <strong>가장 최근 검색어는 <code>salary</code></strong></li><li>키 LastWrite <code>2026-03-14 07:29:51Z</code>는 그 마지막 검색의 시각에 대응한다</li><li>나머지 검색어의 시각은 알 수 없다</li><li><code>110-234-567890</code> 같은 계좌 형태 문자열, 인명, <code>대외비</code> 같은 분류 표시는 <strong>그 자체로 목적의 진술</strong>이다</li></ol>
+<h3 id="6단계-검색어를-사건과-연결한다">6단계 — 검색어를 사건과 연결한다</h3>
+<p>검색어의 형태만으로 무엇을 노렸는지 분류할 수 있다.</p>
+<div class="table-wrap"><table><thead><tr><th>검색어 형태</th><th>예</th><th>시사점</th><th>다음에 볼 것</th></tr></thead><tbody><tr><td>분류 표시</td><td><code>대외비</code>, <code>비밀</code>, <code>confidential</code>, <code>내부용</code></td><td>등급이 높은 문서를 표적 수집</td><td>그 문자열을 포함한 파일명 <code>$MFT</code> 검색</td></tr><tr><td>인명</td><td><code>김철수</code>, <code>홍길동</code></td><td>특정인 관련 자료 수집</td><td>인사·급여 폴더 접근 흔적</td></tr><tr><td>계좌·번호</td><td><code>110-234-567890</code>, <code>주민번호</code></td><td>금융/개인정보 수집</td><td>개인정보 파일 존재와 반출 경로</td></tr><tr><td>확장자</td><td><code>*.pst</code>, <code>.xlsx</code>, <code>*.pdf</code></td><td>형식 단위 대량 수집</td><td>압축·업로드 흔적</td></tr><tr><td>파일명 조각</td><td><code>급여</code>, <code>단가표</code>, <code>계약서</code></td><td>문서 표적 확인</td><td><code>RecentDocs</code>·LNK 대조</td></tr><tr><td>도구·기법</td><td><code>password</code>, <code>mimikatz</code>, <code>dump</code></td><td>공격 도구 탐색</td><td>MUICache·Prefetch</td></tr><tr><td>경로/공유명</td><td><code>backup</code>, <code>share</code></td><td>반출 대상 위치 탐색</td><td><code>TypedPaths</code>·<code>MountPoints2</code></td></tr></tbody></table></div>
+<p>검색어 하나가 답인 경우도 있고, 검색어 목록 전체가 <strong>타임라인의 동기 구간</strong>을 만들어 주는 경우도 있다.</p>
+<h3 id="7단계-어느-검색창이었는지-구분한다">7단계 — 어느 검색창이었는지 구분한다</h3>
+<p><code>WordWheelQuery</code>는 <strong>파일 탐색기 검색창</strong> 입력을 대상으로 한다. 같은 &quot;검색어&quot;라도 입력 위치가 다르면 남는 곳이 다르다.</p>
+<div class="table-wrap"><table><thead><tr><th>어디에 입력했나</th><th>남는 곳</th><th>형식</th><th>확인 방법</th></tr></thead><tbody><tr><td><strong>파일 탐색기 검색창</strong></td><td><code>HKCU\...\Explorer\WordWheelQuery</code></td><td>REG_BINARY (UTF-16LE) + <code>MRUListEx</code></td><td><code>rip.exe -p wordwheelquery</code></td></tr><tr><td>브라우저 검색창/검색엔진</td><td>Chrome <code>History</code>의 <code>keyword_search_terms</code> 테이블</td><td>SQLite</td><td><code>SELECT term FROM keyword_search_terms</code></td></tr><tr><td>브라우저 주소창 URL 직접 입력</td><td>Chrome <code>urls.typed_count</code> / IE <code>TypedURLs</code></td><td>SQLite / REG_SZ</td><td><a href="./typedurls.html">FOR-0065</a></td></tr><tr><td>탐색기 주소창에 경로 입력</td><td><code>HKCU\...\Explorer\TypedPaths</code></td><td>REG_SZ (<code>url1</code>...)</td><td><a href="./typedpaths.html">FOR-0064</a></td></tr><tr><td>실행(Win+R) 대화상자</td><td><code>HKCU\...\Explorer\RunMRU</code></td><td>REG_SZ + <code>MRUList</code></td><td><code>rip.exe -p runmru</code></td></tr><tr><td>Windows Search 색인 자체</td><td><code>C:\ProgramData\Microsoft\Search\Data\Applications\Windows\Windows.edb</code></td><td>ESE 데이터베이스</td><td>ESE 파서</td></tr></tbody></table></div>
+<p>Windows Search 색인(<code>Windows.edb</code>)은 <strong>검색어 기록이 아니라 색인된 파일·속성의 저장소</strong>다. &quot;무엇을 검색했는가&quot;의 답은 <code>WordWheelQuery</code>에 있고, &quot;그 시점에 어떤 파일이 색인되어 있었는가&quot;의 답이 <code>Windows.edb</code>에 있다. 두 역할을 혼동하면 엉뚱한 데이터베이스를 파싱하며 시간을 버린다.</p>
+<p>시작 메뉴·작업 표시줄 검색은 Windows 버전에 따라 저장 위치가 달라 여기서 단정하지 않는다. <strong>탐색기 검색창 이외의 입력이 쟁점이면 위 표의 다른 경로를 함께 확인한다.</strong></p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 브라우저 검색어는 레지스트리가 아니라 History DB 다
+sqlite3 &quot;C:\case\History&quot; &quot;SELECT term FROM keyword_search_terms ORDER BY rowid DESC LIMIT 20;&quot;</code></pre></div>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>해석</th><th>주의</th></tr></thead><tbody><tr><td>값 이름 (<code>0</code>,<code>1</code>,<code>2</code>...)</td><td>등록 순번</td><td>숫자 크기가 최신순이 아니다</td></tr><tr><td>값 데이터</td><td>UTF-16LE 검색어</td><td><code>00 00</code>까지가 한 문자열</td></tr><tr><td><code>MRUListEx</code></td><td>실제 검색 순서. 앞이 최신</td><td>마지막 <code>FF FF FF FF</code>는 종료 표시</td></tr><tr><td>키 <code>LastWrite</code></td><td>마지막 검색 시각(FILETIME, UTC)</td><td>MRU 1위 항목에만 대응</td></tr><tr><td>항목 수</td><td><code>(MRUListEx 길이 − 4) / 4</code></td><td>값 개수와 일치해야 정상</td></tr></tbody></table></div>
+<p>키 LastWrite는 FILETIME이므로 1601-01-01 UTC 기준 100ns 단위다. Unix epoch 차이는 <code>11644473600</code>초, KST는 +9시간이다. 시스템 시간대는 <a href="./system-timezone.html">FOR-0054</a>의 <code>TimeZoneInformation</code>으로 확인한다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<p>검색어는 &quot;찾으려 했다&quot;까지만 말한다. &quot;찾았다&quot;와 &quot;가져갔다&quot;는 다음 artifact가 답한다.</p>
+<div class="table-wrap"><table><thead><tr><th>얻은 정보</th><th>다음 목표</th><th>무엇을 확인하나</th></tr></thead><tbody><tr><td>검색어 문자열</td><td><code>$MFT</code> (<a href="./mft-basics.html">FOR-0021</a>)</td><td>그 문자열을 포함한 파일명이 실제로 존재했는가</td></tr><tr><td>검색어와 일치하는 파일명</td><td><code>RecentDocs</code></td><td>검색 후 실제로 열었는가</td></tr><tr><td>검색어와 일치하는 파일명</td><td><code>%AppData%\Microsoft\Windows\Recent</code>의 LNK</td><td>전체 경로와 접근 시각</td></tr><tr><td>검색 시각(LastWrite)</td><td>ShellBags (<a href="./shellbags.html">FOR-0068</a>)</td><td>같은 시각대에 어떤 폴더를 탐색했는가</td></tr><tr><td>검색 시각</td><td>UserAssist (<a href="./userassist.html">FOR-0061</a>)</td><td>그 전후에 어떤 프로그램을 실행했는가</td></tr><tr><td>검색 대상 폴더</td><td><code>TypedPaths</code>·<code>MountPoints2</code></td><td>검색 후 어디로 이동/복사했는가</td></tr><tr><td>검색어가 개인정보 형태</td><td>개인정보 파일 존재·압축·업로드 흔적</td><td>반출 완료 여부</td></tr><tr><td>검색어가 도구명</td><td>MUICache·Prefetch·Amcache</td><td>그 도구를 실제로 받아 실행했는가</td></tr><tr><td>브라우저 검색어</td><td>Chrome <code>keyword_search_terms</code> (<a href="./chrome-history.html">FOR-0191</a>)</td><td>외부 검색과의 연결</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>값 이름 숫자를 최근순으로 읽는다.</strong> <code>0</code>이 가장 오래된 것도, 가장 최근인 것도 아니다. 등록 순번일 뿐이다 → 순서는 반드시 <code>MRUListEx</code>로 정한다.</li><li><strong><code>FF FF FF FF</code>를 항목으로 센다.</strong> 배열 종료 표시다 → 항목 수는 <code>(길이 − 4) / 4</code>다.</li><li><strong>모든 검색어에 LastWrite 시각을 붙인다.</strong> 개별 값에는 타임스탬프가 없다. 키 LastWrite 하나가 있을 뿐이고 MRU 1위에만 대응한다 → 나머지 검색 시각은 ShellBags·EVTX·<code>$MFT</code>로 간접 추정한다.</li><li><strong>브라우저 검색어를 여기서 찾는다.</strong> 구글·네이버 검색어는 <code>WordWheelQuery</code>에 없다. Chrome은 <code>History</code>의 <code>keyword_search_terms</code>다 → 어느 검색창이었는지부터 확정한다.</li><li><strong><code>Windows.edb</code>를 검색어 기록으로 오해한다.</strong> <code>Windows.edb</code>는 색인된 <strong>파일과 속성</strong>의 저장소다. 검색어 기록이 아니다 → 검색어는 <code>WordWheelQuery</code>, 색인 내용은 <code>Windows.edb</code>다.</li><li><strong>값 데이터를 ANSI로 읽어 깨진 문자로 판단한다.</strong> UTF-16LE다. 1바이트 인코딩으로 보면 글자 사이에 <code>00</code>이 끼어 보인다 → 인코딩 표시를 UTF-16LE로 바꾸거나 파서를 쓴다.</li><li><strong>한글 검색어의 바이트를 순서대로 붙인다.</strong> 리틀엔디언이므로 <code>00 B3</code>은 <code>U+B300</code>이다 → 2바이트를 역순으로 붙인다.</li><li><strong>비어 있으면 &quot;검색하지 않았다&quot;고 단정한다.</strong> 항목은 상한을 넘으면 밀려 나가고, 검색 기록 삭제·정리 도구로 지워진다. 키는 있는데 값이 없으면 <strong>삭제 정황</strong>으로 본다 → 키 LastWrite, hive 슬랙, <code>$UsnJrnl</code>의 hive 변경을 확인한다.</li><li><strong>검색어가 곧 결과를 뜻한다고 본다.</strong> 검색은 실패할 수 있다. 아무 파일도 안 나왔을 수 있다 → 결과 확인은 <code>RecentDocs</code>·LNK·<code>$MFT</code>다. 다만 <strong>실패한 검색도 의도의 증거</strong>로서는 충분히 강하다.</li><li><strong>사용자를 하나만 본다.</strong> <code>NTUSER.DAT</code>은 사용자별이다. 누가 검색했는지가 답이면 모든 프로필을 파싱한다.</li><li><strong>hive 로그를 반영하지 않는다.</strong> <code>rla</code> 없이 파싱하면 마지막 검색어가 빠진다.</li><li><strong>시간대를 안 맞춘다.</strong> LastWrite는 UTC다. KST 답을 요구하면 +9시간.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) WordWheelQuery — 탐색기 검색어와 순서
+rip.exe -r &quot;C:\case\clean\NTUSER.DAT&quot; -p wordwheelquery
+
+# 2) 검색어와 일치하는 파일이 실제로 있었나 (메타파일 경로는 반드시 작은따옴표)
+MFTECmd.exe -f &#39;C:\case\$MFT&#39; --csv &#39;C:\case\out&#39; --csvf mft.csv
+Import-Csv &#39;C:\case\out\mft.csv&#39; | Where-Object { $_.FileName -match &#39;salary|대외비|김철수&#39; }
+
+# 3) 검색 후 실제로 열었나
+rip.exe -r &quot;C:\case\clean\NTUSER.DAT&quot; -p recentdocs | Select-String &#39;salary&#39;
+
+# 4) 같은 시각대의 폴더 탐색
+SBECmd.exe -d &quot;C:\case\Users\jhkim&quot; --csv &quot;C:\case\out&quot;
+
+# 5) 브라우저 검색어 (레지스트리 아님)
+sqlite3 &quot;C:\case\History&quot; &quot;SELECT term FROM keyword_search_terms ORDER BY rowid DESC LIMIT 20;&quot;</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>조합 결과</th><th>해석</th></tr></thead><tbody><tr><td>검색어 O, 일치 파일 O, <code>RecentDocs</code> O</td><td>검색 → 발견 → 열람. 완전한 사슬</td></tr><tr><td>검색어 O, 일치 파일 O, <code>RecentDocs</code> X</td><td>찾았지만 열지는 않았다. 복사만 했을 수 있다. <code>$UsnJrnl</code> 확인</td></tr><tr><td>검색어 O, 일치 파일 X</td><td>검색 실패, 또는 그 파일이 이미 삭제됨. <code>$UsnJrnl</code>·<code>$Recycle.Bin</code> 확인</td></tr><tr><td>검색어 X, <code>RecentDocs</code> O</td><td>검색 없이 직접 접근. 경로를 이미 알고 있었다는 뜻 → <code>TypedPaths</code> 확인</td></tr><tr><td>검색어가 브라우저 쪽에만 O</td><td>외부 검색만 했고 로컬 파일 검색은 없었다</td></tr></tbody></table></div>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;내부 자료 유출자가 자료를 특정하기 위해 사용한 검색어 중 가장 마지막
+ 검색어와 그 검색 시각(KST)을 구하세요.
+ 첨부: NTUSER.DAT(+LOG1/2), UsrClass.dat, $MFT&quot;
+
+1. 첫 시도 (실패)
+   RegistryExplorer 로 NTUSER.DAT 을 열고
+   Explorer\WordWheelQuery 의 값 목록을 확인.
+   값 이름: 0, 1, 2, 3, MRUListEx
+   -&gt; 이름이 가장 큰 &quot;3&quot; 의 데이터를 읽어 &quot;110-234-567890&quot; 을 답으로 냈다. 오답.
+
+   왜 틀렸는가:
+   값 이름 숫자는 등록 순번이다. 최근순은 MRUListEx 만이 정한다.
+
+2. 두 번째 실수
+   값 &quot;2&quot; 의 데이터를 hex 로 보고 1바이트 인코딩으로 읽었다.
+   73 00 61 00 6C 00 61 00 72 00 79 00 00 00
+   -&gt; &quot;s.a.l.a.r.y.&quot; 처럼 점이 섞여 보여 &quot;깨진 값&quot; 이라고 판단했다.
+
+   왜 틀렸는가:
+   UTF-16LE 다. ASCII 글자마다 뒤에 00 이 붙는 것이 정상이다.
+   인코딩을 UTF-16LE 로 바꾸면 &quot;salary&quot; 로 바로 읽힌다.
+
+3. 피벗 1 — 로그 반영 후 파서로
+   rla.exe -f NTUSER.DAT --out clean\
+   rip.exe -r clean\NTUSER.DAT -p wordwheelquery
+
+   LastWrite Time: 2026-03-14 07:29:51Z
+   MRUListEx = 2,0,1,3
+     2 = salary            &lt;- MRU 1위 = 마지막 검색어
+     0 = 대외비
+     1 = 김철수
+     3 = 110-234-567890    &lt;- 이름은 최대지만 MRU 4위
+
+4. 검증 — MRUListEx 원본 hex 를 직접 확인
+   02 00 00 00  00 00 00 00  01 00 00 00  03 00 00 00  FF FF FF FF
+   -&gt; 20바이트. 항목 수 = (20-4)/4 = 4개. 값 개수와 일치.
+      1위가 2 인 것이 확정.
+
+5. 교차검증 — 검색어와 일치하는 파일이 있었나
+   MFTECmd.exe -f &#39;C:\case\$MFT&#39; --csv &#39;C:\case\out&#39; --csvf mft.csv
+   Import-Csv &#39;C:\case\out\mft.csv&#39; |
+     Where-Object { $_.FileName -match &#39;salary&#39; }
+   -&gt; salary_2026Q1.xlsx  Created 2026-02-02  (현재 존재)
+      salary.docx         삭제됨 -&gt; $UsnJrnl 로 삭제 시각 추적 대상
+
+6. 사슬 완성 — 검색 후 열었는가
+   rip.exe -r clean\NTUSER.DAT -p recentdocs | Select-String &#39;salary&#39;
+   -&gt; .xlsx 서브키 MRU 1위 = salary_2026Q1.xlsx
+      RecentDocs\.xlsx LastWrite 2026-03-14 07:31:44Z
+      검색(07:29:51) -&gt; 열람(07:31:44). 2분 차이. 인과가 성립한다.
+
+7. 시간대 변환
+   07:29:51Z (UTC) + 9h = 2026-03-14 16:29:51 KST
+
+정답: salary / 2026-03-14 16:29:51 KST</code></pre></div>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><strong><code>MRUListEx</code>를 읽었는가</strong> — 값 이름 숫자로 순서를 판단하지 않았는가</li><li><strong><code>FF FF FF FF</code>를 항목에서 제외했는가</strong> — 항목 수 = <code>(길이 − 4) / 4</code></li><li><strong>인코딩을 UTF-16LE로 봤는가</strong> — 글자 사이 <code>00</code>은 정상이다</li><li><strong>한글을 리틀엔디언으로 조립했는가</strong> — <code>00 B3</code> = <code>U+B300</code></li><li><strong><code>rla</code>로 <code>.LOG1</code>/<code>.LOG2</code>를 반영했는가</strong> — 마지막 검색어 누락의 주원인</li><li><strong>LastWrite를 MRU 1위에만 적용했는가</strong></li><li>검색창 종류가 쟁점이다 → 브라우저는 <code>keyword_search_terms</code>, 탐색기 주소창은 <code>TypedPaths</code>, 실행 대화상자는 <code>RunMRU</code></li><li>비어 있다 → <code>RecentDocs</code> → ShellBags → LNK/Jump List → <code>Windows.edb</code> 순으로 이동</li><li>검색어와 일치하는 파일이 없다 → <code>$UsnJrnl</code>·<code>$Recycle.Bin</code>으로 삭제 추적</li><li>사용자가 여러 명인가 → 모든 프로필의 <code>NTUSER.DAT</code>. hive 위치는 <a href="./registry-hive-map.html">FOR-0051</a></li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-017 — Microsoft Learn, Windows Registry hives and file locations: <code>NTUSER.DAT</code>의 위치와 <code>HKCU</code> 매핑, hive가 사용자별이라는 근거</li><li>SRC-099 — RegRipper 3.0 repository: <code>wordwheelquery</code> 플러그인과 <code>rip.exe -r ... -p ...</code> 사용법, MRU 계열 플러그인의 출력 형식</li><li>SRC-083 — Microsoft Learn, Windows Search / <code>Windows.edb</code>: 색인 데이터베이스의 역할과 위치(검색어 기록이 아니라 색인 저장소라는 구분 근거)</li><li>시작 메뉴·작업 표시줄 검색의 저장 위치는 Windows 버전에 따라 달라 여기서 단정하지 않았다. 탐색기 검색창 이외의 입력이 쟁점이면 실제 이미지에서 확인할 것</li><li><code>WordWheelQuery</code>가 보관하는 항목 수의 상한은 버전에 따라 다르므로 실제 키의 값 개수로 확인할 것</li><li>플러그인 이름은 배포 버전에 따라 다르므로 <code>rip.exe -l</code>로 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./ntuser-dat.html">
+    <span class="rel-id">FOR-0057 · Registry</span>
+    NTUSER.DAT 기본: 사용자별 hive와 포렌식 키 인덱스
+  </a>
+  <a class="related-item" href="./recentdocs.html">
+    <span class="rel-id">FOR-0062 · Registry</span>
+    RecentDocs로 최근 열어본 문서와 확장자별 MRU 순서 확인
+  </a>
+  <a class="related-item" href="./typedpaths.html">
+    <span class="rel-id">FOR-0064 · Registry</span>
+    TypedPaths로 탐색기 주소창에 직접 입력한 경로 찾기
+  </a>
+  <a class="related-item" href="./shellbags.html">
+    <span class="rel-id">FOR-0068 · Registry</span>
+    ShellBags로 삭제된 폴더 이름과 USB 경로 복원하기
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./muicache.html"><span class="rel-id">← FOR-0069</span>MUICache로 실행된 프로그램의 경로와 FileDescription 확인</a>
+<a class="related-item" href="./bam-dam.html"><span class="rel-id">FOR-0071 →</span>BAM/DAM 키로 사용자별 마지막 실행 시각 얻기</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-hive-확보와-로그-반영">1단계 — hive 확보와 로그 반영</a></li>
+<li class="toc-l3"><a href="#2단계-키-구조">2단계 — 키 구조</a></li>
+<li class="toc-l3"><a href="#3단계-mrulistex-읽기">3단계 — MRUListEx 읽기</a></li>
+<li class="toc-l3"><a href="#4단계-값-데이터-수동-hex-확인">4단계 — 값 데이터 수동 hex 확인</a></li>
+<li class="toc-l3"><a href="#5단계-출력-읽기">5단계 — 출력 읽기</a></li>
+<li class="toc-l3"><a href="#6단계-검색어를-사건과-연결한다">6단계 — 검색어를 사건과 연결한다</a></li>
+<li class="toc-l3"><a href="#7단계-어느-검색창이었는지-구분한다">7단계 — 어느 검색창이었는지 구분한다</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

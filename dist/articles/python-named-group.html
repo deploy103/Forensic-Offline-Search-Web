@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Python 명명 캡처 그룹으로 로그를 표로 만들기: (?P&lt;name&gt;...) · FOR-0124 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%A1%9C%EA%B7%B8%2FRegex">로그/Regex</a> / FOR-0124
+      </div>
+      <header class="article-head">
+        <h1>Python 명명 캡처 그룹으로 로그를 표로 만들기: (?P&lt;name&gt;...)</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">로그/Regex</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>(?P&lt;name&gt;...)로 그룹에 이름을 붙이면 m.groupdict()가 곧바로 dict를 주고, 그 dict를 csv.DictWriter에 던지면 로그 한 줄이 표 한 행이 된다. 그룹 번호를 세는 일이 사라지므로 필드가 다섯 개를 넘는 로그 파싱은 명명 그룹 없이 하지 않는다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Python, re, csv, pandas</td></tr>
+<tr><th>artifact</th><td><code>access.log</code> · <code>auth.log</code> · <code>syslog</code> · <code>error.log</code></td></tr>
+<tr><th>파일 경로</th><td><code>/var/log/auth.log</code> · <code>/var/log/syslog</code> · <code>/var/log/apache2/access.log</code> · <code>C:\inetpub\logs\LogFiles</code></td></tr>
+<tr><th>regex</th><td><code>(?P&lt;ip&gt;\S+) \S+ \S+ \[(?P&lt;time&gt;[^\]]+)\]</code> · <code>(?P&lt;mon&gt;[A-Z][a-z]{2})\s+(?P&lt;day&gt;\d{1,2}) (?P&lt;time&gt;\d{2}:\d{2}:\d{2})</code> · <code>Failed password for (?:invalid user )?(?P&lt;user&gt;\S+) from (?P&lt;ip&gt;\S+)</code></td></tr>
+<tr><th>로그 필드</th><td><code>ip</code> · <code>time</code> · <code>method</code> · <code>uri</code> · <code>status</code> · <code>size</code> · <code>referer</code> · <code>ua</code> · <code>user</code> · <code>host</code> · <code>proc</code> · <code>pid</code></td></tr>
+<tr><th>파일 형식</th><td><code>log</code> · <code>csv</code> · <code>txt</code></td></tr>
+<tr><th>검색 별칭</th><td>파이썬 명명 그룹 · ?P&lt;name&gt; · 정규식 이름 붙이기 · groupdict · 아파치 로그 파싱 파이썬 · syslog 정규식 · auth.log 파싱</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>(?P&lt;name&gt;...)</code>로 그룹에 이름을 붙이면 <code>m.groupdict()</code>가 곧바로 dict를 주고, 그 dict를 <code>csv.DictWriter</code>에 던지면 로그 한 줄이 표 한 행이 된다. 그룹 번호를 세는 일이 사라지므로 필드가 다섯 개를 넘는 로그 파싱은 명명 그룹 없이 하지 않는다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>Apache/nginx access log, syslog, <code>auth.log</code>를 필드별로 잘라 표로 만들어야 하는 상황</li><li>그룹이 6~10개라 <code>m.group(7)</code>이 무엇인지 세다가 틀리는 상황</li><li>결과를 CSV로 내보내 Timeline Explorer나 스프레드시트에서 정렬·필터해야 하는 상황</li><li>정규식이 길어져 다음 날 자기도 못 읽는 상황</li><li><code>re.sub</code>로 마스킹·정규화하면서 원래 값을 이름으로 참조해야 하는 상황</li><li>PowerShell(.NET) 정규식을 그대로 붙여 넣었는데 파이썬에서 에러가 나는 상황</li></ul>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>로그 한 줄에 필드가 5개 이상이다</li><li>문제가 &quot;가장 많이 요청한 URI&quot;, &quot;상태 코드별 건수&quot;처럼 <strong>필드 단위 집계</strong>를 묻는다</li><li>필드 구분자가 공백·대괄호·따옴표로 섞여 있어 <code>split()</code>으로 못 자른다</li><li>최종 산출물이 표·CSV·타임라인이다</li></ol>
+<p>로그 한 줄을 <code>repr</code>로 먼저 본다. 여기서 필드 경계를 확정하지 않으면 정규식이 계속 어긋난다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">with open(&#39;access.log&#39;, encoding=&#39;utf-8&#39;, errors=&#39;replace&#39;) as f:
+    print(repr(next(f)))</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">&#39;203.0.113.77 - - [14/Mar/2026:07:19:02 +0900] &quot;GET /admin/ HTTP/1.1&quot; 403 199 &quot;-&quot; &quot;sqlmap/1.7&quot;\n&#39;</code></pre></div>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">python -c &quot;import re;print(re.match(r&#39;(?P&lt;a&gt;\d+)-(?P&lt;b&gt;\d+)&#39;,&#39;12-34&#39;).groupdict())&quot;</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">{&#39;a&#39;: &#39;12&#39;, &#39;b&#39;: &#39;34&#39;}</code></pre></div>
+<p>Apache combined 로그를 표로 바꾸는 완성 코드는 아래 열 줄이다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import re, csv
+
+APACHE = re.compile(
+    r&#39;^(?P&lt;ip&gt;\S+) (?P&lt;ident&gt;\S+) (?P&lt;user&gt;\S+) \[(?P&lt;time&gt;[^\]]+)\] &#39;
+    r&#39;&quot;(?P&lt;method&gt;\S+) (?P&lt;uri&gt;\S+) (?P&lt;proto&gt;[^&quot;]*)&quot; &#39;
+    r&#39;(?P&lt;status&gt;\d{3}) (?P&lt;size&gt;\S+) &quot;(?P&lt;referer&gt;[^&quot;]*)&quot; &quot;(?P&lt;ua&gt;[^&quot;]*)&quot;&#39;
+)
+FIELDS = [&#39;ip&#39;, &#39;ident&#39;, &#39;user&#39;, &#39;time&#39;, &#39;method&#39;, &#39;uri&#39;, &#39;proto&#39;,
+          &#39;status&#39;, &#39;size&#39;, &#39;referer&#39;, &#39;ua&#39;]
+
+with open(&#39;access.log&#39;, encoding=&#39;utf-8&#39;, errors=&#39;replace&#39;) as fin, \
+     open(&#39;access.csv&#39;, &#39;w&#39;, newline=&#39;&#39;, encoding=&#39;utf-8-sig&#39;) as fout:
+    w = csv.DictWriter(fout, fieldnames=FIELDS)
+    w.writeheader()
+    bad = 0
+    for line in fin:
+        m = APACHE.match(line)
+        if m:
+            w.writerow(m.groupdict())
+        else:
+            bad += 1
+print(&#39;unparsed lines:&#39;, bad)</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">unparsed lines: 12</code></pre></div>
+<p><code>bad</code>를 반드시 출력한다. 0이 아니면 그 줄들이 형식이 다른 줄이고, 거기에 답이 숨어 있는 경우가 많다.</p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-문법-네-개">1단계 — 문법 네 개</h3>
+<div class="table-wrap"><table><thead><tr><th>용도</th><th>문법</th><th>예</th></tr></thead><tbody><tr><td>그룹 정의</td><td><code>(?P&lt;name&gt;...)</code></td><td><code>(?P&lt;ip&gt;\S+)</code></td></tr><tr><td>패턴 안에서 역참조</td><td><code>(?P=name)</code></td><td><code>&lt;(?P&lt;tag&gt;\w+)&gt;.*?&lt;/(?P=tag)&gt;</code></td></tr><tr><td>치환 문자열에서 참조</td><td><code>\g&lt;name&gt;</code></td><td><code>re.sub(p, r&#39;\g&lt;user&gt;@X&#39;, s)</code></td></tr><tr><td>코드에서 값 접근</td><td><code>m.group(&#39;name&#39;)</code> / <code>m[&#39;name&#39;]</code> / <code>m.groupdict()</code></td><td><code>m[&#39;status&#39;]</code></td></tr></tbody></table></div>
+<p>이름은 파이썬 식별자 규칙을 따른다. 즉 문자·숫자·밑줄만 쓰고 숫자로 시작할 수 없다. <strong>한 패턴 안에서 같은 이름을 두 번 쓰면 컴파일 에러다.</strong></p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import re
+re.compile(r&#39;(?P&lt;x&gt;a)(?P&lt;x&gt;b)&#39;)
+# re.error: redefinition of group name &#39;x&#39; as group 2; was group 1 at position 12</code></pre></div>
+<p>명명 그룹도 캡처 그룹이므로 번호를 함께 갖는다. <code>m.group(1)</code>과 <code>m.group(&#39;ip&#39;)</code>가 같은 값일 수 있다는 뜻이고, <code>m.groups()</code>에도 포함된다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">m = re.match(r&#39;(?P&lt;ip&gt;\S+) (?P&lt;st&gt;\d+)&#39;, &#39;10.0.0.1 200&#39;)
+m.groups()        # (&#39;10.0.0.1&#39;, &#39;200&#39;)
+m.group(1)        # &#39;10.0.0.1&#39;
+m.group(&#39;ip&#39;)     # &#39;10.0.0.1&#39;
+m.groupdict()     # {&#39;ip&#39;: &#39;10.0.0.1&#39;, &#39;st&#39;: &#39;200&#39;}</code></pre></div>
+<p><code>findall</code>은 이름을 무시하고 튜플만 준다. 이름으로 접근하려면 <code>finditer</code>나 <code>match</code>/<code>search</code>를 쓴다.</p>
+<h3 id="2단계-역참조-pname">2단계 — 역참조 <code>(?P=name)</code></h3>
+<p>같은 값이 두 번 나타나는 구조를 잡을 때 쓴다. 태그 쌍, 따옴표 쌍, 반복된 IP가 대표적이다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import re
+
+# 열고 닫는 태그가 같은 것만
+re.findall(r&#39;&lt;(?P&lt;tag&gt;\w+)&gt;(?P&lt;body&gt;.*?)&lt;/(?P=tag)&gt;&#39;, &#39;&lt;b&gt;hi&lt;/b&gt;&lt;i&gt;x&lt;/b&gt;&#39;)
+# [(&#39;b&#39;, &#39;hi&#39;)]      &lt;i&gt;x&lt;/b&gt; 는 태그가 달라서 제외된다
+
+# 출발지와 목적지가 같은 (자기 자신에게 보내는) 연결
+re.search(r&#39;src=(?P&lt;ip&gt;\S+) .*dst=(?P=ip)\b&#39;, &#39;src=10.0.0.5 proto=tcp dst=10.0.0.5&#39;)</code></pre></div>
+<p>역참조는 <strong>정규식 엔진 안에서</strong> 값이 같은지 비교한다. 파이썬 코드에서 비교하는 것보다 빠르고, 한 번의 스캔으로 끝난다.</p>
+<h3 id="3단계-reverbose로-긴-패턴을-읽게-만든다">3단계 — <code>re.VERBOSE</code>로 긴 패턴을 읽게 만든다</h3>
+<p>필드가 열 개인 패턴은 한 줄로 두면 검토가 불가능하다. <code>re.X</code>를 주면 패턴 안의 공백이 무시되고 <code>#</code> 주석을 쓸 수 있다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import re
+
+APACHE = re.compile(r&#39;&#39;&#39;
+    ^(?P&lt;ip&gt;\S+)\s+          # 클라이언트 IP
+    (?P&lt;ident&gt;\S+)\s+        # identd (거의 항상 -)
+    (?P&lt;user&gt;\S+)\s+         # HTTP 인증 사용자 (없으면 -)
+    \[(?P&lt;time&gt;[^\]]+)\]\s+  # 14/Mar/2026:07:19:02 +0900
+    &quot;(?P&lt;method&gt;[A-Z]+)\s+   # GET / POST
+     (?P&lt;uri&gt;\S+)\s*
+     (?P&lt;proto&gt;[^&quot;]*)&quot;\s+
+    (?P&lt;status&gt;\d{3})\s+     # 상태 코드
+    (?P&lt;size&gt;\d+|-)          # 응답 바이트. 없으면 -
+    (?:\s+&quot;(?P&lt;referer&gt;[^&quot;]*)&quot;\s+&quot;(?P&lt;ua&gt;[^&quot;]*)&quot;)?   # combined 에만 있다
+    &#39;&#39;&#39;, re.VERBOSE)</code></pre></div>
+<p><code>re.X</code>에서 주의할 것 두 가지다.</p>
+<ul><li>공백을 매칭하려면 <code>\s</code>, <code>[ ]</code>, <code>\ </code>로 명시한다. 그냥 스페이스는 무시된다</li><li><code>#</code>을 리터럴로 쓰려면 <code>\#</code> 또는 <code>[#]</code>로 이스케이프한다</li></ul>
+<p>마지막 그룹을 <code>(?:...)?</code>로 감싼 것은 common 형식(필드 7개)과 combined 형식(필드 9개)을 한 패턴으로 받기 위해서다. Apache는 <code>LogFormat</code>에 따라 두 형식을 다 쓴다. 미매칭 그룹은 <code>None</code>이 되므로 <code>groupdict(default=&#39;&#39;)</code>로 빈 문자열로 받는다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">m = APACHE.match(&#39;10.0.0.1 - - [14/Mar/2026:07:19:02 +0900] &quot;GET / HTTP/1.1&quot; 200 512&#39;)
+m.groupdict(default=&#39;&#39;)[&#39;ua&#39;]    # &#39;&#39;  (None 대신)</code></pre></div>
+<h3 id="4단계-syslog-authlog-완성-패턴">4단계 — syslog / auth.log 완성 패턴</h3>
+<p>전통적인 syslog 줄은 <code>타임스탬프 호스트 프로세스[PID]: 메시지</code> 구조다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import re
+
+SYSLOG = re.compile(r&#39;&#39;&#39;
+    ^(?P&lt;mon&gt;[A-Z][a-z]{2})\s+   # Mar
+    (?P&lt;day&gt;\d{1,2})\s+          # 14   (한 자리면 공백 2개)
+    (?P&lt;time&gt;\d{2}:\d{2}:\d{2})\s+
+    (?P&lt;host&gt;\S+)\s+
+    (?P&lt;proc&gt;[^\[\s:]+)          # sshd
+    (?:\[(?P&lt;pid&gt;\d+)\])?        # [2311]  없을 수도 있다
+    :\s+
+    (?P&lt;msg&gt;.*)$
+    &#39;&#39;&#39;, re.VERBOSE)
+
+line = &#39;Mar 14 07:19:02 web01 sshd[2311]: Failed password for invalid user admin from 203.0.113.77 port 51022 ssh2&#39;
+print(SYSLOG.match(line).groupdict())</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">{&#39;mon&#39;: &#39;Mar&#39;, &#39;day&#39;: &#39;14&#39;, &#39;time&#39;: &#39;07:19:02&#39;, &#39;host&#39;: &#39;web01&#39;,
+ &#39;proc&#39;: &#39;sshd&#39;, &#39;pid&#39;: &#39;2311&#39;,
+ &#39;msg&#39;: &#39;Failed password for invalid user admin from 203.0.113.77 port 51022 ssh2&#39;}</code></pre></div>
+<p>메시지 안쪽은 두 번째 패턴으로 한 겹 더 벗긴다. 이렇게 두 단으로 나누면 각 패턴이 짧아져 디버깅이 쉽다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">SSH_FAIL = re.compile(
+    r&#39;^(?P&lt;result&gt;Failed|Accepted)\s+(?P&lt;method&gt;password|publickey)\s+for\s+&#39;
+    r&#39;(?:invalid user\s+)?(?P&lt;user&gt;\S+)\s+from\s+(?P&lt;src&gt;\S+)\s+port\s+(?P&lt;port&gt;\d+)&#39;
+)</code></pre></div>
+<p>전통 syslog의 치명적 특성 두 개를 반드시 기록한다.</p>
+<div class="table-wrap"><table><thead><tr><th>특성</th><th>결과</th><th>대응</th></tr></thead><tbody><tr><td>연도가 없다</td><td>12월/1월 경계에서 연도를 잘못 붙인다</td><td>파일의 mtime, 로테이션 파일명, 내부 재부팅 이벤트로 확정</td></tr><tr><td>시간대가 없다</td><td>UTC인지 KST인지 알 수 없다</td><td>호스트의 <code>/etc/timezone</code>, <code>/etc/localtime</code>, 같은 사건의 다른 로그와 대조</td></tr><tr><td>하루 한 자리는 공백 2개</td><td><code>\s+</code>가 아니면 매칭 실패</td><td>항상 <code>\s+</code>를 쓴다</td></tr></tbody></table></div>
+<p>RFC 5424 형식(<code>&lt;134&gt;1 2026-03-14T07:19:02.123Z host app 2311 - - msg</code>)은 ISO 8601 타임스탬프와 시간대를 포함하므로 훨씬 안전하다. 두 형식이 한 파일에 섞이는 경우도 있어 <code>bad</code> 카운트로 확인해야 한다.</p>
+<h3 id="5단계-dict를-그대로-표로-만든다">5단계 — dict를 그대로 표로 만든다</h3>
+<p><code>groupdict()</code>가 dict이므로 표 만들기가 곧바로 이어진다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import re, csv
+from collections import Counter
+
+rows, statuses = [], Counter()
+with open(&#39;access.log&#39;, encoding=&#39;utf-8&#39;, errors=&#39;replace&#39;) as f:
+    for line in f:
+        m = APACHE.match(line)
+        if not m:
+            continue
+        d = m.groupdict(default=&#39;&#39;)
+        d[&#39;status&#39;] = int(d[&#39;status&#39;])
+        d[&#39;size&#39;] = int(d[&#39;size&#39;]) if d[&#39;size&#39;].isdigit() else 0
+        rows.append(d)
+        statuses[d[&#39;status&#39;]] += 1
+
+print(statuses.most_common())
+print(Counter(r[&#39;uri&#39;] for r in rows if r[&#39;status&#39;] == 200).most_common(5))
+
+with open(&#39;access.csv&#39;, &#39;w&#39;, newline=&#39;&#39;, encoding=&#39;utf-8-sig&#39;) as fout:
+    w = csv.DictWriter(fout, fieldnames=list(rows[0].keys()))
+    w.writeheader()
+    w.writerows(rows)</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">[(200, 31204), (404, 7712), (403, 2140), (302, 611), (500, 215)]
+[(&#39;/index.html&#39;, 9821), (&#39;/style.css&#39;, 8004), (&#39;/uploads/av4tar.php&#39;, 219),
+ (&#39;/upload.php&#39;, 87), (&#39;/favicon.ico&#39;, 44)]</code></pre></div>
+<p><code>newline=&#39;&#39;</code>과 <code>encoding=&#39;utf-8-sig&#39;</code> 두 개가 실무 필수다. 앞은 Windows에서 빈 줄이 끼는 것을 막고, 뒤는 Excel이 한글을 깨뜨리지 않게 BOM을 붙인다. CSV 쪽 세부는 FOR-0125에서 다룬다.</p>
+<p>pandas가 설치돼 있으면 dict 리스트를 그대로 넘긴다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import pandas as pd
+df = pd.DataFrame(rows)
+print(df.groupby(&#39;status&#39;).size())
+print(df[df.status == 200].uri.value_counts().head())</code></pre></div>
+<p><code>pandas</code>는 표준 라이브러리가 아니므로 오프라인 대회장에 없을 수 있다. <code>csv</code> + <code>Counter</code>만으로 같은 결론이 나오도록 먼저 작성하고, pandas는 있으면 쓰는 보너스로 취급한다.</p>
+<h3 id="6단계-gname-치환">6단계 — <code>\g&lt;name&gt;</code> 치환</h3>
+<p>치환 문자열에서 명명 그룹을 참조한다. 번호(<code>\1</code>)보다 안전하고, 그룹을 추가해도 깨지지 않는다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import re
+
+# 계정명만 남기고 IP 마스킹
+line = &#39;Failed password for admin from 203.0.113.77 port 51022&#39;
+print(re.sub(r&#39;from (?P&lt;ip&gt;\d+\.\d+)\.\d+\.\d+&#39;, r&#39;from \g&lt;ip&gt;.x.x&#39;, line))</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Failed password for admin from 203.0.x.x port 51022</code></pre></div>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python"># 날짜 형식 정규화: 14/Mar/2026 -&gt; 2026-03-14
+MON = {&#39;Jan&#39;:&#39;01&#39;,&#39;Feb&#39;:&#39;02&#39;,&#39;Mar&#39;:&#39;03&#39;,&#39;Apr&#39;:&#39;04&#39;,&#39;May&#39;:&#39;05&#39;,&#39;Jun&#39;:&#39;06&#39;,
+       &#39;Jul&#39;:&#39;07&#39;,&#39;Aug&#39;:&#39;08&#39;,&#39;Sep&#39;:&#39;09&#39;,&#39;Oct&#39;:&#39;10&#39;,&#39;Nov&#39;:&#39;11&#39;,&#39;Dec&#39;:&#39;12&#39;}
+p = r&#39;(?P&lt;d&gt;\d{2})/(?P&lt;mon&gt;[A-Z][a-z]{2})/(?P&lt;y&gt;\d{4})&#39;
+print(re.sub(p, lambda m: f&quot;{m[&#39;y&#39;]}-{MON[m[&#39;mon&#39;]]}-{m[&#39;d&#39;]}&quot;, &#39;14/Mar/2026:07:19:02&#39;))</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">2026-03-14:07:19:02</code></pre></div>
+<p>월 약어를 dict로 직접 매핑한 이유가 있다. <code>datetime.strptime</code>의 <code>%b</code>는 <strong>로케일 의존</strong>이다. 한국어 로케일에서는 <code>Mar</code>을 인식하지 못해 <code>ValueError</code>가 난다. 로그의 월 약어는 영어이므로 dict 매핑이 가장 안전하다.</p>
+<div class="table-wrap"><table><thead><tr><th>참조 문법</th><th>어디서 쓰나</th><th>비고</th></tr></thead><tbody><tr><td><code>\g&lt;name&gt;</code></td><td><code>re.sub</code> 치환 문자열</td><td>이름 참조. 가장 안전</td></tr><tr><td><code>\g&lt;1&gt;</code></td><td><code>re.sub</code> 치환 문자열</td><td>번호 참조. <code>\g&lt;1&gt;0</code>처럼 뒤에 숫자가 와도 안전</td></tr><tr><td><code>\1</code></td><td><code>re.sub</code> 치환 문자열</td><td><code>\10</code>이 10번 그룹으로 해석되는 함정</td></tr><tr><td><code>(?P=name)</code></td><td>패턴 내부</td><td>치환 문자열에서 쓰면 안 된다</td></tr><tr><td><code>m[&#39;name&#39;]</code></td><td>파이썬 코드</td><td><code>m.group(&#39;name&#39;)</code>과 동일</td></tr></tbody></table></div>
+<p>치환 문자열은 항상 raw 문자열로 쓴다. <code>&#39;\g&lt;ip&gt;&#39;</code>는 되지만 <code>&#39;\1&#39;</code>은 제어문자가 되어 조용히 틀린다.</p>
+<h3 id="7단계-netpowershell과-문법이-다르다">7단계 — .NET(PowerShell)과 문법이 다르다</h3>
+<p>같은 로그 패턴을 PowerShell과 파이썬에서 돌려야 할 때 반드시 걸리는 지점이다.</p>
+<div class="table-wrap"><table><thead><tr><th>기능</th><th>Python <code>re</code></th><th>.NET / PowerShell</th></tr></thead><tbody><tr><td>명명 그룹 정의</td><td><code>(?P&lt;name&gt;...)</code></td><td><code>(?&lt;name&gt;...)</code> 또는 <code>(?&#39;name&#39;...)</code></td></tr><tr><td>패턴 내 역참조</td><td><code>(?P=name)</code></td><td><code>\k&lt;name&gt;</code></td></tr><tr><td>치환에서 참조</td><td><code>\g&lt;name&gt;</code></td><td><code>${name}</code></td></tr><tr><td>코드에서 접근</td><td><code>m.group(&#39;name&#39;)</code></td><td><code>$m.Groups[&#39;name&#39;].Value</code></td></tr><tr><td><code>(?P&lt;...&gt;)</code> 지원</td><td>표준</td><td><strong>지원하지 않는다</strong></td></tr><tr><td><code>(?&lt;...&gt;)</code> 지원</td><td>Python 3.12+에서도 미지원</td><td>표준</td></tr></tbody></table></div>
+<p>PowerShell 쪽 예시는 <a href="./powershell-select-string.html">FOR-0121</a>에 있다. 파이썬에서 <code>(?&lt;name&gt;...)</code>를 쓰면 이렇게 죽는다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import re
+re.compile(r&#39;(?&lt;ip&gt;\S+)&#39;)
+# re.error: unknown extension ?&lt;i at position 1</code></pre></div>
+<p>거꾸로 PowerShell에서 <code>(?P&lt;ip&gt;...)</code>를 쓰면 <code>Select-String</code>이 정규식 파싱 예외를 던진다. <strong>패턴을 복사해 옮길 때는 <code>P</code> 하나만 넣거나 빼면 된다.</strong> 그 외 문법(문자 클래스, 수량자, 전방·후방탐색, 인라인 옵션 <code>(?i)</code>)은 대체로 호환된다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p>Apache combined 로그의 필드 의미와 조사에서의 용도다.</p>
+<div class="table-wrap"><table><thead><tr><th>그룹 이름</th><th>Apache 지시자</th><th>의미</th><th>조사에서 보는 것</th></tr></thead><tbody><tr><td><code>ip</code></td><td><code>%h</code></td><td>클라이언트 주소</td><td>공격자 식별. 프록시 뒤면 <code>X-Forwarded-For</code>를 봐야 한다</td></tr><tr><td><code>ident</code></td><td><code>%l</code></td><td>identd 사용자</td><td>거의 항상 <code>-</code>. 무시</td></tr><tr><td><code>user</code></td><td><code>%u</code></td><td>HTTP 인증 사용자</td><td><code>-</code>가 아니면 인증된 요청. 계정 탈취 흔적</td></tr><tr><td><code>time</code></td><td><code>%t</code></td><td><code>14/Mar/2026:07:19:02 +0900</code></td><td>오프셋으로 시간대 확정</td></tr><tr><td><code>method</code></td><td><code>%r</code>의 앞부분</td><td>GET/POST/PUT/DELETE</td><td>POST·PUT은 업로드 의심</td></tr><tr><td><code>uri</code></td><td><code>%r</code>의 중간</td><td>경로와 쿼리스트링</td><td>웹셸·LFI·SQLi 파라미터</td></tr><tr><td><code>proto</code></td><td><code>%r</code>의 끝</td><td><code>HTTP/1.1</code></td><td>비정상 값이면 스캐너</td></tr><tr><td><code>status</code></td><td><code>%&gt;s</code></td><td>상태 코드</td><td>200·302는 성공, 403·404는 실패</td></tr><tr><td><code>size</code></td><td><code>%b</code></td><td>응답 바이트. 본문 없으면 <code>-</code></td><td>급증 지점이 유출 성공 신호</td></tr><tr><td><code>referer</code></td><td><code>%{Referer}i</code></td><td>유입 경로</td><td><code>-</code>면 직접 접근 = 자동화 의심</td></tr><tr><td><code>ua</code></td><td><code>%{User-Agent}i</code></td><td>클라이언트 문자열</td><td><code>sqlmap</code>, <code>curl</code>, <code>python-requests</code>, <code>nikto</code></td></tr></tbody></table></div>
+<p><code>time</code> 필드의 <code>+0900</code>이 KST를 뜻한다. <code>$MFT</code>·EVTX 같은 UTC 기준 artifact와 대조할 때는 9시간을 빼서 맞춘다. <code>%t</code>의 오프셋은 서버 로컬 시간대이므로, 서버가 UTC면 <code>+0000</code>으로 찍힌다.</p>
+<p><code>size</code>가 <code>-</code>인 이유는 응답 본문이 없었다는 뜻이다(304, HEAD 요청 등). <code>int()</code>로 바로 변환하면 <code>ValueError</code>가 나므로 위 코드처럼 <code>isdigit()</code> 방어가 필요하다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>명명 그룹으로 얻은 필드</th><th>다음 목표</th></tr></thead><tbody><tr><td><code>ip</code> 상위값</td><td>pcap <code>ip.addr == &lt;IP&gt;</code> / 방화벽 로그 / 다른 서비스 로그의 같은 IP</td></tr><tr><td><code>user</code> (인증된 요청)</td><td>EVTX 4624/4625, <code>/var/log/auth.log</code>의 같은 계정</td></tr><tr><td><code>uri</code>의 업로드 파일명</td><td>웹 루트의 실제 파일, <code>$MFT</code> 생성 시각, 파일 해시</td></tr><tr><td><code>status</code> 200 + 큰 <code>size</code></td><td>데이터 유출 성공 지점. 그 시각의 pcap</td></tr><tr><td><code>ua</code> 문자열</td><td>공격 도구 특정. 같은 UA의 다른 요청 전부</td></tr><tr><td><code>time</code></td><td>±5분 창의 모든 artifact. 시간대 변환 후</td></tr><tr><td><code>proc</code>/<code>pid</code> (syslog)</td><td>프로세스 단위 세션 추적</td></tr><tr><td>파싱 실패한 줄(<code>bad</code>)</td><td>형식이 다른 줄. 공격 페이로드가 형식을 깨뜨린 경우가 많다</td></tr><tr><td>dict 리스트</td><td>CSV로 저장 → Timeline Explorer, 스프레드시트 (FOR-0125)</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>(?&lt;name&gt;...)</code>를 파이썬에 쓰는 것.</strong> .NET/PowerShell 문법이다. <code>re.error: unknown extension</code>으로 죽는다. 왜 틀리나: 파이썬은 <code>(?P&lt;name&gt;...)</code>만 인식한다. 어떻게: 옮길 때 <code>P</code>를 넣는다. 거꾸로 PowerShell에 붙일 때는 <code>P</code>를 뺀다.</li><li><strong>같은 이름을 두 번 쓰는 것.</strong> <code>(?P&lt;x&gt;a)|(?P&lt;x&gt;b)</code>는 컴파일 에러다. 왜 틀리나: 이름은 패턴 전체에서 유일해야 한다. 어떻게: <code>(?P&lt;x1&gt;a)|(?P&lt;x2&gt;b)</code>로 나누고 <code>m.lastgroup</code>으로 어느 쪽인지 판별한다.</li><li><strong>미매칭 그룹을 문자열로 다루는 것.</strong> <code>(?:...)?</code> 안의 그룹은 매칭되지 않으면 <code>None</code>이다. <code>d[&#39;ua&#39;].lower()</code>가 <code>AttributeError</code>로 죽는다. 어떻게: <code>m.groupdict(default=&#39;&#39;)</code>를 쓴다.</li><li><strong><code>size</code>를 <code>int()</code>로 바로 변환하는 것.</strong> Apache는 본문이 없으면 <code>-</code>를 찍는다. <code>ValueError: invalid literal for int()</code>. 어떻게: <code>int(v) if v.isdigit() else 0</code>.</li><li><strong><code>match</code>와 <code>search</code>를 혼동하는 것.</strong> <code>match</code>는 문자열 <strong>시작</strong>에서만 본다. <code>^</code>를 넣고 <code>search</code>를 쓰거나 <code>match</code>를 쓰는 것 중 하나로 통일한다. 앞에 공백이 하나 있는 줄이 전부 실패하는 원인이 이것이다.</li><li><strong>파싱 실패 줄을 세지 않는 것.</strong> <code>if m:</code>로 조용히 건너뛰면 로그의 30%를 버려도 모른다. 왜 틀리나: 공격 페이로드에 따옴표·줄바꿈이 들어가면 그 줄만 형식이 깨진다. 어떻게: <code>bad</code> 카운터를 출력하고, 0이 아니면 그 줄들을 직접 본다.</li><li><strong><code>re.VERBOSE</code>에서 공백을 그냥 쓰는 것.</strong> <code>re.X</code>는 패턴의 공백을 전부 무시한다. <code>ip time</code> 사이의 스페이스가 사라져 매칭이 안 된다. 어떻게: <code>\s+</code>, <code>[ ]</code>, <code>\ </code>로 명시한다.</li><li><strong><code>%b</code>를 <code>strptime</code>으로 파싱하는 것.</strong> <code>%b</code>는 로케일 의존이라 한국어 환경에서 <code>Mar</code>을 못 읽고 <code>ValueError</code>가 난다. 어떻게: 월 약어를 dict로 직접 매핑하거나 로케일을 <code>C</code>로 고정한다.</li><li><strong>syslog에 연도·시간대를 임의로 붙이는 것.</strong> 전통 syslog에는 둘 다 없다. 파일 mtime과 로테이션 파일명으로 확정한 뒤 기록에 남긴다. 추측한 연도로 타임라인을 만들면 전체가 무의미해진다.</li><li><strong>치환 문자열을 raw로 쓰지 않는 것.</strong> <code>&#39;\g&lt;ip&gt;&#39;</code>는 우연히 동작하지만 <code>&#39;\1&#39;</code>은 제어문자가 된다. 항상 <code>r&#39;...&#39;</code>을 쓴다.</li><li><strong><code>findall</code>로 명명 그룹을 쓰는 것.</strong> 이름이 무시되고 튜플만 온다. 이름이 필요하면 <code>finditer</code>/<code>match</code>/<code>search</code>를 쓴다.</li><li><strong><code>groupdict()</code>를 그대로 CSV에 쓰면서 <code>newline=&#39;&#39;</code>을 빼는 것.</strong> Windows에서 행마다 빈 줄이 끼어 행 수가 두 배로 보인다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<p>명명 그룹 파싱 결과는 필드 기준 도구와 반드시 맞춰 본다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">from collections import Counter
+print(Counter(r[&#39;status&#39;] for r in rows).most_common(5))
+print(len(rows), &#39;parsed&#39;, bad, &#39;unparsed&#39;)</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># awk 필드 기준 — 상태 코드는 combined 형식에서 9번째 필드
+awk &#39;{print $9}&#39; access.log | sort | uniq -c | sort -rn | head -5
+
+# 전체 줄 수와 파싱 성공 수의 합이 맞는지
+wc -l access.log</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Select-String -Path .\access.log -Pattern &#39;&quot; (\d{3}) &#39; -AllMatches |
+  ForEach-Object { $_.Matches[0].Groups[1].Value } |
+  Group-Object | Sort-Object Count -Descending | Select-Object -First 5 Count, Name</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>차이</th><th>원인</th></tr></thead><tbody><tr><td><code>parsed + bad != wc -l</code></td><td>마지막 줄에 줄바꿈이 없거나 파일 안에 NUL이 있다</td></tr><tr><td>awk 결과가 다르다</td><td>URI에 공백이 있어 필드 번호가 밀렸다. 정규식 쪽이 맞다</td></tr><tr><td>정규식이 훨씬 적다</td><td><code>match</code>를 썼는데 줄 앞에 공백·BOM이 있다</td></tr><tr><td>특정 상태 코드만 누락</td><td>그 줄에 따옴표가 홀수 개다. 공격 페이로드 의심</td></tr></tbody></table></div>
+<p>세 번째와 네 번째는 그 자체가 단서다. <strong>형식을 깨뜨린 줄이 공격 줄인 경우가 많다.</strong></p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;access.log 를 파싱해 공격자가 업로드에 성공한 파일명과, 그 파일로 실행한
+ 명령 목록을 CSV 로 제출하세요.&quot;
+첨부: access.log (41,882줄)
+
+1. 한 줄 확인
+   repr(next(open(&#39;access.log&#39;, encoding=&#39;utf-8&#39;, errors=&#39;replace&#39;)))
+   -&gt; &#39;203.0.113.77 - - [14/Mar/2026:07:19:02 +0900] &quot;GET /admin/ HTTP/1.1&quot; 403 199 &quot;-&quot; &quot;sqlmap/1.7&quot;\n&#39;
+      combined 형식. 시간대 +0900 = KST.
+
+2. 첫 시도 (실패):
+   PAT = re.compile(r&#39;^(?&lt;ip&gt;\S+) .* &quot;(?&lt;method&gt;\S+) (?&lt;uri&gt;\S+)&#39;)
+   -&gt; re.error: unknown extension ?&lt;i at position 1
+
+   .NET 문법을 그대로 붙였다. PowerShell 에서 쓰던 패턴이었다.
+
+3. 문법 교정 — P 를 넣는다
+   PAT = re.compile(r&#39;^(?P&lt;ip&gt;\S+) .* &quot;(?P&lt;method&gt;\S+) (?P&lt;uri&gt;\S+)&#39;)
+   parsed = sum(1 for l in open(&#39;access.log&#39;, encoding=&#39;utf-8&#39;, errors=&#39;replace&#39;)
+                if PAT.match(l))
+   -&gt; 41870 / 41882.  12줄이 실패.
+
+4. 두 번째 실패 — 실패한 12줄을 무시하려다 멈춘다
+   업로드 성공 줄을 찾는데 안 나온다.
+   for l in ...: if &#39;upload&#39; in l and &#39;200&#39; in l: print(l)
+   -&gt; 아무것도 없음.
+
+   실패한 12줄을 직접 본다.
+   for i, l in enumerate(open(&#39;access.log&#39;, encoding=&#39;utf-8&#39;, errors=&#39;replace&#39;), 1):
+       if not PAT.match(l): print(i, repr(l))
+   -&gt; 8842 &#39;203.0.113.77 - - [14/Mar/2026:07:19:44 +0900] &quot;POST /upload.php?f=&quot;av4tar.php&quot; HTTP/1.1&quot; 200 87 &quot;-&quot; &quot;curl/8.5&quot;\n&#39;
+      ...
+   URI 안에 따옴표가 들어 있어 combined 패턴의 &quot;...&quot; 경계가 깨졌다.
+   즉 파싱 실패 줄이 바로 공격 줄이었다.
+
+5. 완성 패턴 — 따옴표 대신 마지막 &quot; 까지 게으르지 않게 잡고,
+   요청 라인 전체를 한 그룹으로 받은 뒤 다시 쪼갠다
+   FULL = re.compile(r&#39;&#39;&#39;
+       ^(?P&lt;ip&gt;\S+)\s+\S+\s+(?P&lt;user&gt;\S+)\s+
+       \[(?P&lt;time&gt;[^\]]+)\]\s+
+       &quot;(?P&lt;request&gt;.*)&quot;\s+
+       (?P&lt;status&gt;\d{3})\s+(?P&lt;size&gt;\d+|-)
+       (?:\s+&quot;(?P&lt;referer&gt;[^&quot;]*)&quot;\s+&quot;(?P&lt;ua&gt;[^&quot;]*)&quot;)?
+       &#39;&#39;&#39;, re.VERBOSE)
+   REQ = re.compile(r&#39;^(?P&lt;method&gt;[A-Z]+)\s+(?P&lt;uri&gt;.*?)\s+(?P&lt;proto&gt;HTTP/\S+)$&#39;)
+
+   -&gt; 41882 / 41882.  전부 파싱됨.
+
+6. 업로드 성공과 이후 실행 추출
+   rows = []
+   for line in open(&#39;access.log&#39;, encoding=&#39;utf-8&#39;, errors=&#39;replace&#39;):
+       m = FULL.match(line)
+       if not m: continue
+       d = m.groupdict(default=&#39;&#39;)
+       r = REQ.match(d.pop(&#39;request&#39;))
+       if r: d.update(r.groupdict())
+       rows.append(d)
+
+   ups = [r for r in rows if r[&#39;method&#39;] == &#39;POST&#39; and r[&#39;status&#39;] == &#39;200&#39;
+          and &#39;upload&#39; in r[&#39;uri&#39;]]
+   print(ups)
+   -&gt; [{&#39;ip&#39;:&#39;203.0.113.77&#39;,&#39;time&#39;:&#39;14/Mar/2026:07:19:44 +0900&#39;,
+        &#39;status&#39;:&#39;200&#39;,&#39;method&#39;:&#39;POST&#39;,&#39;uri&#39;:&#39;/upload.php?f=&quot;av4tar.php&quot;&#39;, ...}]
+
+   cmds = [r for r in rows if &#39;av4tar.php&#39; in r[&#39;uri&#39;] and &#39;cmd=&#39; in r[&#39;uri&#39;]]
+   for r in cmds[:3]: print(r[&#39;time&#39;], r[&#39;uri&#39;])
+   -&gt; 14/Mar/2026:07:20:15 +0900 /uploads/av4tar.php?cmd=id
+      14/Mar/2026:07:20:31 +0900 /uploads/av4tar.php?cmd=whoami
+      14/Mar/2026:07:21:07 +0900 /uploads/av4tar.php?cmd=cat+/etc/passwd
+
+7. CSV 로 저장
+   import csv
+   with open(&#39;attack.csv&#39;,&#39;w&#39;,newline=&#39;&#39;,encoding=&#39;utf-8-sig&#39;) as f:
+       w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+       w.writeheader(); w.writerows(cmds)
+
+8. 시간대
+   +0900 이므로 위 시각은 KST. UTC 기준 artifact 와 대조할 때는 9시간을 뺀다.
+   07:20:15 KST = 2026-03-13 22:20:15 UTC.
+
+정답: 업로드 파일 av4tar.php (2026-03-14 07:19:44 KST) /
+      실행 명령 id, whoami, cat /etc/passwd</code></pre></div>
+<p>2단계와 4단계가 교훈이다. <strong><code>(?&lt;name&gt;)</code>은 .NET이고 <code>(?P&lt;name&gt;)</code>이 파이썬이다. 그리고 파싱 실패 줄을 세지 않으면 답을 놓친다.</strong></p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>(?P&lt;name&gt;...)</code>의 <code>P</code>를 넣었는가 — .NET 패턴을 붙여 넣지 않았는가</li><li>그룹 이름이 중복되지 않는가</li><li><code>match</code>인가 <code>search</code>인가 — 줄 앞 공백·BOM이 있으면 <code>match</code>가 전부 실패한다</li><li>파싱 실패 줄 수를 출력했는가 — 그 줄에 답이 있을 수 있다</li><li><code>groupdict(default=&#39;&#39;)</code>로 <code>None</code>을 막았는가</li><li><code>int()</code> 변환 전에 <code>-</code> 값을 방어했는가</li><li><code>re.VERBOSE</code>에서 공백을 <code>\s+</code>로 명시했는가</li><li><code>findall</code>을 쓰고 있지 않은가 — 이름이 필요하면 <code>finditer</code></li><li>치환 문자열을 <code>r&#39;...&#39;</code>로 썼는가</li><li>syslog면 연도와 시간대를 무엇으로 확정했는가</li><li>CSV 저장에 <code>newline=&#39;&#39;</code>과 <code>encoding=&#39;utf-8-sig&#39;</code>를 줬는가</li><li><code>awk</code>/<code>Select-String</code> 결과와 필드별 건수를 맞춰 봤는가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-057 — Python 공식 문서 <code>re</code> 모듈: <code>(?P&lt;name&gt;...)</code>, <code>(?P=name)</code>, <code>\g&lt;name&gt;</code> 문법과 그룹 이름 중복 시 컴파일 에러, <code>groupdict(default=...)</code>, <code>re.VERBOSE</code>의 공백·주석 규칙, <code>findall</code>이 그룹 이름을 무시하는 동작</li><li>SRC-058 — Apache HTTP Server Log Files 문서: common/combined 로그 형식의 <code>%h %l %u %t \&quot;%r\&quot; %&gt;s %b</code> 지시자 정의와 각 필드 의미, 본문 없는 응답에서 <code>%b</code>가 <code>-</code>가 되는 동작</li><li>.NET/PowerShell 정규식 문법(<code>(?&lt;name&gt;...)</code>, <code>\k&lt;name&gt;</code>, <code>${name}</code>)은 Microsoft의 .NET 정규식 문서가 1차 출처다. <code>research/sources.json</code>에 해당 SRC가 없어 이 글에서는 대조표만 제시했다. 추가를 권한다</li><li><code>strptime</code>의 <code>%b</code>가 로케일 의존이라는 점은 Python <code>datetime</code> 문서 범위이며, 실행 환경의 로케일에 따라 결과가 달라지므로 실제 환경에서 확인할 것</li><li>예시 로그 값(IP·파일명·건수)은 설명용 가상 데이터다</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./python-re-findall.html">
+    <span class="rel-id">FOR-0122 · 로그/Regex</span>
+    Python re.findall로 로그에서 값 뽑기: 그룹 개수가 반환형을 바꾼다
+  </a>
+  <a class="related-item" href="./python-re-finditer.html">
+    <span class="rel-id">FOR-0123 · 로그/Regex</span>
+    Python re.finditer와 Match 객체: 매칭 위치까지 얻는다
+  </a>
+  <a class="related-item" href="./powershell-select-string.html">
+    <span class="rel-id">FOR-0121 · 로그/Regex</span>
+    PowerShell Select-String으로 로그 검색하기 (Windows용 grep)
+  </a>
+  <a class="related-item" href="./log-triage.html">
+    <span class="rel-id">FOR-0111 · 로그/Regex</span>
+    로그 파일 30초 트리아지: 형식·줄수·시간범위부터 확인한다
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./python-re-finditer.html"><span class="rel-id">← FOR-0123</span>Python re.finditer와 Match 객체: 매칭 위치까지 얻는다</a>
+<a class="related-item" href="./ipv4-regex.html"><span class="rel-id">FOR-0128 →</span>IPv4 주소 regex: 느슨한 패턴과 엄격한 패턴 골라 쓰기</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-문법-네-개">1단계 — 문법 네 개</a></li>
+<li class="toc-l3"><a href="#2단계-역참조-pname">2단계 — 역참조 `(?P=name)`</a></li>
+<li class="toc-l3"><a href="#3단계-reverbose로-긴-패턴을-읽게-만든다">3단계 — `re.VERBOSE`로 긴 패턴을 읽게 만든다</a></li>
+<li class="toc-l3"><a href="#4단계-syslog-authlog-완성-패턴">4단계 — syslog / auth.log 완성 패턴</a></li>
+<li class="toc-l3"><a href="#5단계-dict를-그대로-표로-만든다">5단계 — dict를 그대로 표로 만든다</a></li>
+<li class="toc-l3"><a href="#6단계-gname-치환">6단계 — `\g&lt;name&gt;` 치환</a></li>
+<li class="toc-l3"><a href="#7단계-netpowershell과-문법이-다르다">7단계 — .NET(PowerShell)과 문법이 다르다</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

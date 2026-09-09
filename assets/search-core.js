@@ -95,8 +95,13 @@
 
   // Attach lazily-computed lowercase haystacks to each doc. Called once per
   // index; keeps the shipped search-index.js free of duplicated lowercase text.
-  function prepare(index) {
-    if (index.__prepared) return index;
+  //
+  // `bodies` is the optional id -> full text map from search-body.js. It ships
+  // separately because body text is ~87% of the index, and article pages only
+  // need the metadata half. Without it, body-tier matching is simply skipped.
+  function prepare(index, bodies) {
+    var withBodies = !!bodies;
+    if (index.__prepared && index.__preparedWithBodies === withBodies) return index;
     var docs = index.docs || [];
     for (var i = 0; i < docs.length; i++) {
       var d = docs[i];
@@ -110,14 +115,16 @@
       d._hd = (d.hd || []).map(norm);
       d._al = (d.al || []).map(norm);
       d._answer = norm(d.an);
-      d._body = norm(d.bd);
+      var body = bodies ? bodies[d.i] || '' : d.bd || '';
+      d._body = norm(body);
       // One squashed blob per doc for Korean substring / n-gram fallback.
       d._blob = squash(
-        [d.t, (d.al || []).join(' '), (d.kw || []).join(' '), (d.sy || []).join(' '), d.an, d.bd].join(' ')
+        [d.t, (d.al || []).join(' '), (d.kw || []).join(' '), (d.sy || []).join(' '), d.an, body].join(' ')
       );
       d._id = norm(d.i);
     }
     index.__prepared = true;
+    index.__preparedWithBodies = withBodies;
     return index;
   }
 
@@ -278,12 +285,14 @@
   /**
    * @param {object} index  the object emitted into assets/search-index.js
    * @param {string} query
-   * @param {object} [opts] { limit, filters }
+   * @param {object} [opts] { limit, filters, bodies }
+   *   bodies: optional id -> full text map from search-body.js. Omit it and
+   *   body-tier matching is skipped (metadata/title/keyword tiers still work).
    * @returns {{id,title,slug,category,type,difficulty,priority,tools,answer,quick,score,matched}[]}
    */
   function search(index, query, opts) {
-    prepare(index);
     opts = opts || {};
+    prepare(index, opts.bodies);
     var limit = opts.limit || 50;
     var filters = opts.filters || null;
     var tokens = tokenize(query || '');

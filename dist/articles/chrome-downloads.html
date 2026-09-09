@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Chrome downloads 테이블 심화: state / danger_type / interrupt_reason 와 출처 추적 · FOR-0192 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%B8%8C%EB%9D%BC%EC%9A%B0%EC%A0%80%2F%EC%9B%B9">브라우저/웹</a> / FOR-0192
+      </div>
+      <header class="article-head">
+        <h1>Chrome downloads 테이블 심화: state / danger_type / interrupt_reason 와 출처 추적</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">브라우저/웹</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>&quot;이 파일을 어디서 받았는가&quot;의 답은 History DB의 downloads.target_path 가 아니라 tab_url + downloads_url_chains 조합에 있고, state·interrupt_reason·opened·hash 네 컬럼이 &quot;온전히 받았는가 / 왜 끊겼는가 / 열어봤는가 / 무슨 파일인가&quot;를 각각 확정한다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>sqlite3, DB Browser for SQLite, FTK Imager, MFTECmd, NTFS Log Tracker, strings</td></tr>
+<tr><th>artifact</th><td><code>Chrome downloads</code> · <code>downloads_url_chains</code> · <code>downloads_slices</code> · <code>.crdownload</code> · <code>Unconfirmed</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Users\&lt;user&gt;\AppData\Local\Google\Chrome\User Data\Default\History</code> · <code>C:\Users\&lt;user&gt;\Downloads</code> · <code>%LocalAppData%\Microsoft\Edge\User Data\Default\History</code> · <code>%LocalAppData%\Naver\Naver Whale\User Data\Default\History</code></td></tr>
+<tr><th>프로토콜</th><td>HTTP, HTTPS</td></tr>
+<tr><th>Wireshark 필터</th><td><code>http.response.code == 302</code></td></tr>
+<tr><th>tshark field</th><td><code>http.host</code> · <code>http.location</code></td></tr>
+<tr><th>regex</th><td><code>https?://[^\s&quot;&#39;&lt;&gt;]+\.(?:exe|dll|zip|rar|7z|ps1|js|hta|scr)</code></td></tr>
+<tr><th>로그 필드</th><td><code>current_path</code> · <code>target_path</code> · <code>state</code> · <code>danger_type</code> · <code>interrupt_reason</code> · <code>hash</code> · <code>opened</code> · <code>last_access_time</code> · <code>referrer</code> · <code>tab_url</code> · <code>tab_referrer_url</code> · <code>site_url</code> · <code>chain_index</code> · <code>received_bytes</code> · <code>total_bytes</code> · <code>etag</code> · <code>last_modified</code> · <code>by_ext_id</code> · <code>http_method</code></td></tr>
+<tr><th>파일 형식</th><td><code>sqlite</code></td></tr>
+<tr><th>검색 별칭</th><td>크롬 다운로드 기록 · 다운로드 어디서 받았나 · crdownload · 다운로드 중단 원인 · 받은 파일 목록 · 다운로드 해시 · 엣지 다운로드 기록 · 다운로드 리다이렉트</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>&quot;이 파일을 어디서 받았는가&quot;의 답은 <code>History</code> DB의 <code>downloads.target_path</code> 가 아니라 <strong><code>tab_url</code> + <code>downloads_url_chains</code> 조합</strong>에 있고, <code>state</code>·<code>interrupt_reason</code>·<code>opened</code>·<code>hash</code> 네 컬럼이 &quot;온전히 받았는가 / 왜 끊겼는가 / 열어봤는가 / 무슨 파일인가&quot;를 각각 확정한다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>악성 파일의 <strong>최초 유입 경로</strong>를 특정해야 하는 경우</li><li>Downloads 폴더에 파일이 없는데 받은 흔적만 찾아야 하는 경우 (받고 삭제·이동)</li><li><code>.crdownload</code> 조각만 남아 있고 원본 URL을 복원해야 하는 경우</li><li>다운로드가 중단된 원인(용량 부족 / Safe Browsing 차단 / 사용자 취소)을 구분해야 하는 경우</li><li>브라우저 기록의 파일 해시와 디스크의 파일 해시를 대조해 <strong>동일 파일인지</strong> 증명해야 하는 경우</li></ul>
+<p>테이블 구조 전반과 <code>urls</code>/<code>visits</code> 조인, WebKit 시각 변환은 <a href="./chrome-history.html">FOR-0191</a>이 담당한다. 이 글은 <code>downloads</code> 계열 3개 테이블만 파고든다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>첨부에 확장자 없는 <code>History</code> 파일이 있는가 → <code>file History</code> 로 SQLite 확인</li><li><code>History-wal</code> 이 같이 있는가 → <strong>있으면 반드시 함께 복사한다.</strong> 마지막 다운로드 1건이 WAL에만 있는 경우가 흔하다</li><li><code>Downloads</code> 폴더에 <code>*.crdownload</code> 또는 <code>Unconfirmed *.crdownload</code> 가 있는가 → 미완료 다운로드</li><li>문제 지문에 &quot;리다이렉트&quot;, &quot;실제 서버&quot;, &quot;진짜 출처&quot; 같은 단어가 있는가 → <code>downloads_url_chains</code> 가 정답</li><li>지문이 &quot;몇 바이트 받았나&quot;를 묻는가 → <code>received_bytes</code> vs <code>total_bytes</code> 불일치를 노린 문제</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">sqlite3 -header -column History &quot;SELECT id, target_path, state, opened, tab_url FROM downloads ORDER BY start_time DESC;&quot;</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 0) 사본으로 작업. -wal 을 반드시 같이 복사한다
+cp History History.cp; cp History-wal History.cp-wal 2&gt;/dev/null
+
+# 1) 스키마 먼저. Chrome 버전마다 컬럼이 늘어난다
+sqlite3 History.cp &quot;.schema downloads&quot;
+
+# 2) 핵심 한 줄 — 무엇을, 어디서, 완료했는가, 열었는가
+sqlite3 -header -column History.cp &quot;
+SELECT d.id,
+       datetime(d.start_time/1000000-11644473600,&#39;unixepoch&#39;,&#39;+9 hours&#39;) AS start_kst,
+       d.target_path, d.received_bytes AS got, d.total_bytes AS total,
+       d.state, d.danger_type AS danger, d.interrupt_reason AS irsn,
+       d.opened, d.tab_url
+FROM downloads d ORDER BY d.start_time DESC;&quot;
+
+# 3) 진짜 출처 — 리다이렉트 체인 전체
+sqlite3 -header -column History.cp &quot;
+SELECT c.id, c.chain_index, c.url FROM downloads_url_chains c ORDER BY c.id, c.chain_index;&quot;</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-downloads-전체-컬럼을-의미별로-갈라-본다">1단계 — <code>downloads</code> 전체 컬럼을 의미별로 갈라 본다</h3>
+<p>컬럼이 30개 가까이 되지만 역할은 5묶음뿐이다.</p>
+<div class="table-wrap"><table><thead><tr><th>묶음</th><th>컬럼</th><th>무엇을 답하는가</th></tr></thead><tbody><tr><td>식별</td><td><code>id</code>, <code>guid</code></td><td>다른 테이블과의 조인 키</td></tr><tr><td>파일</td><td><code>current_path</code>, <code>target_path</code>, <code>received_bytes</code>, <code>total_bytes</code>, <code>hash</code>, <code>mime_type</code>, <code>original_mime_type</code></td><td>디스크에 무엇이 남았는가</td></tr><tr><td>상태</td><td><code>state</code>, <code>danger_type</code>, <code>interrupt_reason</code>, <code>transient</code></td><td>온전히 받았는가</td></tr><tr><td>시각</td><td><code>start_time</code>, <code>end_time</code>, <code>last_access_time</code></td><td>언제 받고 언제 열었는가</td></tr><tr><td>출처</td><td><code>referrer</code>, <code>tab_url</code>, <code>tab_referrer_url</code>, <code>site_url</code>, <code>http_method</code>, <code>etag</code>, <code>last_modified</code>, <code>by_ext_id</code>, <code>by_ext_name</code></td><td>누가·어디서 시작했는가</td></tr></tbody></table></div>
+<p><code>opened</code> 는 상태도 시각도 아닌 <strong>행위</strong> 컬럼이다: <code>1</code> 이면 사용자가 브라우저 UI(다운로드 바 / <code>chrome://downloads</code>)에서 그 파일을 열었다.</p>
+<h3 id="2단계-state-해석">2단계 — <code>state</code> 해석</h3>
+<p><code>state</code> 는 Chromium 이 History DB 에 저장하는 전용 정수다.</p>
+<div class="table-wrap"><table><thead><tr><th><code>state</code></th><th>의미</th><th>실무 판단</th></tr></thead><tbody><tr><td>0</td><td>진행 중 (IN_PROGRESS)</td><td>브라우저가 종료될 때까지 끝나지 않았다. <code>.crdownload</code> 가 남는다</td></tr><tr><td>1</td><td><strong>완료 (COMPLETE)</strong></td><td>파일이 온전히 <code>target_path</code> 에 저장됐다</td></tr><tr><td>2</td><td>취소 (CANCELLED)</td><td>사용자가 취소. <code>interrupt_reason</code> 40 과 함께 나오는 경우가 많다</td></tr><tr><td>3</td><td>레거시 값</td><td>과거 버전이 쓰던 자리. 현행 브라우저에서는 사실상 나오지 않는다</td></tr><tr><td>4</td><td><strong>중단 (INTERRUPTED)</strong></td><td>원인은 <code>interrupt_reason</code> 에 있다</td></tr></tbody></table></div>
+<p><code>state = 1</code> 이 아닌 행을 &quot;다운로드 실패&quot;로 뭉개면 안 된다. <strong><code>state = 4</code> 이면서 <code>received_bytes</code> 가 0보다 크면 부분 파일이 디스크에 남아 있다.</strong></p>
+<h3 id="3단계-dangertype-해석">3단계 — <code>danger_type</code> 해석</h3>
+<p>Safe Browsing 이 그 파일을 어떻게 판정했는지, 그리고 사용자가 경고를 무시했는지가 들어 있다.</p>
+<div class="table-wrap"><table><thead><tr><th><code>danger_type</code></th><th>이름</th><th>의미</th></tr></thead><tbody><tr><td>0</td><td>NOT_DANGEROUS</td><td>판정 없음</td></tr><tr><td>1</td><td>DANGEROUS_FILE</td><td>확장자 자체가 위험군(<code>.exe</code>, <code>.dll</code>, <code>.scr</code> 등)</td></tr><tr><td>2</td><td>DANGEROUS_URL</td><td>URL 이 Safe Browsing 블랙리스트</td></tr><tr><td>3</td><td>DANGEROUS_CONTENT</td><td>내용이 악성으로 판정</td></tr><tr><td>4</td><td>MAYBE_DANGEROUS_CONTENT</td><td>악성 의심</td></tr><tr><td>5</td><td>UNCOMMON_CONTENT</td><td>드문 파일. 평판 정보 부족</td></tr><tr><td>6</td><td><strong>USER_VALIDATED</strong></td><td><strong>사용자가 &quot;유지&quot;를 눌러 경고를 무시했다</strong></td></tr><tr><td>7</td><td>DANGEROUS_HOST</td><td>호스트가 악성 배포 이력</td></tr><tr><td>8</td><td>POTENTIALLY_UNWANTED</td><td>PUP/애드웨어류</td></tr></tbody></table></div>
+<p><code>danger_type = 6</code> 은 포렌식에서 가치가 매우 크다. <strong>브라우저가 경고를 띄웠고 사용자가 의도적으로 무시했다</strong>는 증거다. 9 이상의 값은 딥스캔·정책 차단 등으로 버전마다 추가되므로 단정하지 말고 <code>.schema</code> 와 함께 Chromium 소스로 확인한다.</p>
+<h3 id="4단계-interruptreason-해석">4단계 — <code>interrupt_reason</code> 해석</h3>
+<p>번호대가 그대로 원인 계열이다. 이것만 기억하면 대부분 판단이 된다.</p>
+<div class="table-wrap"><table><thead><tr><th>번호대</th><th>계열</th><th>대표 값</th></tr></thead><tbody><tr><td>0</td><td>없음</td><td>0 NONE (정상)</td></tr><tr><td>1~19</td><td><strong>로컬 파일 계열</strong></td><td>1 FILE_FAILED, 2 FILE_ACCESS_DENIED, 3 <strong>FILE_NO_SPACE</strong>, 5 FILE_NAME_TOO_LONG, 6 FILE_TOO_LARGE, 7 <strong>FILE_VIRUS_INFECTED</strong>, 10 FILE_TRANSIENT_ERROR, 11 <strong>FILE_BLOCKED</strong>, 12 FILE_SECURITY_CHECK_FAILED, 13 FILE_TOO_SHORT, 14 FILE_HASH_MISMATCH</td></tr><tr><td>20~29</td><td>네트워크 계열</td><td>20 NETWORK_FAILED, 21 NETWORK_TIMEOUT, 22 NETWORK_DISCONNECTED, 23 NETWORK_SERVER_DOWN, 24 NETWORK_INVALID_REQUEST</td></tr><tr><td>30~39</td><td>서버 계열</td><td>30 SERVER_FAILED, 31 SERVER_NO_RANGE, 33 SERVER_BAD_CONTENT, 34 SERVER_UNAUTHORIZED, 35 SERVER_CERT_PROBLEM, 36 SERVER_FORBIDDEN, 37 SERVER_UNREACHABLE, 38 SERVER_CONTENT_LENGTH_MISMATCH</td></tr><tr><td>40~49</td><td><strong>사용자 계열</strong></td><td>40 <strong>USER_CANCELED</strong>, 41 USER_SHUTDOWN</td></tr><tr><td>50</td><td>크래시</td><td>50 CRASH</td></tr></tbody></table></div>
+<p>판단 요령:</p>
+<ul><li><code>7 FILE_VIRUS_INFECTED</code> / <code>11 FILE_BLOCKED</code> → <strong>백신 또는 정책이 막았다.</strong> 파일은 디스크에 없다</li><li><code>40 USER_CANCELED</code> → 사용자가 스스로 멈췄다. 의도 증거</li><li><code>41 USER_SHUTDOWN</code> / <code>50 CRASH</code> → 브라우저가 죽었다. <code>.crdownload</code> 가 남아 있을 확률이 높다</li><li><code>3 FILE_NO_SPACE</code> → 디스크가 꽉 찼다. 사건과 무관한 노이즈일 때가 많다</li></ul>
+<h3 id="5단계-opened-와-lastaccesstime">5단계 — <code>opened</code> 와 <code>last_access_time</code></h3>
+<div class="table-wrap"><table><thead><tr><th>컬럼</th><th>의미</th><th>주의</th></tr></thead><tbody><tr><td><code>opened</code></td><td>브라우저 UI 를 통해 파일을 <strong>열었는가</strong> (0/1)</td><td>탐색기에서 직접 더블클릭한 것은 잡히지 않는다</td></tr><tr><td><code>last_access_time</code></td><td>마지막 접근 시각 (WebKit µs)</td><td><code>0</code> 이면 접근 기록 없음</td></tr></tbody></table></div>
+<p><code>opened = 1</code> 이면서 <code>last_access_time &gt; 0</code> 인 행은 <strong>다운로드 → 실행/열기까지 이어졌다</strong>는 직접 증거다. 여기서 바로 실행 흔적(UserAssist, Prefetch)으로 pivot 한다.</p>
+<p><code>opened = 0</code> 이라고 실행하지 않았다고 단정하면 안 된다. 탐색기에서 연 경우는 이 값이 0으로 남는다.</p>
+<h3 id="6단계-hash-는-blob-이다">6단계 — <code>hash</code> 는 BLOB 이다</h3>
+<p><code>hash</code> 컬럼은 완료된 다운로드의 <strong>SHA-256 원시 32바이트</strong>다. 그냥 <code>SELECT hash</code> 하면 깨진 바이너리가 출력된다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">sqlite3 -header -column History.cp &quot;
+SELECT id, target_path, length(hash) AS hlen, hex(hash) AS sha256 FROM downloads;&quot;</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">id  target_path                                    hlen  sha256
+7   C:\Users\jhkim\Downloads\setup_v3.exe          32    9F86D081884C7D659A2FEAA0C55AD015A3BF4F1B2B0B822CD15D6C15B0F00A08
+9   C:\Users\jhkim\Downloads\report.pdf            0</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th><code>length(hash)</code></th><th>의미</th></tr></thead><tbody><tr><td>32</td><td>SHA-256 이 기록됐다. <code>hex()</code> 로 꺼내 디스크 파일 해시와 대조한다</td></tr><tr><td>0</td><td>빈 BLOB. 완료되지 않았거나 해시를 계산하지 않은 다운로드</td></tr></tbody></table></div>
+<p><code>hex()</code> 출력은 대문자다. 대조할 때는 양쪽을 같은 대소문자로 정규화한다.</p>
+<h3 id="7단계-referrer-vs-taburl-vs-siteurl-의-차이">7단계 — <code>referrer</code> vs <code>tab_url</code> vs <code>site_url</code> 의 차이</h3>
+<p>이 세 컬럼을 같은 것으로 취급하는 것이 이 테이블에서 가장 흔한 오독이다.</p>
+<div class="table-wrap"><table><thead><tr><th>컬럼</th><th>채워지는 값</th><th>언제 비어 있나</th></tr></thead><tbody><tr><td><code>referrer</code></td><td>HTTP <code>Referer</code> 헤더로 실제 전송된 참조 URL</td><td>Referrer-Policy 로 축약/제거되면 도메인만 남거나 빈 문자열</td></tr><tr><td><code>tab_url</code></td><td><strong>다운로드를 시작한 탭에 떠 있던 페이지 URL</strong></td><td>새 탭이 즉시 닫히는 다운로드, 링크를 새 창으로 여는 경우, 확장/외부 프로그램이 유발한 다운로드</td></tr><tr><td><code>tab_referrer_url</code></td><td>그 탭이 어디서 왔는지</td><td>탭이 첫 페이지일 때</td></tr><tr><td><code>site_url</code></td><td>사이트 단위(scheme + eTLD+1) 로 축약된 값</td><td>구버전 또는 사이트 격리 정보가 없을 때</td></tr></tbody></table></div>
+<p>우선순위는 <strong><code>tab_url</code> &gt; <code>referrer</code> &gt; <code>site_url</code></strong> 이다. <code>referrer</code> 는 정책으로 잘려 있을 수 있고, <code>site_url</code> 은 애초에 경로가 없다. 세 개가 모두 비어 있으면 <code>by_ext_id</code>(확장이 유발한 다운로드)와 <code>downloads_url_chains</code> 로 넘어간다.</p>
+<p>최신 Chromium 은 <code>site_url</code> 대신 <code>embedder_download_data</code> 를 쓰는 버전도 있다. 컬럼이 없다고 나오면 <code>.schema downloads</code> 로 확인한다.</p>
+<h3 id="8단계-downloadsurlchains-로-리다이렉트-체인-복원">8단계 — <code>downloads_url_chains</code> 로 리다이렉트 체인 복원</h3>
+<div class="code-block" data-lang="sql"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-sql">-- 스키마: downloads_url_chains(id, chain_index, url)
+SELECT d.target_path, c.chain_index, c.url
+FROM downloads d JOIN downloads_url_chains c ON c.id = d.id
+ORDER BY d.id, c.chain_index;</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th><code>chain_index</code></th><th>의미</th></tr></thead><tbody><tr><td>0</td><td><strong>사용자가 클릭/입력한 최초 URL</strong></td></tr><tr><td>1..n-1</td><td>3xx 또는 JS 리다이렉트 중간 단계</td></tr><tr><td>마지막</td><td>실제로 바이트를 내려준 URL</td></tr></tbody></table></div>
+<p><code>downloads</code> 테이블 어디에도 &quot;최종 URL&quot; 컬럼은 없다. 체인의 마지막 항목이 그것이다. <strong>단축 URL·CDN·클라우드 스토리지를 거친 배포는 0번과 마지막이 완전히 다른 도메인</strong>이므로, 하나만 보면 결론이 뒤집힌다.</p>
+<p>체인 길이로 바로 의심 대상을 뽑는다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">sqlite3 -header -column History.cp &quot;
+SELECT d.id, count(*) AS hops, min(c.url) AS one_of
+FROM downloads d JOIN downloads_url_chains c ON c.id=d.id
+GROUP BY d.id HAVING hops &gt; 1;&quot;</code></pre></div>
+<h3 id="9단계-downloadsslices">9단계 — <code>downloads_slices</code></h3>
+<p>병렬 다운로드(구간 분할 수신)를 쓰면 구간별 진행 상황이 별 테이블에 들어간다.</p>
+<div class="table-wrap"><table><thead><tr><th>컬럼</th><th>의미</th></tr></thead><tbody><tr><td><code>download_id</code></td><td><code>downloads.id</code> 참조</td></tr><tr><td><code>offset</code></td><td>이 조각의 시작 오프셋</td></tr><tr><td><code>received_bytes</code></td><td>이 조각이 받은 바이트</td></tr><tr><td><code>finished</code></td><td>이 조각이 끝났는가</td></tr></tbody></table></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">sqlite3 -header -column History.cp &quot;
+SELECT download_id, offset, received_bytes, finished FROM downloads_slices ORDER BY download_id, offset;&quot;</code></pre></div>
+<p>행이 여럿이고 <code>finished = 0</code> 이 섞여 있으면 <strong>파일 중간에 구멍이 있는 부분 파일</strong>이다. 그 파일의 해시가 원본과 다른 이유가 여기서 설명된다. 테이블이 비어 있는 것은 정상이다(병렬 다운로드를 안 쓴 경우).</p>
+<h3 id="10단계-crdownload-와-usnjrnl-rename-쌍">10단계 — <code>.crdownload</code> 와 <code>$UsnJrnl</code> RENAME 쌍</h3>
+<p>Chrome 은 다운로드 중에는 최종 이름을 쓰지 않는다.</p>
+<div class="table-wrap"><table><thead><tr><th>단계</th><th>디스크의 이름</th><th>DB 의 값</th></tr></thead><tbody><tr><td>수신 중 (대상 확정)</td><td><code>report.pdf.crdownload</code></td><td><code>current_path</code> = <code>...report.pdf.crdownload</code>, <code>target_path</code> = <code>...report.pdf</code></td></tr><tr><td>수신 중 (대상 미확정 / 위험 판정 대기)</td><td><code>Unconfirmed 481203.crdownload</code></td><td><code>current_path</code> 가 <code>Unconfirmed ...</code></td></tr><tr><td>완료</td><td><code>report.pdf</code></td><td><code>current_path</code> = <code>target_path</code>, <code>state</code> = 1</td></tr></tbody></table></div>
+<p>완료 순간 파일은 <strong>rename</strong> 된다. NTFS 에서 rename 은 <code>$UsnJrnl:$J</code> 에 <strong>한 파일에 대한 두 개의 레코드 쌍</strong>으로 남는다.</p>
+<div class="table-wrap"><table><thead><tr><th>USN Reason</th><th>파일명 필드</th><th>의미</th></tr></thead><tbody><tr><td><code>RENAME_OLD_NAME</code> (0x00001000)</td><td><code>report.pdf.crdownload</code></td><td>바뀌기 전 이름</td></tr><tr><td><code>RENAME_NEW_NAME</code> (0x00002000)</td><td><code>report.pdf</code></td><td>바뀐 뒤 이름</td></tr></tbody></table></div>
+<p>두 레코드는 <strong>같은 File Reference Number(MFT 엔트리)</strong> 를 가지며 USN 이 연속한다. 이것이 왜 중요한가:</p>
+<ul><li><code>History</code> 가 지워졌어도 <code>$J</code> 에 <code>*.crdownload</code> → 최종 이름 쌍이 남으면 <strong>다운로드가 있었다는 사실과 파일명·시각을 복원</strong>할 수 있다</li><li>반대로 <code>$J</code> 에 <code>.crdownload</code> 쌍이 없는 파일은 브라우저 다운로드가 아니라 복사·압축해제·USB 유입일 가능성이 크다</li><li><code>Unconfirmed NNNNNN.crdownload</code> 이름이 <code>$J</code> 에 있으면 <strong>Safe Browsing 대기 중이던 위험 판정 다운로드</strong>였다는 뜻이다</li></ul>
+<p>Reason 플래그 값과 파싱 방법은 <a href="./usn-reason-flags.html">FOR-0028</a>, <code>$J</code> 추출은 <a href="./usnjrnl-basics.html">FOR-0027</a>을 본다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># $J 를 파싱한 뒤 crdownload 쌍만 뽑기 (경로는 반드시 작은따옴표)
+MFTECmd.exe -f &#39;C:\case\$J&#39; -m &#39;C:\case\$MFT&#39; --csv &#39;C:\case\out&#39; --csvf usn.csv
+Import-Csv &#39;C:\case\out\usn.csv&#39; |
+  Where-Object { $_.Name -like &#39;*.crdownload&#39; -or $_.UpdateReasons -match &#39;Rename&#39; } |
+  Select-Object UpdateTimestamp, Name, UpdateReasons, EntryNumber |
+  Sort-Object UpdateTimestamp</code></pre></div>
+<h3 id="11단계-삭제된-다운로드-기록-복구">11단계 — 삭제된 다운로드 기록 복구</h3>
+<p><code>chrome://downloads</code> 에서 항목을 지우면 <code>downloads</code> 행이 DELETE 되지만, SQLite 는 그 바이트를 즉시 0으로 덮지 않는다. 지워진 행은 <strong>freelist 페이지 또는 페이지 내부의 미사용 영역</strong>에 그대로 남는다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) 가장 빠른 방법 — strings 로 URL·경로 잔존 문자열 긁기
+strings -a History | grep -Eo &#39;https?://[^ &quot;]+\.(exe|dll|zip|rar|7z|ps1|js|hta|iso|pdf)&#39; | sort -u
+strings -a History | grep -Eo &#39;C:\\\\Users\\\\[^ &quot;]+\\\\Downloads\\\\[^ &quot;]+&#39; | sort -u
+
+# 2) -wal 에도 따로 긁는다. 커밋 전 데이터가 여기에만 있다
+strings -a History-wal | grep -Eo &#39;https?://[^ &quot;]+&#39; | sort -u
+
+# 3) freelist 가 실제로 남아 있는지 확인
+sqlite3 History.cp &quot;PRAGMA freelist_count; PRAGMA page_size; PRAGMA page_count;&quot;
+
+# 4) 구조까지 살리고 싶으면 .recover
+sqlite3 History.cp &quot;.recover&quot; &gt; recovered.sql
+grep -i -E &#39;downloads|crdownload&#39; recovered.sql | head -40</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>방법</th><th>얻는 것</th><th>한계</th></tr></thead><tbody><tr><td><code>strings</code></td><td>URL, 저장 경로, 파일명 문자열</td><td>시각·<code>state</code> 등 정수는 못 얻는다</td></tr><tr><td><code>PRAGMA freelist_count</code></td><td>삭제 흔적이 남았을 가능성 판단</td><td>값 자체는 증거가 아니다</td></tr><tr><td><code>.recover</code></td><td>살아 있는 페이지에서 재구성한 INSERT 문</td><td>이미 덮인 행은 못 살린다</td></tr><tr><td><code>$UsnJrnl</code> <code>.crdownload</code> 쌍</td><td>DB 가 통째로 없어도 파일명 + 시각</td><td>볼륨이 NTFS 여야 한다</td></tr><tr><td>캐시 폴더 URL 목록</td><td>방문/수신 URL 잔존</td><td>큰 파일은 캐시에 없다</td></tr></tbody></table></div>
+<p><code>PRAGMA secure_delete</code> 가 켜진 DB 는 삭제 바이트를 0으로 덮으므로 잔존 문자열이 없다. <code>strings</code> 가 아무것도 못 뽑아도 &quot;다운로드가 없었다&quot;는 결론이 아니다.</p>
+<h3 id="12단계-edge-whale-brave-는-같은-쿼리가-그대로-통한다">12단계 — Edge / Whale / Brave 는 같은 쿼리가 그대로 통한다</h3>
+<div class="table-wrap"><table><thead><tr><th>브라우저</th><th><code>History</code> 경로</th><th>스키마</th></tr></thead><tbody><tr><td>Chrome</td><td><code>%LocalAppData%\Google\Chrome\User Data\&lt;프로필&gt;\History</code></td><td>기준</td></tr><tr><td>Edge</td><td><code>%LocalAppData%\Microsoft\Edge\User Data\&lt;프로필&gt;\History</code></td><td>동일 (Edge 전용 컬럼이 추가될 수 있다)</td></tr><tr><td>Whale</td><td><code>%LocalAppData%\Naver\Naver Whale\User Data\&lt;프로필&gt;\History</code></td><td>동일</td></tr><tr><td>Brave</td><td><code>%LocalAppData%\BraveSoftware\Brave-Browser\User Data\&lt;프로필&gt;\History</code></td><td>동일</td></tr><tr><td>Opera</td><td><code>%AppData%\Opera Software\Opera Stable\History</code></td><td>동일 (경로가 Roaming 이다)</td></tr></tbody></table></div>
+<p><code>&lt;프로필&gt;</code> 은 <code>Default</code>, <code>Profile 1</code>, <code>Profile 2</code> … 다. <strong>전부 확인한다.</strong></p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Get-ChildItem &#39;C:\Users\*\AppData\*\*\*\User Data\*\History&#39; -Force -ErrorAction SilentlyContinue |
+  Select-Object FullName, Length, LastWriteTime</code></pre></div>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p>한 행을 읽는 순서를 고정해 두면 오독이 줄어든다.</p>
+<div class="table-wrap"><table><thead><tr><th>읽는 순서</th><th>컬럼</th><th>뽑아내는 결론</th></tr></thead><tbody><tr><td>1</td><td><code>state</code></td><td>온전한 파일인가 (1 이어야 한다)</td></tr><tr><td>2</td><td><code>received_bytes</code> / <code>total_bytes</code></td><td>같은가. 다르면 부분 파일</td></tr><tr><td>3</td><td><code>interrupt_reason</code></td><td>다르다면 왜 끊겼나</td></tr><tr><td>4</td><td><code>target_path</code></td><td>디스크의 어디에 있어야 하나</td></tr><tr><td>5</td><td><code>hex(hash)</code></td><td>그 파일이 정말 이 파일인가</td></tr><tr><td>6</td><td><code>tab_url</code> → <code>chain_index</code> 0 → 마지막</td><td>어디서 시작해 어디서 실제로 받았나</td></tr><tr><td>7</td><td><code>danger_type</code></td><td>브라우저가 경고했나, 사용자가 무시했나</td></tr><tr><td>8</td><td><code>opened</code>, <code>last_access_time</code></td><td>열었나, 언제</td></tr><tr><td>9</td><td><code>start_time</code> / <code>end_time</code> 차이</td><td>파일 크기에 비해 시간이 말이 되나</td></tr></tbody></table></div>
+<p><code>end_time = 0</code> 이면서 <code>state = 0</code> 은 &quot;브라우저가 끝을 보지 못했다&quot;는 뜻이다. 시각 컬럼은 모두 WebKit 마이크로초이므로 변환 규칙은 <a href="./webkit-timestamp.html">FOR-0197</a>을 따른다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>이 글에서 얻은 값</th><th>다음에 여는 것</th><th>무엇을 확인하나</th></tr></thead><tbody><tr><td><code>target_path</code></td><td><code>$MFT</code> (<a href="./mft-basics.html">FOR-0021</a>)</td><td>파일이 실제로 생성/삭제된 시각, 현재 존재 여부</td></tr><tr><td><code>current_path</code> 의 <code>.crdownload</code></td><td><code>$UsnJrnl:$J</code> (<a href="./usnjrnl-basics.html">FOR-0027</a>)</td><td>RENAME_OLD/NEW 쌍으로 완료 시각 확정</td></tr><tr><td><code>target_path</code> + <code>opened = 1</code></td><td>UserAssist / Prefetch / Amcache</td><td>다운로드한 파일을 <strong>실행</strong>했는가</td></tr><tr><td><code>hex(hash)</code></td><td>디스크 파일의 SHA-256</td><td>동일 파일 증명, 치환 여부</td></tr><tr><td><code>chain_index</code> 마지막 URL</td><td>pcap <code>http.host</code> / TLS SNI</td><td>실제 트래픽이 있었는가</td></tr><tr><td><code>tab_url</code></td><td><code>visits</code> 조인 (<a href="./chrome-history.html">FOR-0191</a>)</td><td>그 탭에 어떻게 도달했나 (TYPED / LINK)</td></tr><tr><td><code>by_ext_id</code></td><td><code>Extensions\&lt;id&gt;\manifest.json</code></td><td>어떤 확장이 다운로드를 유발했나</td></tr><tr><td><code>etag</code> / <code>last_modified</code></td><td>서버 응답 헤더</td><td>같은 파일을 받은 다른 PC 와 대조</td></tr><tr><td><code>danger_type = 6</code></td><td>사용자 행위 판단</td><td>경고를 무시한 고의성</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>target_path</code> 만 보고 출처를 결론 내는 것.</strong> <code>target_path</code> 는 저장 위치일 뿐 출처가 아니다. 출처는 <code>tab_url</code> → <code>downloads_url_chains</code> 순으로 본다.</li><li><strong><code>downloads_url_chains</code> 를 건너뛰는 것.</strong> 이 테이블을 안 보면 리다이렉트로 감춰진 실제 배포 서버를 놓친다. <code>downloads</code> 안에는 최종 URL 컬럼이 아예 없다.</li><li><strong><code>referrer</code> 가 비어 있으면 출처가 없다고 판단하는 것.</strong> Referrer-Policy 로 잘린 것일 뿐이다. <code>tab_url</code>, <code>tab_referrer_url</code>, <code>site_url</code>, <code>chain_index 0</code> 을 차례로 본다.</li><li><strong><code>state != 1</code> 을 전부 &quot;실패&quot;로 묶는 것.</strong> <code>state = 4</code> + <code>received_bytes &gt; 0</code> 은 부분 파일이 디스크에 남았다는 뜻이고, 그 조각이 문제의 답인 경우가 있다.</li><li><strong><code>interrupt_reason</code> 을 무시하는 것.</strong> 40(사용자 취소)과 7/11(백신·정책 차단)은 사건 해석이 정반대다. 전자는 사용자 의도, 후자는 시스템 개입이다.</li><li><strong><code>hash</code> 를 문자열로 읽는 것.</strong> BLOB 32바이트다. <code>hex(hash)</code> 없이는 깨진 출력만 본다. <code>length(hash) = 0</code> 이면 해시가 애초에 없다.</li><li><strong><code>opened = 0</code> 을 &quot;실행 안 함&quot;으로 읽는 것.</strong> 탐색기에서 더블클릭한 실행은 이 컬럼에 반영되지 않는다. 실행 여부는 UserAssist/Prefetch 로 판단한다.</li><li><strong><code>History</code> 만 복사하고 <code>History-wal</code> 을 두고 오는 것.</strong> 마지막 다운로드 1건이 통째로 사라진다. 문제의 답이 &quot;마지막에 받은 파일&quot;이면 치명적이다.</li><li><strong><code>Default</code> 프로필만 확인하는 것.</strong> <code>Profile 1</code>, <code>Profile 2</code> 에 답이 있는 문제가 흔하다.</li><li><strong>삭제된 기록을 포기하는 것.</strong> <code>strings History</code>, <code>strings History-wal</code>, <code>.recover</code>, <code>$J</code> 의 <code>.crdownload</code> 쌍 네 갈래가 남아 있다.</li><li><strong>시각을 그대로 읽는 것.</strong> 17자리 WebKit 값이다. <code>/1000000 - 11644473600</code> 을 빼먹으면 1601년, 나누기를 빼먹으면 먼 미래가 나온다. KST 답이 필요하면 <code>&#39;+9 hours&#39;</code> 를 명시한다.</li><li><strong><code>Unconfirmed NNNNNN.crdownload</code> 를 임시 쓰레기로 넘기는 것.</strong> 그 이름 자체가 &quot;위험 판정 대기 상태였다&quot;는 정보다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="table-wrap"><table><thead><tr><th>주장</th><th>뒷받침할 다른 흔적</th></tr></thead><tbody><tr><td>&quot;이 URL 에서 받았다&quot;</td><td>pcap 의 해당 호스트 세션, DNS 질의 기록</td></tr><tr><td>&quot;다운로드가 완료됐다&quot;</td><td><code>$MFT</code> 에 <code>target_path</code> 파일 존재 + 크기 일치</td></tr><tr><td>&quot;받은 직후 이름이 바뀌었다&quot;</td><td><code>$J</code> 의 RENAME_OLD_NAME/NEW_NAME 쌍, 동일 EntryNumber</td></tr><tr><td>&quot;받고 실행했다&quot;</td><td>Prefetch <code>&lt;NAME&gt;-&lt;HASH&gt;.pf</code>, UserAssist Run Count, Amcache</td></tr><tr><td>&quot;이 파일이 그 파일이다&quot;</td><td><code>hex(hash)</code> == 디스크 파일 SHA-256</td></tr><tr><td>&quot;백신이 막았다&quot;</td><td><code>interrupt_reason</code> 7/11 + Defender 이벤트 로그 / 격리 폴더</td></tr><tr><td>&quot;사용자가 경고를 무시했다&quot;</td><td><code>danger_type = 6</code> + 파일이 실제로 존재</td></tr></tbody></table></div>
+<p>브라우저 DB 한 곳에서만 나오는 사실은 반드시 파일시스템 또는 네트워크 흔적으로 한 번 더 확인한다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;사용자가 받은 실행 파일의 실제 배포 서버와 SHA-256 을 제출하시오.
+ Downloads 폴더에는 해당 파일이 없다.&quot;
+첨부: History, History-wal, $J (파싱본 usn.csv), Downloads 폴더 덤프
+
+1. 파일 확인
+   $ file History
+   History: SQLite 3.x database
+   $ ls
+   History  History-wal  usn.csv  Downloads/
+   $ ls Downloads/
+   Unconfirmed 481203.crdownload
+   -&gt; 완료된 exe 가 없다. crdownload 조각만 있다.
+
+2. 첫 시도 (실패):
+   $ sqlite3 History &quot;SELECT target_path, tab_url FROM downloads;&quot;
+   Error: database is locked
+
+   그리고 -wal 을 두고 History 만 복사해 열었더니 최근 행이 안 나왔다.
+
+3. 접근 변경 — 사본 + wal 동반
+   $ cp History History.cp &amp;&amp; cp History-wal History.cp-wal
+   $ sqlite3 History.cp &quot;PRAGMA wal_checkpoint(TRUNCATE);&quot;
+   $ sqlite3 -header -column History.cp &quot;
+     SELECT id, datetime(start_time/1000000-11644473600,&#39;unixepoch&#39;,&#39;+9 hours&#39;) AS kst,
+            current_path, target_path, received_bytes, total_bytes,
+            state, danger_type, interrupt_reason, opened, tab_url
+     FROM downloads ORDER BY start_time DESC;&quot;
+
+   id kst                  current_path                           target_path                    got     total   state danger irsn opened tab_url
+   12 2026-04-02 21:14:07  ...\Unconfirmed 481203.crdownload      ...\Downloads\update_x64.exe   1048576 4194304 4     1      41   0
+   11 2026-04-02 21:09:55  ...\Downloads\notice.html              ...\Downloads\notice.html      8213    8213    1     0      0    1      https://board.example.co.kr/view?id=771
+
+   -&gt; id 12: state=4(중단), irsn=41(USER_SHUTDOWN) = 브라우저가 닫혀 끊겼다.
+      danger=1(DANGEROUS_FILE), tab_url 이 비어 있다. 출처를 모른다.
+
+4. 두 번째 시도 (불충분):
+   referrer 와 site_url 을 봤지만 둘 다 빈 문자열이었다.
+   Referrer-Policy 로 잘린 것이라 여기서는 답이 안 나온다.
+
+5. 접근 변경 — downloads_url_chains
+   $ sqlite3 -header -column History.cp &quot;
+     SELECT c.id, c.chain_index, c.url FROM downloads_url_chains c
+     WHERE c.id = 12 ORDER BY c.chain_index;&quot;
+
+   id  chain_index  url
+   12  0            https://board.example.co.kr/dl?f=update
+   12  1            https://short.example.io/9Kd2
+   12  2            https://cdn-e7.storage.example.net/pkg/update_x64.exe
+                      ^^^ 실제 바이트를 내려준 서버
+
+   chain_index 0 만 봤다면 게시판이 배포처라고 오답을 냈을 것이다.
+
+6. 해시 — 첫 시도가 또 틀렸다
+   $ sqlite3 History.cp &quot;SELECT hash FROM downloads WHERE id=12;&quot;
+   (깨진 바이너리 출력)
+   $ sqlite3 History.cp &quot;SELECT length(hash), hex(hash) FROM downloads WHERE id=12;&quot;
+   0|
+   -&gt; 중단된 다운로드라 해시가 비어 있다. DB 에서는 답을 얻을 수 없다.
+
+7. 접근 변경 — 조각 파일에서 직접 계산 + 구멍 확인
+   $ sqlite3 -header -column History.cp &quot;
+     SELECT download_id, offset, received_bytes, finished
+     FROM downloads_slices WHERE download_id=12 ORDER BY offset;&quot;
+
+   download_id  offset   received_bytes  finished
+   12           0        1048576         0
+
+   -&gt; 4MB 중 앞 1MB 만 받았다. 조각 파일의 해시는 원본과 다르다.
+      제출할 해시는 &quot;부분 파일의 해시&quot;임을 명시해야 한다.
+
+   $ sha256sum &quot;Downloads/Unconfirmed 481203.crdownload&quot;
+
+8. 완료 시각·이름 확정 — $J 쌍 확인
+   $ grep -i crdownload usn.csv | head
+   2026-04-02 21:09:55  notice.html.crdownload  RenameOldName  EntryNumber 91422
+   2026-04-02 21:09:55  notice.html             RenameNewName  EntryNumber 91422
+   -&gt; id 11 은 rename 쌍이 있다 = 완료. id 12 는 쌍이 없다 = 미완료 확정.
+
+정답: 실제 배포 서버 cdn-e7.storage.example.net (chain_index 2),
+      update_x64.exe 는 4,194,304 바이트 중 1,048,576 바이트만 수신 후
+      브라우저 종료(interrupt_reason 41)로 중단, DB 해시 없음 →
+      Unconfirmed 481203.crdownload 의 SHA-256 을 부분 파일 해시로 제출</code></pre></div>
+<p>3단계(<code>-wal</code> 동반)와 5단계(<code>downloads_url_chains</code>)가 승부처였다. <strong><code>downloads</code> 테이블 한 개만 보면 이 문제는 풀리지 않는다.</strong></p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>.schema downloads</code> 를 먼저 찍었는가. 컬럼이 없다는 오류는 대부분 버전 차이다</li><li><code>History-wal</code> 을 같이 복사했는가. <code>PRAGMA wal_checkpoint(TRUNCATE)</code> 를 돌렸는가</li><li><code>Profile 1</code>, <code>Profile 2</code>, 그리고 Edge/Whale/Brave 경로까지 훑었는가</li><li><code>downloads</code> 가 비었으면 <code>downloads_url_chains</code> 만 남아 있지 않은가 (부모 행이 삭제된 경우)</li><li><code>strings History</code>, <code>strings History-wal</code> 로 URL·경로 잔존 문자열을 긁었는가</li><li><code>PRAGMA freelist_count</code> 가 0 이 아니면 <code>.recover</code> 를 시도했는가</li><li>DB 가 아예 없으면 <code>$J</code> 에서 <code>.crdownload</code> RENAME 쌍을 찾았는가</li><li>캐시 폴더(<code>Cache\Cache_Data</code>)에 같은 URL 항목이 남아 있지 않은가</li><li>시각을 <code>/1000000 - 11644473600</code> 로 변환했는가, KST 로 명시했는가</li><li><code>state</code>/<code>interrupt_reason</code> 숫자를 표로 대조했는가. 그냥 &quot;실패&quot;로 적지 않았는가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-008 — Chromium source, <code>components/history/core/browser</code>: <code>downloads</code> / <code>downloads_url_chains</code> / <code>downloads_slices</code> 스키마와 DB 에 저장되는 <code>state</code>·<code>danger_type</code> 정수값 정의</li><li>SRC-110 — Chromium <code>components/download</code>: <code>.crdownload</code> / <code>Unconfirmed NNNNNN.crdownload</code> 중간 파일명 동작과 <code>DownloadInterruptReason</code> 값 계열</li><li>SRC-011 — SQLite 문서: <code>datetime(..., &#39;unixepoch&#39;)</code> 변환, <code>hex()</code>, <code>PRAGMA freelist_count</code>, <code>.recover</code></li><li>컬럼 구성은 Chrome/Edge 버전에 따라 추가·개명된다(<code>site_url</code> ↔ <code>embedder_download_data</code> 등). <strong>쿼리를 쓰기 전에 반드시 <code>.schema downloads</code> 로 실제 컬럼을 확인할 것.</strong></li><li><code>danger_type</code> 9 이상, <code>interrupt_reason</code> 의 전체 목록은 버전마다 늘어나므로 이 글의 표에 없는 값은 Chromium 소스에서 직접 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./chrome-history.html">
+    <span class="rel-id">FOR-0191 · 브라우저/웹</span>
+    Chrome History DB 구조: urls / visits / downloads 읽기
+  </a>
+  <a class="related-item" href="./usn-reason-flags.html">
+    <span class="rel-id">FOR-0028 · 디스크/NTFS</span>
+    USN_REASON 플래그 조합으로 실제 행위 판정하기 (삭제·이동·복사·timestomp 구분)
+  </a>
+  <a class="related-item" href="./chrome-cookies.html">
+    <span class="rel-id">FOR-0193 · 브라우저/웹</span>
+    Chrome Cookies DB: 복호화 없이 읽어내는 정보와 encrypted_value 의 한계
+  </a>
+  <a class="related-item" href="./ntfs-log-tracker.html">
+    <span class="rel-id">FOR-0026 · 디스크/NTFS</span>
+    NTFS Log Tracker로 $LogFile·$UsnJrnl·$MFT 한 번에 묶어 보기
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./chrome-history.html"><span class="rel-id">← FOR-0191</span>Chrome History DB 구조: urls / visits / downloads 읽기</a>
+<a class="related-item" href="./chrome-cookies.html"><span class="rel-id">FOR-0193 →</span>Chrome Cookies DB: 복호화 없이 읽어내는 정보와 encrypted_value 의 한계</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-downloads-전체-컬럼을-의미별로-갈라-본다">1단계 — `downloads` 전체 컬럼을 의미별로 갈라 본다</a></li>
+<li class="toc-l3"><a href="#2단계-state-해석">2단계 — `state` 해석</a></li>
+<li class="toc-l3"><a href="#3단계-dangertype-해석">3단계 — `danger_type` 해석</a></li>
+<li class="toc-l3"><a href="#4단계-interruptreason-해석">4단계 — `interrupt_reason` 해석</a></li>
+<li class="toc-l3"><a href="#5단계-opened-와-lastaccesstime">5단계 — `opened` 와 `last_access_time`</a></li>
+<li class="toc-l3"><a href="#6단계-hash-는-blob-이다">6단계 — `hash` 는 BLOB 이다</a></li>
+<li class="toc-l3"><a href="#7단계-referrer-vs-taburl-vs-siteurl-의-차이">7단계 — `referrer` vs `tab_url` vs `site_url` 의 차이</a></li>
+<li class="toc-l3"><a href="#8단계-downloadsurlchains-로-리다이렉트-체인-복원">8단계 — `downloads_url_chains` 로 리다이렉트 체인 복원</a></li>
+<li class="toc-l3"><a href="#9단계-downloadsslices">9단계 — `downloads_slices`</a></li>
+<li class="toc-l3"><a href="#10단계-crdownload-와-usnjrnl-rename-쌍">10단계 — `.crdownload` 와 `$UsnJrnl` RENAME 쌍</a></li>
+<li class="toc-l3"><a href="#11단계-삭제된-다운로드-기록-복구">11단계 — 삭제된 다운로드 기록 복구</a></li>
+<li class="toc-l3"><a href="#12단계-edge-whale-brave-는-같은-쿼리가-그대로-통한다">12단계 — Edge / Whale / Brave 는 같은 쿼리가 그대로 통한다</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

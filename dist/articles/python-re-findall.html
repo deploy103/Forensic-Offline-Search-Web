@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Python re.findall로 로그에서 값 뽑기: 그룹 개수가 반환형을 바꾼다 · FOR-0122 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%A1%9C%EA%B7%B8%2FRegex">로그/Regex</a> / FOR-0122
+      </div>
+      <header class="article-head">
+        <h1>Python re.findall로 로그에서 값 뽑기: 그룹 개수가 반환형을 바꾼다</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">로그/Regex</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>re.findall의 반환형은 패턴 안의 캡처 그룹 개수가 결정한다. 그룹이 없으면 전체 매칭 문자열 리스트, 그룹이 하나면 그 그룹만, 두 개 이상이면 튜플 리스트다. 값 전체를 원하는데 그룹을 써서 조각만 받는 것이 이 함수에서 나오는 오답의 대부분이다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Python, re, collections.Counter</td></tr>
+<tr><th>artifact</th><td><code>access.log</code> · <code>auth.log</code> · <code>strings dump</code> · <code>text log</code></td></tr>
+<tr><th>파일 경로</th><td><code>/var/log/auth.log</code> · <code>/var/log/apache2/access.log</code></td></tr>
+<tr><th>regex</th><td><code>\d{1,3}(?:\.\d{1,3}){3}</code> · <code>(?:GET|POST|PUT|DELETE) (\S+)</code> · <code>Failed password for (?:invalid user )?(\S+) from (\S+)</code> · <code>flag\{[^}]+\}</code></td></tr>
+<tr><th>로그 필드</th><td><code>ip</code> · <code>method</code> · <code>uri</code> · <code>status</code> · <code>user</code></td></tr>
+<tr><th>파일 형식</th><td><code>log</code> · <code>txt</code> · <code>csv</code> · <code>json</code></td></tr>
+<tr><th>검색 별칭</th><td>python findall · 파이썬 정규식 전부 찾기 · re.findall 튜플 · findall 결과가 이상하다 · 파이썬으로 IP 추출 · python 로그 파싱</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>re.findall</code>의 반환형은 <strong>패턴 안의 캡처 그룹 개수가 결정한다.</strong> 그룹이 없으면 전체 매칭 문자열 리스트, 그룹이 하나면 그 그룹만, 두 개 이상이면 튜플 리스트다. 값 전체를 원하는데 그룹을 써서 조각만 받는 것이 이 함수에서 나오는 오답의 대부분이다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>로그 전체에서 IP, 계정명, URL, 해시, <code>flag{...}</code> 를 <strong>전부</strong> 뽑아 세야 하는 상황</li><li>grep/awk로는 필드 위치가 일정하지 않아 못 자르는 로그</li><li>뽑은 값을 바로 빈도 집계해서 &quot;가장 많이 요청한 IP&quot;, &quot;가장 많이 실패한 계정&quot;을 답해야 하는 상황</li><li>여러 로그 파일을 한 번에 훑어야 하는 상황</li><li>Windows/Linux를 가리지 않고 같은 스크립트를 돌려야 하는 상황</li></ul>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>문제 지문의 &quot;몇 개&quot;, &quot;가장 많이&quot;, &quot;모두 나열&quot; — 전부 <code>findall</code> + <code>Counter</code>다</li><li>로그 한 줄의 형식이 고정이면 <code>split()</code>이 더 빠르고 안전하다. 정규식은 <strong>형식이 흔들릴 때</strong> 쓴다</li><li>파일 크기가 수백 MB 이상이면 <code>read()</code> 금지, 줄 단위 순회로 간다</li><li>한글·비UTF8 바이트가 섞이면 <code>errors=&#39;replace&#39;</code> 없이는 첫 줄에서 예외로 죽는다</li></ol>
+<p>먼저 세 줄을 눈으로 본다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">with open(&#39;access.log&#39;, encoding=&#39;utf-8&#39;, errors=&#39;replace&#39;) as f:
+    for i, line in zip(range(3), f):
+        print(repr(line))</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">&#39;203.0.113.77 - - [14/Mar/2026:07:19:02 +0900] &quot;GET /admin/ HTTP/1.1&quot; 403 199\n&#39;
+&#39;192.168.10.24 - - [14/Mar/2026:07:19:05 +0900] &quot;GET /index.html HTTP/1.1&quot; 200 5120\n&#39;
+&#39;198.51.100.5 - - [14/Mar/2026:07:19:07 +0900] &quot;GET /favicon.ico HTTP/1.1&quot; 404 209\n&#39;</code></pre></div>
+<p><code>repr</code>로 봐야 줄 끝의 <code>\n</code>, <code>\r\n</code>, 탭이 보인다. 이것을 안 보고 만든 정규식은 뒤에서 어긋난다.</p>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">python -c &quot;import re,sys;print(re.findall(r&#39;ERROR.*&#39;,open(sys.argv[1]).read())[:5])&quot; app.log</code></pre></div>
+<p>실전용 최소 스크립트는 다섯 줄이다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import re
+from collections import Counter
+
+text = open(&#39;access.log&#39;, encoding=&#39;utf-8&#39;, errors=&#39;replace&#39;).read()
+ips = re.findall(r&#39;\d{1,3}(?:\.\d{1,3}){3}&#39;, text)
+print(Counter(ips).most_common(5))</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">[(&#39;203.0.113.77&#39;, 1842), (&#39;192.168.10.24&#39;, 311), (&#39;198.51.100.5&#39;, 96),
+ (&#39;10.0.0.14&#39;, 41), (&#39;192.168.10.7&#39;, 22)]</code></pre></div>
+<p><code>(?:...)</code>가 핵심이다. <code>(...)</code>로 썼다면 결과가 <code>[&#39;10.&#39;, &#39;10.&#39;, ...]</code>처럼 망가진다. 아래에서 이유를 본다.</p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-반환형-규칙-세-가지를-외운다">1단계 — 반환형 규칙 세 가지를 외운다</h3>
+<p><code>re.findall(pattern, string, flags=0)</code>은 겹치지 않는 모든 매칭을 리스트로 돌려준다. 그런데 리스트의 <strong>원소가 무엇인지</strong>는 그룹 개수가 정한다.</p>
+<div class="table-wrap"><table><thead><tr><th>패턴의 캡처 그룹 수</th><th>반환 원소</th><th>예시 패턴</th><th><code>&#39;a1b22&#39;</code> 에 적용한 결과</th></tr></thead><tbody><tr><td>0개</td><td>매칭 전체 문자열</td><td><code>[a-z]\d+</code></td><td><code>[&#39;a1&#39;, &#39;b22&#39;]</code></td></tr><tr><td>1개</td><td>그 그룹의 문자열</td><td><code>[a-z](\d+)</code></td><td><code>[&#39;1&#39;, &#39;22&#39;]</code></td></tr><tr><td>2개 이상</td><td>그룹들의 튜플</td><td><code>([a-z])(\d+)</code></td><td><code>[(&#39;a&#39;,&#39;1&#39;), (&#39;b&#39;,&#39;22&#39;)]</code></td></tr></tbody></table></div>
+<p><code>(?:...)</code>는 <strong>캡처하지 않는 그룹</strong>이므로 개수에 포함되지 않는다. 그래서 반복·선택만 묶고 싶을 때는 항상 <code>(?:...)</code>를 쓴다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import re
+
+s = &#39;192.168.10.24 접속, 203.0.113.77 접속&#39;
+
+re.findall(r&#39;(\d{1,3}\.){3}\d{1,3}&#39;, s)      # [&#39;10.&#39;, &#39;113.&#39;]      &lt;- 함정
+re.findall(r&#39;(?:\d{1,3}\.){3}\d{1,3}&#39;, s)    # [&#39;192.168.10.24&#39;, &#39;203.0.113.77&#39;]
+re.findall(r&#39;((?:\d{1,3}\.){3}\d{1,3})&#39;, s)  # [&#39;192.168.10.24&#39;, &#39;203.0.113.77&#39;]</code></pre></div>
+<p>첫 줄이 CTF에서 가장 자주 나오는 사고다. <code>(\d{1,3}\.){3}</code>는 그룹이 <strong>세 번 반복</strong>되지만 파이썬은 마지막 반복의 값만 보관한다. 그룹이 1개이므로 <code>findall</code>은 그 값(<code>&#39;10.&#39;</code>)만 돌려준다. IP가 잘려 나오면 무조건 이 문제다.</p>
+<p>IP 정규식 자체의 정밀도는 <a href="./ipv4-regex.html">FOR-0128</a>에서 다룬다. <code>\d{1,3}</code>은 <code>999.999.999.999</code>도 잡으므로 오탐을 걸러야 한다.</p>
+<h3 id="2단계-여러-값을-한-번에-튜플-리스트">2단계 — 여러 값을 한 번에: 튜플 리스트</h3>
+<p>필드를 여러 개 동시에 뽑을 때는 튜플 반환을 오히려 이용한다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import re
+
+pat = r&#39;^(\S+) \S+ \S+ \[([^\]]+)\] &quot;(\S+) (\S+)[^&quot;]*&quot; (\d{3}) (\S+)&#39;
+rows = re.findall(pat, open(&#39;access.log&#39;, encoding=&#39;utf-8&#39;, errors=&#39;replace&#39;).read(),
+                  re.MULTILINE)
+print(rows[0])</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">(&#39;203.0.113.77&#39;, &#39;14/Mar/2026:07:19:02 +0900&#39;, &#39;GET&#39;, &#39;/admin/&#39;, &#39;403&#39;, &#39;199&#39;)</code></pre></div>
+<p><code>re.MULTILINE</code>이 없으면 <code>^</code>가 문자열 전체의 시작에만 붙어 첫 줄 하나만 매칭된다. 파일 전체를 <code>read()</code>해서 <code>^</code>를 쓸 때는 반드시 같이 준다.</p>
+<p>튜플 인덱스를 세는 것이 귀찮고 위험하면 명명 그룹으로 올라간다(FOR-0124). <code>findall</code>은 명명 그룹의 이름을 무시하고 순서대로 튜플만 주므로, 이름으로 접근하려면 <code>finditer</code>가 필요하다(FOR-0123).</p>
+<h3 id="3단계-플래그">3단계 — 플래그</h3>
+<div class="table-wrap"><table><thead><tr><th>플래그</th><th>축약</th><th>하는 일</th><th>실전 용도</th></tr></thead><tbody><tr><td><code>re.IGNORECASE</code></td><td><code>re.I</code></td><td>대소문자 무시</td><td><code>SELECT</code>/<code>select</code> SQLi 흔적</td></tr><tr><td><code>re.MULTILINE</code></td><td><code>re.M</code></td><td><code>^</code> <code>$</code>가 줄마다 적용</td><td>파일 전체를 read 했을 때 필수</td></tr><tr><td><code>re.DOTALL</code></td><td><code>re.S</code></td><td><code>.</code>이 줄바꿈도 매칭</td><td>여러 줄 XML·JSON 블록</td></tr><tr><td><code>re.VERBOSE</code></td><td><code>re.X</code></td><td>공백·<code>#</code> 주석 허용</td><td>긴 로그 패턴 가독성</td></tr><tr><td><code>re.ASCII</code></td><td><code>re.A</code></td><td><code>\w</code> <code>\d</code>를 ASCII로 제한</td><td>한글이 <code>\w</code>에 걸리는 것 방지</td></tr></tbody></table></div>
+<p>플래그는 <code>|</code>로 합친다. 인라인으로 <code>(?im)</code>처럼 패턴 앞에 붙여도 된다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">re.findall(r&#39;union\s+select&#39;, text, re.I | re.S)
+re.findall(r&#39;(?is)union\s+select&#39;, text)      # 위와 같다</code></pre></div>
+<p><code>re.ASCII</code>는 한국어 로그에서 중요하다. 기본 유니코드 모드에서 <code>\w+</code>는 한글도 잡으므로, 영문 계정명만 뽑으려면 <code>re.A</code>를 주거나 <code>[A-Za-z0-9_]</code>로 명시한다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">re.findall(r&#39;user=(\w+)&#39;, &#39;user=관리자 user=admin&#39;)          # [&#39;관리자&#39;, &#39;admin&#39;]
+re.findall(r&#39;user=(\w+)&#39;, &#39;user=관리자 user=admin&#39;, re.A)     # [&#39;admin&#39;]</code></pre></div>
+<h3 id="4단계-recompile로-재사용">4단계 — <code>re.compile</code>로 재사용</h3>
+<p>같은 패턴을 수십만 줄에 적용할 때는 <code>re.compile</code>로 한 번만 컴파일한다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import re
+from collections import Counter
+
+IP  = re.compile(r&#39;(?:\d{1,3}\.){3}\d{1,3}&#39;)
+UA  = re.compile(r&#39;&quot;[^&quot;]*&quot; &quot;([^&quot;]*)&quot;$&#39;)
+FAIL = re.compile(r&#39;Failed password for (?:invalid user )?(\S+) from (\S+)&#39;)
+
+ips, uas, fails = Counter(), Counter(), Counter()
+with open(&#39;access.log&#39;, encoding=&#39;utf-8&#39;, errors=&#39;replace&#39;) as f:
+    for line in f:
+        ips.update(IP.findall(line))
+        uas.update(UA.findall(line))
+
+for ip, n in ips.most_common(5):
+    print(f&#39;{n:&gt;7}  {ip}&#39;)</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">   1842  203.0.113.77
+    311  192.168.10.24
+     96  198.51.100.5
+     41  10.0.0.14
+     22  192.168.10.7</code></pre></div>
+<p><code>re</code> 모듈은 내부에 컴파일 결과 캐시를 두므로 <code>re.compile</code>이 항상 극적으로 빠른 것은 아니다. 그래도 컴파일해 두면 (1) 패턴을 파일 상단에 모아 검토할 수 있고 (2) 플래그를 한 곳에 고정할 수 있고 (3) 캐시가 다른 패턴으로 밀려나도 재컴파일이 없다. 대회장에서는 가독성 쪽 이득이 더 크다.</p>
+<p><code>Counter.update(리스트)</code>는 리스트의 모든 원소를 한 번에 더한다. 줄마다 <code>findall</code> 결과를 그대로 던지면 집계가 끝난다.</p>
+<h3 id="5단계-대용량-파일-read를-버린다">5단계 — 대용량 파일: <code>read()</code>를 버린다</h3>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python"># 나쁜 예 — 2GB 파일이면 그대로 메모리 2GB 이상
+text = open(&#39;huge.log&#39;, encoding=&#39;utf-8&#39;, errors=&#39;replace&#39;).read()
+hits = re.findall(PAT, text)
+
+# 좋은 예 — 한 줄씩. 메모리는 한 줄 크기
+hits = []
+with open(&#39;huge.log&#39;, encoding=&#39;utf-8&#39;, errors=&#39;replace&#39;) as f:
+    for line in f:
+        hits.extend(PAT.findall(line))</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>방식</th><th>메모리</th><th><code>^</code>/<code>$</code></th><th>줄을 넘는 패턴</th><th>언제</th></tr></thead><tbody><tr><td><code>read()</code> + <code>findall</code></td><td>파일 크기만큼</td><td><code>re.M</code> 필요</td><td>가능 (<code>re.S</code>)</td><td>수십 MB 이하</td></tr><tr><td>줄 단위 순회</td><td>한 줄</td><td>줄마다 자동 적용</td><td>불가</td><td>수백 MB 이상</td></tr><tr><td><code>mmap</code> + 바이트 패턴</td><td>거의 없음</td><td>바이트 모드 규칙</td><td>가능</td><td>GB 단위</td></tr></tbody></table></div>
+<p><code>mmap</code>은 오프셋이 필요할 때 쓴다. 바이트 패턴은 접두사 <code>rb</code>를 붙인다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import mmap, re
+
+with open(&#39;memdump.raw&#39;, &#39;rb&#39;) as f:
+    mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+    for m in re.finditer(rb&#39;flag\{[^}]{1,64}\}&#39;, mm):
+        print(hex(m.start()), m.group().decode(&#39;ascii&#39;, &#39;replace&#39;))</code></pre></div>
+<p>바이트 모드에서는 패턴도 <code>bytes</code>여야 한다. <code>str</code> 패턴을 <code>bytes</code>에 쓰면 <code>TypeError: cannot use a string pattern on a bytes-like object</code>가 난다.</p>
+<h3 id="6단계-인코딩-예외-회피">6단계 — 인코딩 예외 회피</h3>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python"># 이렇게 열면 비UTF8 바이트 한 개에 전체가 죽는다
+open(&#39;mixed.log&#39;, encoding=&#39;utf-8&#39;)
+# UnicodeDecodeError: &#39;utf-8&#39; codec can&#39;t decode byte 0xb0 in position 4210
+
+# 조사에서는 항상 이렇게 연다
+open(&#39;mixed.log&#39;, encoding=&#39;utf-8&#39;, errors=&#39;replace&#39;)</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th><code>errors</code> 값</th><th>동작</th><th>조사에서의 의미</th></tr></thead><tbody><tr><td><code>&#39;strict&#39;</code> (기본)</td><td>예외 발생</td><td>스크립트가 중단된다</td></tr><tr><td><code>&#39;replace&#39;</code></td><td>깨진 바이트를 U+FFFD로 대체</td><td>위치가 보존되어 오프셋이 안 흔들린다</td></tr><tr><td><code>&#39;ignore&#39;</code></td><td>깨진 바이트를 버린다</td><td>문자 오프셋이 어긋난다. 오프셋을 쓸 거면 금지</td></tr><tr><td><code>&#39;surrogateescape&#39;</code></td><td>원본 바이트를 보존해 되돌릴 수 있다</td><td>원문 바이트를 다시 써야 할 때</td></tr></tbody></table></div>
+<p>한글 Windows에서 만든 로그는 CP949일 가능성이 높다. <code>encoding=&#39;cp949&#39;</code>로 다시 열어 보면 판별된다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p><code>findall</code>이 무엇을 돌려주는지 헷갈리면 아래를 그대로 확인한다.</p>
+<div class="table-wrap"><table><thead><tr><th>상황</th><th>결과</th><th>확인 방법</th></tr></thead><tbody><tr><td>매칭 없음</td><td><code>[]</code> (빈 리스트, <code>None</code>이 아니다)</td><td><code>if not hits:</code></td></tr><tr><td>그룹 없음</td><td><code>[&#39;전체매칭&#39;, ...]</code></td><td><code>type(hits[0]) is str</code></td></tr><tr><td>그룹 1개</td><td><code>[&#39;그룹값&#39;, ...]</code></td><td>값이 잘려 보이면 그룹을 잘못 쓴 것</td></tr><tr><td>그룹 2개 이상</td><td><code>[(&#39;a&#39;,&#39;b&#39;), ...]</code></td><td><code>len(hits[0])</code>이 그룹 수</td></tr><tr><td>명명 그룹 사용</td><td>이름 무시, 순서대로 튜플</td><td>이름이 필요하면 <code>finditer</code></td></tr><tr><td>그룹이 매칭 안 됨 (<code>?</code> 뒤)</td><td>해당 자리에 <code>&#39;&#39;</code> (빈 문자열)</td><td><code>None</code>이 아니라 <code>&#39;&#39;</code>다</td></tr><tr><td>빈 매칭 가능한 패턴</td><td>빈 문자열도 원소로 포함된다</td><td><code>+</code> 대신 <code>*</code>를 쓰면 발생</td></tr></tbody></table></div>
+<p>마지막 두 줄이 특히 헷갈린다. <code>re.findall(r&#39;a*&#39;, &#39;bab&#39;)</code>은 <code>[&#39;&#39;, &#39;a&#39;, &#39;&#39;, &#39;&#39;]</code>처럼 빈 문자열을 포함한다. 개수를 세는 문제에서 이것 때문에 답이 부풀어 오른다. 수량자는 의도가 &quot;1개 이상&quot;이면 반드시 <code>+</code>를 쓴다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>findall로 얻은 값</th><th>다음 목표</th></tr></thead><tbody><tr><td>상위 IP</td><td>pcap <code>ip.addr == &lt;IP&gt;</code> / 방화벽 로그 / whois</td></tr><tr><td>계정명</td><td>EVTX 4624·4625 로그온 성공 여부</td></tr><tr><td>URI·파일명</td><td>웹 루트의 실제 파일, $MFT 생성 시각</td></tr><tr><td>User-Agent</td><td>자동화 도구 식별 (sqlmap, curl, python-requests, nikto)</td></tr><tr><td>Base64 후보</td><td>디코딩 → 명령·URL·자격증명</td></tr><tr><td>매칭 <strong>위치</strong>가 필요해짐</td><td><code>finditer</code>로 전환 (FOR-0123)</td></tr><tr><td>필드 이름으로 표를 만들어야 함</td><td>명명 그룹 + <code>csv.DictWriter</code> (FOR-0124, FOR-0125)</td></tr><tr><td>시각 문자열</td><td>시간대 확정. <code>+0900</code>은 KST, <code>Z</code>는 UTC. 두 값을 섞으면 9시간 오차</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>반복 그룹을 캡처 그룹으로 쓰는 것.</strong> <code>(\d{1,3}\.){3}\d{1,3}</code>은 마지막 반복만 남겨 <code>&#39;10.&#39;</code>을 준다. 왜 틀리나: 파이썬은 반복된 그룹의 최종 값 하나만 보관한다. 어떻게: 반복 묶음은 <code>(?:...)</code>로, 전체를 받으려면 <code>((?:...)...)</code>로 감싼다.</li><li><strong>그룹을 넣었는데 전체 매칭을 기대하는 것.</strong> 그룹이 하나라도 있으면 <code>findall</code>은 전체 문자열을 주지 않는다. 전체와 부분을 동시에 원하면 <code>finditer</code> + <code>m.group(0)</code>·<code>m.group(1)</code>을 쓴다.</li><li><strong><code>read()</code> 후 <code>^</code>를 쓰면서 <code>re.MULTILINE</code>을 빼는 것.</strong> <code>^</code>가 파일 전체의 첫 위치에만 붙어 결과가 1건만 나온다. 결과가 부자연스럽게 적으면 이것부터 본다.</li><li><strong><code>.*</code>의 탐욕성.</strong> <code>&quot;(.*)&quot;</code>는 한 줄의 첫 따옴표부터 <strong>마지막</strong> 따옴표까지 삼킨다. 필드 하나만 원하면 <code>&quot;([^&quot;]*)&quot;</code> 또는 <code>&quot;(.*?)&quot;</code>를 쓴다. 문자 클래스 부정형이 게으른 수량자보다 빠르다.</li><li><strong>빈 매칭을 세는 것.</strong> <code>*</code>나 <code>?</code>만으로 끝나는 패턴은 빈 문자열도 매칭으로 센다. 개수 문제의 답이 이상하게 크면 <code>+</code>로 바꾼다.</li><li><strong><code>errors</code>를 지정하지 않는 것.</strong> 비UTF8 바이트 하나에 <code>UnicodeDecodeError</code>로 스크립트가 죽는다. 조사 대상 파일은 항상 <code>errors=&#39;replace&#39;</code>로 연다. 오프셋을 쓸 계획이면 <code>&#39;ignore&#39;</code>는 절대 쓰지 않는다.</li><li><strong><code>str</code> 패턴을 <code>bytes</code> 데이터에 쓰는 것.</strong> 메모리 덤프·바이너리는 <code>rb&#39;...&#39;</code> 패턴과 <code>&#39;rb&#39;</code> 모드로 통일한다. 섞으면 <code>TypeError</code>다.</li><li><strong>결과를 눈으로 세는 것.</strong> <code>len(hits)</code>와 <code>len(set(hits))</code>는 다르다. &quot;몇 종류&quot;와 &quot;몇 번&quot;을 구분해 묻는 문제가 많다. <code>Counter</code>로 둘 다 즉시 낸다.</li><li><strong>한글이 <code>\w</code>에 걸리는 것.</strong> 기본 모드의 <code>\w</code>는 유니코드 문자다. 영문 식별자만 원하면 <code>re.ASCII</code> 또는 <code>[A-Za-z0-9_]</code>.</li><li><strong>정규식으로 CSV·JSON을 파싱하는 것.</strong> 인용 필드 안의 콤마·줄바꿈, 이스케이프된 따옴표를 정규식으로 감당할 수 없다. <code>csv</code>·<code>json</code> 모듈로 넘어간다 (FOR-0125).</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<p>정규식 결과는 반드시 다른 도구의 숫자와 맞춰 본다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import re
+from collections import Counter
+text = open(&#39;access.log&#39;, encoding=&#39;utf-8&#39;, errors=&#39;replace&#39;).read()
+print(Counter(re.findall(r&#39;^(\S+)&#39;, text, re.M)).most_common(3))</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 필드 기준 — 정규식 오탐이 없다. 이것이 기준값이다
+awk &#39;{print $1}&#39; access.log | sort | uniq -c | sort -rn | head -3
+
+# grep 로 특정 IP 건수만
+grep -c &#39;^203\.0\.113\.77 &#39; access.log</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Select-String -Path .\access.log -Pattern &#39;^\S+&#39; |
+  ForEach-Object { $_.Matches[0].Value } |
+  Group-Object | Sort-Object Count -Descending | Select-Object -First 3 Count, Name</code></pre></div>
+<p>세 결과가 다르면 원인은 셋 중 하나다.</p>
+<div class="table-wrap"><table><thead><tr><th>차이</th><th>원인</th></tr></thead><tbody><tr><td>Python이 더 많다</td><td>패턴이 한 줄에서 여러 번 걸렸다. <code>^</code>와 <code>re.M</code>으로 줄 앞에 고정한다</td></tr><tr><td>Python이 더 적다</td><td>인코딩 오류로 줄이 유실됐거나 <code>re.M</code>을 빼서 첫 줄만 봤다</td></tr><tr><td><code>grep -c</code>가 더 적다</td><td><code>grep -c</code>는 매칭된 <strong>줄 수</strong>다. 한 줄에 2건이면 1로 센다</td></tr></tbody></table></div>
+<p>PowerShell 쪽 세부는 <a href="./powershell-select-string.html">FOR-0121</a>에 있다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;auth.log 에서 무차별 대입에 사용된 계정 상위 3개와, 최종적으로 로그인에 성공한
+ 계정·출처 IP를 구하세요.&quot;
+첨부: auth.log (88,214줄)
+
+1. 형식 확인
+   with open(&#39;auth.log&#39;, encoding=&#39;utf-8&#39;, errors=&#39;replace&#39;) as f:
+       for i, l in zip(range(2), f): print(repr(l))
+   -&gt; &#39;Mar 14 07:19:02 web01 sshd[2311]: Failed password for invalid user admin
+       from 203.0.113.77 port 51022 ssh2\n&#39;
+      &#39;Mar 14 07:19:03 web01 sshd[2313]: Failed password for root from
+       203.0.113.77 port 51028 ssh2\n&#39;
+
+2. 첫 시도 (실패):
+   users = re.findall(r&#39;for (invalid user )?(\S+) from&#39;, text)
+   Counter(users).most_common(3)
+   -&gt; [((&#39;invalid user &#39;, &#39;admin&#39;), 4120), ((&#39;&#39;, &#39;root&#39;), 3901), ...]
+
+   원소가 튜플이다. 그룹이 2개라서 튜플 리스트가 됐고,
+   &#39;invalid user &#39; 유무에 따라 같은 계정이 두 종류로 갈라진다.
+   집계 자체가 무의미하다.
+
+3. 접근 변경 — 앞의 그룹을 (?:...) 로 바꿔 캡처를 하나로 줄인다
+   PAT = re.compile(r&#39;Failed password for (?:invalid user )?(\S+) from (\S+)&#39;)
+   fails = Counter()
+   with open(&#39;auth.log&#39;, encoding=&#39;utf-8&#39;, errors=&#39;replace&#39;) as f:
+       for line in f:
+           for user, ip in PAT.findall(line):
+               fails[user] += 1
+   print(fails.most_common(3))
+   -&gt; [(&#39;admin&#39;, 4120), (&#39;root&#39;, 3901), (&#39;test&#39;, 1204)]
+
+   그룹이 2개이므로 findall 은 (user, ip) 튜플을 준다.
+   이번에는 그것이 의도한 형태다.
+
+4. 성공 로그인 찾기 — 두 번째 실패
+   re.findall(r&#39;Accepted password for (\S+) from (\S+)&#39;, text)
+   -&gt; []   0건. 그런데 침해는 성공했다고 지문에 있다.
+
+   원인: 키 인증이었다. 메시지가 &#39;Accepted publickey for ...&#39; 다.
+   문자열을 추측한 것이 실패의 원인이다.
+
+5. 메시지 문자열을 로그에서 직접 확인
+   print(Counter(re.findall(r&#39;sshd\[\d+\]: (\w+(?: \w+)?)&#39;, text)).most_common(6))
+   -&gt; [(&#39;Failed password&#39;, 12043), (&#39;Connection closed&#39;, 3300),
+       (&#39;Invalid user&#39;, 4120), (&#39;Accepted publickey&#39;, 1), ...]
+
+   &#39;Accepted publickey&#39; 가 정확히 1건.
+
+6. 그 한 줄을 뽑는다
+   PAT2 = re.compile(r&#39;Accepted (?:password|publickey) for (\S+) from (\S+) port&#39;)
+   print(PAT2.findall(text))
+   -&gt; [(&#39;svc_backup&#39;, &#39;203.0.113.77&#39;)]
+
+7. 시간대
+   syslog 의 &#39;Mar 14 07:19:02&#39; 에는 연도와 시간대가 없다.
+   서버 /etc/timezone 또는 파일 mtime 으로 확정해야 한다.
+   이 문제의 서버가 UTC 였으므로 07:19:02 UTC = 16:19:02 KST.
+
+8. 교차검증
+   grep -c &#39;Failed password for invalid user admin &#39; auth.log   -&gt; 4120
+   grep &#39;Accepted publickey&#39; auth.log | wc -l                    -&gt; 1
+
+정답: 상위 계정 admin / root / test,
+      성공 계정 svc_backup, 출처 203.0.113.77</code></pre></div>
+<p>2단계와 4단계가 교훈이다. <strong>그룹 개수가 반환형을 바꾼다. 그리고 로그 메시지 문자열은 추측하지 말고 로그에서 뽑아 확인한다.</strong></p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>repr()</code>로 원본 줄을 봤는가 — 탭·<code>\r</code>·이중 공백이 정규식을 깨뜨린다</li><li>값이 잘려 나오면 반복 그룹을 <code>(?:...)</code>로 바꿨는가</li><li>결과가 튜플이면 그룹 수를 세어 봤는가</li><li><code>read()</code> 후 <code>^</code>를 썼는데 <code>re.MULTILINE</code>을 줬는가</li><li>결과가 0건이면 패턴의 절반만 남겨 다시 시도했는가 (이분 탐색)</li><li>문자열 상수를 추측하지 않고 로그에서 실제 메시지를 뽑아 확인했는가</li><li><code>.*</code>가 한 줄을 다 삼키고 있지 않은가 — <code>[^&quot;]*</code>로 바꿔 본다</li><li><code>errors=&#39;replace&#39;</code>로 열었는가</li><li>개수 문제라면 <code>len()</code>과 <code>len(set())</code>을 둘 다 봤는가</li><li>위치·오프셋이 필요해졌으면 <code>finditer</code>로 넘어갈 시점인가 (FOR-0123)</li><li><code>awk</code>/<code>grep</code> 숫자와 맞춰 봤는가</li><li>시각 문자열의 시간대를 확정했는가 — 연도가 없는 syslog는 특히 위험하다</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-057 — Python 공식 문서 <code>re</code> 모듈: <code>findall</code>의 그룹 개수별 반환형 규칙, 빈 매칭 포함 여부, 플래그(<code>re.I</code>/<code>re.M</code>/<code>re.S</code>/<code>re.X</code>/<code>re.A</code>), 바이트 패턴 제약</li><li><code>collections.Counter</code>, <code>mmap</code>, <code>open(errors=...)</code> 동작은 같은 Python 표준 라이브러리 문서 계열에서 확인했다. <code>research/sources.json</code>에는 SRC-057이 <code>re</code>/<code>csv</code>/<code>json</code> 묶음으로 등록되어 있어 그 범위 안에서 인용했다</li><li><code>re</code> 모듈 내부 컴파일 캐시의 크기와 교체 정책은 CPython 구현 세부이며 버전에 따라 다를 수 있다. 캐시 크기에 의존하는 판단은 하지 않았다</li><li>예시 로그 값(IP·계정·건수)은 설명용 가상 데이터다</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./python-re-finditer.html">
+    <span class="rel-id">FOR-0123 · 로그/Regex</span>
+    Python re.finditer와 Match 객체: 매칭 위치까지 얻는다
+  </a>
+  <a class="related-item" href="./python-named-group.html">
+    <span class="rel-id">FOR-0124 · 로그/Regex</span>
+    Python 명명 캡처 그룹으로 로그를 표로 만들기: (?P&lt;name&gt;...)
+  </a>
+  <a class="related-item" href="./ipv4-regex.html">
+    <span class="rel-id">FOR-0128 · 로그/Regex</span>
+    IPv4 주소 regex: 느슨한 패턴과 엄격한 패턴 골라 쓰기
+  </a>
+  <a class="related-item" href="./grep-basics.html">
+    <span class="rel-id">FOR-0112 · 로그/Regex</span>
+    grep 기본 옵션 레퍼런스: -i -v -c -o -w -E -P -r 와 종료 코드
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./powershell-select-string.html"><span class="rel-id">← FOR-0121</span>PowerShell Select-String으로 로그 검색하기 (Windows용 grep)</a>
+<a class="related-item" href="./python-re-finditer.html"><span class="rel-id">FOR-0123 →</span>Python re.finditer와 Match 객체: 매칭 위치까지 얻는다</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-반환형-규칙-세-가지를-외운다">1단계 — 반환형 규칙 세 가지를 외운다</a></li>
+<li class="toc-l3"><a href="#2단계-여러-값을-한-번에-튜플-리스트">2단계 — 여러 값을 한 번에: 튜플 리스트</a></li>
+<li class="toc-l3"><a href="#3단계-플래그">3단계 — 플래그</a></li>
+<li class="toc-l3"><a href="#4단계-recompile로-재사용">4단계 — `re.compile`로 재사용</a></li>
+<li class="toc-l3"><a href="#5단계-대용량-파일-read를-버린다">5단계 — 대용량 파일: `read()`를 버린다</a></li>
+<li class="toc-l3"><a href="#6단계-인코딩-예외-회피">6단계 — 인코딩 예외 회피</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

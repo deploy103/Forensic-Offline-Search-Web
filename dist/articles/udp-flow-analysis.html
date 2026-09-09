@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>UDP 흐름 분석: udp.stream 과 포트로 연결 없는 대화를 세는 방법 · FOR-0176 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Network%2FPCAP">Network/PCAP</a> / FOR-0176
+      </div>
+      <header class="article-head">
+        <h1>UDP 흐름 분석: udp.stream 과 포트로 연결 없는 대화를 세는 방법</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Network/PCAP</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>UDP 는 핸드셰이크가 없으므로 (src IP, src port, dst IP, dst port) 네 값을 하나의 대화로 묶어 보는 것이 유일한 추적 방법이고, Wireshark 는 그 묶음에 udp.stream 번호를 붙여준다. Statistics &gt; Conversations &gt; UDP 를 Bytes 로 정렬해 가장 큰 대화부터 열고, 표준 포트가 아닌 고포트 UDP 대화가 지속되면 터널링·C2 후보로 격상한다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Wireshark, tshark</td></tr>
+<tr><th>artifact</th><td><code>pcap</code> · <code>pcapng</code> · <code>UDP conversation</code></td></tr>
+<tr><th>프로토콜</th><td>UDP, DNS, DHCP, TFTP, NTP, SNMP, syslog, SSDP, mDNS, QUIC, IKE</td></tr>
+<tr><th>Wireshark 필터</th><td><code>udp</code> · <code>udp.port == 53</code> · <code>udp.stream eq 0</code> · <code>udp.length &gt; 100</code> · <code>udp.dstport &gt; 1024 &amp;&amp; !dns &amp;&amp; !quic</code> · <code>udp &amp;&amp; data.len &gt; 64</code> · <code>udp.srcport</code> · <code>udp.dstport</code></td></tr>
+<tr><th>tshark field</th><td><code>udp.srcport</code> · <code>udp.dstport</code> · <code>udp.length</code> · <code>udp.stream</code> · <code>udp.port</code> · <code>udp.payload</code> · <code>data.len</code> · <code>ip.src</code> · <code>ip.dst</code></td></tr>
+<tr><th>파일 형식</th><td><code>pcap</code> · <code>pcapng</code></td></tr>
+<tr><th>검색 별칭</th><td>udp 필터 · udp 대화 · udp 스트림 · udp 포트 번호 · udp 어떻게 추적 · udp follow · udp 페이로드 크기 · udp 목록</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>UDP 는 핸드셰이크가 없으므로 <strong><code>(src IP, src port, dst IP, dst port)</code> 네 값을 하나의 대화로 묶어 보는 것</strong>이 유일한 추적 방법이고, Wireshark 는 그 묶음에 <code>udp.stream</code> 번호를 붙여준다. <code>Statistics &gt; Conversations &gt; UDP</code> 를 Bytes 로 정렬해 가장 큰 대화부터 열고, 표준 포트가 아닌 고포트 UDP 대화가 지속되면 터널링·C2 후보로 격상한다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>Protocol Hierarchy 에서 UDP 비중이 크지만 그 아래에 <code>Data</code> 만 붙어 있는 pcap</li><li>DNS·DHCP 도 아닌 <strong>모르는 UDP 포트</strong>로 트래픽이 계속 오가는 상황</li><li>&quot;어떤 프로토콜로 데이터를 빼냈는가&quot;를 묻는데 TCP 에는 아무것도 없는 문제</li><li>QUIC(UDP 443) 만 보여 HTTP 필터가 통하지 않는 최신 캡처</li><li>TFTP·SNMP·syslog 같은 평문 UDP 프로토콜에서 파일·설정·로그를 꺼내야 하는 상황</li></ul>
+<p><strong>TCP 만 보고 &quot;아무것도 없다&quot;고 판단하는 것이 가장 흔한 오답이다.</strong> 트리아지(<a href="./wireshark-30sec-triage.html">FOR-0146</a>)에서 UDP 비중이 20% 를 넘으면 반드시 이 절차로 들어온다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li><strong>Protocol Hierarchy 의 <code>User Datagram Protocol</code> 하위 항목</strong> — <code>Domain Name System</code> 만 있는가, <code>Data</code> 가 붙어 있는가</li><li><strong><code>Data</code> 의 존재</strong> — Wireshark 가 프로토콜을 판정하지 못한 UDP 페이로드다. 커스텀 프로토콜·C2 후보</li><li><strong>Conversations &gt; UDP 의 Bytes 1위</strong> — 파일이나 대량 데이터가 실린 대화</li><li><strong>포트 번호가 양쪽 모두 1024 이상</strong> — 표준 서비스가 아니다</li><li><strong>패킷 크기가 전부 동일</strong> — 고정 길이 프로토콜(NTP 등)이거나 비콘</li><li><strong>한 대화의 지속 시간</strong> — UDP 인데 수십 분 이상 이어지면 세션형 사용(터널·VPN·C2)</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">udp &amp;&amp; !dns &amp;&amp; !mdns &amp;&amp; !nbns &amp;&amp; !dhcp &amp;&amp; !ssdp &amp;&amp; !ntp &amp;&amp; !quic</code></pre></div>
+<p><strong>&quot;설명되는 UDP&quot;를 전부 지운 뒤 남는 것</strong>이 이 pcap 의 UDP 이상 신호다. 0건이면 UDP 라인은 끝이다.</p>
+<p>이어서 GUI 3단계:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1. Statistics &gt; Protocol Hierarchy   -&gt; UDP 하위에 Data 가 있는가
+2. Statistics &gt; Conversations &gt; UDP  -&gt; Bytes 내림차순. 1위 대화 확인
+3. 그 행 우클릭 &gt; Apply as Filter &gt; Selected -&gt; Follow &gt; UDP Stream</code></pre></div>
+<p>CLI 로 한 번에:</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -q -z conv,udp</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-흐름을-정의한다-udp-에-스트림-번호가-붙는-원리">1단계 — &quot;흐름&quot;을 정의한다: UDP 에 스트림 번호가 붙는 원리</h3>
+<p>TCP 는 SYN 으로 시작하고 FIN/RST 로 끝나므로 세션 경계가 패킷에 적혀 있다. UDP 에는 그런 것이 없다. 그래서 Wireshark 는 <strong>네 값이 같은 데이터그램들을 하나의 대화로 간주</strong>하고 등장 순서대로 0부터 번호를 매긴다.</p>
+<div class="table-wrap"><table><thead><tr><th>묶는 기준</th><th>값</th></tr></thead><tbody><tr><td>출발지 IP</td><td><code>ip.src</code></td></tr><tr><td>출발지 포트</td><td><code>udp.srcport</code></td></tr><tr><td>목적지 IP</td><td><code>ip.dst</code></td></tr><tr><td>목적지 포트</td><td><code>udp.dstport</code></td></tr><tr><td>부여되는 번호</td><td><code>udp.stream</code> (0부터, 방향 무관하게 왕복 한 쌍이 같은 번호)</td></tr></tbody></table></div>
+<p>즉 <code>udp.stream eq 3</code> 은 &quot;3번째로 등장한 (IP,포트) 쌍의 왕복 트래픽 전부&quot;다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">udp.stream eq 3</code></pre></div>
+<p>주의할 점 두 개:</p>
+<ul><li><strong>클라이언트가 소스 포트를 바꾸면 다른 스트림이 된다.</strong> DNS 처럼 질의마다 임시 포트를 새로 여는 프로토콜은 스트림이 수백 개로 쪼개진다. 이때는 <code>udp.stream</code> 이 아니라 <code>udp.port == 53</code> 처럼 포트 기준으로 봐야 한다.</li><li><strong>오래된 캡처에서 같은 포트가 재사용되면 서로 다른 세션이 한 스트림으로 합쳐진다.</strong> 시간 축을 함께 봐야 한다.</li></ul>
+<h3 id="2단계-필드-6개로-전부-처리한다">2단계 — 필드 6개로 전부 처리한다</h3>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>타입</th><th>의미</th><th>실전 용도</th></tr></thead><tbody><tr><td><code>udp</code></td><td>프로토콜</td><td>UDP 데이터그램 전체</td><td>존재 여부 확인</td></tr><tr><td><code>udp.srcport</code></td><td>16비트 정수</td><td>출발지 포트</td><td>방향을 가려 서버/클라이언트 판별</td></tr><tr><td><code>udp.dstport</code></td><td>16비트 정수</td><td>목적지 포트</td><td>어떤 서비스로 보냈는가</td></tr><tr><td><code>udp.port</code></td><td>16비트 정수</td><td>출발지 <strong>또는</strong> 목적지</td><td>양방향 한 번에</td></tr><tr><td><code>udp.length</code></td><td>16비트 정수</td><td><strong>UDP 헤더 8바이트를 포함한</strong> 길이</td><td>페이로드 크기 = <code>udp.length - 8</code></td></tr><tr><td><code>udp.stream</code></td><td>32비트 정수</td><td>대화 번호</td><td>Follow 대상 지정</td></tr><tr><td><code>data.len</code></td><td>정수</td><td>파서가 인식하지 못한 페이로드의 바이트 수</td><td>커스텀 프로토콜 크기 판정</td></tr></tbody></table></div>
+<p><code>udp.length</code> 가 헤더를 포함한다는 점이 계속 실수를 만든다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">udp.length == 56        -&gt; 페이로드 48바이트 (NTP 표준 패킷)
+udp.length &gt; 512        -&gt; DNS 로는 이례적인 크기
+data.len &gt; 64           -&gt; 파서가 못 읽은 64바이트 초과 페이로드</code></pre></div>
+<p>Wireshark 3.4 이상에서는 <code>udp.payload</code> 로 페이로드 바이트열 자체를 필터·추출할 수 있다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">udp.payload[0:4] == 4d:5a:90:00</code></pre></div>
+<p><code>udp.time_delta</code> / <code>udp.time_relative</code>(3.0 이상)는 UDP 프로토콜 preference 의 대화 타임스탬프 계산이 켜져 있어야 값이 채워진다. 비콘 간격을 재려면 이 설정을 확인한다.</p>
+<h3 id="3단계-주요-udp-포트표로-1차-분류한다">3단계 — 주요 UDP 포트표로 1차 분류한다</h3>
+<div class="table-wrap"><table><thead><tr><th>포트</th><th>프로토콜</th><th>Wireshark 필터</th><th>포렌식에서 보는 것</th></tr></thead><tbody><tr><td>53</td><td>DNS</td><td><code>dns</code></td><td>질의 도메인, 터널링(<code>dns.qry.name</code> 길이)</td></tr><tr><td>67 / 68</td><td>DHCP (BOOTP)</td><td><code>dhcp</code></td><td>호스트명, MAC, 임대 IP — 자산 식별</td></tr><tr><td>69</td><td>TFTP</td><td><code>tftp</code></td><td><strong>평문 파일 전송.</strong> Export Objects &gt; TFTP</td></tr><tr><td>123</td><td>NTP</td><td><code>ntp</code></td><td>시각 동기화. 타임라인 기준점, <code>udp.length == 56</code></td></tr><tr><td>137 / 138</td><td>NetBIOS (NBNS/NBDS)</td><td><code>nbns || nbdgm</code></td><td>호스트명, 워크그룹</td></tr><tr><td>161 / 162</td><td>SNMP</td><td><code>snmp</code></td><td><strong>community string 평문</strong>, 장비 정보</td></tr><tr><td>389</td><td>CLDAP</td><td><code>cldap</code></td><td>도메인 컨트롤러 탐지</td></tr><tr><td>443</td><td>QUIC (HTTP/3)</td><td><code>quic</code></td><td>암호화. SNI 만 단서</td></tr><tr><td>500</td><td>IKE (IPsec)</td><td><code>isakmp</code></td><td>VPN 협상 시작</td></tr><tr><td>514</td><td>syslog</td><td><code>syslog</code></td><td><strong>평문 로그 원문</strong></td></tr><tr><td>1900</td><td>SSDP (UPnP)</td><td><code>ssdp</code></td><td>내부 장치 목록. 노이즈</td></tr><tr><td>3478</td><td>STUN</td><td><code>stun</code></td><td>NAT 통과. WebRTC/P2P</td></tr><tr><td>4500</td><td>IPsec NAT-T</td><td><code>isakmp || esp</code></td><td>NAT 뒤 VPN 터널</td></tr><tr><td>5060</td><td>SIP</td><td><code>sip</code></td><td>VoIP 시그널링, 통화 상대</td></tr><tr><td>5353</td><td>mDNS</td><td><code>mdns</code></td><td>로컬 장치 이름. 노이즈</td></tr><tr><td>1024 이상 고포트</td><td>미지정</td><td><code>udp.dstport &gt; 1024</code></td><td><strong>터널·C2 후보</strong></td></tr></tbody></table></div>
+<p>노이즈 제거용으로 자주 쓰는 조합:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">udp &amp;&amp; !(udp.port == 53 || udp.port == 5353 || udp.port == 1900 || udp.port == 137 || udp.port == 138)</code></pre></div>
+<h3 id="4단계-큰-대화와-지속-대화를-찾는다">4단계 — 큰 대화와 지속 대화를 찾는다</h3>
+<p><code>Statistics &gt; Conversations</code> → <strong>UDP 탭</strong> → <code>Bytes</code> 헤더 클릭으로 내림차순.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Address A      Port A   Address B        Port B   Packets  Bytes     Duration
+10.0.0.24      51420    198.51.100.9     8443     14208    18442110  1382.4    &lt;-- 18 MB, 23분
+10.0.0.24      55311    10.0.0.1         53         912       84210    1401.2
+10.0.0.24      68       10.0.0.1         67           4        1368       0.8
+10.0.0.24      51877    239.255.255.250  1900       211       48920     600.1</code></pre></div>
+<p>읽는 순서:</p>
+<ol><li><strong>Bytes 1위</strong> — 데이터가 실려 있다. 18 MB UDP 대화는 파일 유출이나 터널이다</li><li><strong>Duration 이 긴 대화</strong> — 23분 지속되는 UDP 는 세션형 사용이다. 정상 UDP 서비스는 대개 짧다</li><li><strong>Packets 대비 Bytes</strong> — 평균 데이터그램 크기를 계산한다. <code>18442110 / 14208 = 약 1298바이트</code> → MTU 에 가까운 큰 데이터그램 = 대량 전송</li><li><strong>포트가 양쪽 다 비표준</strong> — 위 예의 <code>8443</code> 은 UDP 표준 서비스가 아니다</li></ol>
+<p>CLI 동등물:</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -q -z conv,udp
+tshark -r capture.pcapng -q -z endpoints,udp</code></pre></div>
+<h3 id="5단계-페이로드-크기-분포로-프로토콜을-추정한다">5단계 — 페이로드 크기 분포로 프로토콜을 추정한다</h3>
+<p>파서가 프로토콜을 못 잡았을 때, <strong>크기 분포가 정체를 알려준다.</strong></p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;udp.stream eq 0&#39; -T fields -e udp.length |
+  sort -n | uniq -c | sort -nr | head -15</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>관측된 분포</th><th>추정</th></tr></thead><tbody><tr><td>전부 동일한 한 값</td><td>고정 길이 프로토콜 또는 비콘. <code>udp.length == 56</code> 이면 NTP</td></tr><tr><td>두세 개 값에 집중 (예: 148, 92)</td><td>핸드셰이크 2~3종 + 데이터인 VPN/암호 프로토콜</td></tr><tr><td>1200바이트 이상이 다수 + UDP 443</td><td>QUIC. Initial 패킷은 1200바이트 이상으로 패딩된다</td></tr><tr><td>40~90바이트에 몰림 + 포트 53</td><td>평범한 DNS</td></tr><tr><td>300~600바이트 + 포트 67/68</td><td>DHCP</td></tr><tr><td>MTU 근처(1400~1472)가 연속</td><td>파일 전송 또는 터널링</td></tr><tr><td>크기가 완전히 무작위</td><td>암호화된 커스텀 프로토콜</td></tr></tbody></table></div>
+<p>크기가 일정하고 <strong>시간 간격도 일정하면 비콘</strong>이다. 간격을 직접 재본다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;udp.stream eq 0&#39; -T fields -e frame.time_relative -e udp.length | head -20</code></pre></div>
+<h3 id="6단계-내용을-본다">6단계 — 내용을 본다</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1. udp.stream eq 0 필터 적용
+2. 패킷 우클릭 &gt; Follow &gt; UDP Stream
+3. Show data as = ASCII / Hex Dump 로 전환</code></pre></div>
+<p>Follow UDP Stream 은 데이터그램들을 순서대로 이어 붙여 보여준다. <strong>TCP 와 달리 순서 보장이 없으므로 이어 붙인 결과가 원래 바이트열과 다를 수 있다</strong> — 파일을 꺼낼 때는 Hex Dump 로 경계를 확인한다.</p>
+<p>CLI:</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -q -z follow,udp,ascii,0</code></pre></div>
+<p>평문이 보이면 그대로 답이다. 알아볼 수 없는 바이트열이면 Base64/hex 인코딩 여부를 확인하고, 그래도 안 되면 암호화로 판정하고 <strong>메타데이터(포트, 크기, 간격, 목적지 IP)만으로 결론을 낸다.</strong></p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p><code>tshark</code> 로 UDP 대화 표를 직접 만들면 정렬·집계가 쉽다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;udp&#39; -T fields \
+  -e udp.stream -e ip.src -e udp.srcport -e ip.dst -e udp.dstport -e udp.length \
+  -E header=y -E separator=, | head</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">udp.stream,ip.src,udp.srcport,ip.dst,udp.dstport,udp.length
+0,10.0.0.24,51420,198.51.100.9,8443,1306
+0,198.51.100.9,8443,10.0.0.24,51420,84
+1,10.0.0.24,55311,10.0.0.1,53,44
+1,10.0.0.1,53,10.0.0.24,55311,60</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>읽는 값</th><th>판정</th></tr></thead><tbody><tr><td>같은 <code>udp.stream</code> 에 두 방향이 모두 있는가</td><td>없으면 단방향 = 응답 없는 전송(유출/스캔)</td></tr><tr><td><code>udp.length</code> 가 한쪽만 큰가</td><td>큰 쪽이 데이터를 보낸 쪽. 업로드/다운로드 방향 판정</td></tr><tr><td>서버 포트가 고정, 클라이언트 포트가 매번 다른가</td><td>정상 클라이언트-서버 패턴</td></tr><tr><td>양쪽 포트가 모두 고정된 고포트</td><td><strong>터널링·P2P·C2 의 전형</strong></td></tr></tbody></table></div>
+<p>포트별 데이터그램 개수 집계 — 어느 서비스가 지배적인지 즉시 나온다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;udp&#39; -T fields -e udp.dstport |
+  sort -n | uniq -c | sort -nr | head -20</code></pre></div>
+<p>스트림별 총 바이트 집계:</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;udp&#39; -T fields -e udp.stream -e udp.length |
+  awk -F&#39;\t&#39; &#39;{s[$1]+=$2} END {for (k in s) print s[k], k}&#39; | sort -nr | head</code></pre></div>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>여기서 얻은 것</th><th>다음에 볼 것</th></tr></thead><tbody><tr><td>DNS 질의 도메인 목록</td><td>브라우저 History (<a href="./chrome-history.html">FOR-0191</a>), hosts 파일, DNS 캐시</td></tr><tr><td>DHCP 의 호스트명 + MAC</td><td>자산 식별 → 컴퓨터 이름 확인 (<a href="./computer-name.html">FOR-0073</a>)</td></tr><tr><td>TFTP 로 전송된 파일</td><td><code>File &gt; Export Objects &gt; TFTP</code> → <code>file</code> / <code>strings</code> (<a href="./30sec-triage.html">FOR-0001</a>)</td></tr><tr><td>syslog 원문</td><td>서버 로그 라인 분석 (<a href="./log-triage.html">FOR-0111</a>)</td></tr><tr><td>SNMP community string</td><td>자격증명 후보 → 로그온 이벤트 대조 (<a href="./event-4624-logon.html">FOR-0083</a>)</td></tr><tr><td>비표준 고포트 대화의 상대 IP</td><td>그 IP 의 전 트래픽 (<a href="./ip-addr-filter.html">FOR-0182</a>)</td></tr><tr><td>UDP 443 뿐</td><td>QUIC 의 SNI 로 목적지 도메인 (<a href="./tls-sni.html">FOR-0177</a>)</td></tr><tr><td>일정 간격의 고정 크기 데이터그램</td><td>비콘 판정 → 엔드포인트의 프로세스 확인 (<a href="./sysmon-event-3-network-connect.html">FOR-0100</a>)</td></tr><tr><td>NTP 서버와 동기화 시각</td><td>타임라인 기준점, 시스템 시각 조작 여부 (<a href="./system-timezone.html">FOR-0054</a>)</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>UDP 를 &quot;연결이 없으니 추적 불가&quot;로 포기하는 것.</strong> <code>udp.stream</code> 이 (IP,포트) 튜플로 대화를 이미 묶어 놓았다. <code>Statistics &gt; Conversations &gt; UDP</code> 가 항상 첫 화면이다.</li><li><strong><code>udp.length</code> 를 페이로드 길이로 쓰는 것.</strong> <code>udp.length</code> 는 <strong>헤더 8바이트를 포함</strong>한다. 페이로드는 <code>udp.length - 8</code> 이다. 48바이트 NTP 패킷은 <code>udp.length == 56</code> 으로 잡힌다.</li><li><strong><code>udp.port == 53</code> 을 <code>dns</code> 와 같다고 보는 것.</strong> 53 번을 쓰지 않는 DNS(비표준 포트)도, DNS 가 아닌 53번 트래픽(위장 터널)도 있다. 두 필터를 각각 돌려 개수가 다르면 그 차이가 단서다.</li><li><strong>DNS 스트림을 <code>udp.stream</code> 으로 묶으려 하는 것.</strong> 질의마다 소스 포트가 바뀌어 스트림이 수백 개로 쪼개진다. DNS 는 <code>udp.port == 53</code> 또는 <code>dns.qry.name</code> 기준으로 집계한다.</li><li><strong><code>Data</code> 로 표시된 UDP 를 노이즈로 넘기는 것.</strong> <code>Data</code> 는 <strong>Wireshark 가 못 읽은 페이로드</strong>이며, 커스텀 C2 가 정확히 이렇게 보인다. <code>data.len</code> 으로 크기를 먼저 재고 Follow 로 내용을 본다.</li><li><strong>mDNS(5353) / SSDP(1900) / NBNS(137) 를 이상 신호로 보고하는 것.</strong> 이들은 일반 LAN 에 항상 존재하는 배경 잡음이다. 제외 목록에 넣고 시작한다.</li><li><strong>Follow UDP Stream 결과를 바이트 단위로 신뢰하는 것.</strong> UDP 는 순서와 도착을 보장하지 않으므로 이어 붙인 결과가 원본과 다를 수 있다. 파일을 꺼낼 때는 Hex Dump 로 데이터그램 경계를 확인한다.</li><li><strong>UDP 443 을 보고 &quot;HTTPS 니까 볼 것 없다&quot;고 넘기는 것.</strong> UDP 443 은 QUIC 이며 <code>quic</code> 필터로 파싱된다. Initial 패킷 안의 SNI 로 목적지 도메인을 얻을 수 있다.</li><li><strong>단방향 대화를 정상으로 보는 것.</strong> 응답이 전혀 없는 UDP 전송은 스캔이거나 <strong>응답을 기대하지 않는 데이터 유출</strong>이다. <code>Statistics &gt; Conversations</code> 에서 한 방향 패킷 수가 0 인 행을 찾는다.</li><li><strong>체크섬 오류(<code>udp.checksum.status</code>)를 조작 증거로 읽는 것.</strong> 송신 호스트에서 캡처하면 checksum offload 때문에 정상 트래픽도 오류로 표시된다. <code>udp.checksum.partial</code> 이 붙어 있으면 offload 다.</li><li><strong>시간 간격을 상대 초로만 보고 비콘 판정을 내리는 것.</strong> 절대시각(UTC)으로 바꿔 다른 artifact 와 맞춘 뒤 판정한다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) UDP 대화 목록 — GUI Conversations &gt; UDP 와 동일
+tshark -r capture.pcapng -q -z conv,udp
+
+# 2) UDP 엔드포인트 — 누가 등장하는가
+tshark -r capture.pcapng -q -z endpoints,udp
+
+# 3) 목적지 포트 빈도 — 어떤 서비스가 지배적인가
+tshark -r capture.pcapng -Y &#39;udp&#39; -T fields -e udp.dstport |
+  sort -n | uniq -c | sort -nr | head -20
+
+# 4) 설명되지 않는 UDP 만 남기기
+tshark -r capture.pcapng \
+  -Y &#39;udp &amp;&amp; !dns &amp;&amp; !mdns &amp;&amp; !nbns &amp;&amp; !dhcp &amp;&amp; !ssdp &amp;&amp; !ntp &amp;&amp; !quic&#39; \
+  -T fields -e frame.number -e ip.src -e udp.srcport -e ip.dst -e udp.dstport -e udp.length
+
+# 5) 특정 스트림의 크기 분포 — 프로토콜 추정
+tshark -r capture.pcapng -Y &#39;udp.stream eq 0&#39; -T fields -e udp.length |
+  sort -n | uniq -c | sort -nr | head -15
+
+# 6) 스트림 내용 — GUI Follow UDP Stream 과 동일
+tshark -r capture.pcapng -q -z follow,udp,ascii,0
+
+# 7) 파서를 우회한 최후 수단
+tshark -r capture.pcapng -Y &#39;udp&#39; -T fields -e data.data |
+  tr -d &#39;:\n&#39; | xxd -r -p | strings -n 6 | head -30</code></pre></div>
+<p>GUI 의 Conversations 개수와 <code>-z conv,udp</code> 개수가 다르면 GUI 에 display filter 가 걸려 있는지 확인한다. <code>-z</code> 통계는 <code>-Y</code> 를 함께 주지 않으면 항상 전체 파일을 대상으로 한다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;내부 호스트가 외부로 데이터를 유출했다. 사용한 프로토콜과 유출된 파일 이름을 구하세요.&quot;
+첨부: exfil_udp.pcapng (21,344 packets, 22 MB)
+
+1. 첫 시도 (실패) — TCP 만 봤다
+   Statistics &gt; Conversations &gt; TCP  -&gt; Bytes 최대가 82 KB (평범한 HTTP)
+   필터: http.request  -&gt; GET 요청 몇 개, 전부 정상 사이트
+   File &gt; Export Objects &gt; HTTP -&gt; 이미지 3개뿐
+
+   &quot;유출 흔적 없음&quot; 이라 판단했다 -&gt; 오답.
+   원인: Protocol Hierarchy 를 보지 않고 TCP 탭만 열었다.
+
+2. 접근 변경 — Protocol Hierarchy 를 먼저 본다
+   Statistics &gt; Protocol Hierarchy
+
+     Transmission Control Protocol   9.1%    1942    418220
+     User Datagram Protocol         90.2%   19256  21884410
+       Domain Name System            2.1%     455     41120
+       Data                         87.9%   18790  21830100    &lt;-- 21 MB, 파서가 못 읽음
+       QUIC                          0.0%       0         0
+
+   -&gt; 전체 바이트의 대부분이 &quot;이름 없는 UDP&quot; 다. 여기가 본체다.
+
+3. 어느 대화인가
+   Statistics &gt; Conversations &gt; UDP, Bytes 내림차순
+
+     Address A   Port A   Address B        Port B   Packets   Bytes      Duration
+     10.0.0.24   49188    198.51.100.9     8443     18790     21830100   264.7
+     10.0.0.24   55102    10.0.0.1         53         455        41120   301.2
+
+   -&gt; udp.stream 0 하나에 21 MB. 264초 동안 지속.
+      양쪽 포트가 모두 고정된 고포트 = 세션형 사용.
+
+4. 페이로드 크기 분포로 정체를 좁힌다
+   tshark -r exfil_udp.pcapng -Y &#39;udp.stream eq 0&#39; -T fields -e udp.length |
+     sort -n | uniq -c | sort -nr | head
+
+      18102 1170
+        680 84
+          8 56
+
+   -&gt; 1170바이트가 절대다수. MTU 에 맞춰 잘린 대량 전송이다.
+      84바이트는 응답(ACK 성격), 56바이트는 제어용.
+
+5. 내용을 본다
+   필터: udp.stream eq 0
+   우클릭 &gt; Follow &gt; UDP Stream, Show data as = ASCII
+
+     TFTP? 아니다. 첫 바이트가 매번 다르다.
+     Hex Dump 로 전환 -&gt; 각 데이터그램 앞 8바이트가 순번처럼 증가한다.
+     ASCII 구간에 반복되는 문자열이 보인다:
+       ...customer_db_2026.sql...
+
+6. 문자열로 확정
+   필터: udp contains &quot;customer_db&quot;
+     No.   Src         Dst              Info
+     104   10.0.0.24   198.51.100.9     53994 -&gt; 8443  Len=1128
+
+   상세창 Data 항목:
+     0000  00 00 00 01 00 00 04 68  63 75 73 74 6f 6d 65 72
+     0010  5f 64 62 5f 32 30 32 36  2e 73 71 6c 00 ...
+     -&gt; 8바이트 커스텀 헤더 + 파일명 + 데이터
+
+   확정: 커스텀 UDP 프로토콜(포트 8443)로 customer_db_2026.sql 유출.
+
+7. DNS 도 확인 (다른 유출 경로 배제)
+   tshark -r exfil_udp.pcapng -Y &#39;dns.flags.response == 0&#39; -T fields -e dns.qry.name |
+     sort -u | head
+     ocsp.example-ca.net
+     update.example.com
+   -&gt; 정상. DNS 터널링은 아니다.
+
+정답: UDP 8443 커스텀 프로토콜 / customer_db_2026.sql</code></pre></div>
+<p>1단계의 실패가 이 글의 이유다. <strong><code>Statistics &gt; Conversations</code> 의 TCP 탭만 여는 습관이 UDP 유출을 통째로 놓치게 만든다.</strong> Protocol Hierarchy 를 먼저 보면 21 MB 짜리 <code>Data</code> 가 한눈에 들어온다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>Statistics &gt; Protocol Hierarchy</code> 에서 UDP 하위 항목을 확인했는가 — <code>Data</code> 가 있으면 그것이 목표다</li><li><code>Statistics &gt; Conversations</code> 의 <strong>UDP 탭</strong>을 Bytes 로 정렬했는가</li><li>노이즈 제거 필터(<code>udp &amp;&amp; !dns &amp;&amp; !mdns &amp;&amp; !nbns &amp;&amp; !dhcp &amp;&amp; !ssdp &amp;&amp; !ntp &amp;&amp; !quic</code>)를 돌렸는가</li><li>남은 대화의 양쪽 포트가 모두 1024 이상인가 — 터널 후보다</li><li><code>udp.length</code> 분포를 집계했는가 — 고정 크기면 비콘, MTU 근처면 대량 전송</li><li>Duration 이 긴 대화가 있는가 — UDP 세션형 사용은 그 자체가 이상 신호다</li><li>단방향 대화(응답 0)가 있는가 — 스캔 또는 응답 없는 유출</li><li><code>Follow &gt; UDP Stream</code> 을 ASCII 와 Hex Dump 로 모두 봤는가</li><li><code>udp contains &quot;...&quot;</code> 로 파일명·확장자 문자열을 찾아봤는가</li><li>UDP 443 이 있으면 <code>quic</code> 필터로 파싱되는가 — SNI 확인으로 전환</li><li>TFTP·syslog·SNMP 가 있으면 Export Objects 와 평문 원문을 확인했는가</li><li><code>udp.length</code> 를 페이로드 길이로 착각하지 않았는가 (8바이트 헤더 포함)</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-002 — Wireshark Display Filter Reference: <code>udp</code>, <code>udp.srcport</code>, <code>udp.dstport</code>, <code>udp.port</code>, <code>udp.length</code>, <code>udp.stream</code>, <code>udp.payload</code>(3.4.0 이상), <code>udp.time_delta</code> / <code>udp.time_relative</code>(3.0.0 이상), <code>udp.checksum.status</code>, <code>udp.checksum.partial</code>, <code>data.len</code>, <code>data.data</code> 의 정확한 필드명과 도입 버전 확인</li><li>SRC-003 — Wireshark User&#39;s Guide: <code>Statistics &gt; Conversations</code> / <code>Endpoints</code> 의 UDP 탭, <code>Statistics &gt; Protocol Hierarchy</code>, <code>Follow &gt; UDP Stream</code>, <code>File &gt; Export Objects &gt; TFTP</code></li><li>SRC-010 — tshark man page: <code>-z conv,udp</code>, <code>-z endpoints,udp</code>, <code>-z follow,udp,ascii,&lt;stream&gt;</code>, <code>-T fields -e</code>, <code>-Y</code></li><li>UDP 포트표의 서비스 대응은 IANA 등록 포트 관례를 따른 것이며, <strong>포트 번호만으로 프로토콜을 단정할 수는 없다.</strong> 실제 페이로드로 확인한다 (<a href="./port-filters.html">FOR-0183</a>)</li><li><code>udp.time_delta</code> / <code>udp.time_relative</code> 는 UDP 프로토콜 preference 의 대화 타임스탬프 계산이 켜져 있어야 값이 채워진다. preference 이름과 기본값은 버전에 따라 다를 수 있으므로 <code>Edit &gt; Preferences &gt; Protocols &gt; UDP</code> 에서 실제 화면으로 확인할 것</li><li>QUIC Initial 패킷의 최소 크기(1200바이트 이상 패딩)는 QUIC 명세의 요구사항이며, 실제 캡처에서 <code>quic.long.packet_type</code> 으로 패킷 종류를 확인해 검증할 것</li><li><code>dhcp</code> 필터명은 Wireshark 3.0 에서 <code>bootp</code> 를 대체한 것이다. 구버전 Wireshark 나 오래된 문서에서는 <code>bootp</code> 를 써야 하므로, 필터가 문법 오류로 뜨면 버전을 확인할 것</li><li><code>-e data.data</code> 출력은 콜론으로 구분된 hex 이므로 바이너리로 되돌릴 때 콜론을 먼저 제거해야 한다. 출력 구분 문자는 버전에 따라 다를 수 있으니 실제 출력을 한 줄 찍어 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./wireshark-30sec-triage.html">
+    <span class="rel-id">FOR-0146 · Network/PCAP</span>
+    Wireshark 30초 트리아지: pcap을 받고 처음 할 다섯 가지
+  </a>
+  <a class="related-item" href="./capture-vs-display-filter.html">
+    <span class="rel-id">FOR-0147 · Network/PCAP</span>
+    Capture Filter와 Display Filter 차이: 필터가 안 먹을 때
+  </a>
+  <a class="related-item" href="./protocol-hierarchy.html">
+    <span class="rel-id">FOR-0148 · Network/PCAP</span>
+    Protocol Hierarchy: 프로토콜 비중과 End Packets 읽는 법
+  </a>
+  <a class="related-item" href="./tshark-basics.html">
+    <span class="rel-id">FOR-0184 · Network/PCAP</span>
+    tshark 옵션 레퍼런스: -r -Y -T fields -z 를 한 장에
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./tcp-retransmission.html"><span class="rel-id">← FOR-0175</span>TCP 재전송 해석: tcp.analysis.retransmission 과 재조립 신뢰도</a>
+<a class="related-item" href="./tshark-basics.html"><span class="rel-id">FOR-0184 →</span>tshark 옵션 레퍼런스: -r -Y -T fields -z 를 한 장에</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-흐름을-정의한다-udp-에-스트림-번호가-붙는-원리">1단계 — &quot;흐름&quot;을 정의한다: UDP 에 스트림 번호가 붙는 원리</a></li>
+<li class="toc-l3"><a href="#2단계-필드-6개로-전부-처리한다">2단계 — 필드 6개로 전부 처리한다</a></li>
+<li class="toc-l3"><a href="#3단계-주요-udp-포트표로-1차-분류한다">3단계 — 주요 UDP 포트표로 1차 분류한다</a></li>
+<li class="toc-l3"><a href="#4단계-큰-대화와-지속-대화를-찾는다">4단계 — 큰 대화와 지속 대화를 찾는다</a></li>
+<li class="toc-l3"><a href="#5단계-페이로드-크기-분포로-프로토콜을-추정한다">5단계 — 페이로드 크기 분포로 프로토콜을 추정한다</a></li>
+<li class="toc-l3"><a href="#6단계-내용을-본다">6단계 — 내용을 본다</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

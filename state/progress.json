@@ -1,49 +1,38 @@
 {
   "target": 300,
-  "completed": 11,
-  "verified": 11,
+  "completed": 143,
+  "verified": 143,
   "in_progress": [],
-  "last_completed_id": "FOR-0214",
-  "current_phase": "skeleton-done",
-  "last_commit": "7051f4c",
-  "last_updated_kst": "2026-09-10 02:41 KST",
+  "last_completed_id": "FOR-0231",
+  "current_phase": "wave2-in-progress",
+  "last_commit": "09296c4",
+  "last_updated_kst": "2026-09-10 09:10 KST",
   "blockers": [
     "gh CLI 미설치 — private GitHub repo 생성/push 불가. git init/commit 은 로컬에서 진행 중."
   ],
   "next_actions": [
-    "Phase 2 Critical 100 시작: Windows 라인 FOR-0016 ~ FOR-0020 (FTK Imager / Arsenal / Autopsy / MBR GPT / NTFS 구조)",
-    "이어서 FOR-0022 ~ FOR-0026, FOR-0028 ~ FOR-0032 로 디스크/NTFS 35개 채우기",
-    "Network 라인 FOR-0147 ~ FOR-0152 병행",
-    "Log/Regex 라인 FOR-0111 ~ FOR-0117 병행",
-    "5개마다 build + validate + search-test + smoke-offline + DEVELOPMENT_LOG + progress.json + commit"
+    "Wave 2 커밋 필요 (93개 신규: Registry FOR-0057~0080, Event Log FOR-0081~0110, 로그/Regex FOR-0111~0140, Network/PCAP FOR-0147~0185, 브라우저/SQLite/메모리 FOR-0192/0193/0201/0202/0221/0231, 초반 누락분 FOR-0002/0009/0010)",
+    "57건 broken local link 에러는 전부 아직 안 쓴 글(cut-fields, sort-uniq, head-tail-less, sed-substitute, export-objects-http, tcp-stream-filter, expert-information, dns-tunneling, endpoints, tshark-extract-fields, pcap-credentials, pcap-file-extraction, chrome-login-data, webkit-timestamp, sqlite-basics, process-dump, tls-sni, ip-addr-filter, port-filters, tcp-contains, dns-qry-name-filter, browser-history-vs-pcap) 참조 → 해당 글 작성 시 자동 해소",
+    "search-test 6건 실패(FOR-0295/0217/0214 등 미작성 대상 기대값)도 해당 글 작성 후 해소",
+    "id sequence gap 경고(FOR-0003 자리에 FOR-0009) 는 Phase 3 순서대로 채우면 해소",
+    "다음 이어서 쓸 라인: 남은 Network/PCAP 후반부, 브라우저/SQLite/메모리 나머지, Volatility 라인(FOR-0214 주변)"
   ],
   "phase_notes": {
     "skeleton": "완료. 빌드 파이프라인, 오프라인 검색, 필터, 관련글, file:// 동작, no-CDN 검증까지 통과.",
-    "sample_articles": [
-      "FOR-0001 트리아지 (troubleshooting/basic)",
-      "FOR-0021 디스크/NTFS (reference/basic)",
-      "FOR-0027 디스크/NTFS (reference/intermediate)",
-      "FOR-0061 Registry (guide/intermediate)",
-      "FOR-0083 Event Log (guide/intermediate)",
-      "FOR-0121 로그/Regex (guide/intermediate)",
-      "FOR-0128 로그/Regex (reference/intermediate)",
-      "FOR-0146 Network/PCAP (guide/intermediate)",
-      "FOR-0158 Network/PCAP (guide/intermediate)",
-      "FOR-0191 브라우저/웹 (reference/intermediate)",
-      "FOR-0214 메모리 (guide/intermediate)"
-    ],
-    "sample_selection_reason": "11개 카테고리 중 7개, 3가지 type, basic/intermediate 두 난이도를 모두 태워 UI·검색·필터·관련글을 실제 데이터로 검증했다. 숫자 순서가 아닌 이유는 Phase 1 목적이 뼈대 검증이기 때문이며, validate 의 id sequence gap 경고는 Phase 3에서 순서대로 채우면 해소된다."
+    "wave1": "커밋 09296c4. 디스크/NTFS 35개 + Registry 6개로 11 -> 50.",
+    "wave2": "커밋 미완료(작업 중 중단). 50 -> 143. Registry 잔여, Event Log, 로그/Regex, Network/PCAP, 브라우저/SQLite/메모리 일부, 초반 누락분 채움. build/validate/search-test/smoke-offline 전부 재검증 완료."
   },
   "validation_snapshot": {
-    "as_of_kst": "2026-09-10 02:41 KST",
-    "articles": 11,
-    "validate_errors": 0,
-    "validate_warnings": 2,
-    "search_queries_total": 195,
-    "search_queries_active": 159,
-    "search_queries_passed": 159,
-    "search_queries_pending": 36,
+    "as_of_kst": "2026-09-10 09:10 KST",
+    "articles": 143,
+    "validate_errors": 57,
+    "validate_errors_reason": "전부 미작성 문서로의 broken link (본문/메타 자체 에러 0건)",
+    "validate_warnings": 49,
+    "search_queries_passed": 238,
+    "search_queries_pending_or_failed": 6,
+    "search_queries_total_cases": 267,
     "smoke_offline": "pass",
-    "search_index_kb": 155.1
+    "search_index_kb": 376.9,
+    "search_body_kb": 2733.3
   }
 }

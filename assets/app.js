@@ -13,6 +13,9 @@
 
   var INDEX = window.FORENSIC_INDEX;
   var Search = window.ForensicSearch;
+  // Only the search page loads search-body.js; on article pages this is
+  // undefined and the header dropdown searches metadata only.
+  var BODIES = window.FORENSIC_BODY || null;
   if (!INDEX || !Search) return;
 
   var ROOT = document.documentElement.getAttribute('data-root') || '.';
@@ -114,7 +117,7 @@
       if (browse) browse.hidden = true;
 
       var t0 = Date.now();
-      var results = Search.search(INDEX, q, { limit: 60, filters: filters });
+      var results = Search.search(INDEX, q, { limit: 60, filters: filters, bodies: BODIES });
       var ms = Date.now() - t0;
 
       out.innerHTML = '';
@@ -253,7 +256,7 @@
         panel.innerHTML = '';
         return;
       }
-      var results = Search.search(INDEX, q, { limit: 8 });
+      var results = Search.search(INDEX, q, { limit: 8, bodies: BODIES });
       panel.innerHTML = '';
       if (results.length === 0) {
         panel.appendChild(el('div', 'nav-empty', '결과 없음'));

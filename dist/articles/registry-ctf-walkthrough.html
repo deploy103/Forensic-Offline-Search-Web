@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Registry 종합 CTF 풀이: USB 자료 반출 사건을 hive 5개로 끝까지 · FOR-0080 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Registry">Registry</a> / FOR-0080
+      </div>
+      <header class="article-head">
+        <h1>Registry 종합 CTF 풀이: USB 자료 반출 사건을 hive 5개로 끝까지</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Registry</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>레지스트리 종합 문제는 hive 순서(SAM → SYSTEM → SOFTWARE → NTUSER.DAT → UsrClass.dat)와 두 개의 전제(활성 ControlSet, 시간대)를 먼저 고정한 뒤 계정 → 장치 → 실행 → 파일 접근 → 의도 → 지속성 순으로 쌓아 올리면, 마지막에 시간순 표 하나로 답변이 완성된다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>RegistryExplorer, RegRipper, rla, ShellBags Explorer, AppCompatCacheParser, FTK Imager, Timeline Explorer, DCode</td></tr>
+<tr><th>artifact</th><td><code>SAM</code> · <code>SYSTEM</code> · <code>SOFTWARE</code> · <code>NTUSER.DAT</code> · <code>UsrClass.dat</code> · <code>USBSTOR</code> · <code>MountedDevices</code> · <code>MountPoints2</code> · <code>UserAssist</code> · <code>BAM</code> · <code>ShellBags</code> · <code>RecentDocs</code> · <code>TypedPaths</code> · <code>Run</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Windows\System32\config\SAM</code> · <code>C:\Windows\System32\config\SYSTEM</code> · <code>C:\Windows\System32\config\SOFTWARE</code> · <code>C:\Users\&lt;user&gt;\NTUSER.DAT</code> · <code>C:\Users\&lt;user&gt;\AppData\Local\Microsoft\Windows\UsrClass.dat</code></td></tr>
+<tr><th>레지스트리</th><td><code>SYSTEM\Select</code> · <code>SYSTEM\ControlSet001\Control\TimeZoneInformation</code> · <code>SYSTEM\ControlSet001\Enum\USBSTOR</code> · <code>SYSTEM\MountedDevices</code> · <code>SYSTEM\ControlSet001\Services\bam\State\UserSettings</code> · <code>SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList</code> · <code>NTUSER.DAT\Software\Microsoft\Windows\CurrentVersion\Explorer\MountPoints2</code> · <code>NTUSER.DAT\Software\Microsoft\Windows\CurrentVersion\Explorer\TypedPaths</code> · <code>NTUSER.DAT\Software\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs</code> · <code>NTUSER.DAT\Software\Microsoft\Windows\CurrentVersion\Run</code> · <code>UsrClass.dat\Local Settings\Software\Microsoft\Windows\Shell\BagMRU</code></td></tr>
+<tr><th>로그 필드</th><td><code>Current</code> · <code>ActiveTimeBias</code> · <code>TimeZoneKeyName</code> · <code>ProfileImagePath</code> · <code>MRUListEx</code> · <code>LastArrival</code> · <code>LastRemoval</code> · <code>Run Count</code> · <code>Last Executed</code></td></tr>
+<tr><th>파일 형식</th><td><code>regf</code></td></tr>
+<tr><th>검색 별칭</th><td>레지스트리 문제 풀이 · hive 분석 순서 · 레지스트리 ctf · usb 반출 분석 · 레지스트리 종합 · hive 뭐부터</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>레지스트리 종합 문제는 <strong>hive 순서(SAM → SYSTEM → SOFTWARE → NTUSER.DAT → UsrClass.dat)와 두 개의 전제(활성 ControlSet, 시간대)를 먼저 고정</strong>한 뒤 계정 → 장치 → 실행 → 파일 접근 → 의도 → 지속성 순으로 쌓아 올리면, 마지막에 시간순 표 하나로 답변이 완성된다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>첨부가 <code>SAM</code>, <code>SYSTEM</code>, <code>SOFTWARE</code>, <code>NTUSER.DAT</code>, <code>UsrClass.dat</code> 세트로 통째로 주어진다</li><li>&quot;누가, 언제, 어떤 장치로, 무슨 파일을 가져갔는가&quot;를 한 번에 물어본다</li><li>배점이 큰 시나리오 문제로 소문항이 5~10개 붙어 있다</li><li>답을 시간순으로 서술하라고 요구한다</li><li>개별 artifact는 아는데 <strong>순서와 연결</strong>이 안 잡힌다</li></ul>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>hive 개수를 센다 — 사용자 hive가 몇 명 것인지가 조사 범위다</li><li><code>.LOG1</code>/<code>.LOG2</code>가 함께 있는가 — 있으면 반드시 <code>rla</code>부터</li><li>지문의 동사: &quot;실행&quot;, &quot;복사&quot;, &quot;접근&quot;, &quot;연결&quot;, &quot;등록&quot; — 각각 다른 artifact다</li><li>답 형식이 KST인지 UTC인지</li><li><code>UsrClass.dat</code>이 있으면 ShellBags 문항이 있다고 보면 된다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">rla.exe -d &quot;C:\case\hives&quot; --out &quot;C:\case\clean&quot;</code></pre></div>
+<p>전제 두 개를 먼저 고정한다. 이 두 값 없이 뒤의 모든 시각은 무의미하다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1) SYSTEM\Select                      -&gt; Current = 1  =&gt; ControlSet001
+2) SYSTEM\ControlSet001\Control\TimeZoneInformation
+     TimeZoneKeyName / ActiveTimeBias -&gt; 모든 FILETIME 을 KST 로 보정할 근거</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="시나리오">시나리오</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">&quot;외주 인력이 야간에 사무실 PC 에서 USB 로 자료를 반출했다는 신고입니다.
+ 아래 hive 로 다음을 판정하시오.
+  ① 반출에 사용된 계정과 그 계정의 성격
+  ② 사용된 USB 장치와 연결/제거 시각 (KST)
+  ③ 그 계정이 실행한 도구
+  ④ 접근한 파일과 폴더
+  ⑤ 반출 의도를 보여 주는 흔적
+  ⑥ 지속성(재접속용) 흔적
+ 첨부: SAM, SYSTEM, SOFTWARE, SECURITY (+각 .LOG1/.LOG2)
+       jhkim/NTUSER.DAT, jhkim/UsrClass.dat
+       tempadm/NTUSER.DAT, tempadm/UsrClass.dat (+각 .LOG1/.LOG2)&quot;</code></pre></div>
+<h3 id="0단계-로그-반영과-hive-확인">0단계 — 로그 반영과 hive 확인</h3>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 모든 hive 를 한 폴더에 모으고 로그를 반영한다
+rla.exe -d &quot;C:\case\hives&quot; --out &quot;C:\case\clean&quot;</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 정말 hive 인지, dirty 였는지 확인
+for f in SAM SYSTEM SOFTWARE SECURITY; do xxd -l 16 &quot;$f&quot;; done</code></pre></div>
+<p>반영 전 hive도 <strong>지우지 않고 남긴다.</strong> 삭제된 항목이 반영 전 상태에만 남아 있을 수 있다 (<a href="./registry-deleted-keys.html">FOR-0078</a>).</p>
+<h3 id="1단계-sam-계정-목록과-성격">1단계 — SAM: 계정 목록과 성격</h3>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">rip.exe -r &quot;C:\case\clean\SAM&quot; -p samparse &gt; 01_sam.txt</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Machine SID : S-1-5-21-3623811015-3361044348-30300820
+
+Username        : Administrator [500]
+  Account Created : 2025-09-29 02:14:07Z
+  Last Login Date : Never
+  Account Disabled
+
+Username        : jhkim [1001]
+  Account Created : 2025-09-29 02:31:55Z
+  Last Login Date : 2026-04-08 00:12:40Z
+  Login Count     : 214
+
+Username        : tempadm [1003]
+  Account Created : 2026-04-08 12:40:11Z      &lt;- 사건 당일 생성
+  Last Login Date : 2026-04-08 12:55:38Z
+  Login Count     : 1
+  Password does not expire</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>관측</th><th>판정</th></tr></thead><tbody><tr><td><code>tempadm</code> 생성 시각이 사건 당일, 로그온 1회</td><td><strong>사건용으로 만든 계정</strong></td></tr><tr><td>RID 1002가 비어 있다</td><td>그 번호의 계정이 삭제된 적이 있다. 별도 확인 대상</td></tr><tr><td>머신 SID 확보</td><td>이후 모든 SID의 로컬/도메인 판별 기준</td></tr></tbody></table></div>
+<p>머신 SID를 여기서 반드시 적어 둔다 (<a href="./sam-user-accounts.html">FOR-0052</a>).</p>
+<h3 id="2단계-system-전제-2개-장치">2단계 — SYSTEM: 전제 2개 + 장치</h3>
+<h4 id="①-활성-controlset">① 활성 ControlSet</h4>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">SYSTEM\Select
+  Current = 1   -&gt; ControlSet001</code></pre></div>
+<h4 id="②-시간대">② 시간대</h4>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">SYSTEM\ControlSet001\Control\TimeZoneInformation
+  TimeZoneKeyName  = Korea Standard Time
+  Bias             = 0xFFFFFDE4  (= -540 분)
+  ActiveTimeBias   = 0xFFFFFDE4  (= -540 분)
+  DaylightBias     = 0</code></pre></div>
+<p><code>UTC = 로컬 + Bias</code>이므로 <code>Bias = -540</code>은 로컬이 UTC+9라는 뜻이다. <strong>레지스트리의 FILETIME은 전부 UTC이므로 답을 KST로 낼 때 +9시간 한다</strong> (<a href="./system-timezone.html">FOR-0054</a>).</p>
+<h4 id="③-usb-장치">③ USB 장치</h4>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">rip.exe -r &quot;C:\case\clean\SYSTEM&quot; -p usbstor &gt; 02_usbstor.txt</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">SYSTEM\ControlSet001\Enum\USBSTOR
+Disk&amp;Ven_SanDisk&amp;Prod_Cruzer_Blade&amp;Rev_1.00
+  4C530001231205117495&amp;0
+    FriendlyName  : SanDisk Cruzer Blade USB Device
+    Properties\{83da6326-97a6-4088-9453-a1923f573b29}
+      0064 (최초 설치) : 2026-04-08 12:58:03Z
+      0066 (마지막 연결): 2026-04-08 13:01:58Z
+      0067 (마지막 제거): 2026-04-08 13:52:33Z</code></pre></div>
+<p>인스턴스 ID <code>4C530001231205117495&amp;0</code>에서 <strong>두 번째 문자가 <code>&amp;</code>가 아니므로 장치가 실제 시리얼을 보고한 것</strong>이다. <code>&amp;</code>가 두 번째 문자면 시리얼이 없는 장치이고 그 문자열로는 개별 식별이 안 된다 (<a href="./usbstor.html">FOR-0066</a>).</p>
+<h4 id="④-드라이브-문자와-볼륨-guid">④ 드라이브 문자와 볼륨 GUID</h4>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">rip.exe -r &quot;C:\case\clean\SYSTEM&quot; -p mountdev &gt; 03_mounteddev.txt</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">SYSTEM\MountedDevices
+\DosDevices\C:      -&gt; (12바이트: 디스크 서명 + 오프셋)  = 내장 디스크
+\DosDevices\E:      -&gt; \??\USBSTOR#Disk&amp;Ven_SanDisk&amp;Prod_Cruzer_Blade&amp;Rev_1.00
+                        #4C530001231205117495&amp;0#{53f56307-b6bf-11d0-94f2-00a0c91efb8b}
+\??\Volume{7ac2f19d-3b41-11f0-9c22-8c16455a2d70}
+                    -&gt; (위와 같은 문자열)</code></pre></div>
+<p><strong>이것이 연결의 핵심 고리다.</strong></p>
+<div class="table-wrap"><table><thead><tr><th>얻은 것</th><th>어디서</th></tr></thead><tbody><tr><td>USB 시리얼 → 드라이브 문자 <code>E:</code></td><td><code>\DosDevices\E:</code>의 이진 데이터에 시리얼 문자열</td></tr><tr><td>USB 시리얼 → 볼륨 GUID</td><td><code>\??\Volume{...}</code>의 이진 데이터가 <strong>같은 문자열</strong></td></tr><tr><td>볼륨 GUID → 사용자</td><td>그 GUID가 어느 사용자의 <code>MountPoints2</code>에 있는가</td></tr></tbody></table></div>
+<p>드라이브 문자는 <strong>추측하지 않는다.</strong> 이 표의 이진 데이터가 유일한 근거다 (<a href="./mounteddevices.html">FOR-0067</a>).</p>
+<h4 id="⑤-bam-사용자별-실행">⑤ BAM: 사용자별 실행</h4>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">rip.exe -r &quot;C:\case\clean\SYSTEM&quot; -p bam &gt; 04_bam.txt</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">SYSTEM\ControlSet001\Services\bam\State\UserSettings\
+S-1-5-21-3623811015-3361044348-30300820-1003
+  \Device\HarddiskVolume3\Windows\System32\robocopy.exe   2026-04-08 13:12:05Z
+  \Device\HarddiskVolume3\Program Files\7-Zip\7zFM.exe    2026-04-08 13:07:44Z
+  \Device\HarddiskVolume3\Windows\System32\cmd.exe        2026-04-08 13:05:12Z</code></pre></div>
+<p>값 데이터의 <strong>앞 8바이트가 FILETIME</strong>이다. 키 LastWrite가 아니다 (<a href="./bam-dam.html">FOR-0071</a>). <code>HarddiskVolume3</code>이 어느 드라이브인지는 <code>MountedDevices</code>로 환산한다.</p>
+<h3 id="3단계-software-sid-사용자-os-정보">3단계 — SOFTWARE: SID ↔ 사용자, OS 정보</h3>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">rip.exe -r &quot;C:\case\clean\SOFTWARE&quot; -p profilelist &gt; 05_profilelist.txt
+rip.exe -r &quot;C:\case\clean\SOFTWARE&quot; -p winver     &gt; 06_winver.txt</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">ProfileList
+  S-1-5-21-3623811015-3361044348-30300820-1001 -&gt; C:\Users\jhkim
+  S-1-5-21-3623811015-3361044348-30300820-1003 -&gt; C:\Users\tempadm
+
+CurrentVersion
+  ProductName  : Windows 10 Pro
+  CurrentBuild : 19045
+  InstallDate  : 2025-09-29 02:10:44Z  (Unix epoch DWORD)
+  RegisteredOwner : FIN</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>판정</th><th>근거</th></tr></thead><tbody><tr><td>BAM의 <code>-1003</code> = <code>tempadm</code></td><td>접두어가 머신 SID와 동일 → <strong>로컬 계정</strong></td></tr><tr><td>RID 1002의 프로필이 없다</td><td>삭제된 계정. <code>$Recycle.Bin</code>에 SID 폴더가 남았는지 확인</td></tr></tbody></table></div>
+<p>SID 해부와 로컬/도메인 판별은 <a href="./sid-user-mapping.html">FOR-0074</a>를 따른다.</p>
+<h3 id="4단계-ntuserdat-tempadm-마운트실행파일의도지속성">4단계 — NTUSER.DAT (tempadm): 마운트·실행·파일·의도·지속성</h3>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$h = &quot;C:\case\clean\tempadm\NTUSER.DAT&quot;
+rip.exe -r $h -p mp2         &gt; 07_mp2.txt
+rip.exe -r $h -p userassist  &gt; 08_userassist.txt
+rip.exe -r $h -p recentdocs  &gt; 09_recentdocs.txt
+rip.exe -r $h -p typedpaths  &gt; 10_typedpaths.txt
+rip.exe -r $h -p run         &gt; 11_run.txt</code></pre></div>
+<h4 id="①-mountpoints2-그-사용자가-그-볼륨을-마운트했다">① MountPoints2 — 그 사용자가 그 볼륨을 마운트했다</h4>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">NTUSER.DAT\Software\Microsoft\Windows\CurrentVersion\Explorer\MountPoints2
+  {7ac2f19d-3b41-11f0-9c22-8c16455a2d70}     &lt;- MountedDevices 의 볼륨 GUID 와 동일
+  E
+  ##192.168.20.5#design</code></pre></div>
+<p><strong>볼륨 GUID가 일치하므로 &quot;이 USB를 이 사용자 세션에서 마운트했다&quot;가 성립한다.</strong> <code>##서버#공유</code> 항목은 네트워크 공유 접근 흔적이다.</p>
+<h4 id="②-userassist-사용자가-직접-실행한-것">② UserAssist — 사용자가 직접 실행한 것</h4>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">{CEBFF5CD-ACE2-4F4F-9178-9926F41749EA}
+2026-04-08 13:07:44Z  {7C5A40EF-...}\7-Zip\7zFM.exe (3)
+2026-04-08 13:05:12Z  {1AC14E77-...}\cmd.exe (1)</code></pre></div>
+<p>괄호 안이 실행 횟수다. 값 데이터 오프셋 <code>0x3C</code>의 FILETIME이 마지막 실행 시각이며 <strong>키 LastWrite보다 이쪽이 정확하다</strong> (<a href="./userassist.html">FOR-0061</a>).</p>
+<h4 id="③-recentdocs-열어-본-파일">③ RecentDocs — 열어 본 파일</h4>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">NTUSER.DAT\...\Explorer\RecentDocs\.xlsx
+  MRUListEx = 02 00 00 00 00 00 00 00 01 00 00 00 FF FF FF FF
+  2 = price_2026.xlsx      &lt;- MRUListEx 첫 인덱스 = 가장 최근
+  0 = salary_list.xlsx
+  1 = client_master.xlsx
+  LastWrite 2026-04-08 13:20:33Z</code></pre></div>
+<p><strong>시각은 최신 항목(<code>price_2026.xlsx</code>) 하나에만 귀속된다.</strong> 나머지 두 개는 순서만 말할 수 있다 (<a href="./recentdocs.html">FOR-0062</a>, <a href="./registry-lastwrite-caveats.html">FOR-0077</a>).</p>
+<h4 id="④-typedpaths-의도">④ TypedPaths — 의도</h4>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">NTUSER.DAT\...\Explorer\TypedPaths
+  url1 = E:\proj_backup
+  url2 = \\192.168.20.5\design
+  LastWrite 2026-04-08 13:04:22Z</code></pre></div>
+<p><strong>주소창에 직접 입력한 경로</strong>이므로 우연한 탐색이 아니라 목적지를 알고 이동한 것이다. <code>url1</code>이 가장 최근 입력이다 (<a href="./typedpaths.html">FOR-0064</a>).</p>
+<h4 id="⑤-run-지속성">⑤ Run — 지속성</h4>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">NTUSER.DAT\Software\Microsoft\Windows\CurrentVersion\Run
+  OneDriveHelper = C:\Users\tempadm\AppData\Roaming\odh\odhelper.exe
+  LastWrite 2026-04-08 13:41:09Z</code></pre></div>
+<p>이름은 정상 서비스를 흉내 내지만 경로가 <code>AppData\Roaming</code>이다 (<a href="./run-runonce.html">FOR-0063</a>).</p>
+<h3 id="5단계-usrclassdat-tempadm-shellbags">5단계 — UsrClass.dat (tempadm): ShellBags</h3>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">SBECmd.exe -d &quot;C:\case\clean\tempadm&quot; --csv &quot;C:\case\out&quot;</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">AbsolutePath                                        ShellType  MRUPosition  LastWriteTime
+Desktop\My Computer\E:\                             Volume     0            2026-04-08 13:02:19Z
+Desktop\My Computer\E:\proj_backup                  Directory  0            2026-04-08 13:04:51Z
+Desktop\My Computer\C:\Users\jhkim\Documents\price  Directory  1            2026-04-08 13:19:02Z
+Desktop\Network\192.168.20.5\design                 Network    0            2026-04-08 13:33:40Z</code></pre></div>
+<p><strong><code>C:\Users\jhkim\Documents\price</code> 항목이 결정적이다</strong> — <code>tempadm</code>이 다른 사용자의 문서 폴더를 탐색했다. 그 폴더가 현재 <code>$MFT</code>에 없으면 삭제된 폴더이고, ShellBags가 그 이름의 유일한 근거가 된다 (<a href="./shellbags.html">FOR-0068</a>).</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p>각 단계에서 답으로 쓸 값과 그 근거의 강도다.</p>
+<div class="table-wrap"><table><thead><tr><th>소문항</th><th>답의 근거</th><th>강도</th><th>보강</th></tr></thead><tbody><tr><td>① 계정</td><td><code>SAM</code> 생성 시각 + 로그온 1회 + <code>ProfileList</code></td><td>강</td><td>EVTX 4720/4624</td></tr><tr><td>② USB</td><td><code>USBSTOR</code> Properties의 <code>0066</code>/<code>0067</code> FILETIME</td><td>강</td><td><code>setupapi.dev.log</code>, EVTX</td></tr><tr><td>② 드라이브 문자</td><td><code>MountedDevices</code>의 이진 데이터</td><td>강</td><td>ShellBags의 <code>E:\</code> 항목</td></tr><tr><td>② 사용자 귀속</td><td><code>MountPoints2</code>의 볼륨 GUID 일치</td><td>강</td><td>—</td></tr><tr><td>③ 실행</td><td>BAM 값 앞 8바이트 + UserAssist <code>0x3C</code></td><td>강</td><td>Prefetch, 4688</td></tr><tr><td>④ 파일</td><td><code>RecentDocs</code> MRU 최신 항목</td><td><strong>중</strong></td><td>LNK/Jump List, <code>$MFT</code></td></tr><tr><td>④ 폴더</td><td>ShellBags <code>AbsolutePath</code></td><td>강</td><td><code>$MFT</code>, <code>$UsnJrnl</code></td></tr><tr><td>⑤ 의도</td><td><code>TypedPaths</code> 직접 입력</td><td>강</td><td>브라우저·검색 기록</td></tr><tr><td>⑥ 지속성</td><td><code>Run</code> 값 + 경로 이상</td><td>강</td><td>Amcache/Prefetch로 실제 실행 확인</td></tr></tbody></table></div>
+<p><strong>&quot;중&quot; 강도는 답변에 한계를 함께 적는다.</strong> RecentDocs는 최신 항목 외에는 시각이 없다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>이 글에서 얻은 것</th><th>다음에 열 것</th><th>무엇을 얻나</th></tr></thead><tbody><tr><td>USB 시리얼</td><td><code>setupapi.dev.log</code>, EVTX 장치 로그</td><td>최초 연결 시각 독립 확증</td></tr><tr><td>실행 파일 경로</td><td>Prefetch, Amcache (<a href="./appcompatcache.html">FOR-0079</a>)</td><td>실행 횟수·해시</td></tr><tr><td>파일 이름</td><td>LNK, Jump List, <code>$MFT</code>, <code>$UsnJrnl</code></td><td>복사·삭제 사실과 시각</td></tr><tr><td>폴더 경로</td><td><code>$MFT</code></td><td>폴더가 실제로 있었는가, 삭제됐는가</td></tr><tr><td>계정 SID</td><td><code>$Recycle.Bin\&lt;SID&gt;</code>, EVTX 4624/4720</td><td>삭제 파일과 로그온 이력</td></tr><tr><td><code>Run</code> 항목 경로</td><td>Prefetch, Amcache</td><td>실제로 실행된 적이 있는가</td></tr><tr><td>네트워크 공유 경로</td><td>4624 Logon Type 3, SMB 로그</td><td>원격 접근 계정</td></tr><tr><td>시간대</td><td>모든 artifact</td><td>최종 답의 KST 변환</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>CurrentControlSet</code> 경로를 오프라인 hive에 입력하는 것</strong> → 부팅 시 만들어지는 링크라 파일에 없다 → <code>Select\Current</code>로 실제 번호를 확인한다 (<a href="./system-controlset.html">FOR-0053</a>).</li><li><strong>시간대를 확보하지 않고 시각을 답하는 것</strong> → 레지스트리 FILETIME은 UTC다 → <code>TimeZoneInformation</code>을 먼저 읽고, 마지막에 한 번만 +9시간 한다.</li><li><strong>키 LastWrite로 USB 연결 시각을 답하는 것</strong> → 값이 여러 개인 키의 시각이고 로그 미반영 영향도 크다 → <code>Properties</code> 하위의 FILETIME을 쓴다.</li><li><strong>드라이브 문자를 순서로 추측하는 것</strong> → <code>E:</code>가 USB인지 파티션인지는 <code>MountedDevices</code>만이 말해 준다 → 이진 데이터를 읽는다.</li><li><strong>플러그인 이름을 짐작해 쓰는 것</strong> → 빈 출력이 나오고 &quot;흔적 없음&quot;으로 오판한다 → <code>rip.exe -l</code>로 목록을 먼저 본다.</li><li><strong><code>rla</code>를 건너뛰는 것</strong> → 사건 당일의 항목이 <code>.LOG1</code>에만 있어 통째로 누락된다 → 항상 먼저 반영하고, 반영 전 hive도 보관한다.</li><li><strong>사용자 hive를 하나만 보는 것</strong> → 반출자는 새로 만든 계정을 쓴다 → 모든 프로필의 <code>NTUSER.DAT</code>·<code>UsrClass.dat</code>을 처리한다.</li><li><strong><code>RecentDocs</code>의 LastWrite를 모든 항목의 시각으로 쓰는 것</strong> → 최신 항목 하나뿐이다 → 나머지는 <code>MRUListEx</code> 순서만 주장한다.</li><li><strong>BAM의 <code>\Device\HarddiskVolumeN</code>을 그대로 답에 쓰는 것</strong> → 드라이브 문자가 아니다 → <code>MountedDevices</code>로 환산한다.</li><li><strong>Shimcache 항목을 &quot;실행했다&quot;의 근거로 제시하는 것</strong> → 존재 증거다 → 실행은 BAM·UserAssist·Prefetch로 확증한다 (<a href="./recent-execution-crosscheck.html">FOR-0076</a>).</li><li><strong>ShellBags를 파일 접근 증거로 쓰는 것</strong> → 폴더를 탐색기로 열었다는 증거다 → 파일은 <code>RecentDocs</code>·LNK로 간다.</li><li><strong><code>MountPoints2</code>만으로 USB를 특정하는 것</strong> → 볼륨 GUID만 있고 시리얼이 없다 → <code>MountedDevices</code>를 거쳐 <code>USBSTOR</code>까지 연결해야 장치가 특정된다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) 장치 -&gt; 드라이브 문자 -&gt; 사용자 3단 연결이 끊기지 않는지
+Select-String -Path &quot;C:\case\03_mounteddev.txt&quot; -Pattern &#39;4C530001231205117495&#39;
+Select-String -Path &quot;C:\case\07_mp2.txt&quot;        -Pattern &#39;7ac2f19d&#39;</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 2) 실행 시각을 두 곳에서 (BAM = 서비스 계열, UserAssist = 셸 계열)
+Select-String -Path &quot;C:\case\04_bam.txt&quot;,&quot;C:\case\08_userassist.txt&quot; -Pattern &#39;7zFM|robocopy&#39;</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 3) 파일 접근을 레지스트리 밖에서
+Import-Csv &quot;C:\case\out\mft.csv&quot; | Where-Object { $_.FileName -match &#39;price_2026&#39; } |
+  Format-Table FileName, ParentPath, Created0x10, LastModified0x10, InUse</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 4) 지속성 항목이 실제로 실행됐는가
+AppCompatCacheParser.exe -f &quot;C:\case\clean\SYSTEM&quot; --csv &quot;C:\case\out&quot; --csvf shim.csv
+Import-Csv &quot;C:\case\out\shim.csv&quot; | Where-Object { $_.Path -match &#39;odhelper&#39; }</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>연결이 끊기는 지점</th><th>무엇을 의심하나</th></tr></thead><tbody><tr><td><code>MountedDevices</code>에 시리얼이 없다</td><td>다른 PC에서 쓴 장치, 또는 항목이 덮여 사라졌다</td></tr><tr><td><code>MountPoints2</code>에 볼륨 GUID가 없다</td><td>그 사용자 세션에서 마운트되지 않았다. 다른 사용자 확인</td></tr><tr><td>BAM에는 있고 UserAssist에 없다</td><td>콘솔·스크립트 실행. Explorer 경유가 아니다</td></tr><tr><td>ShellBags에는 폴더가 있고 <code>$MFT</code>에 없다</td><td><strong>삭제된 폴더.</strong> ShellBags가 유일한 이름 근거</td></tr></tbody></table></div>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">[실패 1] CurrentControlSet 을 찾다가 시간을 버렸다
+
+  RegistryExplorer 로 SYSTEM 을 열고
+  SYSTEM\CurrentControlSet\Enum\USBSTOR 로 이동
+  -&gt; CurrentControlSet 이라는 키가 트리에 없다.
+     &quot;hive 가 깨졌나?&quot; 하며 다른 hive 를 열어 봤다.
+
+  왜 틀렸나:
+  CurrentControlSet 은 부팅 시 커널이 만드는 휘발성 심볼릭 링크다.
+  디스크 파일에는 ControlSet001 / ControlSet002 만 있다.
+
+  수정:
+  SYSTEM\Select 의 Current = 1  -&gt;  ControlSet001\Enum\USBSTOR
+
+
+[실패 2] 플러그인 이름을 잘못 써서 빈 출력이 나왔다
+
+  rip.exe -r clean\tempadm\NTUSER.DAT -p mountpoints2
+  -&gt; 빈 출력. &quot;이 사용자는 USB 를 마운트하지 않았다&quot;고 결론 낼 뻔했다.
+
+  rip.exe -r clean\tempadm\NTUSER.DAT -p shellbag
+  -&gt; 역시 빈 출력.
+
+  왜 틀렸나:
+  둘 다 존재하지 않는 플러그인 이름이었다.
+  rip.exe -l | Select-String &#39;mount|shell&#39;
+    -&gt; mp2, shellbags 가 실제 이름이었다.
+
+  수정:
+  rip.exe -r ... -p mp2        -&gt; 볼륨 GUID 3개 출력
+  rip.exe -r ... -p shellbags  -&gt; 항목 출력
+  교훈: 빈 출력을 &quot;흔적 없음&quot;으로 읽기 전에 도구 문제를 배제한다.
+
+
+[실패 3] 키 LastWrite 로 USB 연결 시각을 답했다가 어긋났다
+
+  USBSTOR\...\4C530001231205117495&amp;0 의 키 LastWrite = 2026-03-02 01:44:07Z
+  -&gt; &quot;3월 2일 10:44 KST 에 USB 를 꽂았다&quot;고 적었다.
+
+  그런데 ShellBags 의 E:\ 탐색은 2026-04-08 13:02:19Z,
+  BAM 의 robocopy 실행은 2026-04-08 13:12:05Z 였다. 한 달 넘게 어긋난다.
+
+  원인 두 개가 겹쳐 있었다:
+   (a) 트랜잭션 로그 미반영 hive 를 읽었다 (반영 후 LastWrite 는 04-08 로 바뀐다)
+   (b) 그 인스턴스 키에는 값이 여러 개라 LastWrite 가 어느 값의 시각인지 알 수 없다
+
+  수정:
+  rla 로 반영한 뒤, 값 안에 자체 FILETIME 이 있는 곳으로 갈아탔다.
+    Properties\{83da6326-97a6-4088-9453-a1923f573b29}\0066 = 2026-04-08 13:01:58Z (연결)
+    Properties\{83da6326-97a6-4088-9453-a1923f573b29}\0067 = 2026-04-08 13:52:33Z (제거)
+  ShellBags 탐색(13:02:19Z)이 연결 21초 뒤 -&gt; 순서가 자연스럽다. 확정.
+
+
+[실패 4] BAM 의 볼륨 번호를 드라이브 문자로 추측했다
+
+  \Device\HarddiskVolume3\Windows\System32\robocopy.exe 를
+  &quot;D:\Windows\System32\robocopy.exe&quot; 로 옮겨 적었다.
+  -&gt; MountedDevices 확인 결과 HarddiskVolume3 = C: 였다.
+     시스템 폴더가 D: 에 있을 이유가 없다는 점에서도 자기모순이었다.
+  교훈: 볼륨 번호와 드라이브 문자는 항상 MountedDevices 로 환산한다.
+
+
+[최종 정리] 확정된 사실을 시간순 표로
+
+  모든 시각은 레지스트리 FILETIME(UTC) 이며 KST = UTC + 9h
+
+  | UTC                  | KST                  | 사실                                   | 근거 |
+  | 2026-04-08 12:40:11Z | 2026-04-08 21:40:11  | tempadm 계정 생성 (RID 1003)            | SAM |
+  | 2026-04-08 12:55:38Z | 2026-04-08 21:55:38  | tempadm 최초/유일 로그온                 | SAM Last Login |
+  | 2026-04-08 12:58:03Z | 2026-04-08 21:58:03  | USB 최초 설치 (SanDisk Cruzer Blade)     | USBSTOR 0064 |
+  | 2026-04-08 13:01:58Z | 2026-04-08 22:01:58  | USB 연결 (E: 로 마운트)                  | USBSTOR 0066 + MountedDevices |
+  | 2026-04-08 13:02:19Z | 2026-04-08 22:02:19  | E:\ 탐색기 탐색                          | ShellBags |
+  | 2026-04-08 13:04:22Z | 2026-04-08 22:04:22  | 주소창에 E:\proj_backup 직접 입력         | TypedPaths url1 |
+  | 2026-04-08 13:05:12Z | 2026-04-08 22:05:12  | cmd.exe 실행                            | UserAssist + BAM |
+  | 2026-04-08 13:07:44Z | 2026-04-08 22:07:44  | 7zFM.exe 실행 (3회)                     | UserAssist 0x3C |
+  | 2026-04-08 13:12:05Z | 2026-04-08 22:12:05  | robocopy.exe 실행                       | BAM 앞 8바이트 |
+  | 2026-04-08 13:19:02Z | 2026-04-08 22:19:02  | C:\Users\jhkim\Documents\price 폴더 탐색 | ShellBags |
+  | 2026-04-08 13:20:33Z | 2026-04-08 22:20:33  | price_2026.xlsx 열람 (MRU 최신 항목)      | RecentDocs |
+  | 2026-04-08 13:33:40Z | 2026-04-08 22:33:40  | \\192.168.20.5\design 접근               | ShellBags + MountPoints2 |
+  | 2026-04-08 13:41:09Z | 2026-04-08 22:41:09  | Run 키에 OneDriveHelper 등록             | NTUSER.DAT Run |
+  | 2026-04-08 13:52:33Z | 2026-04-08 22:52:33  | USB 제거                                | USBSTOR 0067 |
+
+  경과 시간: 로그온 후 약 57분. 연결 → 탐색 → 압축 → 복사 → 제거가 한 세션 안에서 완결.</code></pre></div>
+<h3 id="답변-서술-템플릿">답변 서술 템플릿</h3>
+<p>시간순 표를 그대로 문장으로 옮긴다. <strong>각 문장에 근거 artifact를 괄호로 붙이는 것이 채점에서 갈린다.</strong></p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1. 결론 한 줄
+   &quot;로컬 계정 tempadm(RID 1003)이 2026-04-08 22:01~22:52 KST 사이에
+    SanDisk Cruzer Blade(시리얼 4C530001231205117495)를 E: 로 연결하고
+    사내 자료를 반출했다.&quot;
+
+2. 계정
+   - tempadm 은 사건 당일 21:40:11 KST 에 생성되고 21:55:38 KST 에 1회 로그온했다 (SAM)
+   - 머신 SID 접두어가 동일하므로 로컬 계정이다 (SAM 머신 SID + ProfileList)
+
+3. 장치와 사용자 귀속 (3단 연결을 명시한다)
+   - USBSTOR 인스턴스 4C530001231205117495&amp;0 의 연결/제거 시각 (Properties 0066/0067)
+   - MountedDevices\DosDevices\E: 의 이진 데이터가 같은 시리얼을 담고 있다
+   - 같은 볼륨 GUID {7ac2f19d-...} 가 tempadm 의 MountPoints2 에 있다
+     =&gt; 이 USB 를 이 계정 세션에서 E: 로 마운트했다
+
+4. 행위 (시간순, 근거 병기)
+   ... 표의 각 행을 한 문장으로 ...
+
+5. 한계 명시
+   - RecentDocs 의 시각은 MRU 최신 항목(price_2026.xlsx)에만 귀속된다.
+     salary_list.xlsx / client_master.xlsx 는 접근 순서만 확인되고 시각은 미확정이다.
+   - 파일이 실제로 USB 로 복사되었는지는 레지스트리만으로는 확정되지 않는다.
+     $UsnJrnl / LNK / USB 볼륨 이미지가 추가로 필요하다.
+   - Shimcache 항목은 파일의 존재 증거로만 인용했다.
+
+6. 추가 확보 권고
+   $MFT / $UsnJrnl, Prefetch, Security.evtx(4720/4624/4634), USB 볼륨 이미지</code></pre></div>
+<p><strong>5번(한계 명시)을 쓰는 답안이 감점을 피한다.</strong> 레지스트리는 &quot;열었다·실행했다·마운트했다&quot;를 말하고, &quot;복사했다&quot;는 파일시스템 증거의 몫이다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>rla</code>로 모든 hive의 로그를 반영했는가 — 반영 전 hive도 남겼는가</li><li><code>Select\Current</code>로 활성 ControlSet을 정했는가</li><li><code>TimeZoneInformation</code>을 읽고 모든 시각을 같은 기준으로 모았는가</li><li>머신 SID를 확보했는가 — 모든 SID의 로컬/도메인 판별 기준이다</li><li>사용자 hive를 <strong>전부</strong> 처리했는가 — 새로 만든 계정이 범인이다</li><li><code>rip.exe -l</code>로 플러그인 이름을 확인했는가 — 빈 출력의 최대 원인</li><li>USB 3단 연결(<code>USBSTOR</code> → <code>MountedDevices</code> → <code>MountPoints2</code>)이 끊기지 않는가</li><li>볼륨 번호·드라이브 문자를 <code>MountedDevices</code>로 환산했는가</li><li>시각의 근거가 키 LastWrite인가 값 안의 FILETIME인가 — 후자를 우선했는가</li><li>MRU 키의 시각을 최신 항목에만 귀속시켰는가</li><li>실행 증거를 주체가 다른 2곳(BAM·UserAssist·Prefetch)에서 확인했는가</li><li>답변에 근거 artifact와 <strong>한계</strong>를 함께 적었는가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-017 — Microsoft Learn, Windows Registry hives and file locations: hive와 루트키 대응, <code>CurrentControlSet</code>이 휘발성 링크라는 점, 사용자 hive의 위치</li><li>SRC-099 — RegRipper 3.0 저장소: <code>samparse</code>·<code>usbstor</code>·<code>mountdev</code>·<code>mp2</code>·<code>profilelist</code>·<code>userassist</code>·<code>bam</code>·<code>recentdocs</code>·<code>typedpaths</code>·<code>run</code>·<code>shellbags</code>·<code>winver</code> 플러그인의 존재와 출력 형식, <code>rip.exe -l</code>로 목록을 얻는 방법</li><li>SRC-098 — Microsoft Learn, USB device registry entries: <code>Enum\USBSTOR</code> 아래 장치/인스턴스 키 구조와 인스턴스 ID가 장치 시리얼에서 온다는 점(시리얼이 없으면 두 번째 문자가 <code>&amp;</code>)</li><li>SRC-019 — Microsoft Learn, Well-known SIDs: <code>S-1-5-21-&lt;머신/도메인 식별자&gt;-&lt;RID&gt;</code> 구조와 RID 500/1000번대의 의미, 머신 SID 접두어 비교로 로컬 계정을 판별하는 근거</li><li><strong><code>Properties\{83da6326-97a6-4088-9453-a1923f573b29}</code> 아래 <code>0064</code>/<code>0065</code>/<code>0066</code>/<code>0067</code>의 의미(최초 설치·설치·마지막 연결·마지막 제거) 대응은 Windows 버전에 따라 달라질 수 있으므로 실제 hive에서 확인할 것.</strong> 값 자체는 FILETIME이다</li><li><code>MountedDevices</code>의 고정 디스크 항목이 12바이트(디스크 서명 + 파티션 오프셋)라는 점과 이동식 항목이 <code>\??\USBSTOR#...</code> 문자열이라는 점은 관측되는 형태이며, 상세 해석은 <code>MountedDevices</code> 전담 글을 따를 것</li><li>SBECmd/ShellBags Explorer, AppCompatCacheParser의 컬럼명과 RegRipper 플러그인 출력 형식은 도구 버전에 따라 다를 수 있으므로 실제 화면에서 확인할 것</li><li>시나리오의 계정명·시리얼·볼륨 GUID·시각·파일명은 전부 설명을 위한 예시 값이다</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./registry-hive-map.html">
+    <span class="rel-id">FOR-0051 · Registry</span>
+    Registry hive 전체 지도: 루트키와 디스크상 파일 대응표
+  </a>
+  <a class="related-item" href="./usbstor.html">
+    <span class="rel-id">FOR-0066 · Registry</span>
+    USBSTOR 키로 연결된 USB 저장장치와 시리얼 번호 찾기
+  </a>
+  <a class="related-item" href="./mounteddevices.html">
+    <span class="rel-id">FOR-0067 · Registry</span>
+    MountedDevices로 드라이브 문자와 볼륨을 매핑하기
+  </a>
+  <a class="related-item" href="./sid-user-mapping.html">
+    <span class="rel-id">FOR-0074 · Registry</span>
+    SID를 사용자 이름으로 바꾸기: ProfileImagePath와 S-1-5-21 해부
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./appcompatcache.html"><span class="rel-id">← FOR-0079</span>AppCompatCache(Shimcache)와 Amcache: 실행 파일 캐시 두 개 정리</a>
+<a class="related-item" href="./evtx-analysis-order.html"><span class="rel-id">FOR-0081 →</span>EVTX 분석 순서: winevt\Logs 채널 우선순위와 30초 트리아지</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#시나리오">시나리오</a></li>
+<li class="toc-l3"><a href="#0단계-로그-반영과-hive-확인">0단계 — 로그 반영과 hive 확인</a></li>
+<li class="toc-l3"><a href="#1단계-sam-계정-목록과-성격">1단계 — SAM: 계정 목록과 성격</a></li>
+<li class="toc-l3"><a href="#2단계-system-전제-2개-장치">2단계 — SYSTEM: 전제 2개 + 장치</a></li>
+<li class="toc-l3"><a href="#3단계-software-sid-사용자-os-정보">3단계 — SOFTWARE: SID ↔ 사용자, OS 정보</a></li>
+<li class="toc-l3"><a href="#4단계-ntuserdat-tempadm-마운트실행파일의도지속성">4단계 — NTUSER.DAT (tempadm): 마운트·실행·파일·의도·지속성</a></li>
+<li class="toc-l3"><a href="#5단계-usrclassdat-tempadm-shellbags">5단계 — UsrClass.dat (tempadm): ShellBags</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l3"><a href="#답변-서술-템플릿">답변 서술 템플릿</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

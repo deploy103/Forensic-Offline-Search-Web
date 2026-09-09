@@ -20,9 +20,10 @@ const verbose = process.argv.includes('--verbose');
 const CASES_FILE = path.join(ROOT, 'tests', 'search-queries.json');
 
 let INDEX;
+let BODIES;
 let Search;
 try {
-  ({ index: INDEX, Search } = loadSearchRuntime());
+  ({ index: INDEX, bodies: BODIES, Search } = loadSearchRuntime());
 } catch (e) {
   console.error(`search-test: ${e.message}`);
   process.exit(1);
@@ -47,7 +48,7 @@ for (const c of cases) {
     continue;
   }
 
-  const results = Search.search(INDEX, c.q, { limit: Math.max(within, 10) });
+  const results = Search.search(INDEX, c.q, { limit: Math.max(within, 10), bodies: BODIES });
   const top = results.slice(0, within).map((r) => r.id);
   const hit = expected.some((id) => top.includes(id));
 

@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Sysmon Event ID 11 FileCreate: 누가 이 파일을 만들었는가 · FOR-0101 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Event%20Log">Event Log</a> / FOR-0101
+      </div>
+      <header class="article-head">
+        <h1>Sysmon Event ID 11 FileCreate: 누가 이 파일을 만들었는가</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Event Log</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>Sysmon Event ID 11은 파일 생성마다 만든 프로세스(Image, ProcessGuid)와 대상 경로(TargetFilename) 를 남긴다. $MFT와 $UsnJrnl은 &quot;생성됐다&quot;까지만 알고 주체를 모르므로, &quot;누가 만들었는가&quot;에 답하는 로그는 이것뿐이다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Sysmon, EvtxECmd, MFTECmd, PowerShell, Timeline Explorer</td></tr>
+<tr><th>artifact</th><td><code>Sysmon</code> · <code>FileCreate</code> · <code>TargetFilename</code> · <code>CreationUtcTime</code> · <code>FileCreateStreamHash</code> · <code>FileDelete</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Windows\System32\winevt\Logs\Microsoft-Windows-Sysmon%4Operational.evtx</code> · <code>C:\Sysmon</code> · <code>C:\Users\%USERNAME%\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup</code></td></tr>
+<tr><th>Event ID</th><td><code>11</code> · <code>15</code> · <code>23</code> · <code>26</code> · <code>2</code></td></tr>
+<tr><th>regex</th><td><code>TargetFilename:\s*(.+\.(?:exe|dll|ps1|bat|vbs|js|hta|scr))</code></td></tr>
+<tr><th>로그 필드</th><td><code>RuleName</code> · <code>UtcTime</code> · <code>ProcessGuid</code> · <code>ProcessId</code> · <code>Image</code> · <code>TargetFilename</code> · <code>CreationUtcTime</code> · <code>PreviousCreationUtcTime</code> · <code>User</code> · <code>Hash</code> · <code>IsExecutable</code> · <code>Archived</code></td></tr>
+<tr><th>파일 형식</th><td><code>evtx</code></td></tr>
+<tr><th>검색 별칭</th><td>sysmon 파일 생성 · sysmon 11 · 누가 파일을 만들었나 · 드롭된 파일 찾기 · sysmon 파일 삭제 · sysmon 15 ads · 파일 생성 프로세스</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>Sysmon Event ID 11은 파일 생성마다 <strong>만든 프로세스(<code>Image</code>, <code>ProcessGuid</code>)와 대상 경로(<code>TargetFilename</code>)</strong> 를 남긴다. <code>$MFT</code>와 <code>$UsnJrnl</code>은 &quot;생성됐다&quot;까지만 알고 <strong>주체를 모르므로</strong>, &quot;누가 만들었는가&quot;에 답하는 로그는 이것뿐이다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;이 악성 파일을 드롭한 프로세스는 무엇인가&quot;</li><li>&quot;Word 문서가 실행 파일을 떨어뜨렸는가&quot; — 드롭퍼 판정</li><li>&quot;다운로드된 파일인가&quot; — Event 15의 <code>Zone.Identifier</code></li><li>&quot;이 파일을 지운 것은 누구인가&quot; — Event 23/26</li><li>&quot;생성 시각이 조작됐는가&quot; — <code>CreationUtcTime</code> vs <code>UtcTime</code>, Event 2</li><li><code>$UsnJrnl</code>에는 있는데 주체를 모를 때</li></ul>
+<p>프로세스의 명령행·부모·해시는 Sysmon 1 전담 글(FOR-0099)에서 얻는다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>지문에 &quot;누가&quot;, &quot;어떤 프로세스가&quot; + 파일 이름 → Event 11</li><li>파일 경로가 <code>\Temp\</code>, <code>\AppData\</code>, <code>Startup</code> → 드롭 흔적</li><li>지문에 &quot;다운로드&quot; → Event 15와 <code>Zone.Identifier</code></li><li>지문에 &quot;삭제&quot; → Event 23/26, <code>Archived</code></li><li><code>$MFT</code>의 생성 시각과 다른 시각이 나온다 → <code>CreationUtcTime</code> 대조</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 원본: Microsoft-Windows-Sysmon%4Operational.evtx -&gt; sysmon.evtx
+Get-WinEvent -Path &#39;C:\case\sysmon.evtx&#39; -FilterXPath &#39;*[System[EventID=11]]&#39; | Format-List</code></pre></div>
+<p>객체로 뽑아 두고 시작한다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$sm = &#39;C:\case\sysmon.evtx&#39;
+
+$p11 = Get-WinEvent -Path $sm -FilterXPath &#39;*[System[EventID=11]]&#39; |
+  ForEach-Object {
+    $x = [xml]$_.ToXml()
+    $d = @{}
+    $x.Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.&#39;#text&#39; }
+    [pscustomobject]@{
+      UtcTime  = [datetime]::Parse($d[&#39;UtcTime&#39;])
+      CreateT  = [datetime]::Parse($d[&#39;CreationUtcTime&#39;])
+      Image    = $d[&#39;Image&#39;]
+      Guid     = $d[&#39;ProcessGuid&#39;]
+      Target   = $d[&#39;TargetFilename&#39;]
+      User     = $d[&#39;User&#39;]
+      RuleName = $d[&#39;RuleName&#39;]
+    }
+  } | Sort-Object UtcTime
+
+# 실행 가능 확장자만
+$p11 | Where-Object { $_.Target -match &#39;\.(exe|dll|ps1|bat|cmd|vbs|js|hta|scr|jar|lnk)$&#39; } |
+  Select-Object UtcTime, Image, Target, User | Format-Table -AutoSize</code></pre></div>
+<p>출력 예시:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">UtcTime             Image                                 Target                                                    User
+-------             -----                                 ------                                                    ----
+2026-03-14 07:19:58 C:\...\Office16\WINWORD.EXE            C:\Users\jhkim\AppData\Local\Temp\stage1.ps1              WIN10\jhkim
+2026-03-14 07:22:01 C:\...\v1.0\powershell.exe             C:\Windows\Temp\svchost.exe                               WIN10\jhkim
+2026-03-14 07:31:44 C:\Windows\Temp\svchost.exe            C:\Users\jhkim\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\upd.lnk  WIN10\jhkim</code></pre></div>
+<p>세 줄로 감염 → 드롭 → 지속성 등록이 끝난다. <code>WINWORD.EXE</code>가 <code>.ps1</code>을 만드는 것은 정상 환경에서 일어나지 않는다.</p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-필드표">1단계 — 필드표</h3>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>의미</th><th>실전 활용</th></tr></thead><tbody><tr><td><code>RuleName</code></td><td>매칭된 설정 규칙 태그</td><td>설정에서 지정했을 때만 값이 있다</td></tr><tr><td><code>UtcTime</code></td><td><strong>이벤트 발생 시각(UTC)</strong> = 실제로 만든 순간</td><td>타임라인의 기준</td></tr><tr><td><code>ProcessGuid</code></td><td>만든 프로세스의 GUID</td><td><strong>Sysmon 1과 잇는 키</strong></td></tr><tr><td><code>ProcessId</code></td><td>PID</td><td>재사용됨. 단독 사용 금지</td></tr><tr><td><code>Image</code></td><td><strong>만든 프로세스의 실행 파일 경로</strong></td><td>&quot;누가&quot;의 답</td></tr><tr><td><code>TargetFilename</code></td><td><strong>만들어진 파일의 전체 경로</strong></td><td>&quot;무엇을&quot;의 답</td></tr><tr><td><code>CreationUtcTime</code></td><td>그 파일에 기록된 생성 시각(UTC)</td><td><code>UtcTime</code>과 다르면 신호</td></tr><tr><td><code>User</code></td><td>만든 프로세스의 실행 계정</td><td>서비스 계정이 사용자 폴더에 쓰면 이상</td></tr></tbody></table></div>
+<p><code>Image</code>와 <code>TargetFilename</code> 두 필드가 이 로그의 전부이자 핵심이다.</p>
+<h3 id="2단계-mft-usnjrnl-과의-결정적-차이">2단계 — $MFT / $UsnJrnl 과의 결정적 차이</h3>
+<div class="table-wrap"><table><thead><tr><th>질문</th><th><code>$MFT</code></th><th><code>$UsnJrnl</code></th><th><strong>Sysmon 11</strong></th></tr></thead><tbody><tr><td>파일이 존재했나</td><td>답한다</td><td>답한다</td><td>생성 시점만</td></tr><tr><td>언제 만들어졌나</td><td>답한다(<code>$SI</code>/<code>$FN</code>)</td><td>답한다(USN 시각)</td><td>답한다(<code>UtcTime</code>)</td></tr><tr><td><strong>누가 만들었나</strong></td><td><strong>모른다</strong></td><td><strong>모른다</strong></td><td><strong>답한다</strong></td></tr><tr><td>삭제 후에도 남나</td><td>레코드 재사용 전까지</td><td>저널 순환 전까지</td><td><strong>로그에 영구 기록</strong></td></tr><tr><td>파일 내용/해시</td><td>없음</td><td>없음</td><td>11에는 없음(15에 일부)</td></tr><tr><td>조작 저항성</td><td>타임스탬프 조작 가능</td><td>저널 삭제 가능</td><td>로그 삭제 가능</td></tr></tbody></table></div>
+<p><code>$MFT</code>는 파일 시스템의 상태이고 Sysmon 11은 <strong>행위 기록</strong>이다. 그래서 파일이 지워져 <code>$MFT</code> 레코드가 재사용된 뒤에도 Sysmon 11에는 그 파일이 만들어진 사실과 주체가 남는다. 반대로 Sysmon 설치 이전에 만들어진 파일은 Event 11이 없으므로 <code>$MFT</code>로 가야 한다. <strong>둘은 대체재가 아니라 상호 보완재다.</strong> <code>$MFT</code> 해석은 <a href="./mft-basics.html">FOR-0021</a>, <code>$UsnJrnl</code>은 <a href="./usnjrnl-basics.html">FOR-0027</a>을 본다.</p>
+<h3 id="3단계-creationutctime-vs-utctime">3단계 — CreationUtcTime vs UtcTime</h3>
+<p>새로 만들어지는 파일은 두 값이 사실상 같다(밀리초 차이). 다르면 이유가 있다.</p>
+<div class="table-wrap"><table><thead><tr><th>관계</th><th>의미</th><th>판정</th></tr></thead><tbody><tr><td><code>CreationUtcTime</code> ≈ <code>UtcTime</code></td><td>정상적인 신규 생성</td><td>이상 없음</td></tr><tr><td><code>CreationUtcTime</code> &lt; <code>UtcTime</code> (과거)</td><td>생성 시각을 물려받았다</td><td>같은 볼륨 내 <strong>이동/이름 변경</strong>, 생성 시각을 보존하는 복사 도구, 또는 <strong>timestomp</strong></td></tr><tr><td><code>CreationUtcTime</code> &gt; <code>UtcTime</code> (미래)</td><td>존재할 수 없는 조합</td><td><strong>timestomp 확정</strong></td></tr><tr><td>차이가 수년 단위</td><td>정품 시스템 파일의 시각을 베꼈다</td><td><code>\System32\</code> 파일 시각을 그대로 옮겨 심는 전형적 위장</td></tr></tbody></table></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$p11 | Where-Object { [Math]::Abs((($_.UtcTime) - ($_.CreateT)).TotalSeconds) -gt 60 } |
+  Select-Object UtcTime, CreateT, Image, Target |
+  Sort-Object UtcTime | Format-Table -AutoSize</code></pre></div>
+<p>출력:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">UtcTime             CreateT             Image                        Target
+-------             -------             -----                        ------
+2026-03-14 07:22:01 2019-03-19 12:07:44 C:\...\powershell.exe        C:\Windows\Temp\svchost.exe
+2026-03-14 07:26:10 2026-03-14 07:24:55 C:\Windows\explorer.exe      C:\Users\jhkim\Desktop\bk.zip</code></pre></div>
+<p>첫 줄은 2019년 생성 시각을 가진 파일이 2026년에 만들어졌다. 정품 <code>svchost.exe</code>의 시각을 베낀 timestomp다. 둘째 줄은 1분 15초 차이로, 같은 볼륨 안에서 옮긴 것에 가깝다 — 이 정도 차이는 조작으로 단정하지 않는다.</p>
+<p><strong>직접 탐지는 Event 2가 더 확실하다.</strong></p>
+<div class="table-wrap"><table><thead><tr><th>Event 2 필드</th><th>의미</th></tr></thead><tbody><tr><td><code>TargetFilename</code></td><td>시각이 변경된 파일</td></tr><tr><td><code>CreationUtcTime</code></td><td><strong>변경 후</strong> 생성 시각</td></tr><tr><td><code>PreviousCreationUtcTime</code></td><td><strong>변경 전</strong> 생성 시각</td></tr><tr><td><code>Image</code> / <code>ProcessGuid</code></td><td>시각을 바꾼 프로세스</td></tr></tbody></table></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Get-WinEvent -Path $sm -FilterXPath &#39;*[System[EventID=2]]&#39; |
+  ForEach-Object {
+    $x = [xml]$_.ToXml()
+    $d = @{}
+    $x.Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.&#39;#text&#39; }
+    [pscustomobject]@{
+      UtcTime = $d[&#39;UtcTime&#39;]
+      Image   = $d[&#39;Image&#39;]
+      Target  = $d[&#39;TargetFilename&#39;]
+      Before  = $d[&#39;PreviousCreationUtcTime&#39;]
+      After   = $d[&#39;CreationUtcTime&#39;]
+    }
+  } | Format-Table -AutoSize</code></pre></div>
+<p>Event 2가 있으면 <strong>누가 언제 어떤 값으로 바꿨는지</strong>가 전부 나온다. <code>$STANDARD_INFORMATION</code>과 <code>$FILE_NAME</code>의 불일치로 추정하는 방식(<a href="./timestomp-detection.html">FOR-0038</a>)보다 직접적이다.</p>
+<h3 id="4단계-관련-이벤트">4단계 — 관련 이벤트</h3>
+<div class="table-wrap"><table><thead><tr><th>ID</th><th>이름</th><th>무엇을 알려주는가</th></tr></thead><tbody><tr><td>11</td><td>FileCreate</td><td>파일 생성 주체와 경로</td></tr><tr><td>15</td><td>FileCreateStreamHash</td><td><strong>ADS(대체 데이터 스트림) 생성</strong>. 다운로드 흔적</td></tr><tr><td>2</td><td>FileCreateTime</td><td>생성 시각 변경 = timestomp 직접 탐지</td></tr><tr><td>23</td><td>FileDelete (archived)</td><td>삭제 주체 + <strong>파일을 아카이브 폴더에 보존</strong></td></tr><tr><td>26</td><td>FileDeleteDetected</td><td>삭제 주체만 기록(아카이브 없음)</td></tr></tbody></table></div>
+<h4 id="event-15-다운로드-판정">Event 15 — 다운로드 판정</h4>
+<p>브라우저·메일 클라이언트·일부 압축 도구는 다운로드한 파일에 <code>Zone.Identifier</code>라는 ADS를 붙인다. Event 15는 그 스트림 생성을 기록한다.</p>
+<div class="table-wrap"><table><thead><tr><th>Event 15 필드</th><th>의미</th></tr></thead><tbody><tr><td><code>TargetFilename</code></td><td><code>C:\...\a.dat:Zone.Identifier</code> 형태</td></tr><tr><td><code>CreationUtcTime</code></td><td>스트림 생성 시각</td></tr><tr><td><code>Hash</code></td><td>스트림 내용의 해시</td></tr><tr><td><code>Image</code> / <code>ProcessGuid</code></td><td>붙인 프로세스(브라우저 등)</td></tr></tbody></table></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Get-WinEvent -Path $sm -FilterXPath &#39;*[System[EventID=15]]&#39; |
+  Where-Object { $_.Message -match &#39;Zone.Identifier&#39; } |
+  Select-Object -First 20 TimeCreated, Message</code></pre></div>
+<p>ADS의 실제 내용은 마운트한 이미지에서 직접 읽는다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Get-Content -Path &#39;C:\case\mount\Users\jhkim\Downloads\a.dat&#39; -Stream Zone.Identifier</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">[ZoneTransfer]
+ZoneId=3
+ReferrerUrl=http://cdn-update.example.net:8080/
+HostUrl=http://cdn-update.example.net:8080/pkg/a7f2.dat</code></pre></div>
+<p><code>ZoneId=3</code>은 인터넷 영역이다. <strong><code>HostUrl</code>이 다운로드 원본 URL</strong>이므로 이 한 줄이 유입 경로의 답이 되는 경우가 많다. ADS 자체의 구조와 다루는 법은 <a href="./alternate-data-streams.html">FOR-0035</a>를 본다.</p>
+<h4 id="event-23-26-삭제-주체와-아카이빙">Event 23 / 26 — 삭제 주체와 아카이빙</h4>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>23 (FileDelete)</th><th>26 (FileDeleteDetected)</th></tr></thead><tbody><tr><td>삭제 사실 기록</td><td>기록</td><td>기록</td></tr><tr><td>삭제 주체(<code>Image</code>)</td><td>기록</td><td>기록</td></tr><tr><td><strong>파일 사본 보존</strong></td><td><strong>아카이브 폴더에 저장</strong></td><td>저장하지 않음</td></tr><tr><td><code>Archived</code> 필드</td><td>아카이브 성공 여부</td><td>해당 없음</td></tr></tbody></table></div>
+<p>23이 켜져 있으면 삭제된 파일의 <strong>실체가 남는다.</strong> 아카이브 위치는 설정의 <code>ArchiveDirectory</code>로 정하며 기본값은 <code>C:\Sysmon</code>이다. 문제에서 &quot;삭제된 파일의 내용&quot;을 물으면 카빙 전에 이 폴더를 먼저 확인한다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Get-WinEvent -Path $sm -FilterXPath &#39;*[System[EventID=23 or EventID=26]]&#39; |
+  Select-Object -First 20 TimeCreated, Id, Message
+
+# 아카이브 폴더 (이미지 마운트 후)
+Get-ChildItem &#39;C:\case\mount\Sysmon&#39; -Recurse | Select-Object Length, Name</code></pre></div>
+<p>아카이브 파일 이름은 해시 기반이라 원래 이름이 아니다. Event 23의 <code>TargetFilename</code>과 <code>Hashes</code>로 짝을 맞춘다.</p>
+<h3 id="5단계-드롭퍼-탐지-실전-필터">5단계 — 드롭퍼 탐지 실전 필터</h3>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 문서/브라우저/메일 프로세스가 실행 가능 파일을 만든 경우
+$dropper = &#39;winword|excel|powerpnt|outlook|acrord32|msaccess|visio|&#39; +
+           &#39;chrome|firefox|msedge|iexplore|&#39; +
+           &#39;winrar|7z|zip|thunderbird|hwp&#39;
+
+$p11 | Where-Object {
+  $_.Image -match $dropper -and
+  $_.Target -match &#39;\.(exe|dll|ps1|bat|cmd|vbs|js|jse|wsf|hta|scr|lnk|jar|iso|img)$&#39;
+} | Select-Object UtcTime, Image, Target, User | Format-Table -AutoSize
+
+# 자동 실행 위치에 만들어진 파일
+$p11 | Where-Object {
+  $_.Target -match &#39;\\Start Menu\\Programs\\Startup\\|\\Windows\\Tasks\\|\\System32\\Tasks\\|\\Windows\\System32\\drivers\\&#39;
+} | Select-Object UtcTime, Image, Target | Format-Table -AutoSize
+
+# 사용자 쓰기 가능 경로의 실행 파일
+$p11 | Where-Object {
+  $_.Target -match &#39;\\Temp\\|\\AppData\\|\\Downloads\\|\\Public\\|\\ProgramData\\&#39; -and
+  $_.Target -match &#39;\.(exe|dll|ps1|scr)$&#39;
+} | Select-Object UtcTime, Image, Target, User | Format-Table -AutoSize</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>패턴</th><th>해석</th></tr></thead><tbody><tr><td>Office 프로세스 → <code>.exe</code>/<code>.ps1</code></td><td>매크로 드롭퍼. 문서가 최초 유입 경로</td></tr><tr><td>브라우저 → <code>.exe</code> in <code>Downloads</code></td><td>사용자 다운로드. Event 15로 URL 확보</td></tr><tr><td>압축 도구 → <code>\Temp\</code> <code>.exe</code></td><td>첨부 압축파일 안에서 실행</td></tr><tr><td><code>powershell.exe</code> → <code>\Windows\Temp\</code> <code>.exe</code></td><td>2단계 페이로드 드롭</td></tr><tr><td>임의 프로세스 → <code>Startup\*.lnk</code></td><td>지속성 등록</td></tr><tr><td><code>w3wp.exe</code> → <code>.aspx</code>/<code>.jsp</code></td><td><strong>웹셸 설치</strong></td></tr></tbody></table></div>
+<h3 id="6단계-usnjrnl-과-시각-대조">6단계 — $UsnJrnl 과 시각 대조</h3>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">MFTECmd.exe -f &#39;C:\case\$J&#39; -m &#39;C:\case\$MFT&#39; --csv &#39;C:\case\out&#39; --csvf usn.csv</code></pre></div>
+<p>CSV를 열어 같은 파일 이름의 USN 레코드 시각과 Sysmon 11의 <code>UtcTime</code>을 비교한다.</p>
+<div class="table-wrap"><table><thead><tr><th>대조 결과</th><th>해석</th></tr></thead><tbody><tr><td>두 시각이 초 단위 일치</td><td>정합. 파일 생성 사실 확정</td></tr><tr><td>Sysmon 11만 있다</td><td>저널이 순환해 밀려났다. 또는 파일이 즉시 삭제됐다</td></tr><tr><td><code>$UsnJrnl</code>만 있다</td><td>Sysmon 설정에서 제외된 경로이거나 Sysmon 설치 이전</td></tr><tr><td>시각이 크게 어긋난다</td><td>두 개의 다른 사건을 같은 이름으로 착각한 것. 경로 전체로 다시 비교</td></tr></tbody></table></div>
+<p><code>$UsnJrnl</code>은 <code>FileCreate</code> 이후 <code>DataExtend</code>/<code>DataTruncation</code>/<code>Close</code> 등 여러 레코드를 연속으로 남긴다. Sysmon 11의 <code>UtcTime</code>은 그 중 <strong>최초 생성 시점</strong>과 맞춰야 한다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p><code>UtcTime</code>과 <code>CreationUtcTime</code> 모두 <strong>이미 UTC</strong>다. Event Viewer 상단 시각은 EVTX <code>SystemTime</code>(UTC)을 로컬 시간대로 변환한 값이라 다르게 보인다. 답이 KST면 +9시간.</p>
+<div class="table-wrap"><table><thead><tr><th>상황</th><th>해석</th></tr></thead><tbody><tr><td><code>TargetFilename</code>에 <code>:</code> 뒤 스트림 이름</td><td>ADS다. Event 15와 함께 본다</td></tr><tr><td><code>TargetFilename</code>이 <code>\Device\HarddiskVolumeN\...</code></td><td>볼륨 장치 경로 표기. 드라이브 문자로 정규화해 비교</td></tr><tr><td>같은 파일이 여러 번 11에 나온다</td><td>임시 파일로 만들고 이름을 바꾸는 저장 패턴(Office 등)</td></tr><tr><td><code>.tmp</code> → 최종 이름 순서</td><td>정상적인 원자적 저장. 최종 이름으로 추적한다</td></tr><tr><td><code>Image</code>가 <code>System</code></td><td>커널/드라이버 수준 생성</td></tr><tr><td>Event 11이 하나도 없다</td><td>설정에서 대량 제외됨. 경로 기준 포함 규칙만 켜 두는 것이 일반적</td></tr></tbody></table></div>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>여기서 얻은 값</th><th>다음에 볼 것</th><th>확인할 내용</th></tr></thead><tbody><tr><td><code>ProcessGuid</code></td><td>Sysmon 1 (FOR-0099)</td><td>만든 프로세스의 명령행·부모·해시</td></tr><tr><td><code>ProcessGuid</code></td><td>Sysmon 3</td><td>파일 생성 직전의 다운로드 통신</td></tr><tr><td><code>TargetFilename</code></td><td>Sysmon 1의 <code>Image</code></td><td>그 파일이 이후 실행됐는가</td></tr><tr><td><code>TargetFilename</code></td><td><code>$MFT</code> (<a href="./mft-basics.html">FOR-0021</a>)</td><td>파일의 MACB와 현재 존재 여부</td></tr><tr><td><code>TargetFilename</code></td><td><code>$UsnJrnl</code> (<a href="./usnjrnl-basics.html">FOR-0027</a>)</td><td>이름 변경·삭제 이력</td></tr><tr><td>Event 15 <code>Zone.Identifier</code></td><td>ADS 내용 (<a href="./alternate-data-streams.html">FOR-0035</a>)</td><td><code>HostUrl</code> = 다운로드 원본 URL</td></tr><tr><td>Event 23 <code>Hashes</code></td><td>아카이브 폴더 <code>C:\Sysmon</code></td><td>삭제된 파일의 실체</td></tr><tr><td>Event 2 <code>Previous...</code></td><td><code>$STANDARD_INFORMATION</code> 대조 (<a href="./timestomp-detection.html">FOR-0038</a>)</td><td>조작 전 원래 시각</td></tr><tr><td><code>Startup</code>/<code>Tasks</code> 경로</td><td>Sysmon 13 · Run 키</td><td>지속성 등록 전체 그림</td></tr><tr><td>파일 생성 시각</td><td>그 시각의 4624 세션</td><td>어느 로그온 세션의 행위인가</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>$MFT</code>만 보고 &quot;누가 만들었는지 모른다&quot;고 결론 내리는 것.</strong> <code>$MFT</code>에는 주체 정보가 없다 → Sysmon 11의 <code>Image</code>/<code>ProcessGuid</code>가 그 답이다.</li><li><strong><code>CreationUtcTime</code>을 이벤트 시각으로 읽는 것.</strong> 실제로 만들어진 순간은 <code>UtcTime</code>이다 → <code>CreationUtcTime</code>은 파일에 기록된 값이며 조작·상속될 수 있다.</li><li><strong>두 시각 차이를 곧바로 timestomp로 단정하는 것.</strong> 같은 볼륨 내 이동/이름 변경은 생성 시각을 그대로 물려받는다 → 차이가 수년 단위이거나 미래 시각일 때만 조작으로 판정하고, 가능하면 Event 2로 확증한다.</li><li><strong><code>.tmp</code> 파일만 보고 최종 파일을 놓치는 것.</strong> Office 등은 임시 이름으로 쓰고 이름을 바꾼다 → <code>$UsnJrnl</code>의 <code>RenameOldName</code>/<code>RenameNewName</code>으로 최종 이름을 잇는다.</li><li><strong>Event 11이 없어서 파일이 생성되지 않았다고 보는 것.</strong> Sysmon 11은 노이즈가 커서 설정에서 확장자·경로 기준으로만 켜는 경우가 많다 → 설정을 확인하고 <code>$UsnJrnl</code>로 보완한다.</li><li><strong>Event 26을 보고 파일 사본을 찾으려는 것.</strong> 26은 탐지만 하고 아카이브하지 않는다 → 사본은 23의 <code>Archived</code>가 있을 때만 존재한다.</li><li><strong>ADS 이벤트를 파일 생성으로 세는 것.</strong> <code>TargetFilename</code>에 <code>:</code>가 있으면 스트림이다 → 파일 개수 집계에서 제외한다.</li><li><strong>PID로 프로세스를 특정하는 것.</strong> PID는 재사용된다 → <code>ProcessGuid</code>로 Sysmon 1과 잇는다.</li><li><strong><code>UtcTime</code>에 다시 9시간을 더하는 것.</strong> 이미 UTC다 → KST 답에만 한 번 +9시간.</li><li><strong><code>\Device\HarddiskVolume2\</code> 경로를 다른 파일로 보는 것.</strong> 드라이브 문자 표기만 다르다 → 볼륨 매핑을 확인해 정규화한 뒤 비교한다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$sm = &#39;C:\case\sysmon.evtx&#39;
+
+# 1) 관심 파일을 만든 이벤트
+$p11 | Where-Object { $_.Target -match &#39;svchost\.exe&#39; } |
+  Select-Object UtcTime, CreateT, Image, Guid, Target
+
+# 2) 그 프로세스의 Sysmon 1 (명령행과 부모)
+Get-WinEvent -Path $sm -FilterXPath &#39;*[System[EventID=1]]&#39; |
+  Where-Object { $_.Message -match &#39;powershell&#39; } | Select-Object -First 3 TimeCreated, Message
+
+# 3) 그 파일이 나중에 실행됐는가 (Sysmon 1 의 Image 로 등장)
+Get-WinEvent -Path $sm -FilterXPath &#39;*[System[EventID=1]]&#39; |
+  Where-Object { $_.Message -match &#39;C:\\Windows\\Temp\\svchost\.exe&#39; } |
+  Select-Object TimeCreated, Message
+
+# 4) 삭제됐는가 (23/26)
+Get-WinEvent -Path $sm -FilterXPath &#39;*[System[EventID=23 or EventID=26]]&#39; |
+  Where-Object { $_.Message -match &#39;svchost\.exe&#39; } | Select-Object TimeCreated, Id
+
+# 5) 파일시스템 측 대조
+MFTECmd.exe -f &#39;C:\case\$MFT&#39; --csv &#39;C:\case\out&#39; --csvf mft.csv
+MFTECmd.exe -f &#39;C:\case\$J&#39; -m &#39;C:\case\$MFT&#39; --csv &#39;C:\case\out&#39; --csvf usn.csv</code></pre></div>
+<p>Sysmon 11(생성) → Sysmon 1(실행) → Sysmon 3(통신) → Sysmon 23(삭제)가 같은 파일 경로로 이어지면 전체 생애주기가 완성된다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;C:\Windows\Temp\svchost.exe 의 다운로드 원본 URL 과 이 파일을 떨어뜨린 프로세스를 답하시오.
+ 첨부: Microsoft-Windows-Sysmon%4Operational.evtx, 디스크 이미지&quot;
+
+1. 첫 시도 (실패):
+   MFTECmd 로 $MFT 를 파싱해 svchost.exe 를 찾았다.
+
+     FileName            C:\Windows\Temp\svchost.exe
+     Created0x10         2019-03-19 12:07:44
+     LastModified0x10    2019-03-19 12:07:44
+     Created0x30         2026-03-14 07:22:01
+
+   Created0x10 이 2019년이라 &quot;2019년에 설치된 정상 파일&quot; 이라고 판단했다. 오답.
+   그리고 &quot;누가 만들었는지&quot; 는 $MFT 로는 알 수 없어 답을 못 냈다.
+
+   왜 틀렸나:
+   $SI(0x10) 의 생성 시각은 조작 가능하다. $FN(0x30) 은 2026년이었는데 무시했다.
+   그리고 $MFT 에는 생성 주체 정보가 아예 없다.
+
+2. 피벗 — Sysmon Event 11 을 열었다.
+     UtcTime         2026-03-14 07:22:01.338
+     CreationUtcTime 2019-03-19 12:07:44.000
+     Image           C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+     TargetFilename  C:\Windows\Temp\svchost.exe
+     User            WIN10\jhkim
+
+   - UtcTime(2026) != CreationUtcTime(2019), 차이 7년 -&gt; timestomp 확정
+   - 만든 주체는 powershell.exe -&gt; $MFT 로는 절대 알 수 없던 값
+
+3. 시각 조작을 직접 확인 (Event 2):
+     UtcTime 2026-03-14 07:22:02
+     Image   C:\Windows\...\powershell.exe
+     Target  C:\Windows\Temp\svchost.exe
+     PreviousCreationUtcTime 2026-03-14 07:22:01
+     CreationUtcTime         2019-03-19 12:07:44
+   -&gt; 만든 1초 뒤에 자기가 만든 파일의 생성 시각을 2019년으로 바꿨다.
+
+4. 다운로드 원본 찾기 — 먼저 Event 15 를 svchost.exe 로 검색했다. 0건.
+   (PowerShell 의 WebClient 는 Zone.Identifier 를 붙이지 않는다.)
+   대신 그 이전 단계의 다운로드 산물을 찾았다.
+
+     Event 15  07:20:12  chrome.exe
+       TargetFilename C:\Users\jhkim\Downloads\a7f2.dat:Zone.Identifier
+
+   ADS 내용:
+     [ZoneTransfer]
+     ZoneId=3
+     HostUrl=http://cdn-update.example.net:8080/pkg/a7f2.dat
+
+5. 계보 확인 (같은 ProcessGuid 로 Sysmon 1):
+   07:20:08  powershell.exe -nop -w hidden -enc SQBFAFgA...
+     Parent -&gt; 07:19:58  WINWORD.EXE &quot;C:\Users\jhkim\Downloads\invoice.doc&quot;
+
+6. 시간대: UtcTime 은 이미 UTC. 07:22:01 UTC = 16:22:01 KST (+9h)
+
+정답: 원본 URL http://cdn-update.example.net:8080/pkg/a7f2.dat,
+      드롭한 프로세스 powershell.exe (부모 WINWORD.EXE)</code></pre></div>
+<p>1단계의 실패가 이 글의 요지다. <strong><code>$MFT</code>의 생성 시각은 거짓말할 수 있고, 주체는 아예 말하지 않는다.</strong> Sysmon 11은 둘 다 해결한다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>Image</code>를 확인했는가 → &quot;누가&quot;의 답은 이 필드다</li><li><code>UtcTime</code>과 <code>CreationUtcTime</code>을 비교했는가 → 차이가 크면 timestomp</li><li>Event 2가 있는가 → 조작을 직접 증명한다</li><li>Event 15가 있는가 → <code>Zone.Identifier</code>의 <code>HostUrl</code>이 유입 URL</li><li>Event 11이 없는가 → 설정 제외 가능성. <code>$UsnJrnl</code>·<code>$MFT</code>로 보완</li><li>삭제된 파일 내용이 필요한가 → Event 23의 아카이브 폴더(<code>C:\Sysmon</code>)</li><li>임시 파일 이름만 보이는가 → <code>$UsnJrnl</code>의 rename 레코드로 최종 이름을 잇는다</li><li>만든 프로세스의 유입 경로가 필요한가 → <code>ProcessGuid</code>로 Sysmon 1의 부모를 거슬러 올라간다</li><li>그 파일이 실제로 실행됐는지 확인이 필요하면 → 같은 경로가 Sysmon 1의 <code>Image</code>로 나오는지 본다</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-024 — Microsoft Learn, Sysmon: Event ID 11 FileCreate의 필드 목록, 관련 이벤트 2/15/23/26과 아카이브 디렉터리 설정</li><li>SRC-013 — Microsoft Learn, Change Journals: <code>$UsnJrnl</code>이 기록하는 정보 범위(생성 사실은 있으나 주체 정보는 없음)</li><li>SRC-081 — Microsoft Learn, Alternate Data Streams / File Streams: <code>Zone.Identifier</code> ADS와 스트림 경로 표기</li><li>Event 23/26의 필드 구성(<code>Archived</code>, <code>IsExecutable</code>, <code>Hashes</code>)과 아카이브 디렉터리 기본값은 <strong>Sysmon 버전에 따라 다르다.</strong> 실제 이벤트와 설정 파일에서 확인할 것</li><li>Event 15의 <code>Contents</code> 필드는 최신 버전에서만 존재할 수 있으므로 이 글에서는 필수 필드로 다루지 않았다</li><li><code>\Device\HarddiskVolumeN\</code> 형태의 경로 표기가 나오는 조건은 환경에 따라 다르다. 드라이브 문자 매핑은 실제 이미지에서 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./sysmon-event-1-process-create.html">
+    <span class="rel-id">FOR-0099 · Event Log</span>
+    Sysmon Event ID 1 ProcessCreate: ProcessGuid로 프로세스 계보 복원
+  </a>
+  <a class="related-item" href="./sysmon-event-3-network-connect.html">
+    <span class="rel-id">FOR-0100 · Event Log</span>
+    Sysmon Event ID 3 NetworkConnect: 프로세스와 통신을 잇는 유일한 로그
+  </a>
+  <a class="related-item" href="./sysmon-event-13-registry-set.html">
+    <span class="rel-id">FOR-0102 · Event Log</span>
+    Sysmon Event ID 13 RegistryEvent: 레지스트리를 바꾼 프로세스 특정
+  </a>
+  <a class="related-item" href="./evtx-analysis-order.html">
+    <span class="rel-id">FOR-0081 · Event Log</span>
+    EVTX 분석 순서: winevt\Logs 채널 우선순위와 30초 트리아지
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./sysmon-event-3-network-connect.html"><span class="rel-id">← FOR-0100</span>Sysmon Event ID 3 NetworkConnect: 프로세스와 통신을 잇는 유일한 로그</a>
+<a class="related-item" href="./sysmon-event-13-registry-set.html"><span class="rel-id">FOR-0102 →</span>Sysmon Event ID 13 RegistryEvent: 레지스트리를 바꾼 프로세스 특정</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-필드표">1단계 — 필드표</a></li>
+<li class="toc-l3"><a href="#2단계-mft-usnjrnl-과의-결정적-차이">2단계 — $MFT / $UsnJrnl 과의 결정적 차이</a></li>
+<li class="toc-l3"><a href="#3단계-creationutctime-vs-utctime">3단계 — CreationUtcTime vs UtcTime</a></li>
+<li class="toc-l3"><a href="#4단계-관련-이벤트">4단계 — 관련 이벤트</a></li>
+<li class="toc-l3"><a href="#5단계-드롭퍼-탐지-실전-필터">5단계 — 드롭퍼 탐지 실전 필터</a></li>
+<li class="toc-l3"><a href="#6단계-usnjrnl-과-시각-대조">6단계 — $UsnJrnl 과 시각 대조</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

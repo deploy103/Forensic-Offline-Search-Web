@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>NTUSER.DAT 기본: 사용자별 hive와 포렌식 키 인덱스 · FOR-0057 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Registry">Registry</a> / FOR-0057
+      </div>
+      <header class="article-head">
+        <h1>NTUSER.DAT 기본: 사용자별 hive와 포렌식 키 인덱스</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Registry</span>
+      <span class="badge badge-type">레퍼런스</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>NTUSER.DAT은 프로필 폴더 최상단에 사용자 1명당 1개 존재하며 로그온 시 HKU\&lt;SID&gt;(= 그 사용자에게는 HKCU)로 마운트되는 hive로, &quot;누가&quot; 무엇을 실행·열람·입력했는지를 담는 사용자 활동 아티팩트의 본체다. 이 글은 그 안에서 실제로 열어볼 키의 인덱스다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>RegistryExplorer, RegRipper, rla, FTK Imager, KAPE</td></tr>
+<tr><th>artifact</th><td><code>NTUSER.DAT</code> · <code>NTUSER.DAT.LOG1</code> · <code>NTUSER.DAT.LOG2</code> · <code>MRUListEx</code> · <code>MountPoints2</code> · <code>RunMRU</code> · <code>ComDlg32</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Users\&lt;user&gt;\NTUSER.DAT</code> · <code>C:\Users\&lt;user&gt;\ntuser.dat.LOG1</code> · <code>C:\Users\&lt;user&gt;\ntuser.dat.LOG2</code> · <code>C:\Users\&lt;user&gt;\ntuser.ini</code> · <code>%UserProfile%\NTUSER.DAT</code></td></tr>
+<tr><th>레지스트리</th><td><code>HKCU</code> · <code>HKU\&lt;SID&gt;</code> · <code>NTUSER.DAT\Software\Microsoft\Windows\CurrentVersion\Explorer</code> · <code>HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\RunMRU</code> · <code>HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\MountPoints2</code> · <code>HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\ComDlg32\OpenSavePidlMRU</code> · <code>HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\ComDlg32\LastVisitedPidlMRU</code> · <code>HKCU\Network</code> · <code>HKCU\Printers</code> · <code>HKCU\Volatile Environment</code> · <code>HKCU\Software\Microsoft\Terminal Server Client\Servers</code></td></tr>
+<tr><th>로그 필드</th><td><code>MRUListEx</code> · <code>MRUList</code> · <code>LastWrite</code> · <code>RemotePath</code> · <code>url1</code></td></tr>
+<tr><th>파일 형식</th><td><code>regf</code></td></tr>
+<tr><th>검색 별칭</th><td>ntuser.dat · 엔티유저닷댓 · 사용자 레지스트리 · HKCU 어느 파일 · 사용자 hive 위치 · ntuser 어떤 키 봐야 · 사용자별 흔적</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>NTUSER.DAT</code>은 프로필 폴더 최상단에 사용자 1명당 1개 존재하며 로그온 시 <code>HKU\&lt;SID&gt;</code>(= 그 사용자에게는 <code>HKCU</code>)로 마운트되는 hive로, <strong>&quot;누가&quot; 무엇을 실행·열람·입력했는지</strong>를 담는 사용자 활동 아티팩트의 본체다. 이 글은 그 안에서 실제로 열어볼 키의 인덱스다.</p>
+<h2 id="개념">개념</h2>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>내용</th></tr></thead><tbody><tr><td>파일 위치</td><td><code>C:\Users\&lt;user&gt;\NTUSER.DAT</code> (프로필 폴더 최상단, 숨김+시스템 속성)</td></tr><tr><td>마운트되는 키</td><td><code>HKU\&lt;SID&gt;</code>. 그중 현재 로그온 사용자의 것이 <code>HKCU</code>로 한 번 더 노출된다</td></tr><tr><td>개수</td><td><strong>프로필 1개당 정확히 1개.</strong> <code>C:\Users</code> 아래 폴더 수 = hive 수</td></tr><tr><td>형식</td><td><code>regf</code> (선두 4바이트 <code>72 65 67 66</code>)</td></tr><tr><td>시각 단위</td><td>키 LastWrite는 FILETIME, <strong>항상 UTC</strong></td></tr><tr><td>사용자 특정</td><td>파일 자체가 사용자별이므로 &quot;누가&quot;는 파일 경로로 이미 증명된다</td></tr></tbody></table></div>
+<p><code>HKCU</code>는 파일이 아니라 <strong>현재 세션의 SID hive를 가리키는 별칭</strong>이다. 오프라인 분석에서는 <code>HKCU\...</code> 경로를 항상 <code>NTUSER.DAT\...</code>(hive 루트 기준)으로 바꿔 읽는다. SID ↔ 프로필 폴더 대응은 <code>SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList</code>에서 확인한다. 루트키와 파일의 전체 대응표는 <a href="./registry-hive-map.html">FOR-0051</a>에 있다.</p>
+<p><code>Default</code> 프로필(<code>C:\Users\Default\NTUSER.DAT</code>)은 새 계정을 만들 때 복사되는 템플릿이므로 사람의 활동 흔적으로 읽지 않는다.</p>
+<h2 id="파일-경로">파일 / 경로</h2>
+<p>프로필 폴더 최상단에서 hive와 <strong>함께 존재하는 파일들</strong>이다. 추출할 때 전부 같은 폴더로 꺼낸다.</p>
+<div class="table-wrap"><table><thead><tr><th>파일</th><th>역할</th><th>꼭 꺼내야 하나</th></tr></thead><tbody><tr><td><code>NTUSER.DAT</code></td><td>hive 본체</td><td>필수</td></tr><tr><td><code>ntuser.dat.LOG1</code></td><td>트랜잭션 로그 1</td><td><strong>필수</strong> (최신 변경이 여기에만 있을 수 있다)</td></tr><tr><td><code>ntuser.dat.LOG2</code></td><td>트랜잭션 로그 2</td><td><strong>필수</strong></td></tr><tr><td><code>NTUSER.DAT{GUID}.TM.blf</code></td><td>CLFS 기반 트랜잭션 레지스트리(TxR) 로그</td><td>있으면 함께</td></tr><tr><td><code>NTUSER.DAT{GUID}.TMContainer0000...regtrans-ms</code></td><td>같은 TxR 컨테이너</td><td>있으면 함께</td></tr><tr><td><code>ntuser.ini</code></td><td>로밍 프로필 제외 목록</td><td>참고용</td></tr></tbody></table></div>
+<h3 id="잠김과-flush-최신성-문제">잠김과 flush — 최신성 문제</h3>
+<div class="table-wrap"><table><thead><tr><th>사실</th><th>포렌식 의미</th></tr></thead><tbody><tr><td>로그온 중에는 hive가 커널에 열려 있어 일반 복사가 실패한다</td><td>FTK Imager(<a href="./ftk-imager-open-image.html">FOR-0016</a>)·이미지 마운트(<a href="./arsenal-image-mounter.html">FOR-0017</a>)·KAPE 같은 로우레벨 접근이나 VSS를 쓴다</td></tr><tr><td>변경은 즉시 파일에 쓰이지 않고 커널이 지연 기록(lazy flush)한다</td><td>라이브에서 뽑은 hive는 <strong>직전 수 분의 변경이 파일에 없을 수 있다</strong></td></tr><tr><td>로그오프·종료 시 hive가 정리되고 sequence number가 일치(clean)한다</td><td>반대로 강제 종료/전원 차단 이미지의 hive는 dirty로 남는다</td></tr><tr><td>dirty hive의 미반영 변경은 <code>.LOG1</code>/<code>.LOG2</code>에 있다</td><td><code>rla</code>로 반영하지 않으면 &quot;마지막 실행&quot;, &quot;마지막 입력&quot;이 틀린다</td></tr></tbody></table></div>
+<p>dirty 판정은 base block의 primary sequence number(<code>0x04</code>)와 secondary(<code>0x08</code>)를 비교한다. 두 값이 다르면 dirty다. 로그 반영 절차와 <code>rla</code> 사용법은 <a href="./userassist.html">FOR-0061</a>에서 다룬다.</p>
+<p><code>NTUSER.DAT</code>의 <code>$MFT</code> 상 마지막 수정 시각은 &quot;마지막 flush 시각&quot;이며 실무에서 마지막 로그오프/종료의 <strong>근사값</strong>으로 쓰이지만, 백그라운드 flush로도 갱신되므로 그것만으로 로그오프 시각을 단정하지 않는다. 로그온/로그오프 확정은 Security 로그 4624/4634로 간다(<a href="./event-4624-logon.html">FOR-0083</a>).</p>
+<h2 id="주요-필드">주요 필드</h2>
+<h3 id="포렌식-가치가-있는-키-인덱스">포렌식 가치가 있는 키 인덱스</h3>
+<p>경로는 <strong>hive 루트 기준</strong>이다. 아래 표에서 <code>&lt;EXP&gt;</code>는 <code>Software\Microsoft\Windows\CurrentVersion\Explorer</code>를 줄인 것이다.</p>
+<div class="table-wrap"><table><thead><tr><th>키</th><th>남는 것</th><th>전담 글</th></tr></thead><tbody><tr><td><code>&lt;EXP&gt;\UserAssist\{GUID}\Count</code></td><td>GUI로 직접 실행한 프로그램, 실행 횟수, 마지막 실행(FILETIME)</td><td><a href="./userassist.html">FOR-0061</a></td></tr><tr><td><code>&lt;EXP&gt;\RecentDocs</code></td><td>최근 열어본 문서. 확장자별 서브키 + <code>MRUListEx</code></td><td><a href="./recentdocs.html">FOR-0062</a></td></tr><tr><td><code>&lt;EXP&gt;\RunMRU</code></td><td>실행(Win+R) 창에 타이핑한 명령. 값 이름 <code>a</code>,<code>b</code>,<code>c</code>... + <code>MRUList</code></td><td>이 글</td></tr><tr><td><code>&lt;EXP&gt;\TypedPaths</code></td><td>탐색기 주소창에 직접 입력한 경로. 값 <code>url1</code>~<code>urlN</code></td><td><a href="./typedpaths.html">FOR-0064</a></td></tr><tr><td><code>Software\Microsoft\Internet Explorer\TypedURLs</code></td><td>주소창에 입력한 URL. 값 <code>url1</code>~<code>urlN</code></td><td><a href="./typedurls.html">FOR-0065</a></td></tr><tr><td><code>&lt;EXP&gt;\WordWheelQuery</code></td><td>탐색기 검색창 검색어(UTF-16LE) + <code>MRUListEx</code></td><td>FOR-0070</td></tr><tr><td><code>&lt;EXP&gt;\ComDlg32\OpenSavePidlMRU\&lt;ext&gt;</code></td><td>열기/저장 대화상자로 열거나 저장한 파일. shell item(PIDL)로 저장</td><td>이 글</td></tr><tr><td><code>&lt;EXP&gt;\ComDlg32\LastVisitedPidlMRU</code></td><td>대화상자를 띄운 <strong>실행 파일 ↔ 그 프로그램이 마지막에 본 폴더</strong> 쌍</td><td>이 글</td></tr><tr><td><code>&lt;EXP&gt;\ComDlg32\CIDSizeMRU</code></td><td>대화상자 크기를 기억하는 실행 파일 이름 목록(보조 실행 흔적)</td><td>이 글</td></tr><tr><td><code>Software\Microsoft\Windows\CurrentVersion\Run</code>, <code>RunOnce</code></td><td>사용자 단위 자동실행</td><td><a href="./run-runonce.html">FOR-0063</a></td></tr><tr><td><code>Software\Microsoft\Windows NT\CurrentVersion\Windows</code> (<code>Load</code>, <code>Run</code>)</td><td>구형 자동실행 경로. 값이 있으면 의심</td><td><a href="./run-runonce.html">FOR-0063</a></td></tr><tr><td><code>&lt;EXP&gt;\MountPoints2</code></td><td>사용자가 마운트한 볼륨·네트워크 공유(드라이브 문자, 볼륨 GUID)</td><td><a href="./mounteddevices.html">FOR-0067</a></td></tr><tr><td><code>Network\&lt;드라이브문자&gt;</code></td><td>매핑된 네트워크 드라이브. <code>RemotePath</code>, <code>UserName</code>, <code>ProviderName</code></td><td>이 글</td></tr><tr><td><code>Printers\Connections</code>, <code>Printers\Settings</code></td><td>연결한 프린터. 네트워크 프린터면 <code>\\서버\프린터</code> 경로가 남는다</td><td>이 글</td></tr><tr><td><code>Software\Microsoft\Terminal Server Client\Servers\&lt;host&gt;</code></td><td><strong>이 PC에서 RDP로 접속해 나간 대상 호스트</strong>. <code>UsernameHint</code> 값에 사용한 계정</td><td>이 글</td></tr><tr><td><code>&lt;EXP&gt;\Shell Folders</code>, <code>User Shell Folders</code></td><td>Desktop/Downloads/Documents의 실제 경로. 리다이렉트 여부 확인</td><td>이 글</td></tr><tr><td><code>&lt;EXP&gt;\FileExts\.&lt;ext&gt;\UserChoice</code></td><td>확장자별 사용자 지정 기본 프로그램</td><td><a href="./usrclass-dat.html">FOR-0058</a> 비교</td></tr><tr><td><code>Software\Microsoft\Office\&lt;버전&gt;\&lt;앱&gt;\File MRU</code></td><td>Office 최근 파일. 항목 문자열 안에 FILETIME이 hex로 들어 있다</td><td>이 글</td></tr><tr><td><code>Volatile Environment</code></td><td>로그온 시 만들어지는 <strong>휘발성</strong> 키(<code>USERPROFILE</code>, <code>HOMEPATH</code>, <code>LOGONSERVER</code> 등)</td><td>아래 주의</td></tr></tbody></table></div>
+<p><code>Volatile Environment</code>는 이름 그대로 휘발성 키로 설계되어 있어 <strong>디스크의 hive 파일에는 존재하지 않는 것이 정상</strong>이다. 이 값들이 필요하면 라이브 시스템의 <code>HKCU</code>나 메모리 덤프에서 본다. 오프라인 hive에서 이 키가 안 보인다고 hive가 손상됐다고 판단하지 않는다.</p>
+<p><code>MountPoints2</code>의 서브키 형태는 세 가지다.</p>
+<div class="table-wrap"><table><thead><tr><th>서브키 형태</th><th>의미</th></tr></thead><tbody><tr><td><code>E</code> 처럼 문자 1개</td><td>그 드라이브 문자로 마운트한 볼륨. 키 LastWrite ≈ 마지막 마운트 시점</td></tr><tr><td><code>##?#Volume{GUID}</code></td><td>볼륨 GUID로 참조된 마운트. <code>SYSTEM\MountedDevices</code>와 GUID로 연결한다</td></tr><tr><td><code>##서버#공유</code></td><td>사용자가 붙인 네트워크 공유(<code>\\서버\공유</code>)</td></tr></tbody></table></div>
+<h3 id="mru-순서-필드-읽는-법">MRU 순서 필드 읽는 법</h3>
+<p>MRU 계열 키는 &quot;가장 최근&quot;이 어느 값인지를 별도 값으로 저장한다. 이걸 무시하면 순서를 거꾸로 읽는다.</p>
+<div class="table-wrap"><table><thead><tr><th>값 이름</th><th>형식</th><th>읽는 법</th></tr></thead><tbody><tr><td><code>MRUList</code></td><td>문자열 (<code>&quot;cab&quot;</code>)</td><td>문자 순서가 최신순. 첫 글자가 가장 최근 값의 이름</td></tr><tr><td><code>MRUListEx</code></td><td>이진</td><td>4바이트 리틀엔디언 정수의 배열이 최신순. <code>FF FF FF FF</code>가 끝 표시</td></tr></tbody></table></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">MRUListEx = 02 00 00 00 | 00 00 00 00 | 01 00 00 00 | FF FF FF FF
+-&gt; 최신순 = 값 &quot;2&quot;, 값 &quot;0&quot;, 값 &quot;1&quot;</code></pre></div>
+<p>값 자체에는 타임스탬프가 없다. 키 LastWrite는 <strong>가장 최근 1건</strong>의 시각으로만 쓸 수 있고, 나머지 항목은 순서만 알 수 있다. 항목별 시각이 필요하면 LNK·Jump List·<code>$MFT</code>로 교차검증한다.</p>
+<h2 id="빠른-명령">빠른 명령</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">rip.exe -r &#39;C:\case\NTUSER.DAT&#39; -a &gt; &#39;C:\case\ntuser_all.txt&#39;</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) 트랜잭션 로그를 먼저 반영한다 (LOG1/LOG2 가 같은 폴더에 있어야 한다)
+rla.exe -f &#39;C:\case\NTUSER.DAT&#39; --out &#39;C:\case\clean&#39;
+
+# 2) 특정 키만 빠르게
+rip.exe -r &#39;C:\case\clean\NTUSER.DAT&#39; -p runmru
+rip.exe -r &#39;C:\case\clean\NTUSER.DAT&#39; -p comdlg32
+rip.exe -r &#39;C:\case\clean\NTUSER.DAT&#39; -p mp2
+
+# 3) 프로필이 여러 개일 때 전부 훑기
+Get-ChildItem &#39;C:\case\Users&#39; -Directory | ForEach-Object {
+  $h = Join-Path $_.FullName &#39;NTUSER.DAT&#39;
+  if (Test-Path $h) { rip.exe -r $h -a &gt; &quot;C:\case\out\$($_.Name).txt&quot; }
+}</code></pre></div>
+<p>플러그인 이름(<code>runmru</code>, <code>comdlg32</code>, <code>mp2</code>)은 RegRipper 버전마다 다르므로 <strong>먼저 <code>rip.exe -l</code>로 확인한다</strong>(<a href="./regripper.html">FOR-0060</a>).</p>
+<p>라이브 Windows에서 다른 사용자의 hive를 논리 경로로 보려면 임시 마운트한다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 관리자 권한. 분석이 끝나면 반드시 unload 한다
+reg load HKU\case &#39;C:\case\NTUSER.DAT&#39;
+reg query &#39;HKU\case\Software\Microsoft\Windows\CurrentVersion\Explorer\RunMRU&#39;
+reg unload HKU\case</code></pre></div>
+<h2 id="함께-보는-artifact">함께 보는 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>이 hive에서 얻은 것</th><th>다음에 열 것</th><th>무엇을 확인하나</th></tr></thead><tbody><tr><td>실행 파일 경로(UserAssist)</td><td>Prefetch, <code>Amcache.hve</code></td><td>실제 실행 사실, SHA-1, 최초 실행</td></tr><tr><td>문서 경로(RecentDocs, ComDlg32)</td><td><code>C:\Users\&lt;user&gt;\AppData\Roaming\Microsoft\Windows\Recent</code>의 LNK</td><td>대상 경로, 볼륨 시리얼, MAC 시각</td></tr><tr><td>폴더 경로 흔적이 없다</td><td><code>UsrClass.dat</code>의 ShellBags (<a href="./usrclass-dat.html">FOR-0058</a>)</td><td>탐색기로 실제 방문한 폴더</td></tr><tr><td><code>MountPoints2</code>의 볼륨 GUID</td><td><code>SYSTEM\MountedDevices</code>, <code>USBSTOR</code></td><td>장치 시리얼, 드라이브 문자 매핑</td></tr><tr><td><code>Network\&lt;letter&gt;</code>의 <code>RemotePath</code></td><td>Security 4624 Logon Type 3, SMB 트래픽</td><td>공유 접근 시점과 계정</td></tr><tr><td><code>Terminal Server Client\Servers</code></td><td>접속 대상 호스트의 EVTX(TerminalServices 로그, 4624 Type 10)</td><td>측면 이동 여부와 사용 계정</td></tr><tr><td>SID만 있고 사용자 이름을 모른다</td><td><code>SOFTWARE\...\ProfileList</code>, <code>SAM</code> (<a href="./sam-user-accounts.html">FOR-0052</a>)</td><td>SID ↔ 계정명 ↔ 프로필 폴더</td></tr><tr><td>삭제된 값이 필요하다</td><td>RegistryExplorer의 Deleted Records (<a href="./registry-explorer.html">FOR-0059</a>)</td><td>지워진 키/값 복구</td></tr></tbody></table></div>
+<h2 id="흔한-실수">흔한 실수</h2>
+<ul><li><strong><code>HKCU\...</code> 경로를 오프라인 hive 트리에 그대로 찾는 것.</strong> hive 루트가 곧 <code>HKCU</code>다. <code>NTUSER.DAT\Software\...</code>로 바꿔 읽는다. 툴에서 <code>HKCU</code>라는 노드를 찾다가 시간을 버린다.</li><li><strong><code>.LOG1</code>/<code>.LOG2</code>를 남겨두고 hive만 추출하는 것.</strong> dirty hive의 최신 변경은 로그에만 있다. &quot;마지막에 입력한 경로&quot;, &quot;마지막 실행&quot;을 묻는 문제에서 그대로 오답이 된다.</li><li><strong>ShellBags를 <code>NTUSER.DAT</code>에서 찾는 것.</strong> Windows 7 이후 <code>BagMRU</code>/<code>Bags</code>는 <code>UsrClass.dat</code>에 있다. XP 시절 <code>Software\Microsoft\Windows\Shell\BagMRU</code> 기억으로 헤매지 않는다.</li><li><strong><code>MountedDevices</code>를 <code>NTUSER.DAT</code>에서 찾는 것.</strong> 그것은 <code>SYSTEM</code> hive <strong>루트</strong>의 키다. <code>NTUSER.DAT</code>에 있는 사용자 측 대응물은 <code>MountPoints2</code>다.</li><li><strong><code>MRUList</code>/<code>MRUListEx</code>를 무시하고 값 이름 순서(<code>a</code>,<code>b</code>,<code>c</code> 또는 <code>0</code>,<code>1</code>,<code>2</code>)로 최신순을 판단하는 것.</strong> 값 이름은 생성 순서일 뿐 최신순이 아니다.</li><li><strong>키 LastWrite를 항목마다 있는 시각으로 착각하는 것.</strong> 키 단위 시각이고 마지막 1회뿐이다. 값이 10개면 어느 값 때문에 갱신됐는지 알 수 없다.</li><li><strong>LastWrite를 로컬 시각으로 읽는 것.</strong> FILETIME이므로 UTC다. KST는 +9시간, Unix epoch와의 차이는 <code>11644473600</code>초다.</li><li><strong>프로필 하나만 보고 끝내는 것.</strong> <code>C:\Users</code> 아래 모든 프로필의 hive를 세고 시작한다. <code>Default</code>·<code>Public</code>은 템플릿/공용이므로 사람 활동으로 읽지 않는다.</li><li><strong><code>Volatile Environment</code>가 없다고 hive가 깨졌다고 판단하는 것.</strong> 휘발성 키라 파일에 없는 것이 정상이다.</li></ul>
+<h2 id="mini-example">mini example</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;이미지에서 추출한 C:\Users\jhkim\ 폴더가 주어진다. 사용자 jhkim 이 외부
+ 저장장치를 어떤 드라이브 문자로 붙였고, 어떤 네트워크 공유를 사용했는지
+ 구하세요.&quot;
+
+1. 폴더 내용 확인
+   NTUSER.DAT / ntuser.dat.LOG1 / ntuser.dat.LOG2 / ntuser.ini
+   -&gt; hive + 트랜잭션 로그가 모두 있다. 좋다.
+
+2. 첫 시도 (실패):
+   RegistryExplorer 로 NTUSER.DAT 을 열고
+   MountedDevices 키를 찾았다.
+   -&gt; 트리에 그런 키가 없다. &quot;hive가 잘린 건가?&quot; 하고 다시 추출까지 했다.
+
+   왜 틀렸나:
+   MountedDevices 는 SYSTEM hive 루트의 키다. 사용자 hive 에는 없다.
+   NTUSER.DAT 쪽 대응물은
+   Software\Microsoft\Windows\CurrentVersion\Explorer\MountPoints2 다.
+
+3. 두 번째로 틀린 판단:
+   hive 를 바로 파싱했더니 MountPoints2 아래 항목이 3개뿐이고
+   LastWrite 가 사건 시각보다 40분 이르다.
+   -&gt; primary(0x04)=0x2F, secondary(0x08)=0x31 로 불일치. dirty hive 였다.
+      로그를 반영하지 않아 가장 최근 마운트가 빠져 있었다.
+
+4. 피벗: 로그 반영 후 재파싱
+   rla.exe -f NTUSER.DAT --out clean\
+   rip.exe -r clean\NTUSER.DAT -p mp2
+
+   MountPoints2
+     E                       LastWrite 2026-03-14 07:05:11Z
+     ##?#Volume{7b1f...c3}   LastWrite 2026-03-14 07:05:11Z
+     ##fileserv#share01      LastWrite 2026-03-14 06:41:02Z
+
+5. 네트워크 드라이브는 별도 키에서 확정
+   Network\Z
+     RemotePath   = \\fileserv\share01
+     UserName     = jhkim
+     ProviderName = Microsoft Windows Network
+
+6. USB 실체 확인 (pivot)
+   SYSTEM\MountedDevices 에서 \??\Volume{7b1f...c3} 의 데이터가
+   USBSTOR 인스턴스(시리얼)와 일치하는지 대조한다.
+
+7. UTC -&gt; KST
+   2026-03-14 07:05:11 UTC + 9h = 2026-03-14 16:05:11 KST
+
+정답: E: 드라이브로 마운트(2026-03-14 16:05:11 KST), 공유는 \\fileserv\share01 (Z:)</code></pre></div>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-017 — Microsoft Learn, Windows Registry hives and file locations: <code>NTUSER.DAT</code>이 <code>HKU\&lt;SID&gt;</code>/<code>HKCU</code>로 마운트된다는 점, 프로필당 1개라는 구조</li><li>SRC-027 — Libyal libregf, REGF 포맷 문서: <code>regf</code> 시그니처, sequence number로 dirty 판정, LastWrite가 키(<code>nk</code>)에만 존재한다는 점</li><li>SRC-099 — RegRipper 3.0 저장소: <code>rip.exe</code>의 <code>-r</code>/<code>-p</code>/<code>-a</code> 옵션과 사용자 hive 대상 플러그인 존재</li><li>플러그인 이름(<code>runmru</code>, <code>comdlg32</code>, <code>mp2</code>)은 RegRipper 버전에 따라 다르므로 <code>rip.exe -l</code>로 실제 목록을 확인할 것</li><li>Office <code>File MRU</code>의 하위 경로는 Office 버전마다 다르므로 실제 hive에서 <code>Software\Microsoft\Office</code> 아래를 직접 확인할 것</li><li><code>Volatile Environment</code>가 오프라인 hive에 나타나는지는 환경/획득 방식에 따라 보고가 갈리므로, 이 키의 값을 근거로 쓸 때는 라이브 <code>HKCU</code> 또는 메모리에서 재확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./registry-hive-map.html">
+    <span class="rel-id">FOR-0051 · Registry</span>
+    Registry hive 전체 지도: 루트키와 디스크상 파일 대응표
+  </a>
+  <a class="related-item" href="./usrclass-dat.html">
+    <span class="rel-id">FOR-0058 · Registry</span>
+    UsrClass.dat 기본: ShellBags가 사는 hive와 HKCU\Software\Classes
+  </a>
+  <a class="related-item" href="./regripper.html">
+    <span class="rel-id">FOR-0060 · Registry</span>
+    RegRipper 3.0 사용법: rip.exe 옵션과 hive별 플러그인
+  </a>
+  <a class="related-item" href="./userassist.html">
+    <span class="rel-id">FOR-0061 · Registry</span>
+    UserAssist로 사용자가 직접 실행한 프로그램 찾기
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./security-hive-overview.html"><span class="rel-id">← FOR-0056</span>SECURITY hive 개요: 감사 정책·도메인 SID·LSA Secrets</a>
+<a class="related-item" href="./usrclass-dat.html"><span class="rel-id">FOR-0058 →</span>UsrClass.dat 기본: ShellBags가 사는 hive와 HKCU\Software\Classes</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#개념">개념</a></li>
+<li class="toc-l2"><a href="#파일-경로">파일 / 경로</a></li>
+<li class="toc-l3"><a href="#잠김과-flush-최신성-문제">잠김과 flush — 최신성 문제</a></li>
+<li class="toc-l2"><a href="#주요-필드">주요 필드</a></li>
+<li class="toc-l3"><a href="#포렌식-가치가-있는-키-인덱스">포렌식 가치가 있는 키 인덱스</a></li>
+<li class="toc-l3"><a href="#mru-순서-필드-읽는-법">MRU 순서 필드 읽는 법</a></li>
+<li class="toc-l2"><a href="#빠른-명령">빠른 명령</a></li>
+<li class="toc-l2"><a href="#함께-보는-artifact">함께 보는 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-실수">흔한 실수</a></li>
+<li class="toc-l2"><a href="#mini-example">mini example</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

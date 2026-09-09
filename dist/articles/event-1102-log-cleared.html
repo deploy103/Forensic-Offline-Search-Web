@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Event ID 1102 감사 로그 삭제: UserData 구조와 삭제 구간 역추적 · FOR-0091 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Event%20Log">Event Log</a> / FOR-0091
+      </div>
+      <header class="article-head">
+        <h1>Event ID 1102 감사 로그 삭제: UserData 구조와 삭제 구간 역추적</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Event Log</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>1102는 Security 로그가 지워졌음을 기록하고 누가 지웠는지(SubjectUserName, SubjectLogonId)까지 남기지만, 페이로드가 일반 EventData 가 아니라 UserData\LogFileCleared 구조라서 평소 쓰는 파서·XPath 필터가 그대로 통하지 않는다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>EvtxECmd, Event Viewer, PowerShell, wevtutil, Timeline Explorer</td></tr>
+<tr><th>artifact</th><td><code>Security.evtx</code> · <code>1102</code> · <code>LogFileCleared</code> · <code>UserData</code> · <code>EventRecordID</code> · <code>EVTX</code> · <code>반포렌식</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Windows\System32\winevt\Logs\Security.evtx</code> · <code>C:\Windows\System32\winevt\Logs\System.evtx</code> · <code>C:\Windows\System32\winevt\Logs</code></td></tr>
+<tr><th>레지스트리</th><td><code>HKLM\SYSTEM\CurrentControlSet\Services\EventLog</code></td></tr>
+<tr><th>Event ID</th><td><code>1102</code> · <code>1100</code> · <code>104</code></td></tr>
+<tr><th>regex</th><td><code>(?i)wevtutil(\.exe)?\s+cl\b</code> · <code>(?i)Clear-EventLog</code> · <code>(?i)event::(clear|drop)</code></td></tr>
+<tr><th>로그 필드</th><td><code>SubjectUserSid</code> · <code>SubjectUserName</code> · <code>SubjectDomainName</code> · <code>SubjectLogonId</code> · <code>EventRecordID</code> · <code>Channel</code> · <code>BackupPath</code></td></tr>
+<tr><th>파일 형식</th><td><code>evtx</code></td></tr>
+<tr><th>검색 별칭</th><td>1102 · 로그 지운 흔적 · 이벤트 로그 삭제 · 로그가 비어있다 · wevtutil cl 흔적 · 로그 삭제 시각 · 누가 로그를 지웠나</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>1102는 Security 로그가 지워졌음을 기록하고 <strong>누가 지웠는지(<code>SubjectUserName</code>, <code>SubjectLogonId</code>)까지 남기지만</strong>, 페이로드가 일반 <code>EventData</code> 가 아니라 <code>UserData\LogFileCleared</code> 구조라서 평소 쓰는 파서·XPath 필터가 그대로 통하지 않는다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;로그가 비어 있다. 지워진 것인가, 원래 없었던 것인가&quot;</li><li>&quot;누가 언제 로그를 지웠나&quot; (반포렌식 행위 자체가 답인 문제)</li><li>&quot;삭제된 구간에 무슨 일이 있었나&quot; (다른 artifact 로 메우기)</li><li>&quot;이벤트 개수가 비정상적으로 적다&quot;</li><li>&quot;공격자의 마지막 행동은 무엇이었나&quot; — 침입 → 활동 → <strong>로그 삭제</strong> 순서가 전형적이다</li></ul>
+<p>로그 삭제는 그 자체가 침해의 증거다. 정상 운영에서 관리자가 Security 로그를 손으로 지우는 일은 거의 없다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li><code>Security.evtx</code> 의 이벤트 수가 수백 건 이하로 부자연스럽게 적다 → 1102 확인</li><li>가장 오래된 레코드의 시각이 며칠 전에 불과하다 → 삭제 또는 롤오버</li><li>지문에 &quot;은폐&quot;, &quot;흔적 삭제&quot;, &quot;반포렌식&quot;, &quot;로그가 없다&quot; → 1102 확정</li><li>4624/4688 이 특정 시각 이후에만 존재한다 → 그 경계가 삭제 시점</li><li><code>EventRecordID</code> 가 1부터 시작한다 → 새로 만들어진 로그 파일</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\Security.evtx&#39;;Id=1102} | Format-List</code></pre></div>
+<p>이어서 로그가 커버하는 구간과 첫 레코드 번호를 확인한다. <strong>여기서 삭제 여부가 거의 결정된다.</strong></p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 가장 오래된 레코드 / 가장 최근 레코드
+Get-WinEvent -Path &#39;C:\case\Security.evtx&#39; -Oldest -MaxEvents 1 |
+  Select-Object @{n=&#39;UTC&#39;;e={$_.TimeCreated.ToUniversalTime()}}, RecordId, Id
+Get-WinEvent -Path &#39;C:\case\Security.evtx&#39; -MaxEvents 1 |
+  Select-Object @{n=&#39;UTC&#39;;e={$_.TimeCreated.ToUniversalTime()}}, RecordId, Id
+
+# 전체 건수
+(Get-WinEvent -Path &#39;C:\case\Security.evtx&#39;).Count</code></pre></div>
+<p>가장 오래된 레코드의 <code>RecordId</code> 가 <code>1</code> 이거나 한 자리 수라면 <strong>그 파일은 삭제 이후에 새로 시작된 로그다.</strong></p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-1102-는-userdata-구조라는-것을-먼저-안다">1단계 — 1102 는 UserData 구조라는 것을 먼저 안다</h3>
+<p><strong>이 절이 이 글의 핵심이다.</strong> 대부분의 Security 이벤트(4624, 4688, 4697 …)는 페이로드를 <code>&lt;EventData&gt;&lt;Data Name=&quot;...&quot;&gt;</code> 로 담는다. 1102 는 다르다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">&lt;Event xmlns=&quot;http://schemas.microsoft.com/win/2004/08/events/event&quot;&gt;
+  &lt;System&gt;
+    &lt;Provider Name=&quot;Microsoft-Windows-Eventlog&quot; Guid=&quot;{fc65ddd8-d6ef-4962-83d5-6e5cfe9ce148}&quot; /&gt;
+    &lt;EventID&gt;1102&lt;/EventID&gt;
+    &lt;Version&gt;0&lt;/Version&gt;
+    &lt;Level&gt;4&lt;/Level&gt;
+    &lt;Task&gt;104&lt;/Task&gt;
+    &lt;TimeCreated SystemTime=&quot;2026-03-14T15:41:22.9931044Z&quot; /&gt;
+    &lt;EventRecordID&gt;1&lt;/EventRecordID&gt;
+    &lt;Channel&gt;Security&lt;/Channel&gt;
+    &lt;Computer&gt;WIN10-DEV&lt;/Computer&gt;
+  &lt;/System&gt;
+  &lt;UserData&gt;
+    &lt;LogFileCleared xmlns=&quot;http://manifests.microsoft.com/win/2004/08/windows/eventlog&quot;&gt;
+      &lt;SubjectUserSid&gt;S-1-5-21-1004336348-1177238915-682003330-1103&lt;/SubjectUserSid&gt;
+      &lt;SubjectUserName&gt;svc_backup&lt;/SubjectUserName&gt;
+      &lt;SubjectDomainName&gt;WIN10-DEV&lt;/SubjectDomainName&gt;
+      &lt;SubjectLogonId&gt;0x1a2b3c&lt;/SubjectLogonId&gt;
+    &lt;/LogFileCleared&gt;
+  &lt;/UserData&gt;
+&lt;/Event&gt;</code></pre></div>
+<p>여기서 나오는 실전 문제 세 가지:</p>
+<div class="table-wrap"><table><thead><tr><th>문제</th><th>원인</th><th>해결</th></tr></thead><tbody><tr><td><code>$_.Properties</code> 가 비어 있거나 기대한 순서가 아니다</td><td><code>Get-WinEvent</code> 의 <code>Properties</code> 는 <code>EventData</code> 기준으로 채워진다</td><td><code>[xml]$_.ToXml()</code> 로 받아 <code>$x.Event.UserData.LogFileCleared</code> 를 직접 읽는다</td></tr><tr><td>XPath 로 <code>*[EventData[Data[@Name=&#39;SubjectUserName&#39;]=...]]</code> 필터가 0건</td><td>1102 에는 <code>EventData</code> 노드가 없다</td><td>페이로드 조건을 XPath 에 넣지 말고 <code>EventID</code> 로만 걸러 낸 뒤 코드에서 판정한다</td></tr><tr><td><code>LogFileCleared</code> 를 XPath 로 지정해도 0건</td><td><code>LogFileCleared</code> 에 <strong>별도의 기본 네임스페이스</strong>가 선언되어 있어, 접두어 없는 XPath 로는 선택되지 않는다</td><td>XPath 로 페이로드를 파지 말고 <code>[xml]</code> 객체 탐색이나 EvtxECmd 로 처리한다</td></tr></tbody></table></div>
+<p>올바른 추출:</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\Security.evtx&#39;;Id=1102} |
+  ForEach-Object {
+    $x = [xml]$_.ToXml()
+    $u = $x.Event.UserData.LogFileCleared
+    [pscustomobject]@{
+      TimeUTC  = $_.TimeCreated.ToUniversalTime().ToString(&#39;yyyy-MM-dd HH:mm:ss&#39;)
+      RecordId = $_.RecordId
+      Who      = &#39;{0}\{1}&#39; -f $u.SubjectDomainName, $u.SubjectUserName
+      Sid      = $u.SubjectUserSid
+      LogonId  = $u.SubjectLogonId
+      Computer = $x.Event.System.Computer
+    }
+  } | Format-List</code></pre></div>
+<p>출력 예시:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">TimeUTC  : 2026-03-14 15:41:22
+RecordId : 1
+Who      : WIN10-DEV\svc_backup
+Sid      : S-1-5-21-1004336348-1177238915-682003330-1103
+LogonId  : 0x1a2b3c
+Computer : WIN10-DEV</code></pre></div>
+<p><code>SubjectLogonId</code> = <code>0x1a2b3c</code> 를 얻었다면 그 값으로 4624 를 찾아 <strong>로그를 지운 사람이 어디서 들어왔는지</strong>까지 확정할 수 있다(<a href="./event-4624-logon.html">FOR-0083</a>).</p>
+<p><code>TimeCreated SystemTime</code> 은 <strong>UTC</strong> 로 저장된다. Event Viewer 는 로컬 시간대로 변환해 표시하므로 두 화면의 숫자가 다르다. <strong>KST 답은 UTC + 9시간</strong> (15:41:22Z → 2026-03-15 00:41:22 KST — 날짜가 바뀌는 구간이라 특히 주의한다).</p>
+<h3 id="2단계-1102-와-104-를-구분한다">2단계 — 1102 와 104 를 구분한다</h3>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>1102</th><th>104</th></tr></thead><tbody><tr><td>기록되는 채널</td><td><code>Security</code></td><td><code>System</code></td></tr><tr><td>Provider</td><td><code>Microsoft-Windows-Eventlog</code></td><td><code>Microsoft-Windows-Eventlog</code></td></tr><tr><td>의미</td><td><strong>Security(감사) 로그가 지워졌다</strong></td><td><strong>다른 로그(System, Application, Operational 등)가 지워졌다</strong></td></tr><tr><td>페이로드 구조</td><td><code>UserData\LogFileCleared</code></td><td><code>UserData\LogFileCleared</code> (동일 계열)</td></tr><tr><td>주체 정보</td><td>있다</td><td>있다</td></tr><tr><td>어느 로그가 지워졌는지</td><td>Security 로 고정</td><td>페이로드에 대상 채널 이름이 들어간다</td></tr></tbody></table></div>
+<p>즉 <strong>&quot;System 로그를 지웠다&quot;는 흔적은 1102 가 아니라 System 채널의 104 다.</strong> 두 채널을 모두 열어야 삭제 전체 그림이 나온다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># Security 로그 삭제
+Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\Security.evtx&#39;;Id=1102}
+
+# 다른 채널 삭제 (System 채널에 기록됨)
+Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\System.evtx&#39;;Id=104} | Format-List</code></pre></div>
+<p>104 는 어느 채널이 지워졌는지를 페이로드에 담으므로, PowerShell/Operational · Sysmon/Operational · TerminalServices 등 <strong>가장 결정적인 로그만 골라 지운</strong> 정황도 잡아낸다.</p>
+<h3 id="3단계-eventrecordid-로-삭제를-역추적한다">3단계 — EventRecordID 로 삭제를 역추적한다</h3>
+<p><code>EventRecordID</code> 는 채널 안에서 단조 증가하는 일련번호다. 이 성질이 삭제 탐지의 지표가 된다.</p>
+<div class="table-wrap"><table><thead><tr><th>관찰</th><th>해석</th></tr></thead><tbody><tr><td>가장 오래된 레코드의 <code>EventRecordID</code> = <code>1</code></td><td>로그 파일이 <strong>비워진 뒤 새로 시작</strong>됐다. 1102(또는 104)가 그 첫 레코드인 경우가 많다</td></tr><tr><td>1102 의 <code>EventRecordID</code> = <code>1</code></td><td>지운 직후 그 사실만 기록됐다 = 삭제 확정</td></tr><tr><td><code>EventRecordID</code> 가 중간에서 급격히 낮아진다</td><td>서로 다른 시점의 EVTX 조각이 섞였거나, 파일이 교체됐다</td></tr><tr><td><code>EventRecordID</code> 는 연속인데 시각이 크게 점프한다</td><td>삭제가 아니라 <strong>시스템이 꺼져 있던 구간</strong>이다. 6005/6006 으로 확인한다</td></tr><tr><td>번호가 연속인데 특정 EventID 만 사라졌다</td><td>로그 삭제가 아니라 <strong>감사 정책 변경</strong>(4719) 가능성</td></tr></tbody></table></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># RecordId 와 시각을 나란히 놓고 불연속 구간을 찾는다
+$e = Get-WinEvent -Path &#39;C:\case\Security.evtx&#39; -Oldest |
+  Select-Object @{n=&#39;UTC&#39;;e={$_.TimeCreated.ToUniversalTime()}}, RecordId, Id
+
+# 번호가 뒤로 가거나 큰 구멍이 생기는 지점
+for ($i = 1; $i -lt $e.Count; $i++) {
+  $gap = $e[$i].RecordId - $e[$i-1].RecordId
+  if ($gap -ne 1) { &#39;{0}  {1} -&gt; {2}  (gap {3})&#39; -f $e[$i].UTC, $e[$i-1].RecordId, $e[$i].RecordId, $gap }
+}</code></pre></div>
+<p>번호 구멍(gap)은 삭제만이 아니라 <strong>덮어쓰기(롤오버)나 파일 손상</strong>으로도 생긴다. 단독으로 결론을 내지 말고 1102/104 와 함께 판단한다.</p>
+<h3 id="4단계-1102-자체가-지워진-경우를-판정한다">4단계 — 1102 자체가 지워진 경우를 판정한다</h3>
+<p><strong>가장 중요한 함정이다.</strong> 공격자가 로그를 지운 뒤 <strong>한 번 더 지우면</strong> 1102 도 함께 사라진다. 그러면 &quot;삭제 이벤트가 없으니 삭제가 없었다&quot;는 오판으로 이어진다.</p>
+<p>이때는 <strong>간접 증거</strong>로 판정한다.</p>
+<div class="table-wrap"><table><thead><tr><th>간접 증거</th><th>판정 논리</th></tr></thead><tbody><tr><td>로그의 최초 레코드 시각이 시스템 설치 시각·최초 부팅 시각보다 훨씬 늦다</td><td>그 사이의 로그가 사라졌다</td></tr><tr><td>최초 레코드 시각이 <strong>직전 부팅(6005)보다도 늦다</strong></td><td>부팅 이후에 파일이 비워졌다</td></tr><tr><td>로그 파일 크기가 최대 크기에 한참 못 미치는데 오래된 기록이 없다</td><td>롤오버가 아니다. 롤오버는 파일이 꽉 찬 상태에서 일어난다</td></tr><tr><td>Security 는 비어 있는데 System·Application 은 몇 달치가 있다</td><td>특정 채널만 표적으로 지워졌다</td></tr><tr><td><code>$MFT</code> / <code>$UsnJrnl</code> 에서 해당 <code>.evtx</code> 파일의 수정·크기 변경 기록이 사건 시각과 일치</td><td>그 시각에 파일이 재생성됐다</td></tr><tr><td>4688 / 4104 에 <code>wevtutil cl</code> · <code>Clear-EventLog</code> 실행 기록이 있는데 1102 가 없다</td><td>삭제 후 재삭제</td></tr></tbody></table></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 로그 커버 구간 vs 부팅 시각 비교
+$secOld = (Get-WinEvent -Path &#39;C:\case\Security.evtx&#39; -Oldest -MaxEvents 1).TimeCreated.ToUniversalTime()
+$boots  = Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\System.evtx&#39;;Id=6005} |
+  Select-Object -ExpandProperty TimeCreated | ForEach-Object { $_.ToUniversalTime() }
+&quot;Security 최초 레코드 : $secOld&quot;
+&quot;부팅 이력            : $($boots -join &#39;, &#39;)&quot;</code></pre></div>
+<p><code>Security 최초 레코드</code> 가 마지막 부팅보다 늦으면, 그 부팅 이후에 로그가 비워졌다는 뜻이다. <strong>이 비교 하나로 1102 없이도 삭제를 주장할 수 있다.</strong></p>
+<p>파일 포맷 수준에서 더 확실히 하려면 EVTX 헤더를 직접 본다. EVTX 파일은 <code>ElfFile\x00</code> 시그니처로 시작하고, 64KiB 청크마다 <code>ElfChnk\x00</code> 헤더가 있으며, 헤더에는 파일이 담고 있는 <strong>첫/마지막 레코드 번호</strong>가 들어 있다. 첫 레코드 번호가 1 이면 그 파일은 생성 이후 한 번도 롤오버되지 않은 새 파일이다.</p>
+<h3 id="5단계-삭제-도구의-실행-흔적을-찾는다">5단계 — 삭제 도구의 실행 흔적을 찾는다</h3>
+<p>로그를 지우려면 무언가를 실행해야 한다. <strong>그 실행 기록은 다른 곳에 남는다.</strong></p>
+<div class="table-wrap"><table><thead><tr><th>도구/방법</th><th>찾는 위치</th><th>검색 문자열</th></tr></thead><tbody><tr><td><code>wevtutil cl Security</code></td><td>4688 <code>CommandLine</code>, 4104</td><td><code>wevtutil</code>, <code>cl </code>, <code>clear-log</code></td></tr><tr><td><code>Clear-EventLog -LogName Security</code></td><td>4104(스크립트 블록), 4103, PowerShell 콘솔 히스토리</td><td><code>Clear-EventLog</code></td></tr><tr><td><code>Remove-EventLog</code> / <code>Limit-EventLog</code></td><td>4104</td><td><code>EventLog</code></td></tr><tr><td><code>mimikatz</code> <code>event::clear</code></td><td>4688(<code>mimikatz.exe</code>), 4104, Prefetch, Amcache</td><td><code>mimikatz</code>, <code>event::</code></td></tr><tr><td><code>Get-WinEvent</code> 기반 자체 스크립트</td><td>4104</td><td><code>.ClearLog(</code>, <code>EventLogSession</code></td></tr><tr><td>GUI(이벤트 뷰어에서 &quot;로그 지우기&quot;)</td><td>4688 의 <code>eventvwr.exe</code> 실행, UserAssist</td><td><code>eventvwr</code></td></tr><tr><td>로그 파일 직접 삭제/교체</td><td><code>$MFT</code>, <code>$UsnJrnl</code>, <code>$LogFile</code></td><td><code>.evtx</code> 파일명</td></tr></tbody></table></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 4688 명령행에서 삭제 도구 흔적
+Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\Security.evtx&#39;;Id=4688} |
+  Where-Object { $_.Message -match &#39;(?i)wevtutil|Clear-EventLog|mimikatz|eventvwr&#39; } |
+  Select-Object @{n=&#39;UTC&#39;;e={$_.TimeCreated.ToUniversalTime()}}, Message
+
+# PowerShell 스크립트 블록(4104)에서
+Get-WinEvent -FilterHashtable @{
+  Path=&#39;C:\case\Microsoft-Windows-PowerShell%4Operational.evtx&#39;; Id=4104
+} | Where-Object { $_.Message -match &#39;(?i)Clear-EventLog|wevtutil|ClearLog|EventLogSession&#39; }</code></pre></div>
+<p>역설적으로, <strong>삭제 명령을 실행한 4688 이 남아 있다면 그 4688 은 삭제된 구간 이후에 기록된 것</strong>이다. 즉 공격자가 지운 뒤에도 활동했다는 뜻이고, 삭제 시점의 경계를 좁히는 데 쓸 수 있다.</p>
+<h3 id="6단계-삭제된-구간을-다른-artifact-로-메운다">6단계 — 삭제된 구간을 다른 artifact 로 메운다</h3>
+<p>로그가 사라졌다고 사건이 사라지는 것은 아니다. Windows 는 같은 사실을 여러 곳에 중복 기록한다.</p>
+<div class="table-wrap"><table><thead><tr><th>사라진 정보</th><th>대체 artifact</th></tr></thead><tbody><tr><td>로그온(4624)</td><td>RDP 채널(TerminalServices), <code>NTUSER.DAT</code> 로드 시각, ProfileList, SRUM, 마지막 로그온 시각(SAM)</td></tr><tr><td>프로세스 실행(4688)</td><td>Prefetch, Amcache, AppCompatCache, UserAssist, SRUM, <code>$MFT</code>, Sysmon/Operational</td></tr><tr><td>서비스 설치(4697/7045)</td><td>SYSTEM hive <code>Services</code> 키, <code>$MFT</code> 의 이미지 파일</td></tr><tr><td>파일 접근/생성</td><td><code>$MFT</code>, <code>$UsnJrnl</code>, <code>$LogFile</code>, LNK, JumpList, 최근 문서</td></tr><tr><td>네트워크 활동</td><td>SRUM 네트워크 사용량, DNS 캐시, 브라우저 히스토리, 방화벽 로그</td></tr><tr><td>PowerShell 실행</td><td><code>ConsoleHost_history.txt</code>, 4104(다른 채널이라 함께 지워지지 않는 경우가 많다)</td></tr><tr><td>시간대 전체</td><td>다른 호스트의 EVTX, 도메인 컨트롤러 로그, 프록시·방화벽 로그</td></tr></tbody></table></div>
+<p><strong>공격자는 보통 Security 채널만 지운다.</strong> PowerShell/Operational, Sysmon/Operational, TerminalServices, Windows Defender 채널은 그대로 남아 있는 경우가 매우 흔하다. <code>winevt\Logs</code> 디렉터리의 모든 <code>.evtx</code> 를 EvtxECmd 로 한 번에 파싱해 통합 타임라인을 만드는 것이 정석이다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="table-wrap"><table><thead><tr><th>필드 (경로)</th><th>의미</th><th>읽는 법</th></tr></thead><tbody><tr><td><code>System\TimeCreated\@SystemTime</code></td><td>삭제 시각 (<strong>UTC</strong>)</td><td>KST 는 +9시간</td></tr><tr><td><code>System\EventRecordID</code></td><td>레코드 번호</td><td><code>1</code> 이면 삭제 직후 새 로그의 첫 레코드</td></tr><tr><td><code>System\Computer</code></td><td>어느 호스트에서 지웠나</td><td>다중 호스트 사건에서 중요</td></tr><tr><td><code>System\Provider\@Name</code></td><td><code>Microsoft-Windows-Eventlog</code></td><td>4624 등의 <code>Microsoft-Windows-Security-Auditing</code> 과 다르다</td></tr><tr><td><code>UserData\LogFileCleared\SubjectUserSid</code></td><td>삭제한 계정의 SID</td><td>ProfileList·SAM 과 대조</td></tr><tr><td><code>UserData\LogFileCleared\SubjectUserName</code></td><td><strong>삭제한 계정 이름</strong></td><td>이 이벤트의 존재 이유</td></tr><tr><td><code>UserData\LogFileCleared\SubjectDomainName</code></td><td>계정 도메인</td><td>로컬이면 컴퓨터 이름</td></tr><tr><td><code>UserData\LogFileCleared\SubjectLogonId</code></td><td>삭제한 세션의 Logon ID</td><td>4624 로 출처 IP 추적</td></tr></tbody></table></div>
+<h3 id="함께-봐야-하는-이벤트">함께 봐야 하는 이벤트</h3>
+<div class="table-wrap"><table><thead><tr><th>Event ID</th><th>채널</th><th>의미</th><th>왜 함께 보나</th></tr></thead><tbody><tr><td><code>1102</code></td><td>Security</td><td>Security 로그 삭제</td><td>본편</td></tr><tr><td><code>104</code></td><td>System</td><td>다른 채널의 로그 삭제</td><td>표적 삭제 탐지</td></tr><tr><td><code>1100</code></td><td>Security</td><td><strong>이벤트 로그 서비스 종료</strong></td><td>정상 종료 시에도 나오지만, 종료 후 파일을 교체하는 수법의 신호</td></tr><tr><td><code>4719</code></td><td>Security</td><td>시스템 감사 정책 변경</td><td>지우는 대신 <strong>끄는</strong> 수법. 이후 구간이 통째로 비게 된다</td></tr><tr><td><code>4616</code></td><td>Security</td><td>시스템 시각 변경</td><td>타임라인 자체를 흔드는 수법. 순서가 뒤엉킨다</td></tr><tr><td><code>4608</code> / <code>6005</code></td><td>Security / System</td><td>시작 이벤트</td><td>로그가 커버해야 하는 구간의 하한선</td></tr><tr><td><code>4688</code> / <code>4104</code></td><td>Security / PowerShell</td><td>삭제 도구 실행</td><td>누가 무엇으로 지웠나</td></tr></tbody></table></div>
+<p>1100 은 시스템을 정상 종료할 때도 기록되므로 단독으로는 증거가 아니다. <strong>1100 직후에 로그가 끊기고 다음 6005 이후 기록만 남는다면</strong> 서비스를 멈춰 놓고 파일을 손댄 정황을 의심한다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>1102에서 얻은 것</th><th>다음 목표</th><th>확인할 것</th></tr></thead><tbody><tr><td><code>SubjectLogonId</code></td><td>4624 (<a href="./event-4624-logon.html">FOR-0083</a>)</td><td>지운 사람의 계정·출처 IP·Logon Type</td></tr><tr><td><code>SubjectUserSid</code></td><td>SAM hive, ProfileList</td><td>계정 실체와 생성 시각</td></tr><tr><td>삭제 시각</td><td>4688 (<a href="./event-4688-process-creation.html">FOR-0088</a>)</td><td><code>wevtutil cl</code> / <code>mimikatz</code> 실행</td></tr><tr><td>삭제 시각</td><td><code>$MFT</code> / <code>$UsnJrnl</code> (<a href="./mft-basics.html">FOR-0021</a>)</td><td><code>.evtx</code> 파일 수정, 도구 파일 생성·삭제</td></tr><tr><td>삭제 시각</td><td>그 직전 구간의 모든 채널</td><td>지우려 했던 활동의 정체</td></tr><tr><td>로그 최초 레코드 시각</td><td>6005 / 4608</td><td>삭제 구간의 경계 확정</td></tr><tr><td><code>Computer</code></td><td>다른 호스트의 EVTX</td><td>같은 계정이 다른 곳에서도 지웠는지</td></tr><tr><td>삭제 정황</td><td>Prefetch / Amcache / SRUM</td><td>로그 없이 실행 사실 복원</td></tr><tr><td>삭제 정황</td><td>타임스탬프 조작 흔적 (<a href="./timestomp-detection.html">FOR-0038</a>)</td><td>반포렌식이 여기서 끝나지 않았을 가능성</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>EventData</code> 기준 파서로 1102 를 읽고 필드가 비었다고 판단한다.</strong> 1102 의 페이로드는 <code>UserData\LogFileCleared</code> 다. <code>[xml]$_.ToXml()</code> 로 받아 <code>$x.Event.UserData.LogFileCleared</code> 를 읽어야 계정이 나온다.</li><li><strong>XPath 로 페이로드 조건을 건다.</strong> <code>LogFileCleared</code> 에는 별도의 기본 네임스페이스가 선언되어 있어 접두어 없는 XPath 로는 선택되지 않는다. <code>EventID</code> 로만 필터하고 판정은 코드에서 한다.</li><li><strong>1102 가 없으니 삭제가 없었다고 결론 낸다.</strong> 1102 자체가 다음 삭제에 함께 지워진다. <strong>최초 레코드 시각 vs 부팅/설치 시각</strong> 비교로 간접 판정해야 한다.</li><li><strong>1102 만 찾고 104 를 빠뜨린다.</strong> System·PowerShell·Sysmon 채널의 삭제는 System 채널의 104 에 남는다. 표적 삭제일수록 여기서 잡힌다.</li><li><strong>번호 구멍을 곧바로 삭제로 단정한다.</strong> <code>EventRecordID</code> gap 은 롤오버·손상으로도 생긴다. 파일 크기와 최대 크기 설정을 함께 본다.</li><li><strong>시각 점프를 삭제로 오해한다.</strong> 시스템이 꺼져 있던 구간은 원래 로그가 없다. 6005/6006 으로 가동 구간을 먼저 그린다.</li><li><strong>로그가 지워졌다고 조사를 멈춘다.</strong> Prefetch·Amcache·<code>$MFT</code>·<code>$UsnJrnl</code>·SRUM·레지스트리는 그대로 있다. 대체 artifact 표를 순서대로 소진한다.</li><li><strong>UTC/로컬 혼동.</strong> EVTX <code>SystemTime</code> 은 UTC 다. 삭제 시각처럼 사건의 종료 시점을 특정할 때 9시간 차이는 날짜를 바꿔 놓는다. KST 답은 +9시간.</li><li><strong>삭제한 계정을 곧바로 범인으로 확정한다.</strong> 도용된 자격증명일 수 있다. <code>SubjectLogonId</code> 로 4624 를 찾아 출처 IP·Logon Type 을 확인해야 &quot;누가&quot;가 완성된다.</li><li><strong>감사 정책을 끈 경우(4719)를 삭제와 구분하지 않는다.</strong> 지우면 과거가 사라지고, 끄면 미래가 기록되지 않는다. 증거 해석이 완전히 다르다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) Security 로그 삭제 (1102)
+Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\Security.evtx&#39;;Id=1102} | Format-List
+
+# 2) 다른 채널의 삭제 (System 채널 104)
+Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\System.evtx&#39;;Id=104} | Format-List
+
+# 3) 로그 서비스 종료 / 감사 정책 변경 / 시각 변경
+Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\Security.evtx&#39;;Id=1100,4719,4616} |
+  Select-Object @{n=&#39;UTC&#39;;e={$_.TimeCreated.ToUniversalTime()}}, Id, Message
+
+# 4) 커버 구간 확인 — 최초 레코드가 마지막 부팅보다 늦으면 비워졌다는 뜻
+Get-WinEvent -Path &#39;C:\case\Security.evtx&#39; -Oldest -MaxEvents 3 |
+  Select-Object @{n=&#39;UTC&#39;;e={$_.TimeCreated.ToUniversalTime()}}, RecordId, Id
+Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\System.evtx&#39;;Id=6005} |
+  Select-Object @{n=&#39;UTC&#39;;e={$_.TimeCreated.ToUniversalTime()}}
+
+# 5) 삭제 도구 실행 흔적
+Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\Security.evtx&#39;;Id=4688} |
+  Where-Object { $_.Message -match &#39;(?i)wevtutil|Clear-EventLog|mimikatz&#39; }
+
+# 6) winevt\Logs 전체를 한 번에 파싱해 남아 있는 채널을 찾는다
+# EvtxECmd 는 -d 로 디렉터리 전체를 처리한다
+EvtxECmd.exe -d &#39;C:\case\winevt\Logs&#39; --csv &#39;C:\case\out&#39; --csvf all.csv</code></pre></div>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;2026-03-14 침해 사고입니다. 공격자가 로그를 지운 시각과 사용한 계정을 구하세요.
+ 첨부: Security.evtx (312 events), System.evtx&quot;
+
+1. 첫 시도 (실패):
+   wevtutil qe Security.evtx /q:&quot;*[System[(EventID=1102)]] and \
+     *[EventData[Data[@Name=&#39;SubjectUserName&#39;]=&#39;Administrator&#39;]]&quot; /f:xml
+   -&gt; 0건.
+   &quot;1102 가 없다 = 삭제가 없었다&quot;고 결론 낼 뻔했다.
+
+2. 왜 틀렸나:
+   EventID=1102 조건만 남기고 다시 돌리니 1건이 나왔다.
+   즉 EventID 는 맞았고, EventData 조건이 문제였다.
+   1102 의 페이로드는 EventData 가 아니라 UserData\LogFileCleared 다.
+   존재하지 않는 노드를 조건으로 걸었으니 항상 0건이었다.
+   -&gt; 다른 Security 이벤트와 같은 구조라고 가정한 것이 실수.
+
+3. 올바른 추출:
+   Get-WinEvent -FilterHashtable @{Path=&#39;Security.evtx&#39;;Id=1102} |
+     ForEach-Object { ([xml]$_.ToXml()).Event.UserData.LogFileCleared }
+
+   SubjectUserSid    : S-1-5-21-...-1103
+   SubjectUserName   : svc_backup
+   SubjectDomainName : WIN10-DEV
+   SubjectLogonId    : 0x1a2b3c
+
+   그리고 그 이벤트의 EventRecordID = 1, TimeCreated = 2026-03-14T15:41:22Z.
+   RecordId 1 -&gt; 이 파일은 삭제 직후 새로 시작된 로그다.
+
+4. 커버 구간 확인:
+   Security.evtx 최초 레코드 = 2026-03-14 15:41:22Z (= 1102 자신)
+   System.evtx 의 6005(부팅)  = 2026-03-14 06:02:11Z
+   -&gt; 부팅은 06:02, 로그는 15:41 부터. 그 사이 9시간 반의 감사 기록이 사라졌다.
+
+5. 삭제 도구:
+   남아 있는 4688 (15:41 이후) 에는 흔적이 없었다.
+   PowerShell Operational 4104 는 지워지지 않았다:
+     15:40:58Z  wevtutil cl Security; wevtutil cl System
+   -&gt; 삭제 24초 전에 명령이 실행됐다. System 도 지우려 했다.
+
+6. System 채널 확인:
+   Get-WinEvent -FilterHashtable @{Path=&#39;System.evtx&#39;;Id=104}
+   -&gt; 15:41:25Z, 대상 채널 System, 주체 svc_backup.
+   1102(Security) 와 104(System) 가 3초 차이로 짝을 이룬다.
+
+7. 삭제된 구간 메우기:
+   Prefetch: 09:14 rclone.exe, 11:02 7z.exe 실행 기록 (로그에는 없는 구간)
+   $UsnJrnl: 10:40~11:30 사이 대량 파일 읽기 후 아카이브 생성
+   -&gt; 지우려 했던 것은 데이터 반출 활동이었다.
+
+8. 시각 변환:
+   15:41:22Z 는 UTC. KST 는 +9시간 -&gt; 2026-03-15 00:41:22.
+   날짜가 넘어가므로 답을 적을 때 반드시 확인한다.
+
+정답: 삭제 시각 2026-03-14 15:41:22 UTC (KST 03-15 00:41:22), 계정 WIN10-DEV\svc_backup</code></pre></div>
+<p>1단계의 실패가 이 글의 존재 이유다. <strong>1102 는 다른 Security 이벤트와 페이로드 구조가 다르다.</strong> <code>EventData</code> 를 전제한 XPath·파서는 조용히 0건을 돌려주고, 그 0건이 &quot;삭제 없음&quot;이라는 오답으로 직결된다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>EventID</code> 만으로 필터해 봤는가 — 페이로드 조건이 0건의 원인인 경우가 대부분이다</li><li><code>[xml]$_.ToXml()</code> 로 <code>UserData\LogFileCleared</code> 를 직접 읽었는가</li><li>System 채널의 104 를 확인했는가 — 표적 삭제는 여기 있다</li><li>가장 오래된 레코드의 시각과 <code>RecordId</code> 를 확인했는가 — <code>RecordId</code> = 1 이면 새 파일</li><li>최초 레코드 시각을 6005/4608(부팅)과 비교했는가 — 1102 없이 삭제를 증명하는 방법</li><li>파일 크기가 최대 크기에 도달했는지 확인해 롤오버를 배제했는가</li><li>1100(서비스 종료) · 4719(감사 정책 변경) · 4616(시각 변경)을 함께 봤는가</li><li>4688 / 4104 에서 <code>wevtutil cl</code> · <code>Clear-EventLog</code> · <code>mimikatz</code> 를 찾았는가</li><li><code>winevt\Logs</code> 의 <strong>모든</strong> <code>.evtx</code> 를 파싱했는가 — 지워지지 않은 채널이 거의 항상 있다</li><li>삭제 구간을 Prefetch · Amcache · <code>$MFT</code> · <code>$UsnJrnl</code> · SRUM · 레지스트리로 메웠는가</li><li><code>SubjectLogonId</code> 로 4624 를 찾아 출처 IP 를 확정했는가</li><li>답을 UTC 로 낼지 KST(+9)로 낼지 지문을 다시 읽었는가 — 날짜가 바뀔 수 있다</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-022 — Microsoft Learn, Advanced security audit policy settings: 1102 와 4719 의 위치와 의미, Security 채널 이벤트 목록</li><li>SRC-026 — Libyal libevtx / EVTX 파일 포맷 문서: <code>ElfFile</code> 파일 시그니처, 64KiB 청크(<code>ElfChnk</code>) 구조, 파일 헤더가 담는 첫/마지막 레코드 번호와 <code>EventRecordID</code> 의 단조 증가 성질</li><li>SRC-109 — MITRE ATT&amp;CK T1070 (Indicator Removal): 이벤트 로그 삭제·타임스탬프 조작 등 반포렌식 기법과 대체 artifact 접근의 근거</li><li>1102 / 104 의 <code>UserData\LogFileCleared</code> 하위 요소 구성(특히 104 가 담는 대상 채널·백업 경로 필드 이름)은 Windows 버전에 따라 다를 수 있으므로 실제 이벤트 XML 에서 확인할 것</li><li>로그를 비운 직후 <code>EventRecordID</code> 가 1 부터 다시 시작하는 동작은 실무에서 널리 관찰되지만, 버전·설정에 따라 다를 수 있으므로 실제 파일의 첫 레코드 번호를 직접 확인할 것</li><li><code>mimikatz</code> 의 <code>event::</code> 계열 명령 이름은 버전에 따라 다를 수 있다. 문자열 검색은 도구 이름과 명령 이름을 모두 시도할 것</li></ul>
+<p>&lt;/content&gt;</p>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./event-4624-logon.html">
+    <span class="rel-id">FOR-0083 · Event Log</span>
+    Event ID 4624 성공 로그온 분석: 누가 어디서 어떻게 들어왔나
+  </a>
+  <a class="related-item" href="./event-4688-process-creation.html">
+    <span class="rel-id">FOR-0088 · Event Log</span>
+    Event ID 4688 프로세스 생성: CommandLine 과 부모-자식 체인 재구성
+  </a>
+  <a class="related-item" href="./timestomp-detection.html">
+    <span class="rel-id">FOR-0038 · 디스크/NTFS</span>
+    Timestomp 탐지: $SI/$FN 불일치부터 나노초 0까지 7가지 지표
+  </a>
+  <a class="related-item" href="./event-record-id-tracking.html">
+    <span class="rel-id">FOR-0103 · Event Log</span>
+    EventRecordID로 이벤트 순서 확정하기: 같은 초의 인과와 번호 gap 판독
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./event-7045-service-install.html"><span class="rel-id">← FOR-0090</span>Event ID 7045 새 서비스 설치: 기본 감사에서도 남는 지속성 흔적</a>
+<a class="related-item" href="./event-4608-startup.html"><span class="rel-id">FOR-0092 →</span>Event ID 4608 Windows 시작: 부팅 세션으로 로그를 구간화한다</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-1102-는-userdata-구조라는-것을-먼저-안다">1단계 — 1102 는 UserData 구조라는 것을 먼저 안다</a></li>
+<li class="toc-l3"><a href="#2단계-1102-와-104-를-구분한다">2단계 — 1102 와 104 를 구분한다</a></li>
+<li class="toc-l3"><a href="#3단계-eventrecordid-로-삭제를-역추적한다">3단계 — EventRecordID 로 삭제를 역추적한다</a></li>
+<li class="toc-l3"><a href="#4단계-1102-자체가-지워진-경우를-판정한다">4단계 — 1102 자체가 지워진 경우를 판정한다</a></li>
+<li class="toc-l3"><a href="#5단계-삭제-도구의-실행-흔적을-찾는다">5단계 — 삭제 도구의 실행 흔적을 찾는다</a></li>
+<li class="toc-l3"><a href="#6단계-삭제된-구간을-다른-artifact-로-메운다">6단계 — 삭제된 구간을 다른 artifact 로 메운다</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l3"><a href="#함께-봐야-하는-이벤트">함께 봐야 하는 이벤트</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

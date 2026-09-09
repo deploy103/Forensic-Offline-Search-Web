@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>로그 파일 30초 트리아지: 형식·줄수·시간범위부터 확인한다 · FOR-0111 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%A1%9C%EA%B7%B8%2FRegex">로그/Regex</a> / FOR-0111
+      </div>
+      <header class="article-head">
+        <h1>로그 파일 30초 트리아지: 형식·줄수·시간범위부터 확인한다</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">로그/Regex</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">linux</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>로그를 받으면 정규식을 짜기 전에 head -3·tail -3·wc -l·file 네 명령으로 형식·줄수·시간범위·인코딩을 먼저 확정한다 — 이 30초를 건너뛰면 잘못된 필드 번호로 잘못된 답을 세게 된다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>head, tail, wc, file, less, split, sed, iconv, xxd</td></tr>
+<tr><th>artifact</th><td><code>access.log</code> · <code>error.log</code> · <code>auth.log</code> · <code>syslog</code> · <code>messages</code> · <code>secure</code> · <code>IIS W3C log</code> · <code>JSONL log</code></td></tr>
+<tr><th>파일 경로</th><td><code>/var/log/auth.log</code> · <code>/var/log/secure</code> · <code>/var/log/syslog</code> · <code>/var/log/messages</code> · <code>/var/log/apache2/access.log</code> · <code>/var/log/nginx/access.log</code> · <code>C:\inetpub\logs\LogFiles</code></td></tr>
+<tr><th>프로토콜</th><td>HTTP, syslog</td></tr>
+<tr><th>로그 필드</th><td><code>remote_addr</code> · <code>time_local</code> · <code>request</code> · <code>status</code> · <code>body_bytes_sent</code> · <code>date</code> · <code>time</code> · <code>c-ip</code> · <code>cs-uri-stem</code> · <code>sc-status</code></td></tr>
+<tr><th>파일 형식</th><td><code>log</code> · <code>txt</code> · <code>csv</code> · <code>json</code> · <code>jsonl</code> · <code>gz</code></td></tr>
+<tr><th>검색 별칭</th><td>로그 뭐부터 봐야 · 로그 파일 처음 · 로그 형식 확인 · 로그 몇 줄 · 로그 트리아지 · 로그 파일 너무 큼 · 로그 어떻게 열어</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>로그를 받으면 정규식을 짜기 전에 <code>head -3</code>·<code>tail -3</code>·<code>wc -l</code>·<code>file</code> 네 명령으로 <strong>형식·줄수·시간범위·인코딩</strong>을 먼저 확정한다 — 이 30초를 건너뛰면 잘못된 필드 번호로 잘못된 답을 세게 된다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>첨부가 수십 MB~수 GB <code>.log</code> / <code>.txt</code> / <code>.gz</code> 이고 GUI 편집기가 멈추는 상황</li><li>&quot;가장 많이 요청한 IP&quot;, &quot;최초 접속 시각&quot;, &quot;몇 번 실패했나&quot; 같은 집계형 문제</li><li>여러 로그(웹 + 인증 + 시스템)를 시간축으로 합쳐야 하는 상황</li><li>로그의 시간대가 문제 지문의 시간대와 다른지 판단해야 하는 상황</li></ul>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<div class="table-wrap"><table><thead><tr><th>단서</th><th>의미</th></tr></thead><tbody><tr><td>파일명이 <code>access.log</code> / <code>error.log</code></td><td>웹 서버 로그. 1번 필드가 IP</td></tr><tr><td>파일명이 <code>auth.log</code> / <code>secure</code></td><td>SSH·sudo 인증 로그. <code>Failed password</code> / <code>Accepted password</code></td></tr><tr><td>파일명이 <code>syslog</code> / <code>messages</code></td><td>시스템 전반. 태그(<code>sshd[2841]:</code>)로 좁힌다</td></tr><tr><td>파일명이 <code>u_ex260314.log</code></td><td>IIS W3C. <code>#Fields:</code> 헤더에 필드 순서가 있다</td></tr><tr><td>확장자가 <code>.jsonl</code> / <code>.ndjson</code></td><td>한 줄 = JSON 객체 하나. <code>jq -c</code> 대상</td></tr><tr><td>확장자가 <code>.gz</code> / <code>.bz2</code> / <code>.xz</code></td><td>압축. 풀지 말고 <code>zcat</code>·<code>rg -z</code>로 바로 읽는다</td></tr><tr><td>확장자가 <code>.evtx</code></td><td>텍스트 도구로 못 읽는다. 별도 파서 필요</td></tr></tbody></table></div>
+<p><strong><code>.evtx</code>는 이 글의 대상이 아니다.</strong> 바이너리 XML 컨테이너이므로 <code>grep</code>이 아니라 전용 파서를 쓴다 (<a href="./evtx-analysis-order.html">FOR-0081</a>).</p>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">head -3 access.log; echo ---; tail -3 access.log; echo ---; wc -l access.log; file access.log</code></pre></div>
+<p>네 개를 한 줄로 붙인 것이다. 출력 예시:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">203.0.113.77 - - [14/Mar/2026:07:11:02 +0900] &quot;GET / HTTP/1.1&quot; 200 4021 &quot;-&quot; &quot;curl/8.4.0&quot;
+203.0.113.77 - - [14/Mar/2026:07:11:04 +0900] &quot;GET /admin/ HTTP/1.1&quot; 403 199 &quot;-&quot; &quot;curl/8.4.0&quot;
+192.168.10.24 - - [14/Mar/2026:07:11:09 +0900] &quot;GET /index.html HTTP/1.1&quot; 200 4021 &quot;-&quot; &quot;Mozilla/5.0 ...&quot;
+---
+198.51.100.5 - - [14/Mar/2026:23:58:41 +0900] &quot;GET /favicon.ico HTTP/1.1&quot; 404 209 &quot;-&quot; &quot;Mozilla/5.0 ...&quot;
+203.0.113.77 - - [14/Mar/2026:23:59:12 +0900] &quot;POST /upload.php HTTP/1.1&quot; 200 87 &quot;-&quot; &quot;python-requests/2.31&quot;
+192.168.10.24 - - [14/Mar/2026:23:59:58 +0900] &quot;GET /health HTTP/1.1&quot; 200 2 &quot;-&quot; &quot;kube-probe/1.28&quot;
+---
+   41882 access.log
+access.log: ASCII text</code></pre></div>
+<p>이 한 화면에서 다음 5개가 전부 확정된다.</p>
+<div class="table-wrap"><table><thead><tr><th>확정되는 것</th><th>위 예시의 값</th></tr></thead><tbody><tr><td>형식</td><td>Apache/nginx <strong>combined</strong> (필드 9개, Referer·User-Agent 있음)</td></tr><tr><td>줄 수</td><td>41,882</td></tr><tr><td>시간 범위</td><td>2026-03-14 07:11:02 ~ 23:59:58</td></tr><tr><td>시간대</td><td><code>+0900</code> = KST</td></tr><tr><td>인코딩·줄바꿈</td><td>ASCII, LF (CRLF면 <code>file</code>이 명시한다)</td></tr></tbody></table></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-형식-판별표">1단계 — 형식 판별표</h3>
+<p>첫 줄의 <strong>첫 글자와 구분자</strong>만 보면 형식이 나온다.</p>
+<div class="table-wrap"><table><thead><tr><th>첫 줄 모양</th><th>형식</th><th>필드 구분</th><th>필드 수</th></tr></thead><tbody><tr><td><code>1.2.3.4 - - [.../...] &quot;GET / HTTP/1.1&quot; 200 4021</code></td><td>Apache/nginx <strong>common (CLF)</strong></td><td>공백 (따옴표 내부 제외)</td><td>7</td></tr><tr><td>위 + <code>&quot;-&quot; &quot;Mozilla/5.0...&quot;</code></td><td>Apache/nginx <strong>combined</strong></td><td>같음</td><td>9</td></tr><tr><td><code>Mar 14 07:11:02 web01 sshd[2841]: ...</code></td><td>syslog <strong>RFC3164</strong></td><td>공백</td><td>고정 5 + 메시지</td></tr><tr><td><code>&lt;34&gt;1 2026-03-14T07:11:02.123+09:00 web01 sshd 2841 - - ...</code></td><td>syslog <strong>RFC5424</strong></td><td>공백</td><td>고정 7 + 메시지</td></tr><tr><td><code>#Software: Microsoft Internet Information Services</code></td><td><strong>IIS W3C Extended</strong></td><td>공백, <code>#Fields:</code>가 순서 정의</td><td>가변</td></tr><tr><td><code>{&quot;ts&quot;:&quot;2026-03-14T07:11:02Z&quot;,&quot;ip&quot;:&quot;1.2.3.4&quot;,...}</code></td><td><strong>JSON Lines</strong></td><td>없음 (구조화)</td><td>키 기반</td></tr><tr><td><code>[</code> 로 시작하고 파일 끝이 <code>]</code></td><td><strong>JSON 배열 1개</strong></td><td>없음</td><td>키 기반</td></tr><tr><td><code>&quot;time&quot;,&quot;ip&quot;,&quot;uri&quot;,&quot;status&quot;</code></td><td><strong>CSV</strong> (헤더 있음)</td><td>쉼표, 인용 필드 주의</td><td>헤더 개수</td></tr><tr><td>사람이 못 읽는 바이트</td><td>EVTX·SQLite·압축 등 <strong>바이너리</strong></td><td>—</td><td>—</td></tr></tbody></table></div>
+<p>세부 확인 명령이다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 필드 수를 세어 common(7) / combined(9) 를 구분한다
+head -1 access.log | awk &#39;{print NF}&#39;
+
+# IIS 는 헤더가 필드 순서를 알려준다 (이걸 안 읽으면 필드 번호를 틀린다)
+grep -m1 &#39;^#Fields:&#39; u_ex260314.log
+
+# JSONL 은 첫 객체의 키만 본다
+head -1 app.jsonl | jq -r &#39;keys | join(&quot;,&quot;)&#39;
+
+# CSV 헤더
+head -1 export.csv</code></pre></div>
+<p><code>#Fields:</code> 출력 예시:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">#Fields: date time s-ip cs-method cs-uri-stem cs-uri-query s-port cs-username c-ip cs(User-Agent) sc-status sc-substatus sc-win32-status time-taken</code></pre></div>
+<p>여기서 <code>c-ip</code>가 <strong>9번째</strong>다. Apache 습관대로 <code>$1</code>을 IP로 쓰면 IIS에서는 날짜를 세게 된다.</p>
+<h3 id="2단계-줄-수와-실제-크기">2단계 — 줄 수와 실제 크기</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">wc -l access.log          # 줄 수 (개행 문자 개수)
+wc -c access.log          # 바이트
+du -h access.log          # 디스크 사용량
+awk &#39;END{print NR}&#39; access.log   # 마지막 개행이 없어도 정확한 줄 수</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>상황</th><th><code>wc -l</code></th><th><code>awk &#39;END{print NR}&#39;</code></th></tr></thead><tbody><tr><td>마지막 줄이 개행으로 끝남</td><td>정확</td><td>정확</td></tr><tr><td>마지막 줄에 개행 없음</td><td><strong>1 적게 나온다</strong></td><td>정확</td></tr></tbody></table></div>
+<p>줄 수를 알면 전략이 갈린다.</p>
+<div class="table-wrap"><table><thead><tr><th>줄 수</th><th>전략</th></tr></thead><tbody><tr><td>~10만</td><td>무엇을 해도 된다. <code>grep</code>·<code>awk</code> 그대로</td></tr><tr><td>10만~500만</td><td><code>grep</code>으로 먼저 좁히고 <code>awk</code>로 집계. <code>LC_ALL=C</code> 붙이면 빨라진다</td></tr><tr><td>500만 이상</td><td><code>rg</code>로 좁히거나 <code>split</code>으로 쪼갠다. 파이프 앞단에서 최대한 버린다</td></tr></tbody></table></div>
+<h3 id="3단계-인코딩과-줄바꿈">3단계 — 인코딩과 줄바꿈</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">file access.log
+file -i access.log            # MIME + charset 추정
+head -c 16 access.log | xxd   # BOM 확인</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th><code>xxd</code> 앞 3바이트</th><th>의미</th><th>대응</th></tr></thead><tbody><tr><td><code>efbbbf</code></td><td>UTF-8 BOM</td><td>첫 필드 앞에 3바이트가 붙는다. <code>sed &#39;1s/^\xef\xbb\xbf//&#39;</code></td></tr><tr><td><code>fffe</code> / <code>feff</code></td><td>UTF-16 LE / BE</td><td><code>iconv -f UTF-16 -t UTF-8</code> 후 처리</td></tr><tr><td>그 외</td><td>BOM 없음</td><td>그대로</td></tr></tbody></table></div>
+<p><code>file</code> 출력에 <code>with CRLF line terminators</code>가 있으면 줄 끝에 <code>\r</code>(0x0D)이 남아 있다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># CR 이 붙은 줄 수 (0이 아니면 CRLF)
+grep -c $&#39;\r&#39; access.log
+
+# 제거 (원본은 건드리지 않고 새 파일로)
+tr -d &#39;\r&#39; &lt; access.log &gt; access.lf.log</code></pre></div>
+<p>CRLF를 방치하면 <strong>마지막 필드에 <code>\r</code>이 붙어</strong> <code>$9 == &quot;200&quot;</code> 같은 비교가 조용히 실패한다. <code>awk</code>에서만 고치려면 <code>awk &#39;BEGIN{RS=&quot;\r?\n&quot;}&#39;</code>로 레코드 구분자를 바꾼다.</p>
+<p>한글이 깨지면 CP949(EUC-KR) 로그일 가능성이 높다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">iconv -f CP949 -t UTF-8 app.log &gt; app.utf8.log</code></pre></div>
+<p>Windows 쪽에서 같은 일을 할 때다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 앞 3줄 / 뒤 3줄 / 총 줄 수
+Get-Content .\access.log -TotalCount 3
+Get-Content .\access.log -Tail 3
+(Get-Content .\access.log | Measure-Object -Line).Lines
+
+# 인코딩 지정해서 읽기
+Get-Content .\app.log -Encoding utf8 -TotalCount 5</code></pre></div>
+<h3 id="4단계-시간대-표기-확인">4단계 — 시간대 표기 확인</h3>
+<p><strong>로그의 시간대를 확정하지 않으면 타임라인이 전부 어긋난다.</strong></p>
+<div class="table-wrap"><table><thead><tr><th>형식</th><th>시간 표기 예</th><th>시간대 정보</th><th>판정</th></tr></thead><tbody><tr><td>Apache/nginx</td><td><code>[14/Mar/2026:07:11:02 +0900]</code></td><td>오프셋 <strong>있음</strong></td><td>KST. 그대로 신뢰</td></tr><tr><td>Apache/nginx</td><td><code>[14/Mar/2026:07:11:02 +0000]</code></td><td>오프셋 있음</td><td>UTC. KST는 +9시간</td></tr><tr><td>syslog RFC3164</td><td><code>Mar 14 07:11:02</code></td><td><strong>없음. 연도도 없음</strong></td><td>서버 로컬 시간으로 가정하고 별도 확인</td></tr><tr><td>syslog RFC5424</td><td><code>2026-03-14T07:11:02.123+09:00</code></td><td>있음</td><td>그대로 신뢰</td></tr><tr><td>IIS W3C</td><td><code>2026-03-14 07:11:02</code></td><td>없음</td><td>기본이 <strong>UTC</strong>. KST는 +9시간</td></tr><tr><td>JSONL</td><td><code>&quot;ts&quot;:&quot;2026-03-14T07:11:02Z&quot;</code></td><td><code>Z</code> = UTC</td><td>KST는 +9시간</td></tr><tr><td>Unix epoch</td><td><code>1773... </code> (10자리)</td><td>UTC 기준 초</td><td><code>date -d @&lt;초&gt;</code></td></tr></tbody></table></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># epoch -&gt; 사람이 읽는 시간 (UTC 와 KST 둘 다 본다)
+date -u -d @1773450662 &#39;+%F %T UTC&#39;
+TZ=Asia/Seoul date -d @1773450662 &#39;+%F %T KST&#39;</code></pre></div>
+<p>RFC3164 syslog는 <strong>연도가 없다.</strong> 파일 mtime, 로테이션 파일명(<code>syslog.1</code>), 또는 같은 사건이 찍힌 다른 로그에서 연도를 확정한다. 연도를 추측해서 적으면 오답이 된다.</p>
+<h3 id="5단계-대용량-전략">5단계 — 대용량 전략</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) 구간만 보기 — 12,000~12,050 줄
+sed -n &#39;12000,12050p&#39; huge.log
+
+# sed 는 필요한 범위 뒤를 읽지 않게 끊어 주면 훨씬 빠르다
+sed -n &#39;12000,12050p;12051q&#39; huge.log
+
+# 2) 실시간 추적
+tail -f app.log
+less +F app.log        # less 안에서 Ctrl-C 로 탐색, Shift-F 로 다시 추적
+
+# 3) 파일 쪼개기 — 50만 줄씩
+split -l 500000 huge.log part_
+ls part_*              # part_aa part_ab ...
+
+# 4) 압축 로그는 풀지 않고 바로
+zcat access.log.1.gz | head -3
+zgrep -c &#39;POST&#39; access.log.*.gz
+rg -z &#39;POST /upload&#39; access.log.*.gz
+
+# 5) 파이프 앞단에서 최대한 버린다 (grep 먼저, awk 나중)
+LC_ALL=C grep &#39;POST&#39; huge.log | awk &#39;{print $1}&#39; | sort | uniq -c | sort -nr | head</code></pre></div>
+<p><code>LC_ALL=C</code>는 로케일 기반 문자 분류를 끄기 때문에 ASCII 로그에서 <code>grep</code>·<code>sort</code> 속도가 크게 오른다. 다만 <strong>한글이 든 로그에서 정렬 순서가 바뀌므로</strong> 집계 결과를 사람이 읽는 목록으로 낼 때는 주의한다.</p>
+<h3 id="6단계-무엇을-세는지-결정한다">6단계 — 무엇을 세는지 결정한다</h3>
+<p>여기가 트리아지의 마지막 단계다. <strong>문제 지문의 명사가 곧 세야 할 필드다.</strong></p>
+<div class="table-wrap"><table><thead><tr><th>지문의 표현</th><th>세야 할 것</th><th>형식별 필드</th></tr></thead><tbody><tr><td>&quot;가장 많이 접속한&quot;, &quot;공격자&quot;</td><td>출처 IP</td><td>combined <code>$1</code> / IIS <code>c-ip</code> / auth.log <code>from &lt;IP&gt;</code></td></tr><tr><td>&quot;어떤 페이지를&quot;, &quot;무엇을 요청&quot;</td><td>URI</td><td>combined <code>$7</code> / IIS <code>cs-uri-stem</code></td></tr><tr><td>&quot;성공했나&quot;, &quot;실패했나&quot;</td><td>상태 코드</td><td>combined <code>$9</code> / IIS <code>sc-status</code></td></tr><tr><td>&quot;누가&quot;, &quot;어떤 계정&quot;</td><td>사용자명</td><td>auth.log 메시지 / IIS <code>cs-username</code></td></tr><tr><td>&quot;몇 번&quot;</td><td>위 중 하나의 빈도</td><td><code>sort | uniq -c | sort -nr</code></td></tr><tr><td>&quot;최초&quot;, &quot;언제&quot;</td><td>시각</td><td>combined <code>$4</code> / IIS <code>date</code>+<code>time</code></td></tr><tr><td>&quot;얼마나 유출&quot;</td><td>응답 크기 합</td><td>combined <code>$10</code></td></tr><tr><td>&quot;무슨 도구로&quot;</td><td>User-Agent</td><td>combined <code>$12</code> 이후</td></tr></tbody></table></div>
+<p>세는 방법은 하나로 고정한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">awk &#39;{print $1}&#39; access.log | sort | uniq -c | sort -nr | head -10</code></pre></div>
+<p>이 관용구가 왜 정답인지는 <a href="./sort-uniq.html">FOR-0117</a>에서 다룬다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p>Apache/nginx <strong>combined</strong> 필드 번호다. 공백으로 자른 기준이며, 대괄호와 따옴표가 필드를 쪼개는 것이 함정이다.</p>
+<div class="table-wrap"><table><thead><tr><th><code>awk</code> 필드</th><th>내용</th><th>예</th></tr></thead><tbody><tr><td><code>$1</code></td><td>클라이언트 IP (<code>%h</code>)</td><td><code>203.0.113.77</code></td></tr><tr><td><code>$2</code></td><td>identd (<code>%l</code>)</td><td><code>-</code></td></tr><tr><td><code>$3</code></td><td>HTTP 인증 사용자 (<code>%u</code>)</td><td><code>-</code></td></tr><tr><td><code>$4</code></td><td><code>[</code>+날짜시각</td><td><code>[14/Mar/2026:07:11:02</code></td></tr><tr><td><code>$5</code></td><td>시간대 오프셋+<code>]</code></td><td><code>+0900]</code></td></tr><tr><td><code>$6</code></td><td><code>&quot;</code>+메서드</td><td><code>&quot;GET</code></td></tr><tr><td><code>$7</code></td><td>URI (쿼리 포함)</td><td><code>/upload.php?id=1</code></td></tr><tr><td><code>$8</code></td><td>프로토콜+<code>&quot;</code></td><td><code>HTTP/1.1&quot;</code></td></tr><tr><td><code>$9</code></td><td>상태 코드</td><td><code>200</code></td></tr><tr><td><code>$10</code></td><td>응답 바이트 (<code>%b</code>)</td><td><code>4021</code> 또는 <code>-</code></td></tr><tr><td><code>$11</code></td><td>Referer (따옴표 포함)</td><td><code>&quot;-&quot;</code></td></tr><tr><td><code>$12</code> 이후</td><td>User-Agent (<strong>공백 때문에 여러 필드로 쪼개진다</strong>)</td><td><code>&quot;Mozilla/5.0</code> <code>(Windows</code> ...</td></tr></tbody></table></div>
+<p><code>$4</code>와 <code>$5</code>가 시각 하나로 쪼개지고, User-Agent가 여러 필드로 쪼개진다는 점이 실전에서 가장 자주 사고를 낸다. 대응은 두 가지다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) 대괄호/따옴표를 구분자로 삼는다
+awk -F&#39;[][]&#39; &#39;{print $2}&#39; access.log          # 시각만
+awk -F&#39;&quot;&#39; &#39;{print $6}&#39; access.log             # User-Agent 만
+
+# 2) 시각은 $4 에서 대괄호만 떼고 쓴다
+awk &#39;{gsub(/^\[/,&quot;&quot;,$4); print $4}&#39; access.log</code></pre></div>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>트리아지에서 얻은 것</th><th>다음 목표</th></tr></thead><tbody><tr><td>형식 = combined</td><td>필드 번호 확정 → <code>awk</code> 집계 (<a href="./awk-fields.html">FOR-0115</a>)</td></tr><tr><td>형식 = IIS W3C</td><td><code>#Fields:</code> 순서로 필드 번호 재계산</td></tr><tr><td>형식 = JSONL</td><td><code>jq</code> 로 키 기준 추출</td></tr><tr><td>시간 범위</td><td>다른 로그·artifact를 같은 구간으로 자른다</td></tr><tr><td>시간대 오프셋</td><td>전체 타임라인을 UTC 또는 KST 하나로 통일</td></tr><tr><td>상위 IP</td><td>pcap <code>ip.addr == &lt;IP&gt;</code>, EVTX 4624/4625 (<a href="./event-4624-logon.html">FOR-0083</a>)</td></tr><tr><td>상위 URI</td><td>웹셸·업로드 경로 후보</td></tr><tr><td>파일 시그니처가 텍스트가 아님</td><td>매직 바이트 판정 (<a href="./30sec-triage.html">FOR-0001</a>)</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>형식 확인 없이 정규식을 짜는 것.</strong> IIS 로그에 <code>$1</code>을 IP로 쓰면 날짜를 센다. <code>head -1</code>과 <code>#Fields:</code>가 30초를 아껴 준다.</li><li><strong><code>tail</code>을 안 보는 것.</strong> 로그가 시간순이 아닌 경우(여러 서버 병합, 로테이션 재조립)가 있다. 첫 줄과 마지막 줄의 시각을 둘 다 봐야 범위를 안다.</li><li><strong>시간대를 가정하는 것.</strong> IIS는 기본 UTC, Apache는 서버 로컬이다. 오프셋 표기가 없으면 &quot;없다&quot;는 사실을 기록하고 다른 근거로 확정한다.</li><li><strong>RFC3164 syslog에 연도를 추측해 넣는 것.</strong> 원본에 연도가 없다. 파일 mtime이나 다른 로그로 확정하지 않으면 적지 않는다.</li><li><strong>CRLF를 무시하는 것.</strong> 마지막 필드에 <code>\r</code>이 붙어 <code>$NF==&quot;200&quot;</code> 비교가 실패한다. <code>file</code> 출력에 <code>CRLF</code>가 보이면 먼저 <code>tr -d &#39;\r&#39;</code>.</li><li><strong><code>wc -l</code>을 절대 신뢰하는 것.</strong> 마지막 줄에 개행이 없으면 1이 모자란다. 정확한 값이 답인 문제에서는 <code>awk &#39;END{print NR}&#39;</code>로 교차 확인한다.</li><li><strong>GUI 편집기로 대용량을 여는 것.</strong> 수백 MB 파일을 메모장·VS Code로 열면 시간을 다 잃는다. <code>head</code>/<code>sed -n</code>/<code>less</code>로만 접근한다.</li><li><strong>압축을 먼저 푸는 것.</strong> 디스크와 시간을 낭비한다. <code>zcat</code>·<code>zgrep</code>·<code>rg -z</code>로 바로 읽는다.</li><li><strong><code>grep</code> 없이 <code>awk</code>로 전체를 훑는 것.</strong> 파이프 앞단에서 줄을 버려야 빠르다. <code>grep &#39;POST&#39; | awk ...</code> 순서가 <code>awk &#39;/POST/{...}&#39;</code>보다 대개 빠르다.</li><li><strong><code>.evtx</code>·<code>.pcapng</code>를 텍스트 도구로 여는 것.</strong> 바이너리 컨테이너다. <code>strings</code>로 몇 조각이 보이더라도 그것으로 집계하면 누락이 생긴다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<p>같은 값을 두 방법으로 세서 일치하는지 본다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 줄 수
+wc -l access.log
+awk &#39;END{print NR}&#39; access.log
+grep -c &#39;&#39; access.log
+
+# 상위 IP — 필드 기준(정확) vs 정규식 기준(오탐 가능)
+awk &#39;{print $1}&#39; access.log | sort | uniq -c | sort -nr | head -3
+grep -Eo &#39;^[0-9]{1,3}(\.[0-9]{1,3}){3}&#39; access.log | sort | uniq -c | sort -nr | head -3
+
+# 시간 범위 — 첫/마지막 줄 vs 정렬 결과
+head -1 access.log | awk -F&#39;[][]&#39; &#39;{print $2}&#39;
+tail -1 access.log | awk -F&#39;[][]&#39; &#39;{print $2}&#39;</code></pre></div>
+<p>세 줄 수가 다르면 개행이 없는 마지막 줄이나 <code>\r</code>이 원인이다. 상위 IP가 다르면 정규식이 본문 안의 IP까지 잡은 것이다. <strong>필드 기준(<code>awk &#39;{print $1}&#39;</code>)이 기준값</strong>이다 — 정규식 오탐은 <a href="./ipv4-regex.html">FOR-0128</a>에 정리돼 있다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;웹 서버 로그에서 공격자 IP와 최초 공격 시각(KST)을 구하세요.&quot;
+첨부: u_ex260314.log (2,910,447줄, 412MB)
+
+1. 첫 시도 (실패):
+   $ awk &#39;{print $1}&#39; u_ex260314.log | sort | uniq -c | sort -nr | head -3
+   2910441 2026-03-14
+         3 #Software:
+         1 #Fields:
+
+   -&gt; IP 가 아니라 날짜가 나왔다. Apache 습관으로 $1 을 IP 라고 가정한 것이 원인.
+
+2. 접근 변경 — 형식을 먼저 확인한다
+   $ head -4 u_ex260314.log
+   #Software: Microsoft Internet Information Services 10.0
+   #Version: 1.0
+   #Date: 2026-03-14 00:00:00
+   #Fields: date time s-ip cs-method cs-uri-stem cs-uri-query s-port cs-username c-ip cs(User-Agent) sc-status sc-substatus sc-win32-status time-taken
+
+   -&gt; IIS W3C Extended. c-ip 는 9번째 필드다.
+      s-ip($3)는 서버 IP, c-ip($9)가 클라이언트 IP.
+
+3. 줄수·범위·시간대
+   $ wc -l u_ex260314.log
+   2910447 u_ex260314.log
+   $ head -5 u_ex260314.log | tail -1
+   2026-03-14 00:00:01 10.0.0.11 GET /health - 443 - 10.0.0.50 kube-probe/1.28 200 0 0 1
+   $ tail -1 u_ex260314.log
+   2026-03-14 23:59:57 10.0.0.11 GET /favicon.ico - 443 - 198.51.100.5 Mozilla/5.0 404 0 2 3
+
+   -&gt; 00:00:01 ~ 23:59:57. 오프셋 표기가 없고 IIS 기본은 UTC.
+      즉 이 로그의 시각은 UTC 이며 KST 는 +9시간이다. 이걸 놓치면 9시간 틀린다.
+
+4. 헤더 줄을 버리고 c-ip 집계
+   $ grep -v &#39;^#&#39; u_ex260314.log | awk &#39;{print $9}&#39; | sort | uniq -c | sort -nr | head -5
+   1402118 10.0.0.50          &lt;- 내부 헬스체크 봇
+    880219 10.0.0.51
+    412998 198.51.100.5
+     84402 203.0.113.77
+      2311 192.0.2.9
+
+   -&gt; 1,2위는 사설 IP(10.0.0.0/8) 헬스체크. 상위 1위를 공격자로 쓰면 오답.
+
+5. 사설 IP 를 빼고 다시
+   $ grep -v &#39;^#&#39; u_ex260314.log | awk &#39;$9 !~ /^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)/ {print $9}&#39; |
+       sort | uniq -c | sort -nr | head -3
+    412998 198.51.100.5
+     84402 203.0.113.77
+      2311 192.0.2.9
+
+6. 빈도 1위가 공격자인지 확인 — 상태 코드 분포를 본다
+   $ grep -v &#39;^#&#39; u_ex260314.log | awk &#39;$9==&quot;198.51.100.5&quot;{print $11}&#39; | sort | uniq -c
+    412996 200
+         2 304
+   $ grep -v &#39;^#&#39; u_ex260314.log | awk &#39;$9==&quot;203.0.113.77&quot;{print $11}&#39; | sort | uniq -c
+     79214 404
+      5102 403
+        84 500
+         2 200
+
+   -&gt; 198.51.100.5 는 전부 200. 정상 크롤러다.
+      203.0.113.77 은 404/403 이 압도적. 이것이 스캔·탐색 흔적이다.
+
+7. 최초 시각
+   $ grep -v &#39;^#&#39; u_ex260314.log | awk &#39;$9==&quot;203.0.113.77&quot;{print $1, $2; exit}&#39;
+   2026-03-14 06:11:02
+   -&gt; UTC 06:11:02 = KST 15:11:02
+
+정답: 공격자 203.0.113.77 / 최초 공격 2026-03-14 15:11:02 KST (로그 표기 06:11:02 UTC)</code></pre></div>
+<p>1단계와 4단계가 이 문제의 핵심이다. <strong>형식을 확인하지 않으면 필드 번호를 틀리고, 빈도 1위를 그대로 믿으면 헬스체크 봇을 공격자로 지목한다.</strong></p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>head -1</code>로 형식을 확정했는가 — 필드 번호는 형식에서 나온다</li><li>IIS라면 <code>#Fields:</code>를 읽었는가 — 필드 순서는 서버 설정마다 다르다</li><li><code>head -1 | awk &#39;{print NF}&#39;</code>로 필드 수를 셌는가 (common 7 / combined 9)</li><li><code>tail -1</code>로 마지막 시각을 봤는가 — 시간 범위를 알아야 다른 로그와 맞춘다</li><li>시간대 오프셋이 로그에 있는가, 없으면 무엇으로 확정했는가</li><li><code>file</code>이 <code>CRLF</code>나 <code>UTF-16</code>을 말하지 않았는가</li><li><code>wc -l</code>과 <code>awk &#39;END{print NR}&#39;</code>가 일치하는가</li><li>헤더 줄(<code>#</code>)이나 주석을 <code>grep -v &#39;^#&#39;</code>로 걸렀는가</li><li>사설 IP·헬스체크·정상 봇을 상위 목록에서 제외했는가</li><li>압축 파일을 풀지 않고 <code>zcat</code>/<code>rg -z</code>로 읽었는가</li><li>로테이션된 형제 파일(<code>access.log.1</code>, <code>.2.gz</code>)이 함께 있는가 — 사건이 그쪽에 있을 수 있다</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-058 — Apache HTTP Server, Log Files: Common Log Format과 Combined Log Format의 필드 구성(<code>%h %l %u %t \&quot;%r\&quot; %&gt;s %b</code>)</li><li>SRC-059 — nginx <code>ngx_http_log_module</code>: <code>combined</code> <code>log_format</code> 정의와 변수 이름(<code>$remote_addr</code>, <code>$time_local</code>, <code>$status</code>, <code>$body_bytes_sent</code>)</li><li>SRC-060 — RFC 5424: syslog 헤더 구조와 타임스탬프(RFC3339) 표기, RFC3164 대비 차이</li><li>IIS W3C 로그의 <code>#Fields:</code> 항목 구성과 기본 UTC 기록은 서버 설정에 따라 달라질 수 있으므로 실제 파일의 헤더 줄에서 확인할 것</li><li><code>LC_ALL=C</code>의 속도 이득과 <code>sed -n &#39;...;Nq&#39;</code>의 조기 종료 효과는 환경·구현에 따라 차이가 있다</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./grep-basics.html">
+    <span class="rel-id">FOR-0112 · 로그/Regex</span>
+    grep 기본 옵션 레퍼런스: -i -v -c -o -w -E -P -r 와 종료 코드
+  </a>
+  <a class="related-item" href="./powershell-select-string.html">
+    <span class="rel-id">FOR-0121 · 로그/Regex</span>
+    PowerShell Select-String으로 로그 검색하기 (Windows용 grep)
+  </a>
+  <a class="related-item" href="./apache-nginx-timestamp-regex.html">
+    <span class="rel-id">FOR-0140 · 로그/Regex</span>
+    Apache/nginx/syslog timestamp regex: 10/Oct/2000 형식과 연도 없는 syslog
+  </a>
+  <a class="related-item" href="./grep-e-regex.html">
+    <span class="rel-id">FOR-0113 · 로그/Regex</span>
+    grep -E 확장 정규표현식(ERE) 실전: BRE와의 차이와 lookaround 대안
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./windows-log-ctf-walkthrough.html"><span class="rel-id">← FOR-0110</span>Windows 로그 종합 CTF 풀이: RDP 침입부터 로그 삭제까지 4채널 추적</a>
+<a class="related-item" href="./grep-basics.html"><span class="rel-id">FOR-0112 →</span>grep 기본 옵션 레퍼런스: -i -v -c -o -w -E -P -r 와 종료 코드</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-형식-판별표">1단계 — 형식 판별표</a></li>
+<li class="toc-l3"><a href="#2단계-줄-수와-실제-크기">2단계 — 줄 수와 실제 크기</a></li>
+<li class="toc-l3"><a href="#3단계-인코딩과-줄바꿈">3단계 — 인코딩과 줄바꿈</a></li>
+<li class="toc-l3"><a href="#4단계-시간대-표기-확인">4단계 — 시간대 표기 확인</a></li>
+<li class="toc-l3"><a href="#5단계-대용량-전략">5단계 — 대용량 전략</a></li>
+<li class="toc-l3"><a href="#6단계-무엇을-세는지-결정한다">6단계 — 무엇을 세는지 결정한다</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

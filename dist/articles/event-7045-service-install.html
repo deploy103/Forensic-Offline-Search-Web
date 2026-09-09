@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Event ID 7045 새 서비스 설치: 기본 감사에서도 남는 지속성 흔적 · FOR-0090 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Event%20Log">Event Log</a> / FOR-0090
+      </div>
+      <header class="article-head">
+        <h1>Event ID 7045 새 서비스 설치: 기본 감사에서도 남는 지속성 흔적</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Event Log</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>7045는 Service Control Manager 가 서비스 등록을 받을 때 System 채널에 남기며, 감사 정책을 켜지 않은 기본 설정에서도 기록되기 때문에 실전 적중률이 4697보다 훨씬 높다 — 서비스 기반 지속성을 찾는 첫 삽이 여기다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>EvtxECmd, Event Viewer, PowerShell, Registry Explorer, Timeline Explorer</td></tr>
+<tr><th>artifact</th><td><code>System.evtx</code> · <code>7045</code> · <code>ImagePath</code> · <code>Service Control Manager</code> · <code>SCM</code> · <code>EVTX</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Windows\System32\winevt\Logs\System.evtx</code> · <code>C:\Windows\System32\config\SYSTEM</code> · <code>C:\Windows\PSEXESVC.exe</code></td></tr>
+<tr><th>레지스트리</th><td><code>HKLM\SYSTEM\CurrentControlSet\Services</code> · <code>HKLM\SYSTEM\Select</code></td></tr>
+<tr><th>Event ID</th><td><code>7045</code> · <code>7000</code> · <code>7009</code> · <code>7024</code> · <code>7031</code> · <code>7034</code> · <code>7035</code> · <code>7036</code> · <code>7040</code></td></tr>
+<tr><th>프로토콜</th><td>SMB</td></tr>
+<tr><th>regex</th><td><code>(?i)^[a-z]{6,10}$</code> · <code>(?i)\\(Temp|AppData|ProgramData)\\</code></td></tr>
+<tr><th>로그 필드</th><td><code>ServiceName</code> · <code>ImagePath</code> · <code>ServiceType</code> · <code>StartType</code> · <code>AccountName</code></td></tr>
+<tr><th>파일 형식</th><td><code>evtx</code></td></tr>
+<tr><th>검색 별칭</th><td>7045 · 새 서비스가 설치되었습니다 · 서비스 설치 로그 · system.evtx 서비스 · 서비스 지속성 흔적 · 삭제된 서비스 찾기</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>7045는 Service Control Manager 가 서비스 등록을 받을 때 System 채널에 남기며, <strong>감사 정책을 켜지 않은 기본 설정에서도 기록되기 때문에 실전 적중률이 4697보다 훨씬 높다</strong> — 서비스 기반 지속성을 찾는 첫 삽이 여기다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;재부팅 후에도 살아남는 지속성이 심어졌나&quot;</li><li>&quot;4697이 0건인데 서비스 설치를 확인해야 한다&quot; (감사 정책이 꺼진 시스템)</li><li>&quot;이미 삭제된 서비스의 흔적을 찾아야 한다&quot;</li><li>&quot;원격 실행 도구(PsExec 계열)가 쓰였나&quot;</li><li>&quot;악성 드라이버가 등록됐나&quot;</li></ul>
+<p><code>System.evtx</code> 는 Security 채널과 달리 어느 이미지에서나 거의 항상 존재하고, 7045 는 하루 0~2건 수준으로 드물다. <strong>건수가 적으므로 전수 검토가 가능하다.</strong></p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>첨부에 <code>System.evtx</code> 가 있다 → 7045 를 가장 먼저 본다</li><li>지문에 &quot;지속성&quot;, &quot;서비스&quot;, &quot;재부팅&quot;, &quot;자동 실행&quot; → 7045 확정</li><li>Security 채널의 4697 이 0건이다 → 감사 미설정. 7045 가 유일한 서비스 설치 기록</li><li>알 수 없는 <code>.exe</code> 나 <code>.sys</code> 파일 이름이 주어졌다 → <code>ImagePath</code> 로 검색</li><li>측면 이동 정황 → <code>ServiceName</code> 이 <code>PSEXESVC</code> 이거나 무작위 문자열인지 확인</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\System.evtx&#39;;Id=7045} | Format-List</code></pre></div>
+<p>전부 읽고, 표로 정리한다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\System.evtx&#39;;Id=7045} |
+  ForEach-Object {
+    $x = [xml]$_.ToXml()
+    $d = @{}; $x.Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.&#39;#text&#39; }
+    [pscustomobject]@{
+      TimeUTC = $_.TimeCreated.ToUniversalTime().ToString(&#39;yyyy-MM-dd HH:mm:ss&#39;)
+      Name    = $d[&#39;ServiceName&#39;]
+      Image   = $d[&#39;ImagePath&#39;]
+      Type    = $d[&#39;ServiceType&#39;]
+      Start   = $d[&#39;StartType&#39;]
+      Account = $d[&#39;AccountName&#39;]
+    }
+  } | Sort-Object TimeUTC | Format-Table -AutoSize</code></pre></div>
+<p>출력 예시:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">TimeUTC              Name       Image                                    Type               Start         Account
+-------              ----       -----                                    ----               -----         -------
+2026-03-11 02:14:07  PEAUTH     \SystemRoot\system32\drivers\peauth.sys  kernel mode driver system start
+2026-03-14 08:11:52  PSEXESVC   C:\Windows\PSEXESVC.exe                  user mode service  demand start  LocalSystem
+2026-03-14 08:19:03  wqmtsbrv   C:\Windows\wqmtsbrv.exe                  user mode service  auto start    LocalSystem</code></pre></div>
+<p>세 번째 줄이 답이다. <strong>무작위 문자열 이름 + <code>C:\Windows\</code> 루트 + auto start</strong> 세 신호가 겹친다.</p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-채널과-provider-를-정확히-잡는다">1단계 — 채널과 Provider 를 정확히 잡는다</h3>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>값</th></tr></thead><tbody><tr><td>채널</td><td><code>System</code> (<code>C:\Windows\System32\winevt\Logs\System.evtx</code>)</td></tr><tr><td>Provider / Source</td><td><code>Service Control Manager</code></td></tr><tr><td>메시지</td><td>&quot;A service was installed in the system.&quot; (한국어 OS: &quot;새 서비스가 설치되었습니다&quot;)</td></tr><tr><td>감사 정책 필요 여부</td><td><strong>불필요.</strong> 기본 설정에서 기록된다</td></tr><tr><td>존재하는 Windows</td><td>Windows 7 / Server 2008 R2 계열 이후</td></tr><tr><td>Security 채널의 대응 이벤트</td><td>4697 (<a href="./event-4697-service-install.html">FOR-0089</a>)</td></tr></tbody></table></div>
+<p><code>Security.evtx</code> 를 아무리 파도 7045 는 없다. <strong>채널을 틀리면 0건이 나온다</strong> — 이것이 가장 흔한 실수다.</p>
+<h3 id="2단계-필드를-읽는다">2단계 — 필드를 읽는다</h3>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>의미</th><th>읽는 법</th></tr></thead><tbody><tr><td><code>ServiceName</code></td><td>서비스 내부 이름 (레지스트리 키 이름)</td><td>무작위 문자열이면 강한 의심</td></tr><tr><td><code>ImagePath</code></td><td><strong>실행 이미지 경로 (인자 포함)</strong></td><td>판단의 핵심. 아래 3단계</td></tr><tr><td><code>ServiceType</code></td><td>서비스 종류</td><td>7045 는 <code>user mode service</code> / <code>kernel mode driver</code> 같이 <strong>렌더된 문자열</strong>로 기록된다</td></tr><tr><td><code>StartType</code></td><td>시작 방식</td><td><code>auto start</code> / <code>demand start</code> / <code>system start</code> / <code>boot start</code> / <code>disabled</code></td></tr><tr><td><code>AccountName</code></td><td>실행 계정</td><td><code>LocalSystem</code>, <code>NT AUTHORITY\LocalService</code> 등. 드라이버는 비어 있을 수 있다</td></tr></tbody></table></div>
+<p>4697 은 같은 정보를 <code>0x10</code> / <code>3</code> 같은 <strong>숫자 코드</strong>로 준다. 두 이벤트를 한 표로 합칠 때는 이 차이를 반드시 정규화한다.</p>
+<div class="table-wrap"><table><thead><tr><th>개념</th><th>7045 (문자열)</th><th>4697 / 레지스트리 (숫자)</th></tr></thead><tbody><tr><td>커널 드라이버</td><td><code>kernel mode driver</code></td><td><code>Type</code> = <code>0x1</code></td></tr><tr><td>파일 시스템 드라이버</td><td><code>file system driver</code></td><td><code>Type</code> = <code>0x2</code></td></tr><tr><td>자체 프로세스 서비스</td><td><code>user mode service</code></td><td><code>Type</code> = <code>0x10</code></td></tr><tr><td>부트 시작</td><td><code>boot start</code></td><td><code>Start</code> = <code>0</code></td></tr><tr><td>시스템 시작</td><td><code>system start</code></td><td><code>Start</code> = <code>1</code></td></tr><tr><td>자동 시작</td><td><code>auto start</code></td><td><code>Start</code> = <code>2</code></td></tr><tr><td>요청 시 시작</td><td><code>demand start</code></td><td><code>Start</code> = <code>3</code></td></tr><tr><td>비활성</td><td><code>disabled</code></td><td><code>Start</code> = <code>4</code></td></tr></tbody></table></div>
+<p><code>TimeCreated SystemTime</code> 은 <strong>UTC</strong> 로 저장된다. Event Viewer 는 로컬 시간대로 바꿔 보여주므로 화면 값과 원본 값이 다르다. <strong>KST 답은 UTC + 9시간.</strong> 시스템 시간대는 SYSTEM hive 의 <code>TimeZoneInformation</code> 으로 확정한다(<a href="./system-timezone.html">FOR-0054</a>).</p>
+<h3 id="3단계-imagepath-를-정상-패턴과-대조한다">3단계 — ImagePath 를 정상 패턴과 대조한다</h3>
+<p>정상 서비스의 <code>ImagePath</code> 는 몇 가지 형태로 수렴한다.</p>
+<div class="table-wrap"><table><thead><tr><th>정상 패턴</th><th>예</th></tr></thead><tbody><tr><td>시스템 서비스 exe</td><td><code>C:\Windows\System32\&lt;name&gt;.exe</code></td></tr><tr><td>svchost 공유 서비스</td><td><code>C:\Windows\System32\svchost.exe -k &lt;GroupName&gt;</code></td></tr><tr><td>드라이버</td><td><code>\SystemRoot\System32\drivers\&lt;name&gt;.sys</code>, <code>system32\DRIVERS\&lt;name&gt;.sys</code></td></tr><tr><td>설치형 애플리케이션</td><td><code>&quot;C:\Program Files\&lt;Vendor&gt;\&lt;App&gt;\&lt;svc&gt;.exe&quot;</code> (따옴표로 감싸짐)</td></tr><tr><td>WOW64 애플리케이션</td><td><code>&quot;C:\Program Files (x86)\...&quot;</code></td></tr></tbody></table></div>
+<p>의심 패턴:</p>
+<div class="table-wrap"><table><thead><tr><th>신호</th><th>예</th><th>왜 의심인가</th></tr></thead><tbody><tr><td><code>C:\Windows\</code> 루트 직하의 exe</td><td><code>C:\Windows\wqmtsbrv.exe</code></td><td>정상 서비스는 <code>System32</code> 아래에 설치된다. <code>PSEXESVC.exe</code> 도 이 위치다</td></tr><tr><td>사용자 임시/프로필 경로</td><td><code>C:\Users\jhkim\AppData\Local\Temp\a.exe</code></td><td>정상 서비스가 사용자 프로필에 설치되는 일은 없다</td></tr><tr><td><code>ProgramData</code> / <code>Users\Public</code></td><td><code>C:\ProgramData\svc\host.exe</code></td><td>권한이 느슨한 위치</td></tr><tr><td>인터프리터가 이미지</td><td><code>cmd.exe /c ...</code>, <code>powershell.exe -nop -w hidden -enc ...</code></td><td>서비스 이미지는 서비스 컨트롤 API 를 구현해야 한다. cmd/powershell 은 서비스로 정상 동작하지 않는다 — <strong>그런데도 등록했다는 것이 곧 악용</strong></td></tr><tr><td>프록시 실행 LOLBin</td><td><code>rundll32.exe ...,Start</code>, <code>mshta.exe</code>, <code>regsvr32.exe</code></td><td>서비스로 등록될 이유가 없다</td></tr><tr><td>UNC 경로</td><td><code>\\10.20.30.44\share\svc.exe</code></td><td>원격 이미지. 측면 이동</td></tr><tr><td>공백 포함 + 따옴표 없음</td><td><code>C:\Program Files\My App\svc.exe</code></td><td>상위 경로 하이재킹 취약. 실제 실행 파일이 다를 수 있다</td></tr><tr><td>확장자가 서비스답지 않음</td><td><code>.dat</code>, <code>.tmp</code>, <code>.dll</code> 단독</td><td>정상 서비스 이미지가 아니다</td></tr><tr><td>미서명 <code>.sys</code></td><td><code>C:\Users\...\drv.sys</code></td><td>취약 드라이버 로드(방어 도구 무력화)</td></tr></tbody></table></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$s = Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\System.evtx&#39;;Id=7045} |
+  ForEach-Object {
+    $x = [xml]$_.ToXml()
+    $d = @{}; $x.Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.&#39;#text&#39; }
+    [pscustomobject]@{
+      TimeUTC = $_.TimeCreated.ToUniversalTime()
+      Name    = $d[&#39;ServiceName&#39;]
+      Image   = $d[&#39;ImagePath&#39;]
+      Start   = $d[&#39;StartType&#39;]
+    }
+  }
+
+$s | Where-Object {
+  $_.Image -notmatch &#39;(?i)\\System32\\&#39; -or
+  $_.Image -match &#39;(?i)(cmd\.exe|powershell|pwsh|rundll32|mshta|regsvr32|wscript|cscript)&#39; -or
+  $_.Image -match &#39;(?i)\\(Temp|AppData|ProgramData|Users\\Public)\\&#39; -or
+  $_.Image -match &#39;^\\\\&#39;
+} | Format-List</code></pre></div>
+<h3 id="4단계-servicename-의-무작위성을-본다">4단계 — ServiceName 의 무작위성을 본다</h3>
+<p>정상 서비스 이름은 벤더·제품·기능을 담은 의미 있는 문자열이다(<code>Spooler</code>, <code>WinDefend</code>, <code>TrustedInstaller</code>, <code>NVDisplay.ContainerLocalSystem</code>). 자동화된 원격 실행 도구는 <strong>탐지 회피를 위해 이름을 매번 무작위로 만든다.</strong></p>
+<div class="table-wrap"><table><thead><tr><th>신호</th><th>해석</th></tr></thead><tbody><tr><td>의미 없는 소문자 영문 6~10자 (<code>wqmtsbrv</code>, <code>mtqkfhjr</code>)</td><td>자동 생성. 원격 실행 프레임워크 계열</td></tr><tr><td><code>ServiceName</code> 과 <code>ImagePath</code> 파일명이 같은 무작위 문자열</td><td>같은 도구가 둘 다 생성</td></tr><tr><td><code>PSEXESVC</code></td><td><strong>PsExec.</strong> 원격 관리자 권한 실행. 측면 이동의 고전</td></tr><tr><td>정상 서비스 이름의 한 글자 변형 (<code>Spooler</code> vs <code>Spoo1er</code>, <code>WinDefend</code> vs <code>WinDefendr</code>)</td><td>위장</td></tr><tr><td>정상 이름인데 <code>ImagePath</code> 가 다른 경로</td><td><strong>하이재킹.</strong> 이름만 빌렸다</td></tr><tr><td>같은 무작위 이름이 여러 호스트에서 발견</td><td>도구 구성 파일에 고정된 이름. IOC 로 활용</td></tr></tbody></table></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 의미 없어 보이는 소문자 영문만으로 된 짧은 이름 후보
+$s | Where-Object { $_.Name -match &#39;^[a-z]{6,10}$&#39; } | Format-Table -AutoSize</code></pre></div>
+<p>무작위성 판정은 기계적으로 할 수 없다. <strong>모음/자음 배열이 발음 불가능한지, 제품명으로 검색되는 이름인지</strong>를 사람이 판단한다.</p>
+<h3 id="5단계-같은-채널의-관련-scm-이벤트로-수명을-그린다">5단계 — 같은 채널의 관련 SCM 이벤트로 수명을 그린다</h3>
+<p>7045 는 &quot;등록&quot;만 알려준다. 실제로 실행됐는지, 언제 죽었는지, 시작 유형이 바뀌었는지는 같은 Provider 의 다른 이벤트에 있다.</p>
+<div class="table-wrap"><table><thead><tr><th>Event ID</th><th>의미</th><th>포렌식 활용</th></tr></thead><tbody><tr><td><code>7045</code></td><td>새 서비스가 설치됨</td><td>등록 시각. 지속성 시작점</td></tr><tr><td><code>7036</code></td><td>서비스가 실행/중지 상태로 전환됨</td><td><strong>가장 건수가 많다.</strong> 서비스가 실제로 돌았는지 확인</td></tr><tr><td><code>7035</code></td><td>서비스에 시작/중지 제어 신호를 보냄</td><td>제어 요청 시점</td></tr><tr><td><code>7040</code></td><td>서비스 <strong>시작 유형이 변경됨</strong></td><td>manual 로 등록한 뒤 auto 로 바꾸는 2단계 지속성</td></tr><tr><td><code>7034</code></td><td>서비스가 예기치 않게 종료됨</td><td>페이로드 크래시. 공격 실패 흔적</td></tr><tr><td><code>7031</code></td><td>서비스가 예기치 않게 종료되어 복구 동작이 수행됨</td><td>반복 크래시 + 자동 재시작 설정</td></tr><tr><td><code>7024</code></td><td>서비스가 서비스별 오류로 종료됨</td><td>오류 코드가 함께 남는다</td></tr><tr><td><code>7000</code></td><td>서비스를 시작할 수 없음</td><td>이미지 삭제 후 재부팅 → 시작 실패</td></tr><tr><td><code>7009</code></td><td>서비스 연결 대기 시간 초과</td><td>PsExec 계열이 남기기도 한다</td></tr></tbody></table></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 특정 서비스의 전체 수명
+$name = &#39;wqmtsbrv&#39;
+Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\System.evtx&#39;;Id=7000,7009,7024,7031,7034,7035,7036,7040,7045} |
+  Where-Object { $_.Message -match $name } |
+  Select-Object @{n=&#39;UTC&#39;;e={$_.TimeCreated.ToUniversalTime()}}, Id, Message |
+  Sort-Object UTC | Format-List</code></pre></div>
+<p>해석 조합:</p>
+<ul><li><code>7045</code> 뒤에 <code>7036</code>(실행 중)이 있다 → <strong>실제로 실행됐다</strong></li><li><code>7045</code> 뒤에 <code>7036</code> 이 없다 → 등록만 하고 시작하지 못했거나, 로그가 잘렸다</li><li><code>7045</code>(demand start) → <code>7040</code>(auto 로 변경) → 재부팅 후 <code>7036</code> → 2단계 지속성 확립</li><li><code>7000</code> / <code>7034</code> 가 반복된다 → 이미지가 삭제됐거나 페이로드가 불안정하다. <strong>이미지 삭제 시각의 단서</strong></li></ul>
+<h3 id="6단계-삭제된-서비스도-7045-는-남는다">6단계 — 삭제된 서비스도 7045 는 남는다</h3>
+<p>이것이 7045 의 가장 큰 실전 가치다.</p>
+<div class="table-wrap"><table><thead><tr><th>상태</th><th>레지스트리 <code>Services</code> 키</th><th>7045</th></tr></thead><tbody><tr><td>서비스가 지금도 존재</td><td>있다</td><td>있다</td></tr><tr><td>공격자가 등록 후 삭제 (<code>sc delete</code>)</td><td><strong>없다</strong></td><td><strong>있다</strong></td></tr><tr><td>감사 정책이 꺼져 있었다</td><td>있다</td><td>있다 (7045 는 감사와 무관)</td></tr><tr><td>로그가 삭제됐다(1102) 또는 롤오버</td><td>있다</td><td>없을 수 있다</td></tr></tbody></table></div>
+<p><strong>레지스트리에 없고 7045 에만 있는 서비스는 &quot;지우고 나간 흔적&quot;이다.</strong> 정상 소프트웨어도 제거 과정에서 서비스를 삭제하지만, 그때는 Uninstall 키·설치 로그·MSI 흔적이 함께 남는다. 아무 흔적 없이 서비스만 사라졌다면 반포렌식이다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<h3 id="원본-xml-예시">원본 XML 예시</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">&lt;Event xmlns=&quot;http://schemas.microsoft.com/win/2004/08/events/event&quot;&gt;
+  &lt;System&gt;
+    &lt;Provider Name=&quot;Service Control Manager&quot; Guid=&quot;{555908d1-a6d7-4695-8e1e-26931d2012f4}&quot; EventSourceName=&quot;Service Control Manager&quot; /&gt;
+    &lt;EventID Qualifiers=&quot;16384&quot;&gt;7045&lt;/EventID&gt;
+    &lt;TimeCreated SystemTime=&quot;2026-03-14T08:19:03.1194821Z&quot; /&gt;
+    &lt;EventRecordID&gt;10442&lt;/EventRecordID&gt;
+    &lt;Channel&gt;System&lt;/Channel&gt;
+    &lt;Computer&gt;SRV-FILE01&lt;/Computer&gt;
+  &lt;/System&gt;
+  &lt;EventData&gt;
+    &lt;Data Name=&quot;ServiceName&quot;&gt;wqmtsbrv&lt;/Data&gt;
+    &lt;Data Name=&quot;ImagePath&quot;&gt;C:\Windows\wqmtsbrv.exe&lt;/Data&gt;
+    &lt;Data Name=&quot;ServiceType&quot;&gt;user mode service&lt;/Data&gt;
+    &lt;Data Name=&quot;StartType&quot;&gt;auto start&lt;/Data&gt;
+    &lt;Data Name=&quot;AccountName&quot;&gt;LocalSystem&lt;/Data&gt;
+  &lt;/EventData&gt;
+&lt;/Event&gt;</code></pre></div>
+<p>읽는 순서: <code>ImagePath</code>(무엇) → <code>StartType</code>(지속성인가) → <code>ServiceName</code>(도구 식별) → <code>TimeCreated</code>(언제, UTC). 7045 에는 <strong>주체(누가)가 없다.</strong> 그 답은 4697 또는 같은 시각대의 4624/4688 에서 가져온다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<p><strong>7045 → 레지스트리 → 파일 시스템 → 실행</strong> 순서로 잇는 것이 정석이다.</p>
+<div class="table-wrap"><table><thead><tr><th>7045에서 얻은 것</th><th>다음 목표</th><th>확인할 것</th></tr></thead><tbody><tr><td><code>ServiceName</code></td><td><code>HKLM\SYSTEM\CurrentControlSet\Services\&lt;Name&gt;</code> (<a href="./system-controlset.html">FOR-0053</a>)</td><td>현재 존재 여부, <code>ImagePath</code>·<code>Start</code> 변경, <code>DisplayName</code>, <code>ServiceDll</code>, 키 LastWrite</td></tr><tr><td><code>ServiceName</code></td><td>4697 (<a href="./event-4697-service-install.html">FOR-0089</a>)</td><td><strong>누가 설치했나</strong> (감사가 켜져 있었다면)</td></tr><tr><td><code>ImagePath</code> 경로</td><td><code>$MFT</code> (<a href="./mft-basics.html">FOR-0021</a>)</td><td>그 파일의 생성·수정 시각, 삭제 여부, 원래 크기</td></tr><tr><td><code>ImagePath</code> 파일명</td><td>Prefetch, Amcache, AppCompatCache</td><td>실제 실행 여부와 실행 횟수</td></tr><tr><td>등록 시각</td><td>4688 (<a href="./event-4688-process-creation.html">FOR-0088</a>)</td><td><code>sc create</code> / <code>New-Service</code> / <code>wmic</code> 명령행</td></tr><tr><td>등록 시각</td><td>4624 (<a href="./event-4624-logon.html">FOR-0083</a>)</td><td>그 시각 로그온 세션과 출처 IP</td></tr><tr><td>등록 시각</td><td>5140 / 5145</td><td><code>ADMIN$</code> / <code>IPC$</code> 접근 (원격 등록의 증거)</td></tr><tr><td><code>ServiceName</code></td><td>7036 / 7040 / 7034</td><td>실행 여부, 시작 유형 변경, 크래시</td></tr><tr><td><code>AccountName</code></td><td>SAM hive</td><td>전용 계정 생성 여부</td></tr><tr><td>파일 해시</td><td>다른 호스트의 7045</td><td>동일 도구의 확산 범위</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>Security 채널에서 7045 를 찾는다.</strong> 7045 는 <strong>System 채널</strong>이다. 채널을 틀리면 무조건 0건이 나오고 &quot;지속성이 없다&quot;는 오답으로 이어진다.</li><li><strong>4697 이 없으니 서비스 설치 기록이 없다고 판정한다.</strong> 4697 은 감사 정책이 필요해 대개 꺼져 있다. 7045 는 기본으로 남는다. <strong>순서를 7045 먼저로 뒤집는다.</strong></li><li><strong>7045 에서 &quot;누가&quot;를 찾으려 한다.</strong> 이 이벤트에는 주체 필드가 없다. 4697 또는 같은 시각대의 4624/4688 로 가야 한다.</li><li><strong><code>ServiceType</code> 을 숫자로 검색한다.</strong> 7045 는 <code>user mode service</code> 같은 문자열이다. <code>0x10</code> 으로 grep 하면 안 나온다. 반대로 4697 은 숫자다. 두 채널을 합칠 때 정규화가 필요하다.</li><li><strong>레지스트리에 없는 서비스를 &quot;오탐&quot;으로 처리한다.</strong> 등록 후 삭제된 서비스가 <strong>가장 강한 증거</strong>다. 7045 만 남았다는 사실 자체를 결론에 쓴다.</li><li><strong><code>demand start</code> 를 안전하다고 본다.</strong> PsExec 계열 원격 실행은 demand start 로 등록되어 즉시 실행되고 삭제된다. 지속성이 아니라 <strong>실행 자체</strong>가 사건이다.</li><li><strong>정상 이름을 그대로 신뢰한다.</strong> <code>ServiceName</code> 이 <code>Spooler</code> 라도 <code>ImagePath</code> 가 <code>System32\spoolsv.exe</code> 가 아니면 하이재킹이다. 이름과 경로를 <strong>쌍으로</strong> 검증한다.</li><li><strong>UTC/로컬 혼동.</strong> EVTX <code>SystemTime</code> 은 UTC 다. Event Viewer 표시값은 로컬 변환값이다. KST 답은 +9시간.</li><li><strong>7036 의 폭발적인 건수에 파묻힌다.</strong> 7036 은 정상 시스템에서도 수천 건이다. 반드시 <code>ServiceName</code> 으로 좁혀서 본다.</li><li><strong><code>System.evtx</code> 롤오버를 고려하지 않는다.</strong> System 채널은 기본 크기가 작아 오래된 7045 가 덮여 사라질 수 있다. 가장 오래된 레코드의 시각을 확인해 &quot;로그가 커버하는 구간&quot;을 먼저 정한다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) 7045 — 서비스 설치 전수 (System)
+Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\System.evtx&#39;;Id=7045} | Format-List
+
+# 2) 같은 서비스의 실행/상태 변경 이력
+Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\System.evtx&#39;;Id=7035,7036,7040} |
+  Where-Object { $_.Message -match &#39;wqmtsbrv&#39; }
+
+# 3) 크래시/시작 실패 (이미지 삭제 시점의 단서)
+Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\System.evtx&#39;;Id=7000,7024,7031,7034} |
+  Where-Object { $_.Message -match &#39;wqmtsbrv&#39; }
+
+# 4) 주체 보강 — 4697 (있으면) / 4688 (등록 명령) / 4624 (세션)
+Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\Security.evtx&#39;;Id=4697,4688,4624} |
+  Where-Object { $_.TimeCreated -gt &#39;2026-03-14 08:15:00&#39; -and $_.TimeCreated -lt &#39;2026-03-14 08:25:00&#39; }
+
+# 5) 로그가 커버하는 구간 확인 (롤오버 판정)
+$ev = Get-WinEvent -Path &#39;C:\case\System.evtx&#39; -Oldest
+$ev[0].TimeCreated; $ev[-1].TimeCreated</code></pre></div>
+<p>오프라인 SYSTEM hive 대조:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Registry Explorer 로 SYSTEM hive 를 열고
+  SYSTEM\Select\Current                       -&gt; 1  (ControlSet001 이 활성)
+  SYSTEM\ControlSet001\Services\wqmtsbrv      -&gt; 키 자체가 없음
+      =&gt; sc delete 로 지웠다. 7045 만 남은 상황.
+  SYSTEM\ControlSet001\Services\PSEXESVC      -&gt; 키 있음
+      ImagePath = C:\Windows\PSEXESVC.exe
+      Start     = 3
+      Type      = 0x10</code></pre></div>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;침해된 서버에서 공격자가 심은 지속성 서비스의 이름과 실행 파일 경로를 구하세요.
+ 첨부: System.evtx, Security.evtx, SYSTEM hive&quot;
+
+1. 첫 시도 (실패):
+   SYSTEM hive 의 ControlSet001\Services 를 전수 훑어 이상한 서비스를 찾았다.
+   -&gt; 이상한 것이 하나도 없었다. 전부 정상 Windows 서비스와 설치된 소프트웨어.
+   &quot;지속성이 없다&quot;고 결론 낼 뻔했다.
+
+2. 왜 틀렸나:
+   레지스트리는 &quot;현재 상태&quot;다. 공격자가 sc delete 로 지우고 나가면
+   레지스트리에는 아무 흔적도 남지 않는다.
+   과거 등록 사실은 이벤트 로그에만 남는다.
+   -&gt; 현재 상태만 본 것이 실수였다.
+
+3. 방향 전환 — System 채널의 7045 전수:
+   Get-WinEvent -FilterHashtable @{Path=&#39;System.evtx&#39;;Id=7045} | Format-List
+
+   3건 중 2건은 정상(드라이버 설치, 벤더 소프트웨어).
+   남은 1건:
+     TimeCreated : 2026-03-14 08:19:03Z
+     ServiceName : wqmtsbrv
+     ImagePath   : C:\Windows\wqmtsbrv.exe
+     ServiceType : user mode service
+     StartType   : auto start
+     AccountName : LocalSystem
+
+   무작위 이름 + C:\Windows\ 루트 + auto start + LocalSystem.
+   레지스트리에는 이 키가 없다 -&gt; 등록 후 삭제됐다.
+
+4. 실제로 실행됐는지 확인 (7036):
+   08:19:04Z  wqmtsbrv 서비스가 실행 중 상태로 전환되었습니다.
+   -&gt; 등록 1초 뒤 시작. 실행됐다.
+
+5. 언제 사라졌나 (7000/7034):
+   03-15 01:02:11Z  7000 wqmtsbrv 서비스를 시작할 수 없습니다.
+   -&gt; 재부팅 시 시작 실패. 즉 그 사이에 이미지 파일이 지워졌다.
+
+6. 파일 흔적 교차검증 ($MFT):
+   C:\Windows\wqmtsbrv.exe
+     생성 2026-03-14 08:18:57Z  (등록 6초 전 — 복사 후 등록)
+     $UsnJrnl 에 FileDelete  2026-03-14 23:47:10Z
+
+7. 주체 보강:
+   08:19:03Z 앞뒤의 4688 은 명령행 정책이 꺼져 있어 경로만 남았지만
+   sc.exe 실행 기록이 있었고, 같은 SubjectLogonId 의 4624 는
+   LogonType 3 / IpAddress 10.20.30.44 였다.
+
+8. 시각 변환:
+   EVTX SystemTime 은 UTC. 08:19:03Z -&gt; KST 17:19:03.
+
+정답: 서비스 wqmtsbrv, 이미지 C:\Windows\wqmtsbrv.exe</code></pre></div>
+<p>1단계의 실패가 핵심이다. <strong>레지스트리는 현재, 7045 는 과거다.</strong> 지속성 조사에서 두 개를 반대 순서로 보면 지우고 나간 공격자를 놓친다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>System.evtx</code> 를 열었는가 — 7045 는 Security 채널에 없다</li><li>7045 를 <strong>전수</strong> 읽었는가 (보통 한 자리 수 건수다)</li><li><code>ImagePath</code> 가 <code>System32</code> / <code>Program Files</code> / <code>drivers</code> 밖인 건을 뽑았는가</li><li><code>ImagePath</code> 가 <code>cmd.exe</code> / <code>powershell</code> / <code>rundll32</code> / <code>mshta</code> 인 건이 있는가</li><li><code>ServiceName</code> 이 무작위 문자열이거나 정상 이름의 변형인 건이 있는가</li><li><code>StartType</code> = <code>auto start</code> 인 건을 지속성 후보로 분리했는가</li><li>각 후보에 대해 7036(실행) · 7040(유형 변경) · 7000/7034(실패·크래시)를 이어붙였는가</li><li>레지스트리 <code>Services</code> 키와 대조해 <strong>없어진 서비스</strong>를 찾았는가</li><li><code>ImagePath</code> 의 파일을 <code>$MFT</code> · <code>$UsnJrnl</code> · Prefetch 로 추적했는가</li><li>주체가 필요하면 → 4697, 없으면 같은 시각대 4688 / 4624</li><li><code>System.evtx</code> 의 가장 오래된 레코드 시각을 확인해 롤오버 구간을 배제했는가</li><li>답을 UTC 로 낼지 KST(+9)로 낼지 지문을 다시 읽었는가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-022 — Microsoft Learn, Advanced security audit policy settings: Security 채널 4697 과 System 채널 7045 의 역할 구분, 감사 정책 의존성 여부</li><li>SRC-017 — Microsoft Learn, Windows Registry hives and file locations: SYSTEM hive 의 <code>CurrentControlSet\Services</code> 대조와 <code>Select</code> 키 해석 근거</li><li>SRC-086 — MITRE ATT&amp;CK Enterprise Techniques: 서비스 생성 지속성, 원격 서비스 등록 기반 측면 이동, 취약 드라이버 로드, 흔적 삭제(서비스 삭제)의 근거</li><li>7045 의 <code>ServiceType</code> / <code>StartType</code> 은 SCM 이 렌더한 문자열로 기록되며 <strong>OS 언어에 따라 현지화된다.</strong> 한국어 OS 에서는 다른 문자열이 들어갈 수 있으므로 실제 이벤트 XML 에서 확인하고 필터를 짤 것</li><li>7045 가 존재하는 최소 Windows 버전, 그리고 7031 / 7034 의 메시지 차이는 OS 버전에 따라 표현이 다를 수 있으므로 실제 로그에서 확인할 것</li><li>무작위 서비스 이름의 길이·문자 구성은 도구와 버전마다 다르다. 특정 길이를 IOC 로 단정하지 말고 정상 이름 목록과의 대조로 판단할 것</li></ul>
+<p>&lt;/content&gt;</p>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./event-4697-service-install.html">
+    <span class="rel-id">FOR-0089 · Event Log</span>
+    Event ID 4697 서비스 설치 감사: 누가 서비스를 등록했는지까지 남는다
+  </a>
+  <a class="related-item" href="./event-4688-process-creation.html">
+    <span class="rel-id">FOR-0088 · Event Log</span>
+    Event ID 4688 프로세스 생성: CommandLine 과 부모-자식 체인 재구성
+  </a>
+  <a class="related-item" href="./system-controlset.html">
+    <span class="rel-id">FOR-0053 · Registry</span>
+    SYSTEM hive ControlSet 구조와 Select 키로 활성 세트 판정
+  </a>
+  <a class="related-item" href="./event-4624-logon.html">
+    <span class="rel-id">FOR-0083 · Event Log</span>
+    Event ID 4624 성공 로그온 분석: 누가 어디서 어떻게 들어왔나
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./event-4697-service-install.html"><span class="rel-id">← FOR-0089</span>Event ID 4697 서비스 설치 감사: 누가 서비스를 등록했는지까지 남는다</a>
+<a class="related-item" href="./event-1102-log-cleared.html"><span class="rel-id">FOR-0091 →</span>Event ID 1102 감사 로그 삭제: UserData 구조와 삭제 구간 역추적</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-채널과-provider-를-정확히-잡는다">1단계 — 채널과 Provider 를 정확히 잡는다</a></li>
+<li class="toc-l3"><a href="#2단계-필드를-읽는다">2단계 — 필드를 읽는다</a></li>
+<li class="toc-l3"><a href="#3단계-imagepath-를-정상-패턴과-대조한다">3단계 — ImagePath 를 정상 패턴과 대조한다</a></li>
+<li class="toc-l3"><a href="#4단계-servicename-의-무작위성을-본다">4단계 — ServiceName 의 무작위성을 본다</a></li>
+<li class="toc-l3"><a href="#5단계-같은-채널의-관련-scm-이벤트로-수명을-그린다">5단계 — 같은 채널의 관련 SCM 이벤트로 수명을 그린다</a></li>
+<li class="toc-l3"><a href="#6단계-삭제된-서비스도-7045-는-남는다">6단계 — 삭제된 서비스도 7045 는 남는다</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l3"><a href="#원본-xml-예시">원본 XML 예시</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

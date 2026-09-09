@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>EVTX 분석 순서: winevt\Logs 채널 우선순위와 30초 트리아지 · FOR-0081 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Event%20Log">Event Log</a> / FOR-0081
+      </div>
+      <header class="article-head">
+        <h1>EVTX 분석 순서: winevt\Logs 채널 우선순위와 30초 트리아지</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Event Log</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>EVTX 분석은 파일 목록 → 전체 CSV 변환 → Event ID 빈도 집계 → 시간 범위 확인 순서로 들어간다. C:\Windows\System32\winevt\Logs\의 채널 파일 중 Security.evtx·System.evtx·PowerShell·Sysmon 네 개가 전체 정보량의 대부분을 갖고 있고, 나머지는 문제 유형이 정해진 뒤에만 연다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>EvtxECmd, Timeline Explorer, PowerShell, Event Viewer, wevtutil</td></tr>
+<tr><th>artifact</th><td><code>EVTX</code> · <code>winevt</code> · <code>Security.evtx</code> · <code>System.evtx</code> · <code>Application.evtx</code> · <code>Sysmon Operational</code> · <code>TaskScheduler Operational</code> · <code>WMI-Activity Operational</code> · <code>Bits-Client Operational</code> · <code>DriverFrameworks-UserMode Operational</code> · <code>ElfFile</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Windows\System32\winevt\Logs</code> · <code>C:\Windows\System32\winevt\Logs\Security.evtx</code> · <code>C:\Windows\System32\winevt\Logs\System.evtx</code> · <code>C:\Windows\System32\winevt\Logs\Application.evtx</code> · <code>C:\Windows\System32\winevt\Logs\Microsoft-Windows-PowerShell%4Operational.evtx</code> · <code>C:\Windows\System32\winevt\Logs\Windows PowerShell.evtx</code> · <code>C:\Windows\System32\winevt\Logs\Microsoft-Windows-Sysmon%4Operational.evtx</code> · <code>C:\Windows\System32\winevt\Logs\Microsoft-Windows-TerminalServices-LocalSessionManager%4Operational.evtx</code> · <code>C:\Windows\System32\winevt\Logs\Microsoft-Windows-TerminalServices-RemoteConnectionManager%4Operational.evtx</code> · <code>C:\Windows\System32\winevt\Logs\Microsoft-Windows-TaskScheduler%4Operational.evtx</code> · <code>C:\Windows\System32\winevt\Logs\Microsoft-Windows-WMI-Activity%4Operational.evtx</code> · <code>C:\Windows\System32\winevt\Logs\Microsoft-Windows-Windows Defender%4Operational.evtx</code> · <code>C:\Windows\System32\winevt\Logs\Microsoft-Windows-DriverFrameworks-UserMode%4Operational.evtx</code> · <code>C:\Windows\System32\winevt\Logs\Microsoft-Windows-Bits-Client%4Operational.evtx</code></td></tr>
+<tr><th>레지스트리</th><td><code>HKLM\SYSTEM\CurrentControlSet\Services\EventLog</code></td></tr>
+<tr><th>regex</th><td><code>%4</code> · <code>ElfFile</code></td></tr>
+<tr><th>로그 필드</th><td><code>Channel</code> · <code>Provider</code> · <code>EventId</code> · <code>TimeCreated</code> · <code>Computer</code> · <code>EventRecordId</code></td></tr>
+<tr><th>파일 형식</th><td><code>evtx</code></td></tr>
+<tr><th>검색 별칭</th><td>evtx 뭐부터 봐야 · 이벤트 로그 어디 있나 · evtx 파일 목록 · 윈도우 로그 분석 순서 · 이벤트 로그 우선순위 · evtx 폴더 경로 · %4가 뭔가</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>EVTX 분석은 <strong>파일 목록 → 전체 CSV 변환 → Event ID 빈도 집계 → 시간 범위 확인</strong> 순서로 들어간다. <code>C:\Windows\System32\winevt\Logs\</code>의 채널 파일 중 <code>Security.evtx</code>·<code>System.evtx</code>·PowerShell·Sysmon 네 개가 전체 정보량의 대부분을 갖고 있고, 나머지는 문제 유형이 정해진 뒤에만 연다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>첨부로 <code>winevt\Logs</code> 폴더 전체 또는 EVTX 수십 개가 주어졌다</li><li>&quot;침입 시각을 특정하라&quot;, &quot;무슨 일이 일어났는지 타임라인을 만들라&quot; 같은 범위가 넓은 문제</li><li>어느 채널에 답이 있는지 모르는 상태에서 시간을 낭비하고 있다</li><li>특정 채널이 비어 있어서 &quot;로그가 삭제되었는가&quot;를 판단해야 한다</li></ul>
+<p>디스크 이미지에서는 이 폴더만 먼저 뽑는다. Windows 가 실행 중이면 파일이 잠겨 있으므로 원시 접근(FTK Imager, Arsenal Image Mounter) 또는 볼륨 섀도를 쓴다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li><strong>파일명 자체가 단서다.</strong> <code>Microsoft-Windows-&lt;Provider&gt;%4&lt;Channel&gt;.evtx</code> 구조이고, <strong><code>%4</code>는 <code>/</code>의 URL 인코딩</strong>이다. <code>Microsoft-Windows-PowerShell%4Operational.evtx</code> = 채널 <code>Microsoft-Windows-PowerShell/Operational</code>.</li><li><strong>파일 크기 순으로 정렬한다.</strong> 큰 파일에 정보가 있다. <code>Security.evtx</code>가 몇 MB면 정상, 68KB 근처면 사실상 비어 있다.</li><li><strong>없는 파일이 단서다.</strong> Sysmon 채널이 있으면 그 문제는 Sysmon 문제다. <code>Microsoft-Windows-TerminalServices-*</code>가 크면 RDP 문제다.</li><li>문제 지문의 단어 → 채널 매핑: &quot;로그인/접속&quot; → Security, &quot;서비스/부팅&quot; → System, &quot;스크립트&quot; → PowerShell, &quot;예약 작업&quot; → TaskScheduler, &quot;USB&quot; → DriverFrameworks-UserMode, &quot;다운로드&quot; → Bits-Client.</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">EvtxECmd.exe -d &#39;C:\Windows\System32\winevt\Logs&#39; --csv &#39;C:\case\out&#39; --csvf all.csv</code></pre></div>
+<p><code>-d</code>는 하위 폴더까지 재귀 처리하고, 모든 채널을 <strong>하나의 CSV</strong>로 합친다. 채널 구분은 <code>Channel</code> 컬럼에 남는다.</p>
+<p>이어서 4개 명령으로 지도를 그린다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) 파일 목록과 크기 — 큰 것부터. 68KB 근처는 사실상 빈 로그
+Get-ChildItem &#39;C:\case\Logs\*.evtx&#39; |
+  Sort-Object Length -Descending |
+  Select-Object Name, @{n=&#39;KB&#39;;e={[int]($_.Length/1KB)}} | Format-Table -AutoSize
+
+# 2) Event ID 빈도 집계 — 무엇을 볼지 여기서 정한다
+Import-Csv &#39;C:\case\out\all.csv&#39; |
+  Group-Object Channel, EventId |
+  Sort-Object Count -Descending |
+  Select-Object -First 40 Count, Name | Format-Table -AutoSize
+
+# 3) 채널별 시간 범위 — 짧으면 롤오버/삭제 의심
+Import-Csv &#39;C:\case\out\all.csv&#39; |
+  Group-Object Channel |
+  ForEach-Object {
+    $t = $_.Group.TimeCreated | Sort-Object
+    [pscustomobject]@{ Channel=$_.Name; Count=$_.Count; First=$t[0]; Last=$t[-1] }
+  } | Format-Table -AutoSize
+
+# 4) 감사 정책 자체가 조작되었는지 — 1102(로그 삭제), 4719(감사 정책 변경)
+Import-Csv &#39;C:\case\out\all.csv&#39; |
+  Where-Object { $_.EventId -in &#39;1102&#39;,&#39;4719&#39;,&#39;104&#39; } |
+  Select-Object TimeCreated, Channel, EventId, MapDescription</code></pre></div>
+<p>2번의 빈도표가 이 글의 핵심 산출물이다. <strong>상위 40행만 보면 그 시스템에서 무슨 일이 일어났는지 윤곽이 잡힌다.</strong></p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-채널-우선순위표">1단계 — 채널 우선순위표</h3>
+<p><code>C:\Windows\System32\winevt\Logs\</code> 안의 파일이다. 위에서부터 순서대로 연다.</p>
+<div class="table-wrap"><table><thead><tr><th>순위</th><th>파일</th><th>채널</th><th>무엇이 들어 있나</th><th>포렌식 가치</th></tr></thead><tbody><tr><td>0</td><td><code>Microsoft-Windows-Sysmon%4Operational.evtx</code></td><td>Sysmon/Operational</td><td>프로세스 생성(명령행·해시·부모), 네트워크 연결, 파일 생성, 레지스트리 변경</td><td><strong>있으면 무조건 1순위.</strong> 기본 로그가 못 보는 것을 다 본다</td></tr><tr><td>1</td><td><code>Security.evtx</code></td><td>Security</td><td>로그온/로그오프, 권한 부여, 프로세스 생성(4688), 공유 접근, 계정 변경, 로그 삭제</td><td>최고. 침입 경로의 8할이 여기</td></tr><tr><td>2</td><td><code>System.evtx</code></td><td>System</td><td>서비스 설치(7045), 서비스 상태(7034~7036), 부팅/종료(6005·6006·6008), 비정상 재부팅(Kernel-Power 41), 드라이버 로드</td><td>지속성·안티포렌식 흔적</td></tr><tr><td>3</td><td><code>Microsoft-Windows-PowerShell%4Operational.evtx</code></td><td>PowerShell/Operational</td><td>4104(ScriptBlock 원문), 4103(파이프라인/모듈)</td><td><strong>난독화 스크립트 원문이 여기 남는다</strong></td></tr><tr><td>4</td><td><code>Windows PowerShell.evtx</code></td><td>Windows PowerShell</td><td>400/403(엔진 상태 변화), 600(공급자 수명), 800(파이프라인 상세)</td><td>4104가 꺼져 있을 때의 대체 증거</td></tr><tr><td>5</td><td><code>Microsoft-Windows-TerminalServices-LocalSessionManager%4Operational.evtx</code></td><td>.../Operational</td><td>21(세션 로그온), 22(셸 시작), 23(로그오프), 24(연결 끊김), 25(재연결)</td><td>RDP 세션의 시작·끝과 사용자명</td></tr><tr><td>6</td><td><code>Microsoft-Windows-TerminalServices-RemoteConnectionManager%4Operational.evtx</code></td><td>.../Operational</td><td>1149(사용자 인증 성공, 원본 IP 포함)</td><td><strong>RDP 접속 IP</strong>를 가장 깔끔하게 준다</td></tr><tr><td>7</td><td><code>Microsoft-Windows-TaskScheduler%4Operational.evtx</code></td><td>TaskScheduler/Operational</td><td>106(작업 등록), 140(수정), 141(삭제), 200/201(액션 시작/완료), 129(작업 프로세스 생성)</td><td>예약 작업 지속성. 실제 실행 파일 경로가 200/201에</td></tr><tr><td>8</td><td><code>Microsoft-Windows-WMI-Activity%4Operational.evtx</code></td><td>WMI-Activity/Operational</td><td>5857(공급자 로드), 5858(오류), 5860/5861(이벤트 소비자 등록)</td><td><strong>5861 = WMI 영구 이벤트 구독 지속성</strong></td></tr><tr><td>9</td><td><code>Microsoft-Windows-Windows Defender%4Operational.evtx</code></td><td>Windows Defender/Operational</td><td>1116(악성코드 탐지), 1117(조치), 5001(실시간 보호 비활성), 5007(설정 변경)</td><td>탐지된 파일의 <strong>경로와 이름</strong>이 그대로 남는다</td></tr><tr><td>10</td><td><code>Application.evtx</code></td><td>Application</td><td>1000(응용 프로그램 오류), 1001(WER), 1002(응답 없음), MsiInstaller 1033/11707(설치)</td><td>크래시 = 익스플로잇 시도 흔적. 설치 이력</td></tr><tr><td>11</td><td><code>Microsoft-Windows-Bits-Client%4Operational.evtx</code></td><td>Bits-Client/Operational</td><td>3(작업 생성), 59(전송 시작), 60(전송 완료) — <strong>URL과 저장 경로</strong></td><td><code>bitsadmin</code>/<code>Start-BitsTransfer</code> 다운로드 반출·유입</td></tr><tr><td>12</td><td><code>Microsoft-Windows-DriverFrameworks-UserMode%4Operational.evtx</code></td><td>.../Operational</td><td>USB 장치 연결·제거 시각</td><td>USB 문제에서 <strong>초 단위 연결 시각</strong>. 단 Windows 10 이후 <strong>기본 비활성</strong>이라 없는 경우가 많다</td></tr></tbody></table></div>
+<p>Sysmon 채널을 0순위에 둔 이유는, 존재한다는 사실 자체가 &quot;출제자가 Sysmon 로그로 풀라고 준 것&quot;이라는 신호이기 때문이다.</p>
+<h3 id="2단계-파일명-규칙-4">2단계 — 파일명 규칙 (<code>%4</code>)</h3>
+<div class="table-wrap"><table><thead><tr><th>파일명</th><th>실제 채널 이름</th></tr></thead><tbody><tr><td><code>Security.evtx</code></td><td><code>Security</code></td></tr><tr><td><code>Windows PowerShell.evtx</code></td><td><code>Windows PowerShell</code> (공백 포함, <code>%4</code> 없음 — 레거시 채널)</td></tr><tr><td><code>Microsoft-Windows-PowerShell%4Operational.evtx</code></td><td><code>Microsoft-Windows-PowerShell/Operational</code></td></tr><tr><td><code>Microsoft-Windows-Windows Defender%4Operational.evtx</code></td><td><code>Microsoft-Windows-Windows Defender/Operational</code> (파일명에 공백이 있다)</td></tr><tr><td><code>Microsoft-Windows-TerminalServices-LocalSessionManager%4Admin.evtx</code></td><td><code>.../LocalSessionManager/Admin</code> (Admin 채널은 Operational 과 별개 파일)</td></tr></tbody></table></div>
+<p><code>%4</code>는 채널 이름의 <code>/</code>를 파일명에 넣을 수 없어 URL 인코딩한 것이다. <code>Get-WinEvent -FilterHashtable</code>에 <strong>경로로 줄 때는 <code>%4</code>가 든 파일명 그대로</strong>, <strong>채널 이름으로 줄 때는 <code>/</code>로</strong> 쓴다. 이 둘을 섞으면 &quot;채널을 찾을 수 없다&quot;는 에러가 난다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 파일에서 읽기 — Path 에는 %4 가 든 실제 파일명
+Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\Logs\Microsoft-Windows-PowerShell%4Operational.evtx&#39;; Id=4104}
+
+# 라이브 시스템에서 읽기 — LogName 에는 / 가 든 채널명
+Get-WinEvent -FilterHashtable @{LogName=&#39;Microsoft-Windows-PowerShell/Operational&#39;; Id=4104}</code></pre></div>
+<p>또한 파일명에 공백이 들어가는 채널(<code>Windows PowerShell.evtx</code>, <code>Microsoft-Windows-Windows Defender%4Operational.evtx</code>)은 <strong>반드시 인용부호로 감싼다.</strong> 감싸지 않으면 두 개의 인자로 쪼개진다.</p>
+<h3 id="3단계-삭제롤오버-판정">3단계 — 삭제·롤오버 판정</h3>
+<p>EVTX 는 헤더 4096바이트 + 64KB(65,536바이트) 단위 청크로 구성된다. 따라서 레코드가 거의 없는 파일은 <strong>69,632바이트(약 68KB) 근처</strong>에 머문다.</p>
+<div class="table-wrap"><table><thead><tr><th>관찰</th><th>해석</th><th>확증 방법</th></tr></thead><tbody><tr><td>크기가 68KB 근처</td><td>사실상 빈 로그</td><td>레코드 수 0~수십 건</td></tr><tr><td><code>Security.evtx</code>만 작고 나머지는 크다</td><td><strong>선택적 삭제 의심</strong></td><td>1102 확인. 삭제 직후엔 1102 하나만 남는 경우가 많다</td></tr><tr><td>시간 범위가 사건 시각을 포함하지 않고 몇 시간뿐</td><td>롤오버(가득 차서 덮어씀) 또는 삭제 후 재수집</td><td>첫 레코드의 <code>EventRecordId</code>가 1이 아니면 앞부분이 사라진 것</td></tr><tr><td>첫 <code>EventRecordId</code>가 1 인데 시간 범위가 짧다</td><td><strong>로그를 지우고 새로 시작했다</strong></td><td>1102 / 104</td></tr><tr><td>특정 Event ID 가 전 구간에서 0건</td><td>그 감사 하위 범주가 꺼져 있었다</td><td>4719, <code>PolAdtEv</code>(SECURITY 하이브)</td></tr></tbody></table></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 첫 레코드가 1번인지 — 앞이 잘렸는지 지워졌는지의 판별선
+Import-Csv &#39;C:\case\out\all.csv&#39; |
+  Where-Object { $_.Channel -eq &#39;Security&#39; } |
+  Sort-Object { [int]$_.EventRecordId } |
+  Select-Object -First 3 EventRecordId, TimeCreated, EventId</code></pre></div>
+<p><code>EventRecordId</code>는 채널 단위로 단조 증가하고 재사용되지 않는다. <strong>시각보다 신뢰도가 높은 순서 지표</strong>이므로, 시간 조작이 의심되면 이 값으로 정렬한다.</p>
+<h3 id="4단계-감사-정책이-꺼져-있었는지-점검">4단계 — 감사 정책이 꺼져 있었는지 점검</h3>
+<p>&quot;4624 가 없다&quot;는 &quot;로그온이 없었다&quot;가 아니다. 셋 중 하나다.</p>
+<div class="table-wrap"><table><thead><tr><th>Event ID</th><th>채널</th><th>의미</th></tr></thead><tbody><tr><td>1102</td><td>Security</td><td><strong>감사 로그가 지워졌다.</strong> 지운 계정과 시각이 이 이벤트 안에 남는다</td></tr><tr><td>4719</td><td>Security</td><td>시스템 감사 정책이 변경되었다. 어떤 하위 범주가 켜지고 꺼졌는지 포함</td></tr><tr><td>104</td><td>System</td><td>다른 채널(System/Application 등)의 로그가 지워졌다</td></tr><tr><td>4907</td><td>Security</td><td>개체의 감사 설정이 변경되었다</td></tr></tbody></table></div>
+<p>1102 는 로그를 비운 뒤에도 남는다. <strong>로그가 텅 비었는데 1102 가 하나 있으면 그 시각이 곧 안티포렌식 시각이다.</strong></p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p>EvtxECmd 로 전체를 합친 CSV 에서 트리아지에 쓰는 컬럼만 정리한다.</p>
+<div class="table-wrap"><table><thead><tr><th>컬럼</th><th>의미</th><th>트리아지에서의 용도</th></tr></thead><tbody><tr><td><code>Channel</code></td><td>채널 이름 (<code>/</code> 형태)</td><td>어느 로그에서 온 레코드인지. 합친 CSV 에서 필수</td></tr><tr><td><code>Provider</code></td><td>이벤트를 쓴 공급자</td><td>같은 Event ID 가 공급자별로 의미가 다르다 (<code>1</code>은 공급자마다 전부 다르다)</td></tr><tr><td><code>EventId</code></td><td>이벤트 ID</td><td>빈도 집계의 축</td></tr><tr><td><code>TimeCreated</code></td><td>발생 시각 (<strong>UTC</strong>)</td><td>타임라인 축</td></tr><tr><td><code>EventRecordId</code></td><td>채널 내 단조 증가 번호</td><td>순서 확정, 앞부분 손실 판정</td></tr><tr><td><code>Computer</code></td><td>기록된 호스트 이름</td><td>여러 호스트의 로그가 섞였는지 확인</td></tr><tr><td><code>MapDescription</code></td><td>맵으로 정규화된 사람이 읽을 설명</td><td>빈도표에 이걸 붙이면 바로 읽힌다</td></tr><tr><td><code>UserName</code></td><td>맵이 채운 계정</td><td>계정별 집계</td></tr><tr><td><code>RemoteHost</code></td><td>맵이 채운 원격 호스트/IP</td><td>IP 별 집계</td></tr><tr><td><code>Payload</code></td><td><strong>원본 EventData JSON</strong></td><td>맵이 없는 이벤트의 유일한 정보원</td></tr><tr><td><code>SourceFile</code></td><td>어느 <code>.evtx</code> 에서 왔는가</td><td>파일 단위 되짚기</td></tr></tbody></table></div>
+<p><strong>EVTX 내부 <code>SystemTime</code>은 항상 UTC 로 저장된다.</strong> EvtxECmd CSV 의 <code>TimeCreated</code>도 UTC 다. Event Viewer 는 이를 시스템 로컬 시간대로 변환해 보여주므로 두 화면의 숫자가 다르다. <strong>답을 KST 로 요구하면 +9시간</strong>을 더한다. 대상 시스템의 시간대는 SYSTEM 하이브의 <code>TimeZoneInformation</code>(<a href="./system-timezone.html">FOR-0054</a>)에서 확인한다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>빈도표에서 본 것</th><th>다음에 열 것</th><th>확인할 것</th></tr></thead><tbody><tr><td>4624/4625 가 많다</td><td><a href="./event-4624-logon.html">FOR-0083</a>, <a href="./event-4625-failed-logon.html">FOR-0084</a></td><td>Logon Type, IP, 계정, 실패→성공 전환점</td></tr><tr><td>4672 가 특정 계정에 붙어 있다</td><td><a href="./event-4672-special-privileges.html">FOR-0087</a></td><td><code>SeDebugPrivilege</code> 유무</td></tr><tr><td>4648 이 있다</td><td><a href="./event-4648-explicit-credentials.html">FOR-0086</a></td><td>어느 계정으로 어느 서버에 접속했나</td></tr><tr><td>4634/4647 로 세션 길이를 알고 싶다</td><td><a href="./event-4634-4647-logoff.html">FOR-0085</a></td><td><code>TargetLogonId</code> 조인</td></tr><tr><td>7045 가 있다</td><td>System 채널 상세</td><td>설치된 서비스 이름과 <code>ImagePath</code></td></tr><tr><td>4104 가 있다</td><td>PowerShell/Operational</td><td>스크립트 원문, Base64 디코드</td></tr><tr><td>106/200 이 있다</td><td>TaskScheduler/Operational</td><td>등록된 작업 이름과 실행 파일</td></tr><tr><td>5861 이 있다</td><td>WMI-Activity/Operational</td><td><code>__EventFilter</code> / <code>CommandLineEventConsumer</code> 쿼리</td></tr><tr><td>1116/1117 이 있다</td><td>Windows Defender/Operational</td><td>탐지 파일 경로 → <code>$MFT</code>(<a href="./mft-basics.html">FOR-0021</a>)에서 생성 시각</td></tr><tr><td>59/60 이 있다</td><td>Bits-Client/Operational</td><td>다운로드 URL 과 저장 경로</td></tr><tr><td>1102 만 남았다</td><td>파일시스템 쪽으로 전환</td><td>Prefetch, <code>$UsnJrnl</code>(<a href="./usnjrnl-basics.html">FOR-0027</a>), Amcache</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>Event Viewer 로 EVTX 를 하나씩 열어 보는 것.</strong> 파일 30개를 GUI 로 넘기는 사이에 시간이 끝난다. 전체를 CSV 하나로 합쳐 빈도 집계부터 하는 것이 순서다. 채널 구분은 <code>Channel</code> 컬럼이 해 준다.</li><li><strong>Security.evtx 만 보고 끝내는 것.</strong> 서비스 설치(7045)와 부팅 이력은 System 채널에만 있다. 스크립트 원문은 PowerShell 채널에만 있다. Security 에는 없는 정보를 Security 에서 찾다가 &quot;로그에 없다&quot;고 결론 내리는 실수가 가장 잦다.</li><li><strong><code>%4</code>를 <code>/</code>로 바꿔서 파일 경로에 쓰는 것.</strong> <code>Get-WinEvent -Path</code>에는 실제 파일명(<code>%4</code> 포함)을 준다. <code>/</code>로 쓰면 경로가 존재하지 않아 실패한다. 반대로 <code>-FilterHashtable @{LogName=...}</code>에는 <code>/</code>를 쓴다.</li><li><strong>Event ID 만으로 이벤트를 식별하는 것.</strong> Event ID 는 <strong>공급자별로 독립</strong>이다. <code>Provider</code>가 다르면 같은 <code>1</code>도 전혀 다른 이벤트다(Sysmon 1 = 프로세스 생성, Kernel-General 1 = 시스템 시각 변경). 빈도 집계는 반드시 <code>Channel, EventId</code> 또는 <code>Provider, EventId</code> 쌍으로 한다.</li><li><strong>&quot;로그가 비어 있다 = 사건이 없었다&quot;로 결론 내는 것.</strong> 감사 정책 미설정, 롤오버, 1102 삭제 세 가지를 배제해야 성립한다. 첫 <code>EventRecordId</code>와 1102/4719/104 를 먼저 확인한다.</li><li><strong>시간 범위를 확인하지 않는 것.</strong> 사건 시각이 로그의 시간 범위 밖이면 그 로그로는 절대 풀 수 없다. 다른 artifact 로 전환하는 판단을 30초 안에 내려야 한다.</li><li><strong>UTC/로컬 혼동.</strong> EVTX <code>SystemTime</code>은 UTC 다. Event Viewer 화면 값은 로컬 변환값이다. 두 값을 같은 타임라인에 섞으면 9시간 오차가 생긴다. KST 답은 +9시간.</li><li><strong>여러 호스트의 로그를 한 CSV 에 합쳐 놓고 <code>Computer</code> 를 무시하는 것.</strong> 서로 다른 PC 의 로컬 시각과 계정이 섞여 인과가 뒤집힌다. 합친 뒤 <code>Computer</code> 로 먼저 나눈다.</li><li><strong>잠긴 파일을 그대로 복사하려 하는 것.</strong> 실행 중 Windows 에서 <code>winevt\Logs</code>는 잠겨 있다. 원시 접근이나 볼륨 섀도(<code>--vss</code>)를 쓴다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># A) 빈도표에 MapDescription 을 붙여 읽히게 만든다
+Import-Csv &#39;C:\case\out\all.csv&#39; |
+  Group-Object Channel, EventId |
+  Sort-Object Count -Descending | Select-Object -First 25 |
+  ForEach-Object {
+    [pscustomobject]@{
+      Count = $_.Count
+      Key   = $_.Name
+      Desc  = ($_.Group | Select-Object -First 1).MapDescription
+    }
+  } | Format-Table -AutoSize
+
+# B) 사건 시각 ±10분의 모든 채널 레코드 — 채널을 넘나드는 인과가 보인다
+$t0 = [datetime]::Parse(&#39;2026-03-14T07:10:00Z&#39;).ToUniversalTime()
+Import-Csv &#39;C:\case\out\all.csv&#39; |
+  Where-Object {
+    $ts = [datetime]::Parse($_.TimeCreated)
+    $ts -ge $t0.AddMinutes(-10) -and $ts -le $t0.AddMinutes(10)
+  } | Sort-Object TimeCreated |
+  Select-Object TimeCreated, Channel, EventId, MapDescription, UserName, RemoteHost
+
+# C) 채널이 아예 없을 때 — 파일 존재 여부부터
+&#39;Security&#39;,&#39;System&#39;,&#39;Microsoft-Windows-Sysmon%4Operational&#39; | ForEach-Object {
+  $p = &quot;C:\case\Logs\$_.evtx&quot;
+  [pscustomobject]@{ File=$_; Exists=(Test-Path $p) }
+}</code></pre></div>
+<p>B 의 &quot;전 채널 ±10분&quot; 쿼리가 실전에서 가장 강력하다. 4624(Security) → 4104(PowerShell) → 7045(System) → 59(BITS)가 몇 초 간격으로 줄지어 나오면 그 자체가 공격 시나리오다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;침해된 워크스테이션의 로그를 드립니다. 공격자가 지속성을 확보한 방법과
+ 그 시각(KST)을 구하세요.
+ 첨부: winevt_Logs.zip (evtx 34개)&quot;
+
+1. 첫 시도 (실패한 접근):
+   파일명이 익숙한 Security.evtx 를 Event Viewer 로 열었다.
+   -&gt; 4624/4625/4672 가 12,000건. 스크롤만 하다 5분을 썼고
+      &quot;지속성&quot;에 해당하는 이벤트를 못 찾았다.
+   왜 틀렸나: 지속성 흔적(서비스 설치, 예약 작업, WMI 구독)은
+   Security 채널에 거의 없다. 채널을 잘못 골랐다.
+
+2. 방향 전환 — 파일 크기부터 본다:
+   Get-ChildItem *.evtx | Sort-Object Length -Descending
+
+     Name                                              KB
+     Security.evtx                                  20480
+     System.evtx                                     5120
+     Microsoft-Windows-TaskScheduler%4Operational     1024
+     Microsoft-Windows-PowerShell%4Operational         512
+     Microsoft-Windows-WMI-Activity%4Operational        68   &lt;- 사실상 빈 로그
+     Application.evtx                                 1024
+     (이하 28개는 모두 68~70KB)
+
+   -&gt; TaskScheduler 채널이 1MB 나 된다. 워크스테이션치고 크다.
+
+3. 전체를 하나로 합쳐 빈도 집계:
+   EvtxECmd.exe -d . --csv out --csvf all.csv
+   -&gt; 41,902행
+
+   Count  Channel, EventId
+   ------ ------------------
+    9,884 Security, 4624
+    7,120 Security, 4672
+      612 Security, 4625
+      331 TaskScheduler/Operational, 200
+      330 TaskScheduler/Operational, 201
+      118 System, 7036
+        9 TaskScheduler/Operational, 106   &lt;- 작업 등록 9건
+        3 PowerShell/Operational, 4104
+        1 Security, 1102                   &lt;- 로그 삭제 1건
+
+4. 106(작업 등록) 9건을 본다:
+   ... Channel -like &#39;TaskScheduler*&#39; -and EventId -eq 106
+
+   TimeCreated              PayloadData1 / MapDescription
+   2026-03-13 22:41:07Z     \Microsoft\Windows\UpdateOrchestrator\...
+   ...
+   2026-03-14 07:22:19Z     \WindowsUpdateCheck              &lt;- 이름이 수상하다
+
+   경로가 \Microsoft\Windows\ 아래가 아니라 루트에 있다. 정상 작업이 아니다.
+
+5. 같은 작업의 200(액션 시작)에서 실제 실행 파일:
+   2026-03-14 07:22:31Z  C:\Users\Public\wuauclt.exe
+   -&gt; 정상 wuauclt.exe 는 C:\Windows\System32 에 있다. 경로가 가짜다.
+
+6. 1102 확인 — 왜 WMI 채널이 비어 있었나:
+   Security, 1102 @ 2026-03-14 07:29:44Z, SubjectUserName=svc_backup
+   -&gt; 지속성 확보 7분 뒤 감사 로그를 지웠다.
+      WMI 채널이 68KB 였던 것도 같은 맥락으로 재해석된다.
+
+7. 시간대 변환:
+   EVTX SystemTime 은 UTC. 07:22:19Z + 9h = 2026-03-14 16:22:19 KST
+
+정답: 예약 작업 \WindowsUpdateCheck 등록(C:\Users\Public\wuauclt.exe),
+      2026-03-14 16:22:19 KST</code></pre></div>
+<p>1단계의 실패가 이 글의 요점이다. <strong>채널 선택이 잘못되면 아무리 오래 봐도 답이 없다.</strong> 2~3단계처럼 크기 정렬과 빈도 집계로 &quot;어디를 볼지&quot;를 먼저 정하면 34개 파일이 3개로 줄어든다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>Get-ChildItem</code>으로 크기 정렬을 했는가 — 68KB 근처 파일은 전부 후보에서 제외</li><li>전체를 CSV 하나로 합쳐 <code>Channel, EventId</code> 빈도표를 만들었는가</li><li>채널별 시간 범위가 사건 시각을 <strong>포함하는지</strong> 확인했는가</li><li>1102 / 4719 / 104 를 확인했는가 — 없는 로그의 이유가 여기 있다</li><li>첫 <code>EventRecordId</code>가 1인가 — 1이면 로그를 새로 시작한 것</li><li>문제 지문의 키워드를 채널 우선순위표에 대입했는가 — &quot;서비스&quot;면 System, &quot;스크립트&quot;면 PowerShell</li><li><code>Provider</code>를 무시하고 Event ID 만으로 필터하고 있지 않은가</li><li>Sysmon 채널이 있는데 안 봤다면 지금 본다 — 기본 로그보다 정보량이 훨씬 많다</li><li>답이 KST 인지 UTC 인지 문제 지문을 다시 읽었는가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-022 — Microsoft Learn, Advanced security audit policy settings: 감사 하위 범주별 Event ID 대응과 1102·4719 의 의미</li><li>SRC-026 — libevtx (EVTX) 포맷 문서: <code>ElfFile</code> 시그니처, 4096바이트 헤더, 65,536바이트 청크 구조, <code>EventRecordId</code> 단조 증가 성질</li><li>SRC-004 — Eric Zimmerman 문서: EvtxECmd 의 <code>-d</code> 재귀 처리, 여러 채널을 하나의 CSV 로 합칠 때의 <code>Channel</code>/<code>SourceFile</code> 컬럼</li><li>채널 파일명·기본 활성 여부·최대 크기는 Windows 버전과 감사 정책에 따라 다르므로 실제 폴더 목록에서 확인할 것. <code>DriverFrameworks-UserMode/Operational</code>은 Windows 10 이후 기본 비활성인 경우가 많다</li></ul>
+<p>&lt;/content&gt; &lt;/invoke&gt;</p>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./evtxecmd.html">
+    <span class="rel-id">FOR-0082 · Event Log</span>
+    EvtxECmd 사용법: EVTX를 CSV로 바꾸고 Maps로 페이로드를 정규화한다
+  </a>
+  <a class="related-item" href="./event-4624-logon.html">
+    <span class="rel-id">FOR-0083 · Event Log</span>
+    Event ID 4624 성공 로그온 분석: 누가 어디서 어떻게 들어왔나
+  </a>
+  <a class="related-item" href="./event-1102-log-cleared.html">
+    <span class="rel-id">FOR-0091 · Event Log</span>
+    Event ID 1102 감사 로그 삭제: UserData 구조와 삭제 구간 역추적
+  </a>
+  <a class="related-item" href="./attack-timeline-from-eventlog.html">
+    <span class="rel-id">FOR-0108 · Event Log</span>
+    Event Log만으로 공격 타임라인 만들기: 침해 단계별 Event ID 지도
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./registry-ctf-walkthrough.html"><span class="rel-id">← FOR-0080</span>Registry 종합 CTF 풀이: USB 자료 반출 사건을 hive 5개로 끝까지</a>
+<a class="related-item" href="./evtxecmd.html"><span class="rel-id">FOR-0082 →</span>EvtxECmd 사용법: EVTX를 CSV로 바꾸고 Maps로 페이로드를 정규화한다</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-채널-우선순위표">1단계 — 채널 우선순위표</a></li>
+<li class="toc-l3"><a href="#2단계-파일명-규칙-4">2단계 — 파일명 규칙 (`%4`)</a></li>
+<li class="toc-l3"><a href="#3단계-삭제롤오버-판정">3단계 — 삭제·롤오버 판정</a></li>
+<li class="toc-l3"><a href="#4단계-감사-정책이-꺼져-있었는지-점검">4단계 — 감사 정책이 꺼져 있었는지 점검</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

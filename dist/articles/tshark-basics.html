@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>tshark 옵션 레퍼런스: -r -Y -T fields -z 를 한 장에 · FOR-0184 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Network%2FPCAP">Network/PCAP</a> / FOR-0184
+      </div>
+      <header class="article-head">
+        <h1>tshark 옵션 레퍼런스: -r -Y -T fields -z 를 한 장에</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Network/PCAP</span>
+      <span class="badge badge-type">레퍼런스</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>tshark 는 -r(입력) -Y(디스플레이 필터) -T fields -e(컬럼 추출) -q -z(통계) 네 축으로 쓴다. 나머지 옵션은 이 네 축을 보정하는 장치이며, GUI 와 결과가 다르면 거의 항상 -2(2-pass) 또는 -o(preference) 가 원인이다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>tshark, Wireshark, capinfos, editcap, mergecap</td></tr>
+<tr><th>artifact</th><td><code>pcap</code> · <code>pcapng</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Program Files\Wireshark\tshark.exe</code> · <code>/usr/bin/tshark</code></td></tr>
+<tr><th>프로토콜</th><td>HTTP, DNS, TCP, UDP, TLS</td></tr>
+<tr><th>Wireshark 필터</th><td><code>http.request</code> · <code>dns.flags.response == 0</code> · <code>tcp.stream eq 4</code></td></tr>
+<tr><th>tshark field</th><td><code>frame.number</code> · <code>frame.time</code> · <code>frame.time_epoch</code> · <code>ip.src</code> · <code>ip.dst</code> · <code>tcp.stream</code> · <code>_ws.col.Info</code> · <code>_ws.col.Protocol</code></td></tr>
+<tr><th>파일 형식</th><td><code>pcap</code> · <code>pcapng</code></td></tr>
+<tr><th>검색 별칭</th><td>tshark 옵션 · tshark 사용법 · tshark 명령어 · 티샤크 · wireshark cli · tshark exe 경로 · tshark 안됨</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>tshark 는 <code>-r</code>(입력) <code>-Y</code>(디스플레이 필터) <code>-T fields -e</code>(컬럼 추출) <code>-q -z</code>(통계) 네 축으로 쓴다. 나머지 옵션은 이 네 축을 보정하는 장치이며, GUI 와 결과가 다르면 거의 항상 <code>-2</code>(2-pass) 또는 <code>-o</code>(preference) 가 원인이다.</p>
+<h2 id="개념">개념</h2>
+<p>tshark 는 Wireshark 와 <strong>같은 dissector 엔진</strong>을 쓰는 CLI 프론트엔드다. 따라서 GUI 에서 보이는 필드 이름을 그대로 <code>-e</code> 에 넣을 수 있고, GUI 의 디스플레이 필터를 그대로 <code>-Y</code> 에 넣을 수 있다.</p>
+<p>세 가지 계층을 구분해야 옵션이 헷갈리지 않는다.</p>
+<div class="table-wrap"><table><thead><tr><th>계층</th><th>옵션</th><th>언제 적용되나</th><th>문법</th></tr></thead><tbody><tr><td>캡처 필터</td><td><code>-f</code></td><td><strong>캡처하는 순간</strong> 커널에서 버린다</td><td>pcap-filter (BPF), <code>tcp port 80</code></td></tr><tr><td>읽기 필터</td><td><code>-R</code></td><td>1차 패스에서 걸러 이후 패스에 넘기지 않는다. <code>-2</code> 필요</td><td>디스플레이 필터 문법</td></tr><tr><td>디스플레이 필터</td><td><code>-Y</code></td><td>해석 후 출력 직전</td><td>디스플레이 필터 문법</td></tr><tr><td>출력 형식</td><td><code>-T</code>, <code>-e</code>, <code>-E</code>, <code>-V</code>, <code>-x</code>, <code>-O</code></td><td>통과한 패킷을 어떻게 찍을까</td><td>—</td></tr><tr><td>통계</td><td><code>-z</code></td><td>읽기가 끝난 뒤 한 번</td><td><code>-z &lt;subtype&gt;[,filter]</code></td></tr></tbody></table></div>
+<p>이미 저장된 pcap 을 분석할 때 <code>-f</code> 는 의미가 없다. <strong>저장 파일에는 <code>-Y</code> 를 쓴다.</strong></p>
+<h2 id="파일-경로">파일 / 경로</h2>
+<div class="table-wrap"><table><thead><tr><th>플랫폼</th><th>실행 파일</th></tr></thead><tbody><tr><td>Windows (기본 설치)</td><td><code>C:\Program Files\Wireshark\tshark.exe</code></td></tr><tr><td>Windows (32bit 설치)</td><td><code>C:\Program Files (x86)\Wireshark\tshark.exe</code></td></tr><tr><td>Linux (deb/rpm)</td><td><code>/usr/bin/tshark</code></td></tr><tr><td>macOS (Wireshark.app)</td><td><code>/Applications/Wireshark.app/Contents/MacOS/tshark</code></td></tr></tbody></table></div>
+<p>Windows 설치 시 <code>tshark.exe</code> 가 있는 디렉터리가 <strong>PATH 에 자동으로 추가되지 않는 경우가 많다.</strong> <code>tshark : 용어가 cmdlet ... 인식되지 않습니다</code> 가 뜨면 경로 문제다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 현재 세션에만 PATH 추가
+$env:Path += &#39;;C:\Program Files\Wireshark&#39;
+tshark -v
+
+# 또는 별칭으로
+Set-Alias tshark &#39;C:\Program Files\Wireshark\tshark.exe&#39;</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># Linux: 비루트로 저장 파일만 읽을 때는 권한 설정이 필요 없다
+which tshark &amp;&amp; tshark -v | head -1</code></pre></div>
+<p>같은 디렉터리에 함께 설치되는 형제 도구도 같은 PATH 문제를 공유한다.</p>
+<div class="table-wrap"><table><thead><tr><th>도구</th><th>용도</th></tr></thead><tbody><tr><td><code>capinfos</code></td><td>패킷 수, 시간 범위, 파일 해시 — GUI 의 Capture File Properties</td></tr><tr><td><code>editcap</code></td><td>자르기, 분할, 시간 범위 추출, 포맷 변환</td></tr><tr><td><code>mergecap</code></td><td>여러 캡처 파일을 하나로 병합</td></tr><tr><td><code>text2pcap</code></td><td>hex 덤프를 pcap 으로 되돌리기</td></tr><tr><td><code>dumpcap</code></td><td>실제 캡처 엔진</td></tr></tbody></table></div>
+<h2 id="주요-필드">주요 필드</h2>
+<h3 id="입출력">입출력</h3>
+<div class="table-wrap"><table><thead><tr><th>옵션</th><th>의미</th><th>주의</th></tr></thead><tbody><tr><td><code>-r &lt;file&gt;</code></td><td>저장 파일 읽기. gzip 압축 파일도 그대로 읽는다</td><td><code>-</code> 로 stdin 도 되지만 되감기가 필요한 포맷은 실패</td></tr><tr><td><code>-w &lt;file&gt;</code></td><td><strong>원시 패킷 데이터</strong>를 파일로 쓴다</td><td>텍스트가 아니다. 텍스트를 저장하려면 셸 리다이렉션(<code>&gt; out.txt</code>)</td></tr><tr><td><code>-c &lt;n&gt;</code></td><td>최대 n 패킷만 읽는다</td><td><strong>필터에 걸러진 패킷도 개수에 포함된다</strong></td></tr><tr><td><code>-F &lt;format&gt;</code></td><td><code>-w</code> 출력 포맷 지정</td><td><code>-F pcap</code> 로 구형 도구 호환</td></tr></tbody></table></div>
+<h3 id="필터">필터</h3>
+<div class="table-wrap"><table><thead><tr><th>옵션</th><th>의미</th></tr></thead><tbody><tr><td><code>-Y &lt;filter&gt;</code></td><td>디스플레이 필터. 단일 패스 분석의 기본 선택</td></tr><tr><td><code>-f &lt;filter&gt;</code></td><td>캡처 필터(BPF). 라이브 캡처에만 의미</td></tr><tr><td><code>-2</code></td><td>2-pass 분석. 미래 정보가 필요한 필드를 채운다. 되감기 가능한 입력만</td></tr><tr><td><code>-R &lt;filter&gt;</code></td><td>1차 패스 읽기 필터. <strong><code>-2</code> 와 함께만 의미가 있다</strong></td></tr></tbody></table></div>
+<p><code>-2</code> 아래에서는 <code>-R</code> 를 통과한 패킷만 <code>-Y</code> 검사를 받는다. <code>http.response_in</code>, <code>http.time</code> 처럼 <strong>뒤 패킷을 봐야 알 수 있는 필드는 <code>-2</code> 없이는 비어 나온다.</strong></p>
+<h3 id="출력-형식">출력 형식</h3>
+<div class="table-wrap"><table><thead><tr><th>옵션</th><th>의미</th></tr></thead><tbody><tr><td><code>-T text</code></td><td>기본. GUI 의 패킷 목록 한 줄 요약</td></tr><tr><td><code>-T fields</code></td><td><code>-e</code> 로 고른 필드만. <strong>CSV/TSV 를 만드는 모드</strong></td></tr><tr><td><code>-T json</code></td><td>전체 트리를 JSON 으로</td></tr><tr><td><code>-T jsonraw</code></td><td>JSON + 원시 hex 바이트</td></tr><tr><td><code>-T ek</code></td><td>Elasticsearch 용 줄단위 JSON</td></tr><tr><td><code>-T pdml</code></td><td>전체 트리를 XML 로 (GUI 의 Export Packet Dissections &gt; PDML)</td></tr><tr><td><code>-T psml</code></td><td>요약을 XML 로</td></tr><tr><td><code>-T tabs</code></td><td>텍스트 요약을 탭으로 구분</td></tr><tr><td><code>-T ps</code></td><td>PostScript</td></tr></tbody></table></div>
+<p><code>-T</code> 의 유효값 전체는 <code>ek|fields|json|jsonraw|pdml|ps|psml|tabs|text</code> 이다.</p>
+<div class="table-wrap"><table><thead><tr><th>옵션</th><th>의미</th></tr></thead><tbody><tr><td><code>-e &lt;field&gt;</code></td><td>출력할 필드. <strong>반복해서 컬럼을 늘린다.</strong> <code>-T fields</code> 에서는 최소 1개 필수</td></tr><tr><td><code>-V</code></td><td>패킷 상세 트리 전체 출력</td></tr><tr><td><code>-x</code></td><td>hex + ASCII 덤프</td></tr><tr><td><code>-O &lt;proto,...&gt;</code></td><td>지정 프로토콜만 상세하게, 나머지는 한 줄로</td></tr><tr><td><code>-q</code></td><td>패킷 정보를 출력하지 않는다. <code>-z</code> 통계만 볼 때</td></tr><tr><td><code>-Q</code></td><td><code>-q</code> 보다 조용하다. 진짜 오류만 stderr 로</td></tr><tr><td><code>-l</code></td><td>패킷마다 stdout 을 flush. 파이프로 실시간 처리할 때</td></tr></tbody></table></div>
+<p><code>-e</code> 에는 프로토콜 필드 외에 <strong>GUI 컬럼</strong>도 넣을 수 있다.</p>
+<div class="table-wrap"><table><thead><tr><th><code>-e</code> 값</th><th>내용</th></tr></thead><tbody><tr><td><code>_ws.col.Protocol</code></td><td>GUI 의 Protocol 컬럼(최종 판정 프로토콜)</td></tr><tr><td><code>_ws.col.Info</code></td><td>GUI 의 Info 컬럼 요약 문자열</td></tr><tr><td><code>_ws.col.Source</code> / <code>_ws.col.Destination</code></td><td>GUI 의 주소 컬럼</td></tr></tbody></table></div>
+<h3 id="-e--t-fields-의-출력-제어"><code>-E</code> — <code>-T fields</code> 의 출력 제어</h3>
+<div class="table-wrap"><table><thead><tr><th><code>-E</code> 옵션</th><th>유효값</th><th>기본값</th><th>용도</th></tr></thead><tbody><tr><td><code>header=</code></td><td><code>y</code> | <code>n</code></td><td><code>n</code></td><td>첫 줄에 필드 이름</td></tr><tr><td><code>separator=</code></td><td><code>/t</code> | <code>/s</code> | 임의 문자</td><td><code>/t</code>(탭)</td><td><code>separator=,</code> 로 CSV</td></tr><tr><td><code>quote=</code></td><td><code>d</code> | <code>s</code> | <code>n</code></td><td><code>n</code></td><td><code>d</code> 는 큰따옴표, <code>s</code> 는 작은따옴표</td></tr><tr><td><code>occurrence=</code></td><td><code>f</code> | <code>l</code> | <code>a</code></td><td><code>a</code></td><td>한 패킷에 같은 필드가 여러 번일 때 first/last/all</td></tr><tr><td><code>aggregator=</code></td><td><code>,</code> | <code>/s</code> | 임의 문자</td><td><code>,</code></td><td><code>occurrence=a</code> 일 때 값들을 묶는 구분자</td></tr><tr><td><code>bom=</code></td><td><code>y</code> | <code>n</code></td><td><code>n</code></td><td>UTF-8 BOM 부착. Excel 한글 깨짐 방지</td></tr><tr><td><code>escape=</code></td><td><code>y</code> | <code>n</code></td><td><code>y</code></td><td>제어문자를 C 스타일 이스케이프로</td></tr></tbody></table></div>
+<p>CSV 를 만드는 표준 조합은 <code>-E header=y -E separator=, -E quote=d -E occurrence=a</code> 다. 자세한 레시피는 <a href="./tshark-extract-fields.html">FOR-0186</a>.</p>
+<h3 id="해석-보정--d--o--n--n">해석 보정 — <code>-d</code>, <code>-o</code>, <code>-n</code>, <code>-N</code></h3>
+<div class="table-wrap"><table><thead><tr><th>옵션</th><th>문법</th><th>예시</th></tr></thead><tbody><tr><td><code>-d</code></td><td><code>&lt;layer type&gt;==&lt;selector&gt;,&lt;protocol&gt;</code></td><td><code>-d tcp.port==8080,http</code></td></tr><tr><td><code>-d</code> (범위)</td><td><code>&lt;layer&gt;==&lt;from&gt;-&lt;to&gt;,&lt;proto&gt;</code></td><td><code>-d tcp.port==8000-8010,http</code></td></tr><tr><td><code>-d</code> (목록 보기)</td><td><code>-d .</code> 로 selector 목록, <code>-d tcp.port==8080,.</code> 로 프로토콜 목록</td><td>—</td></tr><tr><td><code>-o</code></td><td><code>&lt;preference&gt;:&lt;value&gt;</code></td><td><code>-o tcp.desegment_tcp_streams:TRUE</code></td></tr><tr><td><code>-n</code></td><td>이름 변환 전부 끔</td><td>포트가 <code>http</code> 대신 <code>80</code> 으로</td></tr><tr><td><code>-N &lt;flags&gt;</code></td><td>선택적 변환만 켬</td><td><code>-N t</code> 는 포트 이름만</td></tr></tbody></table></div>
+<p><code>-N</code> 의 플래그는 다음과 같다.</p>
+<div class="table-wrap"><table><thead><tr><th>플래그</th><th>켜는 변환</th></tr></thead><tbody><tr><td><code>m</code></td><td>MAC 주소 → 벤더 이름</td></tr><tr><td><code>n</code></td><td>네트워크 주소 → 호스트 이름 (내부 테이블)</td></tr><tr><td><code>N</code></td><td>외부 리졸버(DNS) 사용. <code>n</code> 과 함께 써야 한다</td></tr><tr><td><code>d</code></td><td>캡처된 DNS 패킷으로부터 이름 변환</td></tr><tr><td><code>t</code></td><td>전송 계층 포트 번호 → 서비스 이름</td></tr><tr><td><code>s</code></td><td>캡처된 핸드셰이크의 SNI 로 주소 변환</td></tr><tr><td><code>v</code></td><td>VLAN ID → 이름</td></tr><tr><td><code>g</code></td><td>MaxMind DB 로 지리 정보 조회</td></tr></tbody></table></div>
+<p><strong>포렌식에서는 <code>-n</code> 을 기본으로 켠다.</strong> 이름 변환이 켜져 있으면 외부 DNS 질의가 나가고(증거 오염), 출력에 IP 대신 도메인이 들어와 grep 이 어긋난다.</p>
+<p>자주 쓰는 <code>-o</code> preference:</p>
+<div class="table-wrap"><table><thead><tr><th>preference</th><th>값</th><th>효과</th></tr></thead><tbody><tr><td><code>tcp.desegment_tcp_streams</code></td><td><code>TRUE</code> / <code>FALSE</code></td><td>여러 세그먼트에 걸친 페이로드 재조립. <code>http.file_data</code> 가 비면 이것을 본다</td></tr><tr><td><code>tcp.check_checksum</code></td><td><code>FALSE</code></td><td>체크섬 오류로 패킷이 버려지는 것을 막는다 (TSO 캡처에서 흔하다)</td></tr><tr><td><code>tcp.reassemble_out_of_order</code></td><td><code>TRUE</code></td><td>순서가 뒤바뀐 캡처 재조립</td></tr><tr><td><code>tcp.calculate_timestamps</code></td><td><code>TRUE</code></td><td><code>tcp.time_delta</code> 를 계산해 준다 (비콘 간격 판정용)</td></tr><tr><td><code>http.decompress_body</code></td><td><code>TRUE</code></td><td>gzip 응답 본문을 풀어 <code>http.file_data</code> 에 넣는다</td></tr><tr><td><code>tls.keylog_file</code></td><td>파일 경로</td><td>SSLKEYLOGFILE 로 TLS 복호화</td></tr><tr><td><code>gui.column.format</code></td><td><code>&quot;Time&quot;,&quot;%Aut&quot;</code> 등</td><td>텍스트 출력의 컬럼 구성 변경</td></tr></tbody></table></div>
+<h3 id="시각-표기--t">시각 표기 — <code>-t</code></h3>
+<p><code>-t</code> 의 문법은 <code>-t (a|ad|adoy|d|dd|e|r|u|ud|udoy)[.[N]]</code> 다.</p>
+<div class="table-wrap"><table><thead><tr><th>값</th><th>표기</th></tr></thead><tbody><tr><td><code>r</code></td><td><strong>기본값.</strong> 첫 패킷 기준 상대 초</td></tr><tr><td><code>a</code></td><td>로컬 시각 (날짜 없음)</td></tr><tr><td><code>ad</code></td><td>로컬 <strong>날짜 + 시각</strong></td></tr><tr><td><code>adoy</code></td><td>로컬 날짜(연중 일수) + 시각</td></tr><tr><td><code>u</code></td><td>UTC 시각 (날짜 없음)</td></tr><tr><td><code>ud</code></td><td><strong>UTC 날짜 + 시각</strong> — 로그 대조의 정답</td></tr><tr><td><code>udoy</code></td><td>UTC 날짜(연중 일수) + 시각</td></tr><tr><td><code>d</code></td><td>직전 캡처 패킷과의 델타</td></tr><tr><td><code>dd</code></td><td>직전 <strong>표시된</strong> 패킷과의 델타</td></tr><tr><td><code>e</code></td><td>Unix epoch 초</td></tr></tbody></table></div>
+<p>pcap 의 타임스탬프는 <strong>파일 안에 UTC(epoch) 로 저장된다.</strong> 화면에 로컬 시각으로 보이는 것은 표기 변환일 뿐이다. <code>-t ad</code> 는 분석 PC 의 타임존을 타므로, 보고서와 타임라인에는 <code>-t ud</code>(UTC) 또는 <code>-t e</code>(epoch) 를 쓰고 KST 는 명시적으로 +9시간 계산해 병기한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># UTC 절대시각으로 출력 — EVTX/access.log 와 대조 가능
+tshark -r capture.pcapng -n -t ud -c 5
+
+# epoch 로 뽑아 스크립트에서 변환
+tshark -r capture.pcapng -T fields -e frame.time_epoch -e ip.src -c 3</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1773645302.418221	10.0.0.15
+1773645302.601884	203.0.113.77
+1773645302.734550	10.0.0.15</code></pre></div>
+<p><code>1773645302</code> → UTC <code>2026-03-16 09:55:02</code> → KST <code>2026-03-16 18:55:02</code>. Unix epoch 는 1970-01-01 UTC 기준 초이며, FILETIME(1601 기준 100ns) 과의 차이는 <code>11644473600</code>초다.</p>
+<h3 id="통계--z">통계 — <code>-z</code></h3>
+<p><code>-z</code> 는 항상 <code>-q</code> 와 함께 쓴다. 유효한 subtype 전체 목록은 <code>tshark -z help</code> 로 확인한다.</p>
+<div class="table-wrap"><table><thead><tr><th><code>-z</code> 값</th><th>출력</th><th>GUI 동등물</th></tr></thead><tbody><tr><td><code>io,phs</code></td><td>프로토콜 계층 비중</td><td>Statistics &gt; Protocol Hierarchy</td></tr><tr><td><code>conv,tcp</code> / <code>conv,udp</code> / <code>conv,ip</code></td><td>대화 목록 (패킷/바이트)</td><td>Statistics &gt; Conversations</td></tr><tr><td><code>endpoints,ip</code> / <code>endpoints,tcp</code></td><td>종점 목록</td><td>Statistics &gt; Endpoints</td></tr><tr><td><code>io,stat,&lt;간격&gt;,&lt;필터&gt;</code></td><td>시간 구간별 카운트</td><td>Statistics &gt; I/O Graph</td></tr><tr><td><code>http,tree</code></td><td>상태 코드/요청 통계</td><td>Statistics &gt; HTTP &gt; Packet Counter</td></tr><tr><td><code>http_req,tree</code></td><td>요청 URI 별 카운트</td><td>Statistics &gt; HTTP &gt; Requests</td></tr><tr><td><code>dns,tree</code></td><td>DNS 질의/응답 통계</td><td>Statistics &gt; DNS</td></tr><tr><td><code>smb,srt</code> / <code>smb2,srt</code></td><td>SMB 응답 시간</td><td>Statistics &gt; Service Response Time</td></tr><tr><td><code>expert</code></td><td>전문가 정보(재전송, 오류)</td><td>Analyze &gt; Expert Information</td></tr><tr><td><code>follow,tcp,ascii,&lt;stream&gt;</code></td><td>스트림 내용</td><td>Follow &gt; TCP Stream</td></tr><tr><td><code>credentials</code></td><td>평문 자격증명 후보 목록</td><td>— (<a href="./pcap-credentials.html">FOR-0187</a>)</td></tr></tbody></table></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 10초 구간별 HTTP 요청 수와 DNS 질의 수를 동시에
+tshark -r capture.pcapng -q -z io,stat,10,&#39;http.request&#39;,&#39;dns.flags.response==0&#39;</code></pre></div>
+<h3 id="파일에서-객체-뽑기">파일에서 객체 뽑기</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng --export-objects help
+tshark -r capture.pcapng --export-objects http,out_http/</code></pre></div>
+<p><code>--export-objects &lt;protocol&gt;,&lt;destdir&gt;</code> 는 디렉터리에 파일을 저장하며, <strong>이름이 겹치면 덮어쓰지 않고 확장자 앞에 번호를 붙인다.</strong> 그래서 <code>report(1).pdf</code> 같은 파일이 생긴다. 자세한 것은 <a href="./pcap-file-extraction.html">FOR-0189</a>.</p>
+<h3 id="필드-이름프로토콜-이름을-모를-때">필드 이름·프로토콜 이름을 모를 때</h3>
+<div class="table-wrap"><table><thead><tr><th>명령</th><th>출력</th></tr></thead><tbody><tr><td><code>tshark -G protocols</code></td><td>프로토콜 약칭 목록 (<code>-O</code> 에 넣을 이름)</td></tr><tr><td><code>tshark -G fields</code></td><td><strong>전체 필드 이름 목록</strong> (수십만 줄. grep 필수)</td></tr><tr><td><code>tshark -G values</code></td><td>필드별 값 이름 매핑</td></tr><tr><td><code>tshark -z help</code></td><td><code>-z</code> subtype 전체</td></tr><tr><td><code>tshark -d .</code></td><td><code>-d</code> 에 쓸 수 있는 selector 목록</td></tr></tbody></table></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># ftp 로 시작하는 필드만 찾는다
+tshark -G fields | grep -P &#39;^F\tftp&#39; | cut -f2,3 | head -20</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">tshark -G fields | Select-String -Pattern &#39;\tftp\.&#39; | Select-Object -First 20</code></pre></div>
+<h2 id="빠른-명령">빠른 명령</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -n -t ud -c 20</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 프로토콜 비중 (가장 먼저)
+tshark -r capture.pcapng -q -z io,phs
+
+# TCP 대화 — 바이트 큰 순서가 목표
+tshark -r capture.pcapng -q -z conv,tcp
+
+# HTTP 요청을 CSV 로
+tshark -r capture.pcapng -n -Y &#39;http.request&#39; \
+  -T fields -e frame.number -e frame.time_epoch -e ip.src -e http.host -e http.request.uri \
+  -E header=y -E separator=, -E quote=d
+
+# 특정 패킷 하나만 상세히, HTTP 만
+tshark -r capture.pcapng -Y &#39;frame.number == 842&#39; -V -O http
+
+# 비표준 포트 8080 을 HTTP 로 강제 + 재조립 켜기
+tshark -r capture.pcapng -d tcp.port==8080,http -o tcp.desegment_tcp_streams:TRUE \
+  -Y &#39;http.request&#39; -T fields -e http.request.uri
+
+# 2-pass 로만 채워지는 필드 (응답 시간, 응답 프레임 번호)
+tshark -r capture.pcapng -2 -R &#39;http&#39; -Y &#39;http.request&#39; \
+  -T fields -e http.request.uri -e http.time -e http.response_in
+
+# 스트림 4 의 내용을 텍스트로
+tshark -r capture.pcapng -q -z follow,tcp,ascii,4
+
+# HTTP 로 전송된 파일 전부 추출
+tshark -r capture.pcapng --export-objects http,out_http/ &amp;&amp; file out_http/*</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># PowerShell — 필터는 작은따옴표로 감싼다
+tshark -r capture.pcapng -Y &#39;http.request.method == &quot;POST&quot;&#39; -T fields -e http.request.uri
+
+# 결과를 CSV 로 받아 바로 집계
+tshark -r capture.pcapng -n -Y &#39;dns.flags.response == 0&#39; -T fields -e dns.qry.name |
+  Group-Object | Sort-Object Count -Descending | Select-Object -First 10 Count, Name</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># capinfos / editcap / mergecap
+capinfos capture.pcapng
+mergecap -w merged.pcapng part1.pcapng part2.pcapng
+editcap -c 20000 big.pcapng chunk.pcapng
+editcap -r capture.pcapng picked.pcapng 100-200</code></pre></div>
+<h2 id="함께-보는-artifact">함께 보는 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>tshark 로 얻은 것</th><th>다음에 볼 것</th></tr></thead><tbody><tr><td><code>-z io,phs</code> 의 이상한 프로토콜</td><td>그 프로토콜 전담 필터 (<a href="./wireshark-30sec-triage.html">FOR-0146</a>)</td></tr><tr><td><code>-z conv,tcp</code> 의 최대 바이트 대화</td><td><code>tcp.stream eq &lt;n&gt;</code> 으로 Follow, 파일 추출 (<a href="./pcap-file-extraction.html">FOR-0189</a>)</td></tr><tr><td>POST 요청 목록</td><td>본문·자격증명 (<a href="./http-post-find.html">FOR-0158</a>)</td></tr><tr><td>평문 자격증명</td><td>EVTX 4624/4625 로 실제 로그온 확인 (<a href="./event-4624-logon.html">FOR-0083</a>)</td></tr><tr><td><code>frame.time_epoch</code></td><td>디스크 artifact 타임라인 (<a href="./ntfs-artifact-timeline.html">FOR-0050</a>)</td></tr><tr><td>추출한 실행 파일 해시</td><td>Amcache / Prefetch / <code>$MFT</code> (<a href="./mft-basics.html">FOR-0021</a>)</td></tr></tbody></table></div>
+<h2 id="흔한-실수">흔한 실수</h2>
+<ul><li><strong>저장 파일에 <code>-f</code> 를 쓰는 것.</strong> <code>-f &#39;tcp port 80&#39;</code> 은 캡처 필터(BPF)이고 이미 저장된 파일에는 적용되지 않는다. <code>-Y &#39;tcp.port == 80&#39;</code> 을 써야 한다. 문법도 다르다 — BPF 는 <code>port 80</code>, 디스플레이 필터는 <code>tcp.port == 80</code>.</li><li><strong><code>-R</code> 를 <code>-2</code> 없이 쓰는 것.</strong> <code>-R</code> 는 1차 패스 필터이므로 단일 패스에서는 의미가 없고, 버전에 따라 <code>-R without -2</code> 경고 또는 오류가 난다. 단일 패스에서는 항상 <code>-Y</code>.</li><li><strong><code>-w out.txt</code> 로 텍스트를 저장하려는 것.</strong> <code>-w</code> 는 원시 패킷을 쓴다. 텍스트는 <code>&gt; out.txt</code> 리다이렉션으로 받는다.</li><li><strong><code>-c</code> 를 &quot;필터에 걸린 패킷 n개&quot;로 이해하는 것.</strong> <code>-c</code> 는 <strong>읽은 패킷</strong> 수를 센다. <code>-Y</code> 로 걸러진 것도 포함되므로 <code>-c 10</code> 이 결과 10줄을 보장하지 않는다. 결과 줄 수를 제한하려면 <code>| head -10</code> 을 쓴다.</li><li><strong><code>-z</code> 를 <code>-q</code> 없이 쓰는 것.</strong> 패킷 요약 수만 줄이 통계 앞에 쏟아져 통계를 못 찾는다. <code>-q -z ...</code> 가 정답이다.</li><li><strong><code>-e</code> 없이 <code>-T fields</code> 를 쓰는 것.</strong> <code>-T fields</code> 는 <code>-e</code> 를 최소 하나 요구한다. 빈 줄만 나오거나 오류가 난다.</li><li><strong><code>-o</code> 값의 대소문자.</strong> boolean preference 는 <code>TRUE</code>/<code>FALSE</code> 로 쓴다. <code>true</code>/<code>1</code> 이 통하는 버전도 있으나 일관되지 않으므로 대문자로 고정한다.</li><li><strong><code>-n</code> 없이 분석하는 것.</strong> 이름 변환이 켜져 있으면 분석 PC 에서 <strong>외부 DNS 질의가 나간다.</strong> 증거 처리 원칙에도 어긋나고, 출력에 <code>example.com</code> 이 들어와 IP 기준 grep 이 어긋난다.</li><li><strong><code>-d</code> 의 selector 를 프로토콜 이름으로 착각하는 것.</strong> <code>-d http==8080</code> 이 아니라 <code>-d tcp.port==8080,http</code> 다. 좌변은 <strong>선택자 필드</strong>, 우변은 붙일 프로토콜이다.</li><li><strong>GUI 와 결과가 다를 때 필터를 의심하는 것.</strong> 필터보다 먼저 볼 것은 아래 세 가지다.</li></ul>
+<div class="table-wrap"><table><thead><tr><th>GUI 와 tshark 가 다를 때</th><th>확인</th></tr></thead><tbody><tr><td>필드가 비어 나온다 (<code>http.time</code>, <code>http.response_in</code>, <code>tcp.analysis.*</code> 일부)</td><td><code>-2</code> 를 붙인다. 미래 정보가 필요한 필드다</td></tr><tr><td>본문/재조립 필드가 비어 나온다 (<code>http.file_data</code>)</td><td><code>-o tcp.desegment_tcp_streams:TRUE</code>, <code>-o http.decompress_body:TRUE</code></td></tr><tr><td>프로토콜이 <code>TCP</code> 로만 나온다</td><td><code>-d tcp.port==&lt;포트&gt;,&lt;프로토콜&gt;</code></td></tr><tr><td>패킷 자체가 사라졌다</td><td><code>-o tcp.check_checksum:FALSE</code> — 체크섬 오프로드 캡처</td></tr><tr><td>GUI 에서 켜둔 설정이 반영되지 않는다</td><td>GUI 는 프로필의 <code>preferences</code> 파일을 쓴다. tshark 는 같은 프로필을 읽지만 GUI 에서 저장하지 않은 변경은 모른다. <code>-o</code> 로 명시한다</td></tr></tbody></table></div>
+<h2 id="mini-example">mini example</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;이 캡처에서 서버가 응답하는 데 가장 ���래 걸린 HTTP 요청의 URI 를 구하세요.&quot;
+첨부: web.pcapng (9,120 packets)
+
+1. 첫 시도 (실패)
+   $ tshark -r web.pcapng -Y &#39;http.request&#39; -T fields -e http.request.uri -e http.time
+   /index.html
+   /login
+   /admin/report.php
+   ...
+   -&gt; http.time 컬럼이 전부 비어 있다.
+
+   원인: http.time 은 &quot;요청 → 응답까지 걸린 시간&quot; 이다.
+        요청 패킷을 읽는 시점에는 응답이 아직 오지 않았으므로
+        단일 패스에서는 계산할 수 없다.
+        같은 이유로 http.response_in, http.request_in 도 비어 나온다.
+
+2. 접근 변경 — -2 (2-pass) 를 붙인다
+   $ tshark -r web.pcapng -2 -Y &#39;http.request&#39; \
+       -T fields -e frame.number -e http.request.uri -e http.time -e http.response_in \
+       -E header=y
+
+   frame.number  http.request.uri     http.time  http.response_in
+   210           /index.html          0.014221   214
+   488           /login               0.102885   495
+   1902          /admin/report.php    4.871004   1955     &lt;-- 가장 느리다
+   3771          /export.php?all=1    0.220118   3780
+
+3. 정렬로 확정 (컬럼 3번이 http.time)
+   $ tshark -r web.pcapng -2 -Y &#39;http.request&#39; \
+       -T fields -e http.request.uri -e http.time | sort -k2 -g -r | head -3
+   /admin/report.php	4.871004
+   /export.php?all=1	0.220118
+   /login	0.102885
+
+4. 응답 내용 확인 — 왜 느렸나
+   $ tshark -r web.pcapng -2 -Y &#39;frame.number == 1955&#39; -V -O http | head -20
+     Content-Length: 4194304
+   -&gt; 4 MB 응답. 대량 데이터 반출 후보다.
+
+정답: /admin/report.php (4.871초)</code></pre></div>
+<p><code>http.time</code> 이 비어 있는 것을 &quot;필드 이름이 틀렸다&quot;로 오해하면 <code>tshark -G fields | grep http.time</code> 만 반복하게 된다. <strong>비어 나오는 필드는 이름 문제가 아니라 패스 문제일 때가 많다.</strong></p>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-010 — Wireshark tshark man page: <code>-r</code> <code>-w</code> <code>-c</code> <code>-Y</code> <code>-f</code> <code>-2</code> <code>-R</code> <code>-T</code>(ek/fields/json/jsonraw/pdml/ps/psml/tabs/text) <code>-e</code> <code>-E</code>(bom/header/separator/occurrence/aggregator/quote/escape) <code>-z</code> <code>-q</code> <code>-Q</code> <code>-V</code> <code>-x</code> <code>-O</code> <code>-n</code> <code>-N</code>(d/g/m/n/N/s/t/v) <code>-d</code> <code>-o</code> <code>-l</code> <code>-t</code>(a/ad/adoy/d/dd/e/r/u/ud/udoy) <code>--export-objects</code> 의 문법과 기본값</li><li>SRC-002 — Wireshark Display Filter Reference: <code>-e</code> / <code>-Y</code> 에 넣는 필드 이름(<code>http.time</code>, <code>http.response_in</code>, <code>frame.time_epoch</code>, <code>_ws.col.*</code>)</li><li><code>-z</code> subtype 목록과 <code>-o</code> preference 이름은 Wireshark 버전에 따라 추가·변경된다. 실제 환경에서 <code>tshark -z help</code>, <code>tshark -G currentprefs</code> 로 확인할 것</li><li><code>-z credentials</code> 는 비교적 최근에 추가된 subtype이므로 구버전에는 없을 수 있다. <code>tshark -z help</code> 출력에 없으면 <a href="./pcap-credentials.html">FOR-0187</a> 의 필터 방식을 쓴다</li><li>Windows/macOS 의 설치 경로는 설치 옵션에 따라 다를 수 있으므로 실제 경로를 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./tshark-display-filter.html">
+    <span class="rel-id">FOR-0185 · Network/PCAP</span>
+    tshark -Y 로 디스플레이 필터 쓰기: bash / PowerShell / cmd 인용 문제
+  </a>
+  <a class="related-item" href="./wireshark-30sec-triage.html">
+    <span class="rel-id">FOR-0146 · Network/PCAP</span>
+    Wireshark 30초 트리아지: pcap을 받고 처음 할 다섯 가지
+  </a>
+  <a class="related-item" href="./protocol-hierarchy.html">
+    <span class="rel-id">FOR-0148 · Network/PCAP</span>
+    Protocol Hierarchy: 프로토콜 비중과 End Packets 읽는 법
+  </a>
+  <a class="related-item" href="./capture-vs-display-filter.html">
+    <span class="rel-id">FOR-0147 · Network/PCAP</span>
+    Capture Filter와 Display Filter 차이: 필터가 안 먹을 때
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./udp-flow-analysis.html"><span class="rel-id">← FOR-0176</span>UDP 흐름 분석: udp.stream 과 포트로 연결 없는 대화를 세는 방법</a>
+<a class="related-item" href="./tshark-display-filter.html"><span class="rel-id">FOR-0185 →</span>tshark -Y 로 디스플레이 필터 쓰기: bash / PowerShell / cmd 인용 문제</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#개념">개념</a></li>
+<li class="toc-l2"><a href="#파일-경로">파일 / 경로</a></li>
+<li class="toc-l2"><a href="#주요-필드">주요 필드</a></li>
+<li class="toc-l3"><a href="#입출력">입출력</a></li>
+<li class="toc-l3"><a href="#필터">필터</a></li>
+<li class="toc-l3"><a href="#출력-형식">출력 형식</a></li>
+<li class="toc-l3"><a href="#-e--t-fields-의-출력-제어">`-E` — `-T fields` 의 출력 제어</a></li>
+<li class="toc-l3"><a href="#해석-보정--d--o--n--n">해석 보정 — `-d`, `-o`, `-n`, `-N`</a></li>
+<li class="toc-l3"><a href="#시각-표기--t">시각 표기 — `-t`</a></li>
+<li class="toc-l3"><a href="#통계--z">통계 — `-z`</a></li>
+<li class="toc-l3"><a href="#파일에서-객체-뽑기">파일에서 객체 뽑기</a></li>
+<li class="toc-l3"><a href="#필드-이름프로토콜-이름을-모를-때">필드 이름·프로토콜 이름을 모를 때</a></li>
+<li class="toc-l2"><a href="#빠른-명령">빠른 명령</a></li>
+<li class="toc-l2"><a href="#함께-보는-artifact">함께 보는 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-실수">흔한 실수</a></li>
+<li class="toc-l2"><a href="#mini-example">mini example</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

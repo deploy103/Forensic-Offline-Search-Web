@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Wireshark HTTP 필터 필드 레퍼런스: http.request부터 http.request_in까지 · FOR-0156 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Network%2FPCAP">Network/PCAP</a> / FOR-0156
+      </div>
+      <header class="article-head">
+        <h1>Wireshark HTTP 필터 필드 레퍼런스: http.request부터 http.request_in까지</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Network/PCAP</span>
+      <span class="badge badge-type">레퍼런스</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>HTTP 분석의 필터는 세 층으로 나뉜다. 존재 판정(http, http.request, http.response) → 요청 식별(http.request.method, http.request.uri, http.host) → 응답 판정(http.response.code, http.content_length) 이고, 요청과 응답을 잇는 열쇠는 http.request_in과 tcp.stream이다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Wireshark, tshark</td></tr>
+<tr><th>artifact</th><td><code>pcap</code> · <code>pcapng</code> · <code>HTTP request header</code> · <code>HTTP response header</code></td></tr>
+<tr><th>프로토콜</th><td>HTTP, TCP</td></tr>
+<tr><th>Wireshark 필터</th><td><code>http</code> · <code>http.request</code> · <code>http.response</code> · <code>http.request.method</code> · <code>http.request.uri</code> · <code>http.request.full_uri</code> · <code>http.request.version</code> · <code>http.host</code> · <code>http.user_agent</code> · <code>http.referer</code> · <code>http.cookie</code> · <code>http.authorization</code> · <code>http.content_type</code> · <code>http.content_length</code> · <code>http.content_encoding</code> · <code>http.transfer_encoding</code> · <code>http.file_data</code> · <code>http.response.code</code> · <code>http.response.phrase</code> · <code>http.server</code> · <code>http.location</code> · <code>http.set_cookie</code> · <code>http.time</code> · <code>http.request_in</code> · <code>http.response_for.uri</code></td></tr>
+<tr><th>tshark field</th><td><code>http.request.method</code> · <code>http.request.uri</code> · <code>http.request.full_uri</code> · <code>http.request.version</code> · <code>http.host</code> · <code>http.user_agent</code> · <code>http.referer</code> · <code>http.cookie</code> · <code>http.authorization</code> · <code>http.content_type</code> · <code>http.content_length</code> · <code>http.content_encoding</code> · <code>http.transfer_encoding</code> · <code>http.file_data</code> · <code>http.response.code</code> · <code>http.response.phrase</code> · <code>http.server</code> · <code>http.location</code> · <code>http.set_cookie</code> · <code>http.time</code> · <code>http.request_in</code> · <code>http.response_for.uri</code> · <code>tcp.stream</code></td></tr>
+<tr><th>파일 형식</th><td><code>pcap</code> · <code>pcapng</code></td></tr>
+<tr><th>검색 별칭</th><td>http 필터 · 와이어샤크 http 필터 · http 필드 목록 · http.request 뭐냐 · http 필터 정리 · 패킷 http 필터</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>HTTP 분석의 필터는 세 층으로 나뉜다. <strong>존재 판정(<code>http</code>, <code>http.request</code>, <code>http.response</code>) → 요청 식별(<code>http.request.method</code>, <code>http.request.uri</code>, <code>http.host</code>) → 응답 판정(<code>http.response.code</code>, <code>http.content_length</code>)</strong> 이고, 요청과 응답을 잇는 열쇠는 <code>http.request_in</code>과 <code>tcp.stream</code>이다.</p>
+<h2 id="개념">개념</h2>
+<p>Wireshark의 HTTP 필드는 <strong>패킷 하나에 요청 필드와 응답 필드가 동시에 존재하지 않는다.</strong> 요청 패킷에는 <code>http.request.*</code>가, 응답 패킷에는 <code>http.response.*</code>가 붙는다. 이 사실이 필터 설계를 지배한다.</p>
+<div class="table-wrap"><table><thead><tr><th>층</th><th>필터</th><th>무엇을 얻는가</th></tr></thead><tbody><tr><td>존재</td><td><code>http</code></td><td>HTTP로 해석된 모든 패킷(요청+응답+이어붙은 본문)</td></tr><tr><td>요청만</td><td><code>http.request</code></td><td>요청 라인이 있는 패킷. <strong>URI 목록을 뽑는 출발점</strong></td></tr><tr><td>응답만</td><td><code>http.response</code></td><td>상태 라인이 있는 패킷. 성공/실패 판정</td></tr><tr><td>특정 요청</td><td><code>http.request.method == &quot;GET&quot;</code></td><td>메서드별 분리</td></tr><tr><td>특정 대상</td><td><code>http.host</code>, <code>http.request.uri</code></td><td>누구에게 무엇을 요청했는가</td></tr><tr><td>결과</td><td><code>http.response.code</code></td><td>그 요청이 통했는가</td></tr><tr><td>내용</td><td><code>http.file_data</code></td><td>실제로 전송된 바이트</td></tr></tbody></table></div>
+<p><code>http</code>와 <code>http.request</code>의 차이가 초보자를 가장 많이 잡는다. <code>http</code>는 응답 패킷과 재조립된 본문 패킷까지 포함하므로 <strong>개수가 요청 개수보다 훨씬 많다.</strong> &quot;요청이 몇 건인가&quot;를 세려면 반드시 <code>http.request</code>를 쓴다.</p>
+<p>HTTP는 평문 프로토콜이므로 캡처에 다 남는다. 반대로 <strong>HTTPS(TLS 안의 HTTP)는 <code>http</code> 필터에 걸리지 않는다.</strong> <code>tls</code> 필터와 SNI로 넘어가야 한다.</p>
+<h2 id="파일-경로">파일 / 경로</h2>
+<p>이 글은 디스크 artifact가 아니라 캡처 파일을 다룬다.</p>
+<div class="table-wrap"><table><thead><tr><th>대상</th><th>형식</th><th>비고</th></tr></thead><tbody><tr><td>캡처 파일</td><td><code>.pcap</code> / <code>.pcapng</code></td><td>pcapng는 주석·인터페이스 정보를 함께 담는다</td></tr><tr><td>Wireshark 기본 HTTP 포트</td><td>TCP 80, 8080, 8008, 3128 등</td><td><code>Preferences &gt; Protocols &gt; HTTP &gt; TCP port(s)</code> 에 목록이 있다</td></tr><tr><td>비표준 포트</td><td>예: 8888, 9001</td><td>패킷 우클릭 <code>Decode As...</code> 로 HTTP 지정</td></tr><tr><td>서버 측 대조 로그</td><td><code>access.log</code>, <code>u_ex*.log</code></td><td>요청 URI·상태 코드·User-Agent가 같은 값으로 남는다</td></tr></tbody></table></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Preferences &gt; Protocols &gt; HTTP &gt; TCP port(s)
+Analyze &gt; Decode As...   (Field=TCP port, Current=HTTP)
+Preferences &gt; Protocols &gt; TCP &gt; Allow subdissector to reassemble TCP streams</code></pre></div>
+<p>세 번째 설정이 꺼져 있으면 <code>http.file_data</code>가 비고, 여러 세그먼트에 걸친 본문 검색이 실패한다.</p>
+<h2 id="주요-필드">주요 필드</h2>
+<h3 id="요청-측">요청 측</h3>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>값의 예</th><th>용도</th><th>컬럼으로 둘 가치</th></tr></thead><tbody><tr><td><code>http.request</code></td><td>(존재 여부)</td><td>요청 패킷만 남긴다</td><td>-</td></tr><tr><td><code>http.request.method</code></td><td><code>GET</code> <code>POST</code> <code>PUT</code> <code>HEAD</code> <code>OPTIONS</code></td><td>메서드 분리. <strong>문자열이므로 큰따옴표 필수</strong></td><td>있음</td></tr><tr><td><code>http.request.uri</code></td><td><code>/admin/upload.php?id=3</code></td><td>경로+쿼리. <strong>호스트는 없다</strong></td><td>필수</td></tr><tr><td><code>http.request.full_uri</code></td><td><code>http://shop.example.com/admin/upload.php?id=3</code></td><td>Host 헤더와 합성한 전체 URL</td><td>있음</td></tr><tr><td><code>http.request.version</code></td><td><code>HTTP/1.1</code> <code>HTTP/1.0</code></td><td><code>HTTP/1.0</code> 단독 사용은 스크립트/도구 신호</td><td>낮음</td></tr><tr><td><code>http.host</code></td><td><code>shop.example.com</code></td><td>Host 헤더. 가상 호스트를 구분한다</td><td>필수</td></tr><tr><td><code>http.user_agent</code></td><td><code>curl/8.4.0</code></td><td>클라이언트 도구 식별</td><td>있음</td></tr><tr><td><code>http.referer</code></td><td><code>http://shop.example.com/index.php</code></td><td>유입 경로. <strong>철자가 <code>referer</code>(r 하나)</strong></td><td>있음</td></tr><tr><td><code>http.cookie</code></td><td><code>PHPSESSID=9f2a...</code></td><td>세션 추적, 하이재킹 판정</td><td>있음</td></tr><tr><td><code>http.authorization</code></td><td><code>Basic YWRtaW46cGFzcw==</code></td><td><code>Basic</code>은 Base64, <code>Bearer</code>는 JWT</td><td>있음</td></tr><tr><td><code>http.content_type</code></td><td><code>application/x-www-form-urlencoded</code></td><td><strong>요청 본문 처리 방법을 결정</strong></td><td>있음</td></tr><tr><td><code>http.content_length</code></td><td><code>8421</code></td><td>선언된 본문 길이</td><td>있음</td></tr></tbody></table></div>
+<h3 id="응답-측">응답 측</h3>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>값의 예</th><th>용도</th></tr></thead><tbody><tr><td><code>http.response</code></td><td>(존재 여부)</td><td>응답 패킷만 남긴다</td></tr><tr><td><code>http.response.code</code></td><td><code>200</code> <code>302</code> <code>401</code> <code>404</code> <code>500</code></td><td><strong>숫자 필드. 범위 비교가 된다</strong> (<code>&gt;= 400</code>)</td></tr><tr><td><code>http.response.phrase</code></td><td><code>OK</code> <code>Not Found</code> <code>Forbidden</code></td><td>코드와 짝인 사유구. 서버가 임의로 바꿀 수 있다</td></tr><tr><td><code>http.server</code></td><td><code>Apache/2.4.52 (Ubuntu)</code></td><td>서버 기술 스택 파악</td></tr><tr><td><code>http.location</code></td><td><code>/dashboard.php</code></td><td>3xx 리다이렉트 목적지. <strong>로그인 성공 판정에 쓰인다</strong></td></tr><tr><td><code>http.set_cookie</code></td><td><code>PHPSESSID=...; HttpOnly</code></td><td>세션 발급 시점 = 인증 성공 시점</td></tr><tr><td><code>http.content_type</code></td><td><code>application/octet-stream</code></td><td>응답 본문 종류. 파일 다운로드 판정</td></tr><tr><td><code>http.content_length</code></td><td><code>1048576</code></td><td>응답 크기. 유출량 추정</td></tr><tr><td><code>http.content_encoding</code></td><td><code>gzip</code> <code>br</code> <code>deflate</code></td><td>압축됨. 원문을 보려면 해제 필요</td></tr><tr><td><code>http.transfer_encoding</code></td><td><code>chunked</code></td><td><strong><code>Content-Length</code>가 없다.</strong> 크기 판정과 추출이 까다로워진다</td></tr><tr><td><code>http.file_data</code></td><td>(바이트)</td><td><strong>재조립된 본문 바이트.</strong> 요청·응답 모두에 붙는다</td></tr></tbody></table></div>
+<h3 id="요청과-응답을-잇는-필드">요청과 응답을 잇는 필드</h3>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>붙는 곳</th><th>의미</th></tr></thead><tbody><tr><td><code>http.request_in</code></td><td><strong>응답 패킷</strong></td><td>이 응답에 대응하는 요청의 프레임 번호</td></tr><tr><td><code>http.response_in</code></td><td><strong>요청 패킷</strong></td><td>이 요청에 대응하는 응답의 프레임 번호</td></tr><tr><td><code>http.response_for.uri</code></td><td><strong>응답 패킷</strong></td><td>이 응답이 어떤 URI에 대한 것인지 (full URI)</td></tr><tr><td><code>http.time</code></td><td><strong>응답 패킷</strong></td><td>요청부터 응답까지 초 단위 경과 시간</td></tr><tr><td><code>tcp.stream</code></td><td>모든 패킷</td><td>같은 TCP 연결의 요청/응답을 묶는 인덱스</td></tr></tbody></table></div>
+<p><strong><code>http.response_for.uri</code>가 실무에서 가장 강력하다.</strong> 응답만 필터한 상태에서도 &quot;이 404가 어떤 경로에 대한 것인가&quot;를 한 컬럼으로 볼 수 있어, 요청과 응답을 따로 뽑아 손으로 맞추는 작업이 사라진다.</p>
+<p>Keep-Alive 연결에서는 한 <code>tcp.stream</code>에 요청/응답이 여러 쌍 들어 있다. 이때 <strong><code>tcp.stream</code>만으로는 짝을 확정할 수 없고 <code>http.request_in</code>이 정답이다.</strong> 반대로 파이프라이닝이 없는 일반 브라우징이라면 <code>tcp.stream</code>으로도 충분하다.</p>
+<h3 id="비교-연산자별-동작">비교 연산자별 동작</h3>
+<div class="table-wrap"><table><thead><tr><th>표현</th><th>의미</th><th>주의</th></tr></thead><tbody><tr><td><code>http.host == &quot;a.com&quot;</code></td><td>값 전체가 정확히 일치</td><td>부분 일치 안 됨</td></tr><tr><td><code>http.host contains &quot;a.com&quot;</code></td><td>부분 문자열. <strong>대소문자 구분</strong></td><td>바이트 단위 비교</td></tr><tr><td><code>http.host matches &quot;a\\.(com|net)&quot;</code></td><td>정규식. <strong>기본이 대소문자 무시</strong></td><td><code>(?-i)</code>로 구분 강제</td></tr><tr><td><code>http.response.code &gt;= 400</code></td><td>숫자 비교</td><td>문자열 필드에는 못 쓴다</td></tr><tr><td><code>http.request.method in {&quot;GET&quot; &quot;POST&quot;}</code></td><td>집합 멤버십</td><td>값마다 따옴표 필요</td></tr><tr><td><code>http.host</code></td><td>필드 존재 여부</td><td>값을 몰라도 &quot;헤더가 있는가&quot;를 판정</td></tr></tbody></table></div>
+<h2 id="빠른-명령">빠른 명령</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r c.pcapng -Y http.request -T fields -e http.host -e http.request.uri</code></pre></div>
+<p>요청을 한눈에 보는 표:</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;http.request&#39; \
+  -T fields -e frame.number -e tcp.stream -e ip.src -e http.request.method \
+            -e http.host -e http.request.uri -e http.user_agent \
+  -E header=y -E separator=,</code></pre></div>
+<p>응답을 URI와 함께:</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;http.response&#39; \
+  -T fields -e frame.number -e http.request_in -e http.response.code \
+            -e http.content_length -e http.content_type -e http.response_for.uri \
+  -E header=y</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">frame.number  http.request_in  http.response.code  http.content_length  http.content_type  http.response_for.uri
+918           842              302                 0                    text/html          http://shop.example.com/login
+1310          1204             200                 44                   application/json   http://shop.example.com/admin/upload.php
+2402          2377             404                 291                  text/html          http://shop.example.com/.git/config</code></pre></div>
+<p>GUI에서 같은 것을 보려면 필드 우클릭 → <code>Apply as Column</code>으로 <code>http.host</code>, <code>http.request.uri</code>, <code>http.response.code</code>, <code>tcp.stream</code> 네 개를 컬럼으로 올린다.</p>
+<h2 id="함께-보는-artifact">함께 보는 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>이 글의 필드</th><th>다음에 볼 것</th></tr></thead><tbody><tr><td><code>http.request.method == &quot;GET&quot;</code></td><td>GET 전용 분석 (<a href="./http-get-find.html">FOR-0157</a>)</td></tr><tr><td><code>http.request.method == &quot;POST&quot;</code></td><td>본문·자격증명 (<a href="./http-post-find.html">FOR-0158</a>)</td></tr><tr><td><code>http.request.uri</code></td><td>URI 필터 정밀 사용 (<a href="./http-request-uri-filter.html">FOR-0159</a>)</td></tr><tr><td><code>http.host</code></td><td>접속 도메인 목록화 (<a href="./http-host-filter.html">FOR-0160</a>)</td></tr><tr><td><code>http.response.code</code></td><td>상태 코드 판정 (<a href="./http-status-analysis.html">FOR-0161</a>)</td></tr><tr><td><code>http.file_data</code></td><td>Export Objects로 파일 추출 (<a href="./export-objects-http.html">FOR-0165</a>)</td></tr><tr><td><code>tcp.stream</code></td><td>스트림 번호 필터 (<a href="./tcp-stream-filter.html">FOR-0164</a>)</td></tr><tr><td>전체 흐름</td><td>트리아지 순서 (<a href="./wireshark-30sec-triage.html">FOR-0146</a>)</td></tr></tbody></table></div>
+<h2 id="흔한-실수">흔한 실수</h2>
+<ul><li><strong><code>http.request.method == GET</code> (따옴표 없음).</strong> Wireshark는 문자열 값에 큰따옴표를 요구한다. 게다가 값은 <strong>대문자</strong>다. <code>&quot;get&quot;</code>은 매칭되지 않는다.</li><li><strong><code>http.referrer</code>로 쓰는 것.</strong> HTTP 헤더 자체가 <code>Referer</code>(r 하나)이고 Wireshark 필드도 <code>http.referer</code>다. <code>http.referrer</code>는 존재하지 않는 필드라 문법 오류가 난다.</li><li><strong><code>http</code> 개수를 요청 개수로 세는 것.</strong> <code>http</code>는 응답과 이어붙은 본문 패킷까지 포함한다. 요청 개수는 <code>http.request</code>로 센다.</li><li><strong><code>http.request.uri</code>에 호스트가 들어 있다고 가정하는 것.</strong> <code>/login</code>만 들어 있다. 도메인까지 필요하면 <code>http.request.full_uri</code>나 <code>http.host</code>를 쓴다.</li><li><strong>응답 패킷에 <code>http.request.uri</code>를 기대하는 것.</strong> 응답에는 그 필드가 없다. <code>http.response_for.uri</code>가 응답 측 대응 필드다.</li><li><strong><code>http.content_length</code>를 실제 전송량으로 믿는 것.</strong> <code>Transfer-Encoding: chunked</code>면 <code>Content-Length</code> 헤더가 아예 없고, 값이 있어도 압축 전/후 기준이 헷갈린다. 실제 크기는 <code>Statistics &gt; Conversations</code>의 Bytes로 확인한다.</li><li><strong>HTTPS를 <code>http</code> 필터로 찾는 것.</strong> TLS로 감싼 HTTP는 <code>http</code>에 안 걸린다. 키가 없으면 <code>tls.handshake.extensions_server_name</code>(SNI)으로 목적지만 확보한다.</li><li><strong>비표준 포트를 놓치는 것.</strong> 9001 포트 HTTP는 Protocol 컬럼에 <code>TCP</code>로만 보인다. <code>Decode As...</code>로 HTTP를 강제하기 전까지 <code>http</code> 필터는 0건이다.</li><li><strong><code>http.file_data</code>가 비었다고 본문이 없다고 판단하는 것.</strong> TCP 재조립 설정, chunked 전송, 미인식 포트 중 하나가 원인이다.</li><li><strong><code>http.response.phrase</code>로 성공/실패를 판정하는 것.</strong> 사유구는 서버가 임의 문자열로 바꿀 수 있다. 판정은 항상 숫자 <code>http.response.code</code>로 한다.</li></ul>
+<h2 id="mini-example">mini example</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;관리자가 로그인에 성공한 시각과 그때 발급된 세션 쿠키 값을 구하세요.&quot;
+첨부: portal.pcapng (4,180 packets)
+
+1. 첫 시도 (실패):
+   필터: http &amp;&amp; http.cookie
+   -&gt; 1,204개가 걸렸다. 브라우징 내내 모든 요청이 쿠키를 실어 보내므로
+      &quot;발급 시점&quot;을 여기서 찾을 수 없다.
+      http.cookie 는 &quot;요청이 들고 간 쿠키&quot;이고, 발급은 응답 측 사건이다.
+
+2. 필드를 바꾼다 — 발급은 Set-Cookie 다.
+   필터: http.set_cookie
+
+   frame  code  set_cookie
+   918    302   PHPSESSID=b71c3ad9f0e24; path=/; HttpOnly
+   3355   200   PHPSESSID=deleted; expires=Thu, 01-Jan-1970 00:00:00 GMT
+
+   -&gt; 918 이 발급, 3355 는 로그아웃(값이 deleted).
+
+3. 그 응답이 어느 요청의 것인지 — http.request_in
+   tshark -r portal.pcapng -Y &#39;frame.number == 918&#39; \
+     -T fields -e http.request_in -e http.response.code -e http.location -e http.time
+
+   842   302   /dashboard.php   0.043
+
+   -&gt; 요청은 frame 842. 302 + Location: /dashboard.php = 로그인 성공 리다이렉트.
+
+4. 요청 쪽을 확인
+   필터: frame.number == 842
+   POST /login  Host: portal.example.com
+   http.content_type = application/x-www-form-urlencoded
+
+   본문 파싱은 POST 전용 절차로 넘긴다 -&gt; FOR-0158
+
+5. 시각 확정
+   View &gt; Time Display Format &gt; UTC Date and Time of Day
+   frame 842: 2026-03-14 07:22:41.108 UTC  = KST 16:22:41 (UTC+9)
+
+정답: 2026-03-14 07:22:41 UTC (16:22:41 KST) / PHPSESSID=b71c3ad9f0e24</code></pre></div>
+<p>1단계의 실패가 이 글의 요점이다. <strong><code>http.cookie</code>(요청)와 <code>http.set_cookie</code>(응답)는 방향이 반대인 서로 다른 필드다.</strong> 요청 측 필드로 응답 측 사건을 찾으려 하면 건수만 폭발한다. 그리고 응답에서 요청으로 되돌아가는 다리가 <code>http.request_in</code>이다.</p>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-002 — Wireshark Display Filter Reference: <code>http.*</code> 필드 이름과 자료형(문자열/숫자/프레임 번호), 비교 연산자와 <code>matches</code>의 대소문자 동작</li><li>SRC-064 — RFC 9110 HTTP Semantics: 메서드, 상태 코드, <code>Host</code> / <code>Referer</code> / <code>Authorization</code> / <code>Content-Length</code> / <code>Transfer-Encoding</code> 헤더의 정의</li><li><code>http.request.uri.path</code>, <code>http.request.uri.query</code>, <code>http.response.code.desc</code> 처럼 비교적 최근에 추가된 필드는 Wireshark 버전에 따라 없을 수 있다. 필터 입력창이 초록색으로 바뀌는지로 존재를 확인할 것</li><li><code>Preferences</code> 하위 항목명과 <code>Decode As...</code> 메뉴 경로는 도구 버전에 따라 다를 수 있으므로 실제 화면에서 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./http-get-find.html">
+    <span class="rel-id">FOR-0157 · Network/PCAP</span>
+    pcap에서 HTTP GET 요청 분석: 쿼리 명령·다운로드 파일·User-Agent 도구 식별
+  </a>
+  <a class="related-item" href="./http-request-uri-filter.html">
+    <span class="rel-id">FOR-0159 · Network/PCAP</span>
+    http.request.uri 필터 실전: == / contains / matches 와 퍼센트 인코딩 함정
+  </a>
+  <a class="related-item" href="./http-status-analysis.html">
+    <span class="rel-id">FOR-0161 · Network/PCAP</span>
+    HTTP 상태 코드로 성공·실패 판정: http.response.code와 401→200 전환 읽기
+  </a>
+  <a class="related-item" href="./wireshark-30sec-triage.html">
+    <span class="rel-id">FOR-0146 · Network/PCAP</span>
+    Wireshark 30초 트리아지: pcap을 받고 처음 할 다섯 가지
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./conversations.html"><span class="rel-id">← FOR-0149</span>Conversations: 가장 큰 대화를 찾아 tcp.stream으로 직행하기</a>
+<a class="related-item" href="./http-get-find.html"><span class="rel-id">FOR-0157 →</span>pcap에서 HTTP GET 요청 분석: 쿼리 명령·다운로드 파일·User-Agent 도구 식별</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#개념">개념</a></li>
+<li class="toc-l2"><a href="#파일-경로">파일 / 경로</a></li>
+<li class="toc-l2"><a href="#주요-필드">주요 필드</a></li>
+<li class="toc-l3"><a href="#요청-측">요청 측</a></li>
+<li class="toc-l3"><a href="#응답-측">응답 측</a></li>
+<li class="toc-l3"><a href="#요청과-응답을-잇는-필드">요청과 응답을 잇는 필드</a></li>
+<li class="toc-l3"><a href="#비교-연산자별-동작">비교 연산자별 동작</a></li>
+<li class="toc-l2"><a href="#빠른-명령">빠른 명령</a></li>
+<li class="toc-l2"><a href="#함께-보는-artifact">함께 보는 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-실수">흔한 실수</a></li>
+<li class="toc-l2"><a href="#mini-example">mini example</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

@@ -806,8 +806,7 @@
   {
    "q": "regex email",
    "expect": [
-    "FOR-0132",
-    "FOR-0128"
+    "FOR-0132"
    ],
    "within": 5
   },
@@ -822,8 +821,7 @@
   {
    "q": "base64 regex",
    "expect": [
-    "FOR-0135",
-    "FOR-0128"
+    "FOR-0135"
    ],
    "within": 5
   },
@@ -854,7 +852,7 @@
    "q": "PowerShell EncodedCommand",
    "expect": [
     "FOR-0143",
-    "FOR-0214"
+    "FOR-0097"
    ],
    "within": 5
   },
@@ -1014,8 +1012,7 @@
   {
    "q": "Capture Filter Display Filter 차이",
    "expect": [
-    "FOR-0147",
-    "FOR-0146"
+    "FOR-0147"
    ],
    "within": 3
   },

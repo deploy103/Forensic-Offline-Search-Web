@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>해시로 분석 전후 무결성 확인 (MD5/SHA1/SHA256) · FOR-0010 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%ED%8A%B8%EB%A6%AC%EC%95%84%EC%A7%80">트리아지</a> / FOR-0010
+      </div>
+      <header class="article-head">
+        <h1>해시로 분석 전후 무결성 확인 (MD5/SHA1/SHA256)</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">트리아지</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>분석을 시작하기 전에 원본 파일의 SHA-256을 계산해 케이스 폴더 밖에 기록하고, 작업은 사본에서만 하고, 분석이 끝난 뒤 원본을 다시 계산해 그 값과 문자 단위로 일치하는지 확인한다. 해시는 &quot;원본을 안 건드렸다&quot;는 유일한 증명 수단이다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>HashCalc, FTK Imager, certutil, Get-FileHash, sha256sum, md5sum, ewfverify, ewfinfo</td></tr>
+<tr><th>artifact</th><td><code>E01 digest</code> · <code>acquisition log</code> · <code>hash manifest</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\case\original</code> · <code>C:\case\work</code> · <code>C:\case\notes\hash_before.txt</code></td></tr>
+<tr><th>regex</th><td><code>^[a-fA-F0-9]{32}$</code> · <code>^[a-fA-F0-9]{40}$</code> · <code>^[a-fA-F0-9]{64}$</code></td></tr>
+<tr><th>로그 필드</th><td><code>Hash</code> · <code>Algorithm</code> · <code>Path</code> · <code>MD5</code> · <code>SHA1</code> · <code>SHA256</code></td></tr>
+<tr><th>파일 형식</th><td><code>e01</code> · <code>raw</code> · <code>txt</code> · <code>csv</code></td></tr>
+<tr><th>검색 별칭</th><td>해시 무결성 · 분석 전후 해시 · 무결성 검증 · 해시 계산 방법 · 해시 다름 · get-filehash · certutil 해시 · e01 검증</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>분석을 시작하기 전에 원본 파일의 SHA-256을 계산해 케이스 폴더 밖에 기록하고, <strong>작업은 사본에서만 하고</strong>, 분석이 끝난 뒤 원본을 다시 계산해 그 값과 문자 단위로 일치하는지 확인한다. 해시는 &quot;원본을 안 건드렸다&quot;는 유일한 증명 수단이다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>디스크 이미지·메모리 덤프를 받아 분석을 시작할 때 (항상)</li><li>문제가 파일의 해시값 자체를 답으로 요구할 때</li><li>이미지에서 파일을 추출(export)했는데 그 추출물이 원본과 같은지 확인해야 할 때</li><li>마운트했던 이미지가 변경되지 않았는지 확인해야 할 때</li><li>여러 첨부 중 같은 파일이 중복으로 들어 있는지 확인할 때</li><li>제출한 답이 틀렸는데 &quot;내가 분석한 파일이 원본과 다른가?&quot;를 배제해야 할 때</li></ul>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>첨부와 함께 온 <code>*.txt</code>, <code>*.md5</code>, <code>hashes.txt</code>, <code>readme</code> — <strong>취득 시 계산된 해시가 들어 있다</strong></li><li>이미지가 <code>.E01</code>이면 해시가 <strong>파일 내부에 저장되어 있다</strong></li><li>문제 지문에 <code>MD5</code>, <code>SHA-256</code>, <code>무결성</code>, <code>해시값을 제출</code> 같은 단어</li><li>답으로 요구하는 문자열 길이 — 32자면 MD5, 40자면 SHA-1, 64자면 SHA-256</li><li>첨부 파일 크기가 어중간하게 잘려 있는가 — 다운로드 중단이면 해시부터 안 맞는다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">sha256sum evidence.dd | tee ~/case_notes/hash_before.txt</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># Windows. 결과를 케이스 폴더 &quot;밖&quot;에 기록한다
+Get-FileHash .\evidence.dd -Algorithm SHA256 |
+  Select-Object Algorithm, Hash, Path |
+  Tee-Object -FilePath D:\notes\hash_before.txt</code></pre></div>
+<p>E01이면 파일 해시가 아니라 <strong>내장 해시 검증</strong>을 돌린다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">ewfverify evidence.E01</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-해시-알고리즘-선택">1단계 — 해시 알고리즘 선택</h3>
+<div class="table-wrap"><table><thead><tr><th>알고리즘</th><th>출력 길이</th><th>hex 문자 수</th><th>포렌식에서의 용도</th></tr></thead><tbody><tr><td>MD5</td><td>128비트</td><td>32</td><td>레거시 해시셋 대조, 중복 파일 식별 <strong>전용</strong></td></tr><tr><td>SHA-1</td><td>160비트</td><td>40</td><td>구형 도구 호환(Amcache의 파일 SHA-1 등)</td></tr><tr><td>SHA-256</td><td>256비트</td><td>64</td><td><strong>무결성 증명의 기본값</strong></td></tr><tr><td>SHA-512</td><td>512비트</td><td>128</td><td>필요할 때만. 대용량에서 SHA-256보다 빠른 경우도 있다</td></tr></tbody></table></div>
+<p>원칙은 두 줄이다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">무결성을 &quot;증명&quot;할 때        -&gt; SHA-256 (또는 SHA-256 + MD5 병기)
+파일을 &quot;식별/대조&quot;할 때만   -&gt; MD5 도 무방 (해시셋, 중복 제거)</code></pre></div>
+<p>빈 파일의 해시는 외워 두면 즉시 사고를 잡는다. 복사 실패·0바이트 추출을 한눈에 알 수 있다.</p>
+<div class="table-wrap"><table><thead><tr><th>대상</th><th>MD5</th><th>SHA-256</th></tr></thead><tbody><tr><td>0바이트 파일</td><td><code>d41d8cd98f00b204e9800998ecf8427e</code></td><td><code>e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855</code></td></tr></tbody></table></div>
+<h3 id="2단계-계산-방법-4가지">2단계 — 계산 방법 4가지</h3>
+<div class="table-wrap"><table><thead><tr><th>방법</th><th>환경</th><th>명령/조작</th><th>특징</th></tr></thead><tbody><tr><td>HashCalc</td><td>Windows GUI</td><td>파일 선택 → 알고리즘 체크 → Calculate</td><td>여러 알고리즘 동시 계산. 파일 하나씩</td></tr><tr><td><code>Get-FileHash</code></td><td>PowerShell</td><td><code>Get-FileHash &lt;path&gt; -Algorithm SHA256</code></td><td>파이프라인·재귀·CSV에 강하다. 기본값 SHA-256</td></tr><tr><td><code>certutil -hashfile</code></td><td>cmd/PowerShell</td><td><code>certutil -hashfile &lt;path&gt; SHA256</code></td><td>PowerShell 없는 구형 환경에서도 동작</td></tr><tr><td><code>sha256sum</code> / <code>md5sum</code></td><td>Linux/WSL</td><td><code>sha256sum &lt;path&gt;</code></td><td><code>-c</code>로 목록 검증까지 한 번에</td></tr></tbody></table></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) 단일 파일
+Get-FileHash .\evidence.dd -Algorithm SHA256
+
+# 2) 여러 알고리즘 병기
+&#39;MD5&#39;,&#39;SHA1&#39;,&#39;SHA256&#39; | ForEach-Object {
+  Get-FileHash .\evidence.dd -Algorithm $_
+} | Format-Table Algorithm, Hash -AutoSize
+
+# 3) NTFS 메타파일은 반드시 작은따옴표. 큰따옴표는 변수로 확장돼 경로가 잘린다
+Get-FileHash &#39;C:\case\original\$MFT&#39; -Algorithm SHA256
+Get-FileHash &#39;C:\case\original\$J&#39;   -Algorithm SHA256</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Algorithm  Hash                                                             Path
+---------  ----                                                             ----
+SHA256     9F86D081884C7D659A2FEAA0C55AD015A3BF4F1B2B0B822CD15D6C15B0F00A08 C:\case\evidence.dd</code></pre></div>
+<p><code>Get-FileHash</code>는 <strong>대문자 hex</strong>를 낸다. <code>sha256sum</code>은 <strong>소문자</strong>다. 비교할 때는 한쪽을 맞춘다.</p>
+<div class="code-block" data-lang="cmd"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-cmd">certutil -hashfile C:\case\evidence.dd SHA256</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">SHA256 hash of C:\case\evidence.dd:
+9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+CertUtil: -hashfile command completed successfully.</code></pre></div>
+<p><code>certutil</code> 출력은 <strong>3줄</strong>이다. 해시만 필요하면 가운데 줄을 뽑는다. 구형 Windows에서는 hex 사이에 공백이 들어가므로 공백을 제거해야 비교가 된다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># certutil 출력에서 해시만 추출 (공백 제거 포함)
+(certutil -hashfile C:\case\evidence.dd SHA256)[1] -replace &#39;\s&#39;,&#39;&#39;</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># Linux
+sha256sum evidence.dd
+md5sum    evidence.dd
+sha1sum   evidence.dd</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08  evidence.dd</code></pre></div>
+<h3 id="3단계-분석-전후-절차로-고정">3단계 — 분석 전후 절차로 고정</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">[1] 원본 도착      -&gt; SHA-256 계산 -&gt; hash_before.txt 에 기록 (케이스 폴더 밖)
+[2] 취득 로그/E01 내장 해시가 있으면 [1] 값과 대조
+[3] 사본 생성      -&gt; 사본의 SHA-256 이 [1] 과 같은지 확인
+[4] 원본은 읽기 전용으로 잠그고 손대지 않는다
+[5] 모든 작업은 사본에서 한다
+[6] 분석 종료      -&gt; 원본 SHA-256 재계산 -&gt; hash_after.txt
+[7] before == after 확인. 다르면 무엇이 원본을 건드렸는지 규명
+[8] 추출물(export)마다 해시를 기록. 원본 내 해당 파일 해시와 대조</code></pre></div>
+<p>핵심은 [3]과 [7]이다. <strong>[3]은 사본이 제대로 만들어졌음을, [7]은 원본이 그대로임을 증명한다.</strong> 둘 중 하나만 하면 반쪽이다. 사본 생성과 원본 보존의 구체적 방법은 별도 글에서 다룬다.</p>
+<h3 id="4단계-e01-내장-해시와-ftk-imager-verify">4단계 — E01 내장 해시와 FTK Imager Verify</h3>
+<p>E01(EWF) 컨테이너는 <strong>취득한 미디어 데이터의 해시를 파일 내부에 저장한다.</strong> 이것이 RAW 이미지와의 결정적인 차이다.</p>
+<div class="table-wrap"><table><thead><tr><th>대상</th><th>무엇을 해시하는가</th><th>값이 같은가</th></tr></thead><tbody><tr><td><code>sha256sum evidence.E01</code></td><td><strong>컨테이너 파일</strong>의 바이트 (헤더·압축 포함)</td><td>E01 내장 해시와 <strong>다르다</strong></td></tr><tr><td><code>ewfverify evidence.E01</code></td><td>압축을 풀어 복원한 <strong>미디어 데이터</strong></td><td>내장 해시와 <strong>같아야 한다</strong></td></tr><tr><td>FTK Imager <code>Verify Drive/Image</code></td><td>동일하게 미디어 데이터</td><td>내장 해시와 <strong>같아야 한다</strong></td></tr><tr><td><code>sha256sum evidence.dd</code> (RAW)</td><td>미디어 데이터 자체</td><td>E01의 내장 해시와 같아야 한다</td></tr></tbody></table></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># E01 내장 해시 확인
+ewfinfo evidence.E01
+
+# 실제로 다시 읽어 계산하고 내장값과 비교
+ewfverify evidence.E01</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">ewfverify 20140608
+
+Verify started at: Mar 14, 2026 07:10:22
+...
+MD5 hash stored in file:      3f1c8a0e6b2d47c9a1e5b73d0c9f4a12
+MD5 hash calculated over data: 3f1c8a0e6b2d47c9a1e5b73d0c9f4a12
+
+ewfverify: SUCCESS</code></pre></div>
+<p>FTK Imager에서는 이미지를 추가한 뒤 <code>File &gt; Verify Drive/Image</code>를 실행한다. 결과 창에 저장된 해시와 계산된 해시가 나란히 표시되고 일치 여부를 알려 준다 (<a href="./ftk-imager-open-image.html">FOR-0016</a>).</p>
+<p><strong>분할 E01(<code>.E01</code>, <code>.E02</code>, ...)은 개별 파일 해시를 비교하지 말고 <code>ewfverify</code>나 FTK Imager Verify를 쓴다.</strong> 세그먼트 분할 방식이 다르면 파일 단위 해시는 달라도 데이터는 같을 수 있다.</p>
+<h3 id="5단계-폴더-전체-해시-목록-만들기와-비교">5단계 — 폴더 전체 해시 목록 만들기와 비교</h3>
+<p>파일 하나가 아니라 수집 폴더 전체를 검증할 때는 <strong>목록(manifest)</strong> 을 만든다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 생성 — 경로 순으로 정렬해야 diff 가 의미를 가진다
+cd /case/original
+find . -type f -print0 | sort -z | xargs -0 sha256sum &gt; /notes/manifest_before.txt
+
+# 나중에 같은 위치에서 검증 (내용까지 다시 읽어 비교)
+cd /case/original &amp;&amp; sha256sum -c /notes/manifest_before.txt</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">./Windows/System32/config/SYSTEM: OK
+./Windows/System32/winevt/Logs/Security.evtx: OK
+./Users/kim/NTUSER.DAT: FAILED
+sha256sum: WARNING: 1 computed checksum did NOT match</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 두 목록 비교 (원본 vs 사본). 경로 접두사를 맞춘 뒤 diff
+diff &lt;(sort /notes/manifest_before.txt) &lt;(sort /notes/manifest_after.txt)</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># PowerShell — 상대 경로로 정규화해서 만들어야 원본/사본 비교가 된다
+$root = &#39;C:\case\original&#39;
+Get-ChildItem -LiteralPath $root -Recurse -File |
+  Get-FileHash -Algorithm SHA256 |
+  Select-Object Hash, @{ n=&#39;Rel&#39;; e={ $_.Path.Substring($root.Length).TrimStart(&#39;\&#39;) } } |
+  Sort-Object Rel |
+  Export-Csv D:\notes\manifest_before.csv -NoTypeInformation -Encoding UTF8
+
+# 비교 — Hash 와 상대 경로 조합이 다른 항목만 나온다
+Compare-Object `
+  (Import-Csv D:\notes\manifest_before.csv) `
+  (Import-Csv D:\notes\manifest_after.csv) `
+  -Property Hash, Rel | Format-Table -AutoSize</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th><code>Compare-Object</code> <code>SideIndicator</code></th><th>의미</th></tr></thead><tbody><tr><td><code>&lt;=</code></td><td>before에만 있다 → 파일이 삭제됐거나 내용이 변경됐다</td></tr><tr><td><code>=&gt;</code></td><td>after에만 있다 → 파일이 추가됐거나 내용이 변경됐다</td></tr><tr><td>같은 <code>Rel</code>이 양쪽에 각각</td><td><strong>그 파일의 내용이 바뀌었다</strong></td></tr><tr><td>출력 없음</td><td>완전 일치</td></tr></tbody></table></div>
+<p><strong>절대 경로를 그대로 넣으면 <code>C:\case\original</code>과 <code>C:\case\work</code> 차이 때문에 전 항목이 불일치로 나온다.</strong> 반드시 상대 경로로 정규화한다.</p>
+<h3 id="6단계-추출물과-원본-대조">6단계 — 추출물과 원본 대조</h3>
+<p>이미지에서 파일을 export한 뒤에는 <strong>그 추출물이 이미지 안의 원본과 같은지</strong> 확인해야 한다. 도구가 조용히 잘라내거나 슬랙을 붙이는 경우가 있다.</p>
+<div class="table-wrap"><table><thead><tr><th>확인 방법</th><th>명령</th><th>무엇을 잡아내는가</th></tr></thead><tbody><tr><td>크기 우선 확인</td><td><code>ls -l</code> / <code>Get-Item</code></td><td>0바이트, 잘린 추출</td></tr><tr><td>추출물 해시</td><td><code>sha256sum extracted.xlsx</code></td><td>기록해 두면 이후 변조 감지</td></tr><tr><td>다른 도구로 재추출 후 대조</td><td>Autopsy export vs FTK Imager export</td><td>도구 버그·슬랙 포함 여부</td></tr><tr><td>Sleuth Kit으로 직접 뽑아 대조</td><td><code>icat -o &lt;offset&gt; image.dd &lt;inode&gt; | sha256sum</code></td><td>GUI 추출의 신뢰도 검증</td></tr></tbody></table></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 같은 파일을 두 경로로 뽑아 해시가 같은지 확인
+icat -o 2048 image.dd 12345 | sha256sum
+sha256sum ./autopsy_export/secret.xlsx</code></pre></div>
+<p>두 값이 다르면 <strong>최소 한쪽 도구가 잘못 뽑았다.</strong> 크기를 먼저 비교하면 원인이 대부분 즉시 보인다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="table-wrap"><table><thead><tr><th>관찰</th><th>판정</th><th>조치</th></tr></thead><tbody><tr><td>before == after</td><td>원본 무결성 유지</td><td>그대로 진행</td></tr><tr><td>before != after</td><td>원본이 변경됐다</td><td>아래 원인 표로 규명. 사본으로 재작업</td></tr><tr><td>취득 로그 해시 != 내 계산값</td><td>전송 중 손상 또는 다른 파일</td><td>파일 크기부터 비교</td></tr><tr><td><code>ewfverify: SUCCESS</code></td><td>E01 데이터 무결</td><td>마운트/파싱 진행</td></tr><tr><td><code>ewfverify: FAILURE</code></td><td>세그먼트 손상/누락</td><td><code>.E02</code> 이후 파일이 다 있는지 확인</td></tr><tr><td><code>sha256sum -c</code> 결과 <code>FAILED</code></td><td>그 파일만 변경됨</td><td>어느 도구가 그 파일을 열었는지 추적</td></tr><tr><td>해시가 <code>e3b0c442...</code></td><td><strong>0바이트</strong></td><td>복사·추출이 실패했다</td></tr><tr><td>해시는 같은데 타임스탬프가 다름</td><td><strong>정상</strong></td><td>해시는 내용만 본다. 무결성 판정에 영향 없음</td></tr><tr><td>크기가 같은데 해시가 다름</td><td>내용의 일부가 바뀌었다</td><td>마운트 쓰기·백신 치료 의심</td></tr></tbody></table></div>
+<p><strong>타임스탬프가 바뀌어도 해시는 바뀌지 않는다.</strong> 반대로 해시가 바뀌었다면 내용이 실제로 바뀐 것이다. 이 구분이 원인 추적의 출발점이다.</p>
+<h3 id="해시가-달라졌을-때의-원인">해시가 달라졌을 때의 원인</h3>
+<div class="table-wrap"><table><thead><tr><th>원인</th><th>어떻게 일어나는가</th><th>예방</th></tr></thead><tbody><tr><td>쓰기 가능 마운트</td><td>마운트 시 OS가 저널을 재생(replay)하고 <code>$LogFile</code>·메타데이터를 갱신한다</td><td>읽기 전용 마운트 (<a href="./arsenal-image-mounter.html">FOR-0017</a>)</td></tr><tr><td>백신 치료/격리</td><td>이미지 안이나 추출물에서 악성코드를 탐지해 파일을 변경·삭제한다</td><td>케이스 폴더 실시간 검사 예외 등록</td></tr><tr><td>검색 인덱싱</td><td>인덱서가 파일을 열고 ADS(<code>Zone.Identifier</code> 등)를 붙인다. 이름 없는 데이터 스트림은 보통 그대로지만 컨테이너 파일은 영향을 받을 수 있다</td><td>케이스 볼륨 인덱싱 해제</td></tr><tr><td>복사 중단</td><td>대용량 복사가 끝나기 전에 계산했다</td><td>크기 확인 후 해시</td></tr><tr><td>도구의 &quot;복구&quot; 동작</td><td>일부 도구가 손상 헤더를 자동 수정해 저장한다</td><td>원본 열기 금지, 사본에서만</td></tr><tr><td>압축 해제 후 재압축</td><td>ZIP을 풀고 다시 묶으면 컨테이너 해시가 달라진다</td><td>내부 파일 단위로 해시 비교</td></tr><tr><td>네트워크/USB 전송 오류</td><td>드물지만 존재</td><td>전송 후 해시 재확인</td></tr></tbody></table></div>
+<h3 id="충돌-내성-md5는-어디까지-쓸-수-있는가">충돌 내성 — MD5는 어디까지 쓸 수 있는가</h3>
+<div class="table-wrap"><table><thead><tr><th>성질</th><th>MD5</th><th>SHA-1</th><th>SHA-256</th></tr></thead><tbody><tr><td>충돌 저항 (서로 다른 두 파일이 같은 해시)</td><td><strong>깨졌다</strong></td><td><strong>깨졌다</strong></td><td>유효</td></tr><tr><td>원상 복원(preimage) 저항</td><td>실용적으로 유효</td><td>유효</td><td>유효</td></tr><tr><td>&quot;이 파일이 그 파일인가&quot; 식별</td><td>쓸 수 있다</td><td>쓸 수 있다</td><td>쓸 수 있다</td></tr><tr><td>&quot;누가 바꿔치기하지 않았다&quot;는 증명</td><td><strong>못 쓴다</strong></td><td><strong>못 쓴다</strong></td><td>쓸 수 있다</td></tr></tbody></table></div>
+<p>즉 MD5가 같으면 <strong>우연히 다른 파일일 가능성은 사실상 없지만, 의도적으로 같게 만든 파일일 가능성은 있다.</strong> 그래서 MD5는 해시셋 대조·중복 제거 같은 식별 용도로만 쓰고, 무결성 주장에는 SHA-256을 병기한다. 취득 로그가 MD5만 남겼다면 MD5로 대조하되 <strong>자기 기록에는 SHA-256을 함께 남긴다.</strong></p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>이 글에서 얻은 값</th><th>다음에 할 일</th><th>확인 사항</th></tr></thead><tbody><tr><td>원본 SHA-256</td><td>사본 생성 후 재계산</td><td>사본이 원본과 동일한가</td></tr><tr><td><code>ewfverify: SUCCESS</code></td><td>이미지 마운트 / 파티션 확인</td><td>읽기 전용으로 마운트했는가 (<a href="./arsenal-image-mounter.html">FOR-0017</a>)</td></tr><tr><td>취득 로그의 MD5</td><td>내 계산 MD5와 대조</td><td>전송 손상 배제</td></tr><tr><td>추출물 해시</td><td>다른 도구로 재추출해 대조</td><td>도구가 잘라내지 않았는가</td></tr><tr><td>폴더 manifest</td><td>분석 종료 후 <code>-c</code> 검증</td><td>어느 파일이 변경됐는가</td></tr><tr><td>해시가 0바이트 값</td><td>추출 절차 재실행</td><td>파일 크기·경로 오타</td></tr><tr><td>파일 형식 미확정</td><td>매직 바이트 확인</td><td>해시만으로는 형식을 알 수 없다 (<a href="./30sec-triage.html">FOR-0001</a>)</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>E01 컨테이너 파일의 해시를 내장 해시와 비교하는 것.</strong> <code>sha256sum evidence.E01</code>은 압축·헤더를 포함한 컨테이너 바이트의 해시다. E01 안에 저장된 해시는 <strong>복원된 미디어 데이터</strong>의 해시라서 절대 같지 않다. 반드시 <code>ewfverify</code>나 FTK Imager <code>Verify Drive/Image</code>를 쓴다.</li><li><strong>원본을 직접 열어 놓고 나중에 해시를 계산하는 것.</strong> 이미 변경됐으면 before 값이 없어 무결성을 증명할 방법이 사라진다. <strong>해시는 아무것도 하기 전에 계산한다.</strong></li><li><strong>대소문자를 무시하고 문자열 비교하는 것.</strong> <code>Get-FileHash</code>는 대문자, <code>sha256sum</code>은 소문자를 낸다. 육안 비교는 통과하지만 스크립트 비교(<code>-eq</code>, <code>diff</code>)는 불일치로 나온다. 한쪽을 <code>.ToLower()</code>로 맞춘다.</li><li><strong><code>certutil</code> 출력을 통째로 비교하는 것.</strong> 출력은 헤더 줄과 완료 메시지를 포함한 3줄이고, 구형 Windows는 hex 사이에 공백을 넣는다. 가운데 줄만 뽑고 공백을 제거한다.</li><li><strong>폴더 manifest를 절대 경로로 만들어 비교하는 것.</strong> <code>C:\case\original\...</code>과 <code>C:\case\work\...</code>는 해시가 같아도 전 항목이 불일치로 나온다. 상대 경로로 정규화한다.</li><li><strong>타임스탬프가 바뀌었으니 무결성이 깨졌다고 판단하는 것.</strong> 해시는 내용만 본다. 타임스탬프·ADS·속성 변경은 파일 내용 해시를 바꾸지 않는다. 반대로 <strong>해시가 바뀌었으면 내용이 실제로 바뀐 것</strong>이므로 그때는 원인을 반드시 규명한다.</li><li><strong>MD5 일치만으로 무결성을 주장하는 것.</strong> MD5는 충돌 저항이 깨져 있다. 식별에는 쓰고 증명에는 SHA-256을 병기한다.</li><li><strong>해시 기록을 케이스 폴더 안에 두는 것.</strong> 케이스 폴더가 통째로 오염되면 기준값도 함께 오염된다. 별도 위치(다른 드라이브, 메모 파일)에 남긴다.</li><li><strong>크기를 확인하지 않고 해시부터 계산하는 것.</strong> 해시가 <code>e3b0c442...</code>(0바이트)나 예상과 완전히 다르면 대개 크기 문제다. <code>ls -l</code> 한 줄이 더 빠르다.</li><li><strong>분할 E01의 세그먼트를 개별 비교하는 것.</strong> 분할 크기가 다르면 파일 단위 해시가 달라도 데이터는 동일하다. 데이터 단위로 검증한다.</li><li><strong>분석 종료 후 재계산을 생략하는 것.</strong> [7]단계를 빼면 &quot;작업 중 원본을 건드렸는지&quot;를 아무도 모른다. 30초짜리 작업이다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<p>같은 파일을 두 도구로 계산해서 값이 같아야 한다. 도구 오류·잘못된 경로를 즉시 잡는다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) Linux 두 방법
+sha256sum evidence.dd
+openssl dgst -sha256 evidence.dd</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 2) Windows 두 방법 — 값이 다르면 경로/스트림을 잘못 지정한 것이다
+(Get-FileHash .\evidence.dd -Algorithm SHA256).Hash.ToLower()
+(certutil -hashfile .\evidence.dd SHA256)[1] -replace &#39;\s&#39;,&#39;&#39;</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>관찰</th><th>결론</th></tr></thead><tbody><tr><td>두 도구 값이 일치</td><td>계산 신뢰 가능</td></tr><tr><td>한쪽만 0바이트 해시</td><td>경로 오타 또는 권한 문제</td></tr><tr><td>GUI(HashCalc)와 CLI가 다름</td><td>GUI가 다른 파일/다른 스트림을 읽고 있다</td></tr><tr><td>E01 내장 해시와 RAW 변환 결과가 일치</td><td>변환 무손실 확인</td></tr><tr><td><code>-c</code> 검증에서 특정 파일만 <code>FAILED</code></td><td>그 파일을 연 도구를 추적</td></tr></tbody></table></div>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;제공된 E01 이미지의 무결성을 검증하고, 이미지에서 추출한
+ secret.xlsx 의 SHA-256 을 제출하시오.&quot;
+첨부: case01.E01 (2.1 GB), case01.E01.txt (취득 로그), case01.E02
+
+1. 첫 시도 (실패):
+   취득 로그를 열었다.
+     Acquisition MD5: 3f1c8a0e6b2d47c9a1e5b73d0c9f4a12
+   그래서 컨테이너 파일의 MD5 를 계산해 비교했다.
+     $ md5sum case01.E01
+       8b44f0c1d9e27a3b5c6f018d4e2a91bb  case01.E01
+   값이 전혀 달랐다. &quot;이미지가 손상됐다&quot;고 판단하고 문제를 넘겼다.  오답.
+
+   왜 틀렸나:
+   취득 로그의 MD5 는 &quot;취득한 미디어 데이터&quot; 의 해시다.
+   반면 md5sum 이 계산한 것은 압축·헤더를 포함한 E01 컨테이너 파일의 해시다.
+   대상이 다르므로 애초에 같을 수 없다.
+   게다가 .E02 세그먼트가 있는 분할 이미지였는데 .E01 만 계산했다.
+
+2. 피벗: E01 은 전용 검증 도구로 데이터 단위로 검증한다
+   $ ewfinfo case01.E01
+     Digest hash information
+       MD5: 3f1c8a0e6b2d47c9a1e5b73d0c9f4a12     &lt;- 로그와 동일
+     Media size: 2147483648 bytes
+
+   $ ewfverify case01.E01
+     MD5 hash stored in file:       3f1c8a0e6b2d47c9a1e5b73d0c9f4a12
+     MD5 hash calculated over data: 3f1c8a0e6b2d47c9a1e5b73d0c9f4a12
+     ewfverify: SUCCESS
+   -&gt; 무결성 확인. 손상이 아니었다.
+   ewfverify 는 .E01 을 지정하면 .E02 이후 세그먼트를 자동으로 따라간다.
+
+3. 분석 전 기록 (원본 기준값)
+   $ sha256sum case01.E01 case01.E02 &gt; /notes/hash_before.txt
+   -&gt; 컨테이너 해시도 별개로 남긴다. &quot;내가 이 파일들을 안 건드렸다&quot; 의 증명용.
+
+4. 읽기 전용 마운트 후 추출
+   추출한 파일이 0바이트가 아닌지 크기부터 본다.
+   $ ls -l export/secret.xlsx
+     -rw-r--r-- 1 u u 18452 Mar 14 07:31 export/secret.xlsx
+   $ sha256sum export/secret.xlsx
+     4c9f2a7e1b8d05c3a6e4f27b9d013c8a5f6e2b40c7d19a83e5f0b6c2d4a89173
+
+5. 교차검증 — 다른 경로로 뽑아 같은 값인지 확인
+   $ icat -o 2048 case01.dd 74213 | sha256sum
+     4c9f2a7e1b8d05c3a6e4f27b9d013c8a5f6e2b40c7d19a83e5f0b6c2d4a89173
+   -&gt; 일치. 추출 과정에서 잘리거나 슬랙이 붙지 않았다.
+
+6. 분석 종료 후 원본 재계산
+   $ sha256sum -c /notes/hash_before.txt
+     case01.E01: OK
+     case01.E02: OK
+   -&gt; 읽기 전용 마운트였으므로 원본 불변. 무결성 사슬 완성.
+
+정답: 4c9f2a7e1b8d05c3a6e4f27b9d013c8a5f6e2b40c7d19a83e5f0b6c2d4a89173
+      (E01 무결성: ewfverify SUCCESS, 내장 MD5 = 취득 로그 MD5 일치)</code></pre></div>
+<p>4단계에서 <strong>크기를 먼저 본 것</strong>이 결정적이었다. 0바이트 추출은 해시가 <code>e3b0c442...</code>로 나오는데, 그것을 정답으로 제출하는 사고가 흔하다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li>파일 <strong>크기</strong>를 먼저 확인했는가 — 0바이트/잘림이면 해시는 의미 없다</li><li>E01이면 <code>ewfverify</code> 또는 FTK Imager <code>Verify Drive/Image</code>를 썼는가 (컨테이너 해시가 아니다)</li><li>분할 이미지의 세그먼트가 전부 있는가 (<code>.E02</code>, <code>.E03</code>, ...)</li><li>대소문자를 맞추고 비교했는가</li><li><code>certutil</code> 출력에서 가운데 줄만 뽑고 공백을 제거했는가</li><li>manifest를 상대 경로로 만들었는가</li><li>해시가 <code>d41d8cd9...</code> / <code>e3b0c442...</code>인가 → 0바이트다</li><li>취득 로그가 MD5만 남겼는가 → MD5로 대조하고 SHA-256을 추가로 기록</li><li>원본을 읽기 전용으로 잠갔는가, 작업을 사본에서 했는가</li><li>백신·인덱싱 예외를 등록했는가</li><li>분석 종료 후 재계산을 했는가</li><li>문제가 요구하는 알고리즘(32/40/64자)이 내가 계산한 것과 같은가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-078 — NIST FIPS 180-4(Secure Hash Standard) / RFC 1321(MD5): SHA-1 160비트, SHA-256 256비트, MD5 128비트라는 출력 길이와 알고리즘 정의</li><li>SRC-007 — Microsoft Learn, PowerShell Utility 모듈 문서: 파이프라인·<code>Select-Object</code>·<code>Export-Csv</code> 조합의 동작. <strong><code>Get-FileHash</code>의 <code>-Algorithm</code> 허용값 목록은 PowerShell 버전에 따라 다르므로 <code>Get-Help Get-FileHash -Full</code>로 확인할 것</strong></li><li><code>certutil -hashfile</code> 출력 형식(줄 수, hex 사이 공백 유무)은 Windows 버전에 따라 다르므로 실제 화면에서 확인할 것</li><li><code>ewfinfo</code>/<code>ewfverify</code> 출력 라벨과 FTK Imager의 <code>Verify Drive/Image</code> 메뉴 경로는 도구 버전에 따라 다를 수 있으므로 실제 화면에서 확인할 것</li><li>본문의 해시값 예시(<code>9f86d081...</code>, <code>3f1c8a0e...</code> 등)는 절차를 보여주기 위한 가상 값이다. 0바이트 파일 해시 두 개만 실제 상수다</li><li>문제에서 요구하는 flag/해시 제출 형식은 대회마다 다르다. 이 글은 특정 flag 형식을 가정하지 않는다</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./ftk-imager-open-image.html">
+    <span class="rel-id">FOR-0016 · 디스크/NTFS</span>
+    FTK Imager로 디스크 이미지 열고 필요한 artifact만 꺼내기
+  </a>
+  <a class="related-item" href="./arsenal-image-mounter.html">
+    <span class="rel-id">FOR-0017 · 디스크/NTFS</span>
+    Arsenal Image Mounter로 이미지를 실제 디스크처럼 마운트하기
+  </a>
+  <a class="related-item" href="./30sec-triage.html">
+    <span class="rel-id">FOR-0001 · 트리아지</span>
+    포렌식 문제 파일을 받았을 때 30초 트리아지
+  </a>
+  <a class="related-item" href="./partition-offset-problems.html">
+    <span class="rel-id">FOR-0048 · 디스크/NTFS</span>
+    파티션 오프셋이 안 맞을 때: 섹터/바이트, 4Kn, 볼륨 단독 이미지
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./utc-kst-first.html"><span class="rel-id">← FOR-0009</span>분석 시작 전 UTC/KST 시간대 확정 절차</a>
+<a class="related-item" href="./ftk-imager-open-image.html"><span class="rel-id">FOR-0016 →</span>FTK Imager로 디스크 이미지 열고 필요한 artifact만 꺼내기</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-해시-알고리즘-선택">1단계 — 해시 알고리즘 선택</a></li>
+<li class="toc-l3"><a href="#2단계-계산-방법-4가지">2단계 — 계산 방법 4가지</a></li>
+<li class="toc-l3"><a href="#3단계-분석-전후-절차로-고정">3단계 — 분석 전후 절차로 고정</a></li>
+<li class="toc-l3"><a href="#4단계-e01-내장-해시와-ftk-imager-verify">4단계 — E01 내장 해시와 FTK Imager Verify</a></li>
+<li class="toc-l3"><a href="#5단계-폴더-전체-해시-목록-만들기와-비교">5단계 — 폴더 전체 해시 목록 만들기와 비교</a></li>
+<li class="toc-l3"><a href="#6단계-추출물과-원본-대조">6단계 — 추출물과 원본 대조</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l3"><a href="#해시가-달라졌을-때의-원인">해시가 달라졌을 때의 원인</a></li>
+<li class="toc-l3"><a href="#충돌-내성-md5는-어디까지-쓸-수-있는가">충돌 내성 — MD5는 어디까지 쓸 수 있는가</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

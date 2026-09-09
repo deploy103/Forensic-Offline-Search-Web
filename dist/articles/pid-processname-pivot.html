@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>PID·ProcessName으로 pivot하기: 16진수 함정과 프로세스 계보 재구성 · FOR-0105 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Event%20Log">Event Log</a> / FOR-0105
+      </div>
+      <header class="article-head">
+        <h1>PID·ProcessName으로 pivot하기: 16진수 함정과 프로세스 계보 재구성</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Event Log</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>4688의 NewProcessId(자식)와 ProcessId(부모)는 16진수이고 Sysmon의 ProcessId는 10진수이므로 진법을 통일하지 않으면 조인이 통째로 빈다. 그리고 PID는 재사용되므로 PID 단독으로 추적하면 안 된다 — Sysmon의 ProcessGuid, 없으면 (PID + 생성 시각) 조합을 키로 쓴다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>EvtxECmd, Timeline Explorer, PowerShell, Volatility 3, Event Viewer</td></tr>
+<tr><th>artifact</th><td><code>NewProcessId</code> · <code>ProcessId</code> · <code>ProcessGuid</code> · <code>NewProcessName</code> · <code>ParentProcessName</code> · <code>Security.evtx</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Windows\System32\winevt\Logs\Security.evtx</code> · <code>C:\Windows\System32\winevt\Logs\Microsoft-Windows-Sysmon%4Operational.evtx</code></td></tr>
+<tr><th>Event ID</th><td><code>4689</code></td></tr>
+<tr><th>regex</th><td><code>0x[0-9a-fA-F]{2,8}</code> · <code>\{[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}</code></td></tr>
+<tr><th>로그 필드</th><td><code>NewProcessId</code> · <code>NewProcessName</code> · <code>ProcessId</code> · <code>ParentProcessName</code> · <code>CommandLine</code> · <code>TokenElevationType</code> · <code>ProcessGuid</code> · <code>ParentProcessGuid</code> · <code>Image</code> · <code>ParentImage</code></td></tr>
+<tr><th>파일 형식</th><td><code>evtx</code> · <code>csv</code></td></tr>
+<tr><th>검색 별칭</th><td>pid 추적 · 부모 프로세스 찾기 · 프로세스 트리 만들기 · pid 16진수 · 0x1a4c pid · 프로세스 계보 · 누가 실행했나</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>4688의 <code>NewProcessId</code>(자식)와 <code>ProcessId</code>(부모)는 <strong>16진수</strong>이고 Sysmon의 <code>ProcessId</code>는 <strong>10진수</strong>이므로 진법을 통일하지 않으면 조인이 통째로 빈다. 그리고 <strong>PID는 재사용되므로 PID 단독으로 추적하면 안 된다</strong> — Sysmon의 <code>ProcessGuid</code>, 없으면 <code>(PID + 생성 시각)</code> 조합을 키로 쓴다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;이 프로세스를 실행한 것은 무엇인가&quot; — 부모를 거슬러 올라가 루트까지 찾는 문제</li><li>명령행이 수상한 프로세스를 하나 찾았고, 그 앞뒤 계보를 그려야 하는 문제</li><li>메모리 덤프의 PID와 EVTX의 PID를 맞춰야 하는 문제</li><li>같은 PID가 로그 안에서 여러 프로그램을 가리켜 어느 것인지 가려야 하는 문제</li><li>프로세스가 몇 초 살아 있었는지(생존 구간)를 근거와 함께 답해야 하는 문제</li></ul>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>4688이 있고 <code>CommandLine</code> 이 채워져 있다 → 여기서 시작한다. 가장 정보가 많다</li><li>4688에 <code>CommandLine</code> 이 비어 있다 → 명령행 감사가 꺼져 있다. Sysmon 1 또는 PowerShell 4103/4104로 우회</li><li>Sysmon 채널이 있다 → <code>ProcessGuid</code> 를 키로 쓴다. <strong>PID 재사용 문제가 사라진다</strong></li><li>메모리 덤프가 함께 있다 → <code>windows.pstree</code> 의 PID(10진수)와 대조 (<a href="./volatility-pslist.html">FOR-0214</a>)</li><li>PID가 <code>0x</code> 로 시작한다 → Security 채널이다. Sysmon과 섞기 전에 변환</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">EvtxECmd.exe -f &#39;C:\case\Security.evtx&#39; --csv &#39;C:\case\out&#39; --csvf sec.csv</code></pre></div>
+<p>그다음 진법을 맞춘다. 이 한 줄을 먼저 손에 익힌다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">[Convert]::ToInt32(&#39;1a4c&#39;, 16)   # 6732  (0x1a4c -&gt; 10진수)
+&#39;0x{0:x}&#39; -f 6732                # 0x1a4c (10진수 -&gt; 16진수)</code></pre></div>
+<p>4688만 뽑아 부모-자식 표를 만든다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Get-WinEvent -Path &#39;C:\case\Security.evtx&#39; -Oldest -FilterXPath &#39;*[System[(EventID=4688)]]&#39; |
+  ForEach-Object {
+    $x = [xml]$_.ToXml(); $d = @{}
+    $x.Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.&#39;#text&#39; }
+    [pscustomobject]@{
+      RecordId = $_.RecordId
+      TimeUTC  = $x.Event.System.TimeCreated.SystemTime
+      Pid      = $d[&#39;NewProcessId&#39;]
+      PidDec   = [Convert]::ToInt64(($d[&#39;NewProcessId&#39;] -replace &#39;^0[xX]&#39;,&#39;&#39;), 16)
+      Ppid     = $d[&#39;ProcessId&#39;]
+      Image    = $d[&#39;NewProcessName&#39;]
+      Parent   = $d[&#39;ParentProcessName&#39;]
+      Cmd      = $d[&#39;CommandLine&#39;]
+      Session  = $d[&#39;SubjectLogonId&#39;]
+      User     = $d[&#39;SubjectUserName&#39;]
+    }
+  } | Sort-Object RecordId | Format-Table TimeUTC, Pid, Ppid, Image, Cmd -AutoSize</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-진법-대응표-최대-함정">1단계 — 진법 대응표 (최대 함정)</h3>
+<div class="table-wrap"><table><thead><tr><th>소스</th><th>PID 필드</th><th>진법</th><th>예시</th></tr></thead><tbody><tr><td>Security 4688</td><td><code>NewProcessId</code> (자식)</td><td><strong>16진수</strong></td><td><code>0x1a4c</code></td></tr><tr><td>Security 4688</td><td><code>ProcessId</code> (부모)</td><td><strong>16진수</strong></td><td><code>0x2f8</code></td></tr><tr><td>Security 4689</td><td><code>ProcessId</code> (종료된 프로세스)</td><td><strong>16진수</strong></td><td><code>0x1a4c</code></td></tr><tr><td>Security 4624 / 4672 / 4673</td><td><code>ProcessId</code></td><td><strong>16진수</strong></td><td><code>0x2f8</code></td></tr><tr><td>Sysmon 1 / 3 / 11 / 13</td><td><code>ProcessId</code>, <code>ParentProcessId</code></td><td><strong>10진수</strong></td><td><code>6732</code></td></tr><tr><td>Volatility <code>windows.pslist</code> / <code>pstree</code></td><td><code>PID</code>, <code>PPID</code></td><td><strong>10진수</strong></td><td><code>6732</code></td></tr><tr><td>작업 관리자 / <code>tasklist</code></td><td>PID</td><td><strong>10진수</strong></td><td><code>6732</code></td></tr><tr><td>PowerShell 4103 <code>ContextInfo</code></td><td>Host Process ID</td><td><strong>10진수</strong></td><td><code>6732</code></td></tr></tbody></table></div>
+<p><strong><code>0x1a4c</code> 를 그대로 <code>1a4c</code> 로 읽고 Sysmon에서 찾으면 아무것도 안 나온다.</strong> 반대로 Sysmon의 <code>6732</code> 를 Security에서 문자열로 찾아도 안 나온다. 조인 전에 한쪽으로 통일한다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">function Get-PidDec {
+  param([string]$Text)
+  if ([string]::IsNullOrWhiteSpace($Text)) { return $null }
+  $t = $Text.Trim()
+  if ($t -match &#39;^0[xX]&#39;) { return [Convert]::ToInt64(($t -replace &#39;^0[xX]&#39;,&#39;&#39;), 16) }
+  return [int64]$t
+}
+
+Get-PidDec &#39;0x1a4c&#39;   # 6732
+Get-PidDec &#39;6732&#39;     # 6732</code></pre></div>
+<p>주의: <code>0x</code> 접두사 없이 <code>1a4c</code> 처럼 나오는 경우가 있다. 그때는 <strong>문자에 a-f가 있으면 16진수</strong>로 판정할 수밖에 없다. <code>1234</code> 처럼 모두 숫자면 진법 판정이 불가능하므로, <strong>소스가 무엇인지로 결정한다</strong> — Security 채널이면 16진수다.</p>
+<h3 id="2단계-pid-단독-추적을-금지하는-이유">2단계 — PID 단독 추적을 금지하는 이유</h3>
+<p>Windows는 프로세스가 끝나면 그 PID를 <strong>재사용</strong>한다. 바쁜 시스템에서는 몇 분 안에 같은 PID가 다른 프로그램에 붙는다.</p>
+<div class="table-wrap"><table><thead><tr><th>키</th><th>유일성</th><th>언제 쓰나</th></tr></thead><tbody><tr><td><code>ProcessGuid</code> (Sysmon)</td><td><strong>부팅·호스트를 넘어 유일</strong></td><td>Sysmon이 있으면 무조건 이것</td></tr><tr><td><code>LogonGuid</code> + PID</td><td>세션 안에서 유일</td><td>Kerberos 환경</td></tr><tr><td><strong>PID + 생성 시각</strong></td><td>실질적으로 유일</td><td>Sysmon이 없을 때의 표준 대안</td></tr><tr><td>PID + 생존 구간(4688~4689)</td><td>유일</td><td>4689가 켜져 있을 때</td></tr><tr><td>PID 단독</td><td><strong>유일하지 않다</strong></td><td>쓰지 않는다</td></tr></tbody></table></div>
+<p><code>ProcessGuid</code> 는 Sysmon이 프로세스마다 새로 만드는 식별자이므로 PID처럼 재사용되지 않는다. Sysmon 채널이 있으면 PID 대신 이것을 조인 키로 쓴다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># Sysmon 이 있으면 ProcessGuid 로 pivot 한다 (PID 재사용 무관)
+Get-WinEvent -Path &#39;C:\case\Microsoft-Windows-Sysmon%4Operational.evtx&#39; -Oldest |
+  ForEach-Object {
+    $x = [xml]$_.ToXml(); $d = @{}
+    if ($x.Event.EventData) { $x.Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.&#39;#text&#39; } }
+    if ($d[&#39;ProcessGuid&#39;] -eq &#39;{c8f6f2a1-6b41-6612-3a00-000000001e00}&#39;) {
+      [pscustomobject]@{
+        RecordId = $_.RecordId
+        TimeUTC  = $x.Event.System.TimeCreated.SystemTime
+        EventId  = $_.Id
+        Image    = $d[&#39;Image&#39;]
+        Detail   = $d[&#39;CommandLine&#39;] + $d[&#39;TargetFilename&#39;] + $d[&#39;DestinationIp&#39;]
+      }
+    }
+  } | Sort-Object RecordId | Format-Table -AutoSize</code></pre></div>
+<h3 id="3단계-같은-pid가-여러-프로세스를-가리키는지-판별">3단계 — 같은 PID가 여러 프로세스를 가리키는지 판별</h3>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 같은 PID 로 4688 이 두 번 이상 나오면 재사용이다
+$procs = Get-WinEvent -Path &#39;C:\case\Security.evtx&#39; -Oldest -FilterXPath &#39;*[System[(EventID=4688)]]&#39; |
+  ForEach-Object {
+    $x = [xml]$_.ToXml(); $d = @{}
+    $x.Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.&#39;#text&#39; }
+    [pscustomobject]@{
+      RecordId = $_.RecordId
+      TimeUTC  = $x.Event.System.TimeCreated.SystemTime
+      PidDec   = Get-PidDec $d[&#39;NewProcessId&#39;]
+      PpidDec  = Get-PidDec $d[&#39;ProcessId&#39;]
+      Image    = $d[&#39;NewProcessName&#39;]
+      Cmd      = $d[&#39;CommandLine&#39;]
+      Session  = $d[&#39;SubjectLogonId&#39;]
+    }
+  }
+
+$procs | Group-Object PidDec | Where-Object { $_.Count -gt 1 } |
+  ForEach-Object {
+    &quot;PID {0} : {1} processes&quot; -f $_.Name, $_.Count
+    $_.Group | Select-Object TimeUTC, Image | Format-Table -AutoSize
+  }</code></pre></div>
+<p>출력 예시:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">PID 6732 : 3 processes
+TimeUTC                       Image
+2026-03-14T07:20:08.4410021Z  C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+2026-03-14T07:52:19.7710004Z  C:\Windows\System32\notepad.exe
+2026-03-14T08:41:03.2010887Z  C:\Program Files\7-Zip\7z.exe</code></pre></div>
+<p><strong>같은 PID 6732가 세 번 등장했다.</strong> 이 상태에서 &quot;PID 6732가 7z.exe&quot;라고 단정하면 오답이다. 판별은 시각으로 한다.</p>
+<div class="table-wrap"><table><thead><tr><th>판별 기준</th><th>방법</th></tr></thead><tbody><tr><td>어느 구간의 6732인가</td><td>그 PID의 4688 시각과 다음 4688 시각 사이</td></tr><tr><td>4689가 있는가</td><td><code>ProcessId</code> = <code>0x1a4c</code> 인 4689의 시각이 생존 구간의 끝</td></tr><tr><td>부모가 같은가</td><td><code>ProcessId</code>(부모)가 다르면 확실히 다른 프로세스</td></tr><tr><td>Sysmon이 있는가</td><td><code>ProcessGuid</code> 가 다르면 확실히 다른 프로세스</td></tr></tbody></table></div>
+<h3 id="4단계-프로세스-계보-재구성-부모로-거슬러-올라가기">4단계 — 프로세스 계보 재구성 (부모로 거슬러 올라가기)</h3>
+<p>4688의 <code>ProcessId</code>(부모 PID)를 키로 그 부모 자신의 4688을 찾고, 다시 그 부모의 부모를 찾는다. 루트(<code>services.exe</code>, <code>explorer.exe</code>, <code>winlogon.exe</code>)에 닿거나 4688이 없어지면 멈춘다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># $procs 는 3단계에서 만든 목록
+function Get-Ancestry {
+  param([int64]$TargetPid, [datetime]$Before, [int]$Depth = 8)
+
+  $chain = @()
+  $curPid = $TargetPid
+  $curTime = $Before
+
+  for ($i = 0; $i -lt $Depth; $i++) {
+    # 그 시각 이전에 생성된 같은 PID 중 가장 최근 것이 진짜 부모다
+    $cand = $procs |
+      Where-Object { $_.PidDec -eq $curPid -and ([datetime]$_.TimeUTC) -le $curTime } |
+      Sort-Object { [datetime]$_.TimeUTC } |
+      Select-Object -Last 1
+    if (-not $cand) { break }
+    $chain += $cand
+    $curPid = $cand.PpidDec
+    $curTime = [datetime]$cand.TimeUTC
+  }
+  $chain
+}
+
+Get-Ancestry -TargetPid 6732 -Before ([datetime]&#39;2026-03-14T07:21:00Z&#39;) |
+  Select-Object TimeUTC, PidDec, PpidDec, Image, Cmd | Format-Table -AutoSize</code></pre></div>
+<p>출력 예시 (자식 → 부모 순):</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">TimeUTC                       PidDec PpidDec Image                                  Cmd
+2026-03-14T07:20:08.4410021Z  6732   4188    ...\v1.0\powershell.exe                powershell.exe -enc SQBFAFgA...
+2026-03-14T07:19:31.0021110Z  4188   1044    C:\Windows\System32\cmd.exe            cmd.exe
+2026-03-14T07:19:04.1180022Z  1044   760     C:\Windows\System32\rdpclip.exe        rdpclip.exe</code></pre></div>
+<p><strong><code>-le $curTime</code> 조건이 이 함수의 핵심이다.</strong> 그것 없이 PID로만 찾으면 재사용된 나중 프로세스를 부모로 잡는다.</p>
+<p><code>ParentProcessName</code> 필드가 채워져 있으면 이 작업이 훨씬 쉽다. 하지만 이 필드는 Windows 버전에 따라 <strong>없을 수도 있다.</strong> 없으면 위 방식으로 PID 조인이 유일한 방법이다.</p>
+<p>Sysmon이 있으면 GUID로 잇는다. 재사용 걱정이 없다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Sysmon 1: ProcessGuid  &lt;- 이 프로세스
+          ParentProcessGuid  -&gt; 부모의 ProcessGuid 와 정확히 일치</code></pre></div>
+<h3 id="5단계-생존-구간-확정-4689">5단계 — 생존 구간 확정 (4689)</h3>
+<p>4689(프로세스 종료)는 <code>ProcessId</code>(16진수)와 <code>ProcessName</code> 을 담는다. 4688과 짝지어 생존 구간을 만든다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$exits = Get-WinEvent -Path &#39;C:\case\Security.evtx&#39; -Oldest -FilterXPath &#39;*[System[(EventID=4689)]]&#39; |
+  ForEach-Object {
+    $x = [xml]$_.ToXml(); $d = @{}
+    $x.Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.&#39;#text&#39; }
+    [pscustomobject]@{
+      TimeUTC = $x.Event.System.TimeCreated.SystemTime
+      PidDec  = Get-PidDec $d[&#39;ProcessId&#39;]
+      Image   = $d[&#39;ProcessName&#39;]
+      Status  = $d[&#39;Status&#39;]
+    }
+  }
+
+# 시작-종료 짝짓기: 시작 이후 최초의 같은 PID 종료
+foreach ($p in $procs) {
+  $e = $exits |
+    Where-Object { $_.PidDec -eq $p.PidDec -and ([datetime]$_.TimeUTC) -ge ([datetime]$p.TimeUTC) } |
+    Sort-Object { [datetime]$_.TimeUTC } | Select-Object -First 1
+  $endTime = &#39;(running)&#39;
+  $life = &#39;&#39;
+  if ($e) {
+    $endTime = $e.TimeUTC
+    $life = [math]::Round((([datetime]$e.TimeUTC) - ([datetime]$p.TimeUTC)).TotalSeconds, 1)
+  }
+  [pscustomobject]@{
+    PidDec = $p.PidDec; Image = $p.Image
+    StartUTC = $p.TimeUTC; EndUTC = $endTime; LifeSec = $life
+  }
+} | Format-Table -AutoSize</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>관찰</th><th>해석</th></tr></thead><tbody><tr><td>4689가 없다</td><td>프로세스 종료 감사가 꺼져 있다(기본값), 또는 이미지 획득 시각까지 살아 있었다</td></tr><tr><td>생존 시간이 1초 미만</td><td>실행 즉시 종료. 로더/드로퍼 또는 오류</td></tr><tr><td>생존 시간이 수 시간</td><td>상주. 지속성·C2 후보</td></tr><tr><td>4689의 <code>ProcessName</code> 이 4688의 <code>NewProcessName</code> 과 다르다</td><td><strong>PID 재사용이다.</strong> 짝이 잘못 붙었다</td></tr></tbody></table></div>
+<p><strong>마지막 행이 검산이다.</strong> 4688과 4689의 이미지 이름이 다르면 짝짓기가 틀렸다.</p>
+<h3 id="6단계-processname-이-전체-경로인가-파일명인가">6단계 — ProcessName 이 전체 경로인가 파일명인가</h3>
+<div class="table-wrap"><table><thead><tr><th>소스 / 필드</th><th>형태</th><th>예시</th></tr></thead><tbody><tr><td>4688 <code>NewProcessName</code></td><td>전체 경로</td><td><code>C:\Windows\System32\cmd.exe</code></td></tr><tr><td>4688 <code>ParentProcessName</code></td><td>전체 경로 (있을 때)</td><td><code>C:\Windows\explorer.exe</code></td></tr><tr><td>4689 <code>ProcessName</code></td><td>전체 경로</td><td><code>C:\Windows\System32\cmd.exe</code></td></tr><tr><td>4624 / 4672 <code>ProcessName</code></td><td>전체 경로</td><td><code>C:\Windows\System32\lsass.exe</code></td></tr><tr><td>Sysmon 1 <code>Image</code></td><td>전체 경로</td><td><code>C:\Windows\System32\cmd.exe</code></td></tr><tr><td>Sysmon 1 <code>OriginalFileName</code></td><td><strong>PE 리소스의 원래 파일명</strong></td><td>이름을 바꿔도 원본이 드러난다</td></tr><tr><td>Volatility <code>pslist</code> 의 이름</td><td><strong>파일명, 최대 15자로 잘림</strong></td><td><code>powershell.ex</code></td></tr><tr><td>Prefetch <code>ExecutableName</code></td><td>파일명(대문자)</td><td><code>POWERSHELL.EXE</code></td></tr></tbody></table></div>
+<p>두 가지 결과가 나온다.</p>
+<ul><li><strong>경로로 필터하면 안전하지만, 파일명으로 필터하면 놓친다.</strong> <code>C:\Users\Public\svchost.exe</code> 는 정상 <code>svchost.exe</code> 와 파일명이 같다. 경로를 봐야 위장이 드러난다</li><li><strong>Volatility의 이름은 잘린다.</strong> <code>powershell.exe</code> 를 찾으려면 <code>powershell</code> 로 부분 일치 검색한다</li></ul>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 정상 경로가 아닌 곳에서 실행된 시스템 프로세스 이름 찾기 (위장 탐지)
+$procs | Where-Object {
+  $_.Image -match &#39;\\(svchost|lsass|services|csrss|winlogon|explorer)\.exe$&#39; -and
+  $_.Image -notmatch &#39;^C:\\Windows\\(System32|SysWOW64)\\&#39; -and
+  $_.Image -notmatch &#39;^C:\\Windows\\explorer\.exe$&#39;
+} | Select-Object TimeUTC, PidDec, Image, Cmd | Format-Table -AutoSize</code></pre></div>
+<h3 id="7단계-메모리-덤프의-pid와-대조">7단계 — 메모리 덤프의 PID와 대조</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 메모리에서 프로세스 트리 (PID/PPID 는 10진수)
+vol.py -f mem.raw windows.pstree
+vol.py -f mem.raw windows.pslist
+vol.py -f mem.raw windows.cmdline --pid 6732</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>대조 결과</th><th>해석</th></tr></thead><tbody><tr><td>로그의 PID가 메모리에도 있다</td><td>획득 시각에 살아 있었다. <code>windows.cmdline</code> 으로 명령행 확보</td></tr><tr><td>로그에는 있고 메모리에 없다</td><td>이미 종료됐다. 4689 시각과 일치하는지 확인</td></tr><tr><td>메모리에는 있고 4688에 없다</td><td><strong>감사 이전에 실행됐거나 4688이 지워졌다.</strong> <code>psscan</code> 으로 종료된 프로세스까지 본다</td></tr><tr><td>같은 PID인데 이름이 다르다</td><td>재사용. 획득 시각 기준으로 어느 쪽인지 판정</td></tr></tbody></table></div>
+<p>Volatility의 출력 해석은 <a href="./volatility-pslist.html">FOR-0214</a>에 있다. 여기서는 <strong>PID가 10진수라는 점</strong>과 <strong>이름이 잘린다는 점</strong>만 기억한다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>소스</th><th>의미</th></tr></thead><tbody><tr><td><code>NewProcessId</code></td><td>4688</td><td><strong>생성된(자식) 프로세스의 PID.</strong> 16진수</td></tr><tr><td><code>NewProcessName</code></td><td>4688</td><td>자식의 전체 경로</td></tr><tr><td><code>ProcessId</code></td><td>4688</td><td><strong>부모 프로세스의 PID.</strong> 16진수. 이름이 헷갈리기 쉽다</td></tr><tr><td><code>ParentProcessName</code></td><td>4688</td><td>부모의 전체 경로. Windows 버전에 따라 없을 수 있다</td></tr><tr><td><code>CommandLine</code></td><td>4688</td><td>전체 명령행. <strong>별도 정책을 켜야 채워진다.</strong> 비어 있으면 정책 미설정</td></tr><tr><td><code>TokenElevationType</code></td><td>4688</td><td><code>%%1936</code> 기본 / <code>%%1937</code> 상승 / <code>%%1938</code> 제한 토큰</td></tr><tr><td><code>SubjectLogonId</code></td><td>4688</td><td>실행한 세션 (FOR-0104의 조인 키)</td></tr><tr><td><code>SubjectUserName</code></td><td>4688</td><td>실행한 계정</td></tr><tr><td><code>MandatoryLabel</code></td><td>4688</td><td>무결성 수준 SID. <code>S-1-16-12288</code> = System, <code>S-1-16-8192</code> = High</td></tr><tr><td><code>ProcessId</code></td><td>4689</td><td><strong>종료된</strong> 프로세스의 PID. 16진수</td></tr><tr><td><code>Status</code></td><td>4689</td><td>종료 코드</td></tr><tr><td><code>ProcessGuid</code></td><td>Sysmon 1</td><td>재사용 없는 유일 키</td></tr><tr><td><code>ParentProcessGuid</code></td><td>Sysmon 1</td><td>부모의 <code>ProcessGuid</code></td></tr><tr><td><code>Image</code> / <code>ParentImage</code></td><td>Sysmon 1</td><td>전체 경로</td></tr><tr><td><code>OriginalFileName</code></td><td>Sysmon 1</td><td>PE에 박힌 원래 파일명</td></tr><tr><td><code>IntegrityLevel</code></td><td>Sysmon 1</td><td><code>Medium</code> / <code>High</code> / <code>System</code></td></tr></tbody></table></div>
+<p><code>TokenElevationType</code> 의 <code>%%1937</code>(상승)은 UAC 승격을 거쳤다는 뜻이다. <code>%%1938</code>(제한)은 관리자 계정이지만 승격 없이 실행됐다는 뜻이다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>여기서 얻은 것</th><th>다음 목표</th><th>무엇을 확인하나</th></tr></thead><tbody><tr><td><code>SubjectLogonId</code></td><td>4624 (FOR-0104)</td><td>어느 세션·어느 IP에서 실행됐나</td></tr><tr><td>계보의 루트</td><td>4624 / 7045 / 4698</td><td>로그온·서비스·작업 스케줄러 중 무엇이 시작점인가</td></tr><tr><td><code>NewProcessName</code> 경로</td><td><code>$MFT</code> / <code>$J</code> (<a href="./ntfs-artifact-timeline.html">FOR-0050</a>)</td><td>그 실행 파일이 언제 어디서 만들어졌나</td></tr><tr><td><code>CommandLine</code> 이 비어 있다</td><td>Sysmon 1, PowerShell 4103/4104</td><td>명령행 원본 확보</td></tr><tr><td>PID (10진수)</td><td>메모리 <code>windows.cmdline</code> / <code>pstree</code> (<a href="./volatility-pslist.html">FOR-0214</a>)</td><td>획득 시각의 실제 인자와 메모리 내용</td></tr><tr><td>프로세스 이름</td><td>Prefetch / Amcache</td><td>4688이 없던 구간의 실행 흔적</td></tr><tr><td><code>ProcessGuid</code></td><td>Sysmon 3 / 11 / 13</td><td>그 프로세스의 네트워크·파일·레지스트리 행위</td></tr><tr><td>위장 경로</td><td><code>$MFT</code> 생성 시각, 다운로드 흔적</td><td>어디서 왔나</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>16진수와 10진수를 섞는 것.</strong> Security의 <code>0x1a4c</code> 와 Sysmon의 <code>6732</code> 는 같은 프로세스다. 문자열로 비교하면 절대 매칭되지 않는다. → 조인 전에 한쪽 진법으로 정규화한다.</li><li><strong><code>ProcessId</code> 를 자식 PID로 읽는 것.</strong> 4688에서 자식은 <code>NewProcessId</code> 이고 <code>ProcessId</code> 는 <strong>부모</strong>다. 이름 때문에 뒤집어 읽는 사고가 가장 많다. → 필드 이름을 표에서 확인하고 쓴다.</li><li><strong>PID 단독으로 추적하는 것.</strong> PID는 재사용된다. 같은 PID의 4688이 여러 개면 시각으로 구간을 나눠야 한다. → <code>ProcessGuid</code> 또는 <code>(PID + 생성 시각)</code> 을 키로 쓴다.</li><li><strong>부모를 PID만으로 찾는 것.</strong> 재사용된 나중 프로세스를 부모로 잡는다. → &quot;자식 생성 시각 이전에 생성된 같은 PID 중 가장 최근 것&quot;으로 찾는다.</li><li><strong>파일명으로 정상 여부를 판정하는 것.</strong> <code>C:\Users\Public\svchost.exe</code> 는 파일명이 정상과 같다. → 항상 전체 경로로 판정한다.</li><li><strong>Volatility의 프로세스 이름을 그대로 검색하는 것.</strong> 15자로 잘려 <code>powershell.ex</code> 로 나온다. → 부분 일치로 검색한다.</li><li><strong><code>CommandLine</code> 이 비어 있는 것을 &quot;인자 없이 실행&quot;으로 읽는 것.</strong> 명령행 감사 정책이 꺼져 있으면 필드 자체가 비거나 없다. → 다른 4688의 <code>CommandLine</code> 도 전부 비었는지 확인해 정책 문제인지 판정한다.</li><li><strong>4689가 없는 것을 &quot;종료되지 않았다&quot;로 읽는 것.</strong> 프로세스 종료 감사는 기본으로 꺼져 있다. → 없음을 근거로 쓰지 않는다.</li><li><strong>4688과 4689를 PID만으로 짝짓는 것.</strong> 재사용된 PID의 4689가 붙는다. → 이미지 이름이 일치하는지 검산한다.</li><li><strong>같은 초의 4688 순서를 시각으로 정하는 것.</strong> 프로세스 생성은 1초에 여러 개가 몰린다. → <code>EventRecordId</code> 로 정렬한다 (FOR-0103).</li><li><strong>UTC/KST 혼동.</strong> EVTX <code>SystemTime</code> 은 UTC다. 생존 구간과 실행 시각을 그대로 제출하면 9시간 어긋난다. → 축은 UTC로 두고 답을 낼 때만 +9시간.</li><li><strong><code>TokenElevationType</code> 을 무시하는 것.</strong> <code>%%1937</code> 은 UAC 승격을 거친 실행이다. 권한 상승 서술의 직접 근거다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) 같은 프로세스가 4688 과 Sysmon 1 에 모두 있는가 (진법 변환 검산)
+$secPid = &#39;0x1a4c&#39;
+$dec = [Convert]::ToInt64(($secPid -replace &#39;^0[xX]&#39;,&#39;&#39;), 16)
+&quot;hex $secPid = dec $dec&quot;
+
+Get-WinEvent -Path &#39;C:\case\Microsoft-Windows-Sysmon%4Operational.evtx&#39; -Oldest -FilterXPath &#39;*[System[(EventID=1)]]&#39; |
+  ForEach-Object {
+    $x = [xml]$_.ToXml(); $d = @{}
+    $x.Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.&#39;#text&#39; }
+    if ([int64]$d[&#39;ProcessId&#39;] -eq $dec) { $d[&#39;Image&#39;] + &#39; | &#39; + $d[&#39;ProcessGuid&#39;] }
+  }
+
+# 2) 4688 의 NewProcessName 과 4689 의 ProcessName 이 일치하는가
+$procs | Where-Object { $_.PidDec -eq $dec } | Select-Object TimeUTC, Image
+$exits | Where-Object { $_.PidDec -eq $dec } | Select-Object TimeUTC, Image
+
+# 3) 계보의 각 단계가 같은 세션인가 (다르면 권한 전환이 있었다)
+$procs | Where-Object { $_.PidDec -in 6732,4188,1044 } |
+  Select-Object TimeUTC, PidDec, PpidDec, Session, Image | Format-Table -AutoSize
+
+# 4) 실행 파일이 디스크에 실제로 있었는가
+Import-Csv &#39;C:\case\out\mft.csv&#39; | Where-Object { $_.FileName -eq &#39;rclone.exe&#39; } |
+  Select-Object ParentPath, FileName, Created0x10, InUse</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 5) 메모리와 대조 (PID 10진수)
+vol.py -f mem.raw windows.pstree | grep -i &#39;powershell\|6732&#39;
+vol.py -f mem.raw windows.cmdline --pid 6732</code></pre></div>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;powershell.exe 가 인코딩된 명령을 실행했습니다.
+ 이 powershell 을 실행한 최초의 프로세스(계보의 루트)를 구하세요.
+ 첨부: Security.evtx, Microsoft-Windows-Sysmon%4Operational.evtx&quot;
+
+1. 4688 에서 powershell 을 찾는다
+   Get-WinEvent -Path &#39;C:\case\Security.evtx&#39; -Oldest `
+     -FilterXPath &#39;*[System[(EventID=4688)]]&#39; | ...
+
+   TimeUTC                       NewProcessId ProcessId NewProcessName            CommandLine
+   2026-03-14T07:20:08.4410021Z  0x1a4c       0x105c    ...\powershell.exe        powershell.exe -enc SQBFAFgA...
+
+   자식 PID = 0x1a4c, 부모 PID = 0x105c
+
+2. 첫 시도 (실패):
+   Sysmon 에서 부모를 찾으려고 PID 를 그대로 검색했다.
+
+   Get-WinEvent -Path &#39;C:\case\Microsoft-Windows-Sysmon%4Operational.evtx&#39; -Oldest |
+     Where-Object { $_.Message -match &#39;105c&#39; }
+   -&gt; 0건.
+
+   무엇이 틀렸나:
+     Security 의 0x105c 는 16진수다. Sysmon 의 ProcessId 는 10진수 4188 로 기록된다.
+     &#39;105c&#39; 라는 문자열은 Sysmon 로그에 존재하지 않는다.
+
+   [Convert]::ToInt32(&#39;105c&#39;, 16)  -&gt; 4188
+   다시 검색 -&gt; Sysmon 1: ProcessId=4188 Image=C:\Windows\System32\cmd.exe
+
+3. 두 번째 시도 (실패):
+   cmd.exe(4188)의 부모를 4688 에서 PID 로만 찾았다.
+
+   $procs | Where-Object { $_.PidDec -eq 4188 } | Select TimeUTC, Image
+
+   TimeUTC                       Image
+   2026-03-14T07:19:31.0021110Z  C:\Windows\System32\cmd.exe
+   2026-03-14T09:14:52.6610220Z  C:\Windows\System32\taskhostw.exe
+
+   같은 PID 4188 이 두 개다. 뒤의 taskhostw.exe 를 부모로 잡아
+   &quot;작업 스케줄러가 시작점&quot; 이라고 답했다. 오답.
+
+   무엇이 틀렸나:
+     PID 는 재사용된다. 07:20:08 에 생성된 자식의 부모는
+     07:20:08 보다 먼저 생성된 4188 이어야 한다.
+     09:14:52 의 taskhostw.exe 는 사건 이후의 다른 프로세스다.
+
+4. 접근 변경 — &quot;자식 생성 시각 이전 + 가장 최근&quot; 조건을 넣는다
+   Get-Ancestry -TargetPid 6732 -Before ([datetime]&#39;2026-03-14T07:21:00Z&#39;)
+
+   TimeUTC                       PidDec PpidDec Image
+   2026-03-14T07:20:08.4410021Z  6732   4188    ...\powershell.exe
+   2026-03-14T07:19:31.0021110Z  4188   1044    C:\Windows\System32\cmd.exe
+   2026-03-14T07:19:04.1180022Z  1044   760     C:\Windows\System32\rdpclip.exe
+
+   1044 의 부모 760 에 대한 4688 이 없다 -&gt; 감사 시작 이전에 실행된 프로세스다.
+
+5. 세 번째 확인 — Sysmon ProcessGuid 로 검산
+   Sysmon 1 에서 ProcessGuid 체인을 따라간다.
+     powershell.exe  ProcessGuid {...1e00}  ParentProcessGuid {...1c40}
+     cmd.exe         ProcessGuid {...1c40}  ParentProcessGuid {...1a80}
+     rdpclip.exe     ProcessGuid {...1a80}  ParentProcessGuid {...0300}
+     svchost.exe     ProcessGuid {...0300}  (services.exe 하위)
+
+   GUID 체인이 4단계의 PID 체인과 일치한다. 재사용 오류가 없다는 확증이다.
+
+6. 루트 판정
+   rdpclip.exe 는 RDP 세션에서 실행되는 클립보드 프로세스다.
+   4688 의 SubjectLogonId = 0x1a2b3c 를 4624 로 되짚으면
+   Logon Type 10 (RDP), IpAddress 203.0.113.77.
+
+정답: RDP 세션(4624 Type 10, LogonId 0x1a2b3c)에서 시작된
+      rdpclip.exe -&gt; cmd.exe -&gt; powershell.exe 계보.
+      계보의 실질적 루트는 RDP 로그온이다.</code></pre></div>
+<p>세 번의 교정이 핵심이다. <strong>① 진법을 통일하지 않으면 조인이 0건이다.</strong> <strong>② PID로만 부모를 찾으면 재사용된 다른 프로세스를 잡는다</strong> — 시각 조건이 필수다. <strong>③ <code>ProcessGuid</code> 체인으로 검산</strong>하면 재사용 오류를 확실히 배제할 수 있다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li>Security의 PID를 10진수로 변환했는가 (<code>[Convert]::ToInt32(...,16)</code>)</li><li><code>NewProcessId</code>(자식)와 <code>ProcessId</code>(부모)를 뒤집어 읽지 않았는가</li><li>같은 PID의 4688이 여러 개인가 — 재사용 여부를 먼저 확인</li><li>부모를 찾을 때 &quot;자식 생성 시각 이전&quot;이라는 조건을 넣었는가</li><li>Sysmon이 있는가 — 있으면 <code>ProcessGuid</code> 로 다시 검산</li><li><code>CommandLine</code> 이 비어 있는가 — 전부 비었으면 정책 문제다</li><li>4689가 있는가 — 있으면 생존 구간, 없으면 감사 미설정</li><li>4688/4689 짝의 이미지 이름이 일치하는가</li><li>전체 경로로 판정했는가 (파일명만으로는 위장을 못 잡는다)</li><li>Volatility 이름이 15자로 잘린 것을 감안했는가</li><li>같은 초의 4688을 <code>EventRecordId</code> 로 정렬했는가</li><li><code>SubjectLogonId</code> 로 4624까지 되짚었는가</li><li><code>TokenElevationType</code> 으로 승격 여부를 확인했는가</li><li>답 시각을 KST(+9시간)로 낼지 확인했는가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-021 — Microsoft Learn, Event 4688: <code>NewProcessId</code>(자식, 16진수), <code>NewProcessName</code>, <code>ProcessId</code>(부모, 16진수), <code>ParentProcessName</code>, <code>CommandLine</code>, <code>TokenElevationType</code>(<code>%%1936</code>/<code>%%1937</code>/<code>%%1938</code>), <code>MandatoryLabel</code>, <code>SubjectLogonId</code> 필드 정의와 명령행 감사가 별도 설정이라는 근거</li><li>SRC-024 — Microsoft Learn, Sysmon: Event 1의 <code>ProcessGuid</code>, <code>ProcessId</code>, <code>Image</code>, <code>OriginalFileName</code>, <code>ParentProcessGuid</code>, <code>ParentProcessId</code>, <code>ParentImage</code>, <code>IntegrityLevel</code>, <code>LogonId</code> 필드 구성과 <code>ProcessGuid</code> 가 프로세스를 유일하게 식별한다는 근거</li><li>SRC-006 — Volatility 3 문서: <code>windows.pslist</code>, <code>windows.pstree</code>, <code>windows.cmdline</code> 의 PID/PPID 출력</li><li>4689(프로세스 종료)의 <code>ProcessId</code>/<code>ProcessName</code>/<code>Status</code> 필드는 Microsoft 감사 정책 문서 기준이며, 이 글에서는 생존 구간 판정 용도로만 사용했다. 정확한 필드 목록은 실제 이벤트 XML에서 확인할 것</li><li><code>ParentProcessName</code> 필드의 존재 여부와 Volatility 출력의 이름 절단 길이는 Windows/도구 버전에 따라 다르므로 실제 데이터에서 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./logon-id-session-linking.html">
+    <span class="rel-id">FOR-0104 · Event Log</span>
+    Logon ID로 세션 전체 조립하기: TargetLogonId·SubjectLogonId 조인 절차
+  </a>
+  <a class="related-item" href="./volatility-pslist.html">
+    <span class="rel-id">FOR-0214 · 메모리</span>
+    Volatility 3 windows.pslist로 메모리 덤프의 프로세스 목록 읽기
+  </a>
+  <a class="related-item" href="./windows-log-ctf-walkthrough.html">
+    <span class="rel-id">FOR-0110 · Event Log</span>
+    Windows 로그 종합 CTF 풀이: RDP 침입부터 로그 삭제까지 4채널 추적
+  </a>
+  <a class="related-item" href="./evtx-analysis-order.html">
+    <span class="rel-id">FOR-0081 · Event Log</span>
+    EVTX 분석 순서: winevt\Logs 채널 우선순위와 30초 트리아지
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./logon-id-session-linking.html"><span class="rel-id">← FOR-0104</span>Logon ID로 세션 전체 조립하기: TargetLogonId·SubjectLogonId 조인 절차</a>
+<a class="related-item" href="./account-ip-workstation-pivot.html"><span class="rel-id">FOR-0106 →</span>계정·IP·WorkstationName 3축 pivot: 공격자 단말과 측면 이동 경로 특정</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-진법-대응표-최대-함정">1단계 — 진법 대응표 (최대 함정)</a></li>
+<li class="toc-l3"><a href="#2단계-pid-단독-추적을-금지하는-이유">2단계 — PID 단독 추적을 금지하는 이유</a></li>
+<li class="toc-l3"><a href="#3단계-같은-pid가-여러-프로세스를-가리키는지-판별">3단계 — 같은 PID가 여러 프로세스를 가리키는지 판별</a></li>
+<li class="toc-l3"><a href="#4단계-프로세스-계보-재구성-부모로-거슬러-올라가기">4단계 — 프로세스 계보 재구성 (부모로 거슬러 올라가기)</a></li>
+<li class="toc-l3"><a href="#5단계-생존-구간-확정-4689">5단계 — 생존 구간 확정 (4689)</a></li>
+<li class="toc-l3"><a href="#6단계-processname-이-전체-경로인가-파일명인가">6단계 — ProcessName 이 전체 경로인가 파일명인가</a></li>
+<li class="toc-l3"><a href="#7단계-메모리-덤프의-pid와-대조">7단계 — 메모리 덤프의 PID와 대조</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

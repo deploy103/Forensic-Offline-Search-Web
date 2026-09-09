@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>HTTP 상태 코드로 성공·실패 판정: http.response.code와 401→200 전환 읽기 · FOR-0161 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Network%2FPCAP">Network/PCAP</a> / FOR-0161
+      </div>
+      <header class="article-head">
+        <h1>HTTP 상태 코드로 성공·실패 판정: http.response.code와 401→200 전환 읽기</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Network/PCAP</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>요청을 찾는 것은 절반이고, 성공·실패는 응답 코드가 결정한다. http.response.code로 분포를 먼저 보고(404 급증=스캔, 500 존재=주입 성공 흔적), http.request_in·http.response_for.uri로 요청과 짝지은 뒤, http.content_length를 함께 봐야 &quot;200인데 빈 응답&quot;과 &quot;200에 4 MB&quot;를 구분할 수 있다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Wireshark, tshark</td></tr>
+<tr><th>artifact</th><td><code>pcap</code> · <code>pcapng</code> · <code>HTTP response header</code> · <code>HTTP status line</code></td></tr>
+<tr><th>프로토콜</th><td>HTTP, TCP</td></tr>
+<tr><th>Wireshark 필터</th><td><code>http.response</code> · <code>http.response.code == 200</code> · <code>http.response.code == 401</code> · <code>http.response.code == 206</code> · <code>http.response.code &gt;= 400</code> · <code>http.response.code &gt;= 400 &amp;&amp; http.response.code &lt; 500</code> · <code>http.response.code &gt;= 500</code> · <code>http.response.code == 302 &amp;&amp; http.location</code> · <code>http.response.code == 200 &amp;&amp; http.content_length &gt; 100000</code> · <code>http.response.code == 101</code></td></tr>
+<tr><th>tshark field</th><td><code>http.response.code</code> · <code>http.response.phrase</code> · <code>http.request_in</code> · <code>http.response_for.uri</code> · <code>http.content_length</code> · <code>http.content_type</code> · <code>http.server</code> · <code>http.location</code> · <code>http.set_cookie</code> · <code>http.time</code> · <code>http.transfer_encoding</code> · <code>tcp.stream</code></td></tr>
+<tr><th>로그 필드</th><td><code>sc-status</code> · <code>status</code></td></tr>
+<tr><th>파일 형식</th><td><code>pcap</code> · <code>pcapng</code></td></tr>
+<tr><th>검색 별칭</th><td>응답 코드 필터 · 상태코드 분석 · 401 200 전환 · 로그인 성공 판정 · 404 많이 나온다 · 206 부분전송 · 500 에러 패킷</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>요청을 찾는 것은 절반이고, <strong>성공·실패는 응답 코드가 결정한다.</strong> <code>http.response.code</code>로 분포를 먼저 보고(404 급증=스캔, 500 존재=주입 성공 흔적), <code>http.request_in</code>·<code>http.response_for.uri</code>로 요청과 짝지은 뒤, <strong><code>http.content_length</code>를 함께 봐야</strong> &quot;200인데 빈 응답&quot;과 &quot;200에 4 MB&quot;를 구분할 수 있다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;로그인에 성공한 시각을 구하라&quot; — 성공 지점은 코드 전환에 있다</li><li>&quot;공격자의 시도 중 실제로 통한 것은 무엇인가&quot;</li><li>&quot;스캐닝이 있었는가, 어느 도구가 무엇을 훑었는가&quot;</li><li>&quot;파일이 실제로 전송됐는가&quot; — 요청만으로는 알 수 없다</li><li>&quot;서버가 무엇으로 만들어졌는가&quot; (<code>Server</code> 헤더)</li><li>&quot;대용량 데이터가 나눠서 빠져나갔는가&quot; (206)</li></ul>
+<p><strong>응답을 안 보고 답을 제출하는 것이 pcap 문제의 최다 오답 원인이다.</strong> 실패한 로그인 시도를 정답으로 적는 실수가 대표적이다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li><code>Info</code> 컬럼에 <code>HTTP/1.1 404 Not Found</code>가 화면을 가득 채운다 → 스캔</li><li><code>HTTP/1.1 401 Unauthorized</code>가 보인다 → 인증 구간이 있다. <strong>그 뒤의 200을 찾는다</strong></li><li><code>HTTP/1.1 302 Found</code> + <code>Location:</code> → 로그인/리다이렉트 성공 지점</li><li><code>HTTP/1.1 500 Internal Server Error</code> → 주입 시도가 서버 로직을 깨뜨렸다</li><li><code>HTTP/1.1 206 Partial Content</code> → 이어받기/분할 전송. 대용량 이동</li><li><code>HTTP/1.1 101 Switching Protocols</code> → WebSocket 업그레이드. 이후는 <code>http</code>로 안 보인다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y http.response -T fields -e http.response.code | sort | uniq -c | sort -nr</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">    502 200
+     88 404
+     31 302
+     14 500
+      6 401
+      3 206
+      1 101</code></pre></div>
+<p><strong>이 표 하나로 사건의 성격이 정해진다.</strong> 404가 많으면 스캔, 500이 있으면 주입, 401이 있으면 인증 구간, 206이 있으면 대용량 전송.</p>
+<p>GUI에서 실패만 즉시 보기:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">http.response.code &gt;= 400</code></pre></div>
+<p><code>http.response.code</code>와 <code>http.response_for.uri</code>를 컬럼으로 올리면(필드 우클릭 → <code>Apply as Column</code>) 어느 경로가 실패했는지 한 화면에 나온다.</p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-코드별-의미와-포렌식-해석">1단계 — 코드별 의미와 포렌식 해석</h3>
+<h4 id="1xx-정보">1xx — 정보</h4>
+<div class="table-wrap"><table><thead><tr><th>코드</th><th>의미</th><th>포렌식 해석</th></tr></thead><tbody><tr><td>100 Continue</td><td>본문을 보내도 좋다</td><td>클라이언트가 <code>Expect: 100-continue</code>를 보냈다. <strong>대용량 업로드 직전 신호</strong></td></tr><tr><td>101 Switching Protocols</td><td>프로토콜 전환</td><td><strong>WebSocket 업그레이드.</strong> 이후 통신은 <code>http</code> 필터에 안 걸린다. <code>websocket</code> 필터로 전환. C2 채널로 쓰인다</td></tr></tbody></table></div>
+<h4 id="2xx-성공">2xx — 성공</h4>
+<div class="table-wrap"><table><thead><tr><th>코드</th><th>의미</th><th>포렌식 해석</th></tr></thead><tbody><tr><td>200 OK</td><td>성공</td><td><strong>본문 크기를 함께 봐야 한다.</strong> 0바이트 200과 4 MB 200은 완전히 다른 사건</td></tr><tr><td>201 Created</td><td>리소스 생성됨</td><td><strong>업로드/등록 성공.</strong> REST API 업로드의 성공 신호</td></tr><tr><td>204 No Content</td><td>성공했고 본문 없음</td><td>비컨 응답에서 흔하다. <strong>&quot;할 일 없음&quot; 신호로 쓰이는 C2 패턴</strong></td></tr><tr><td>206 Partial Content</td><td>요청한 범위만 전송</td><td><strong>이어받기/분할 다운로드.</strong> 대용량 유출을 조각내 보낸 흔적. 여러 206을 합쳐야 원본 크기가 나온다</td></tr></tbody></table></div>
+<h4 id="3xx-리다이렉션">3xx — 리다이렉션</h4>
+<div class="table-wrap"><table><thead><tr><th>코드</th><th>의미</th><th>포렌식 해석</th></tr></thead><tbody><tr><td>301 Moved Permanently</td><td>영구 이동</td><td>HTTP→HTTPS 강제 전환에서 흔하다</td></tr><tr><td>302 Found / 303 See Other</td><td>임시 이동</td><td><strong>로그인 성공의 표준 신호.</strong> <code>Location</code>이 대시보드면 인증 통과</td></tr><tr><td>304 Not Modified</td><td>변경 없음</td><td><strong>본문이 전송되지 않았다.</strong> 다운로드 성공으로 세면 안 된다</td></tr><tr><td>307 / 308</td><td>메서드 보존 리다이렉트</td><td>POST가 다른 URL로 재전송된다. 자격증명이 두 곳에 남을 수 있다</td></tr></tbody></table></div>
+<h4 id="4xx-클라이언트-오류">4xx — 클라이언트 오류</h4>
+<div class="table-wrap"><table><thead><tr><th>코드</th><th>의미</th><th>포렌식 해석</th></tr></thead><tbody><tr><td>400 Bad Request</td><td>요청 형식 오류</td><td>손으로 조립한 요청, 퍼징, 프로토콜 혼선</td></tr><tr><td>401 Unauthorized</td><td>인증 필요</td><td><strong><code>WWW-Authenticate</code> 헤더가 함께 온다.</strong> 다음 요청의 <code>Authorization</code>과 짝</td></tr><tr><td>403 Forbidden</td><td>권한 없음</td><td>파일은 존재하나 접근 차단. <strong>404와 구분되는 정보</strong> — 경로가 실재한다는 뜻</td></tr><tr><td>404 Not Found</td><td>없음</td><td><strong>급증하면 스캔.</strong> 어떤 경로를 시도했는지가 도구 지문</td></tr><tr><td>405 Method Not Allowed</td><td>메서드 불허</td><td><code>PUT</code>/<code>DELETE</code> 시도가 막혔다</td></tr><tr><td>407 Proxy Authentication Required</td><td>프록시 인증 필요</td><td>프록시 경유 환경</td></tr><tr><td>413 Content Too Large</td><td>본문이 너무 큼</td><td><strong>업로드가 크기 제한에 막혔다.</strong> 공격 실패 근거</td></tr><tr><td>414 URI Too Long</td><td>URI 과다</td><td>긴 SQLi/셸코드를 GET 쿼리로 밀어넣은 흔적</td></tr><tr><td>416 Range Not Satisfiable</td><td>범위 불가</td><td>206 이어받기 시도가 실패</td></tr><tr><td>429 Too Many Requests</td><td>요청 과다</td><td><strong>스캐너가 레이트 리밋에 걸렸다.</strong> 스캔의 강한 증거</td></tr></tbody></table></div>
+<h4 id="5xx-서버-오류">5xx — 서버 오류</h4>
+<div class="table-wrap"><table><thead><tr><th>코드</th><th>의미</th><th>포렌식 해석</th></tr></thead><tbody><tr><td>500 Internal Server Error</td><td>서버 내부 오류</td><td><strong>주입이 서버 코드를 깨뜨렸다.</strong> SQLi·LFI·역직렬화 시도의 핵심 증거. 응답 본문에 스택 트레이스·DB 오류가 실려 정보가 유출되는 경우가 많다</td></tr><tr><td>501 Not Implemented</td><td>미구현 메서드</td><td>이상한 메서드 시도</td></tr><tr><td>502 / 503 / 504</td><td>게이트웨이·과부하·타임아웃</td><td>DoS, 백엔드 다운, 또는 리버스 프록시 뒤의 서버 문제</td></tr></tbody></table></div>
+<p><strong>403과 404의 차이가 실전에서 큰 정보다.</strong> 스캐너가 100개 경로를 훑어 99개가 404, 1개가 403이면 <strong>그 1개는 실제로 존재하는 경로</strong>다.</p>
+<h3 id="2단계-필터-단일-값과-범위">2단계 — 필터: 단일 값과 범위</h3>
+<p><code>http.response.code</code>는 <strong>숫자 필드</strong>이므로 부등호가 그대로 통한다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">http.response.code == 200
+http.response.code == 404
+http.response.code &gt;= 400
+http.response.code &gt;= 400 &amp;&amp; http.response.code &lt; 500
+http.response.code &gt;= 500
+http.response.code in {401 403 407}
+http.response.code in {301 302 303 307 308}
+!(http.response.code == 200) &amp;&amp; http.response</code></pre></div>
+<p><strong>성공한 것만 / 실패한 것만</strong> 두 축으로 나누는 것이 첫 작업이다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">http.response.code &lt; 400
+http.response.code &gt;= 400</code></pre></div>
+<p>크기 조건과 결합하면 훨씬 강해진다.</p>
+<div class="table-wrap"><table><thead><tr><th>목적</th><th>필터</th></tr></thead><tbody><tr><td>실제로 데이터가 나간 응답</td><td><code>http.response.code == 200 &amp;&amp; http.content_length &gt; 100000</code></td></tr><tr><td>성공했지만 본문이 빈 응답</td><td><code>http.response.code == 200 &amp;&amp; http.content_length == 0</code></td></tr><tr><td>파일 다운로드 성공</td><td><code>http.response.code == 200 &amp;&amp; http.content_type contains &quot;octet-stream&quot;</code></td></tr><tr><td>로그인 성공 후보</td><td><code>http.response.code == 302 &amp;&amp; http.set_cookie</code></td></tr><tr><td>인증 도전</td><td><code>http.response.code == 401</code></td></tr><tr><td>분할 전송</td><td><code>http.response.code == 206</code></td></tr><tr><td>오류 본문에 정보 유출</td><td><code>http.response.code &gt;= 500 &amp;&amp; http.content_length &gt; 500</code></td></tr></tbody></table></div>
+<p><code>http.response.phrase</code>로도 필터할 수 있지만 <strong>판정 근거로 쓰지 않는다.</strong> 사유구는 서버가 임의 문자열로 바꿀 수 있어 <code>200 Not Found</code> 같은 응답도 만들 수 있다. 판정은 항상 숫자로 한다.</p>
+<h3 id="3단계-요청과-응답을-짝짓는-절차">3단계 — 요청과 응답을 짝짓는 절차</h3>
+<p>응답 패킷에는 <code>http.request.uri</code>가 없다. 짝짓는 방법이 세 가지다.</p>
+<div class="table-wrap"><table><thead><tr><th>방법</th><th>필드/절차</th><th>정확도</th><th>언제 쓰나</th></tr></thead><tbody><tr><td><code>http.request_in</code></td><td>응답 패킷에 붙는 <strong>요청 프레임 번호</strong></td><td><strong>가장 높음</strong></td><td>항상 1순위. Keep-Alive에서도 정확</td></tr><tr><td><code>http.response_for.uri</code></td><td>응답 패킷에 붙는 요청 URI</td><td>높음</td><td>표로 뽑을 때. URI만 필요할 때</td></tr><tr><td><code>tcp.stream</code></td><td>같은 연결로 묶기</td><td>보통</td><td>한 연결에 요청이 하나뿐일 때만 안전</td></tr></tbody></table></div>
+<p>한 번에 뽑는 표:</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;http.response&#39; \
+  -T fields -e frame.number -e http.request_in -e tcp.stream \
+            -e http.response.code -e http.content_length -e http.content_type \
+            -e http.time -e http.response_for.uri \
+  -E header=y -E separator=&#39;|&#39;</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">frame.number|http.request_in|tcp.stream|http.response.code|http.content_length|http.content_type|http.time|http.response_for.uri
+908|902|7|401|294|text/html|0.008|http://portal.example.com/admin/
+918|912|7|200|8214|text/html|0.021|http://portal.example.com/admin/
+1908|1902|17|404|291|text/html|0.006|http://portal.example.com/.git/config
+2470|2455|21|200|4194304|application/octet-stream|3.912|http://portal.example.com/backup/db.zip</code></pre></div>
+<p>역방향으로 요청에서 응답을 찾는 필드는 <code>http.response_in</code>이다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;http.request&#39; \
+  -T fields -e frame.number -e http.request.uri -e http.response_in -E header=y</code></pre></div>
+<p><strong>응답이 없는 요청</strong>(<code>http.request &amp;&amp; !http.response_in</code>)은 서버가 답하지 않았거나 캡처가 잘린 것이다. 둘을 구분하려면 <code>Analyze &gt; Expert Information</code>에서 재전송·누락을 확인한다.</p>
+<p>GUI에서 한 요청의 짝을 즉시 보려면 요청 패킷 상세 트리의 <code>Response in frame: 918</code> 항목을 <strong>더블클릭</strong>하면 그 프레임으로 점프한다. 응답 쪽에서는 <code>Request in frame: 912</code>가 같은 역할을 한다.</p>
+<h3 id="4단계-401200-전환이-인증-성공-지점">4단계 — 401→200 전환이 인증 성공 지점</h3>
+<p>HTTP 기본/다이제스트 인증의 표준 흐름은 세 단계다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1) 클라이언트: GET /admin/  (Authorization 없음)
+2) 서버:      401 Unauthorized  + WWW-Authenticate: Basic realm=&quot;Admin&quot;
+3) 클라이언트: GET /admin/  + Authorization: Basic YWRtaW46UzNjcjN0
+4) 서버:      200 OK        &lt;-- 인증 성공 지점</code></pre></div>
+<p><strong>따라서 &quot;401 다음에 온 200&quot;이 성공 시각이고, 그 사이 요청의 <code>Authorization</code> 헤더가 통한 자격증명이다.</strong></p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">http.response.code in {401 200} &amp;&amp; tcp.stream eq 7</code></pre></div>
+<p>전체 캡처에서 401이 등장한 스트림만 골라 그 안의 코드 흐름을 보는 절차:</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) 401 이 난 스트림 목록
+tshark -r capture.pcapng -Y &#39;http.response.code == 401&#39; -T fields -e tcp.stream | sort -un
+# 예: 7 13 19
+
+# 2) 그 스트림들의 코드 흐름을 시간순으로
+tshark -r capture.pcapng -Y &#39;tcp.stream in {7 13 19} &amp;&amp; http&#39; \
+  -T fields -e frame.number -e tcp.stream -e http.request.method \
+            -e http.request.uri -e http.authorization -e http.response.code \
+  -E header=y</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">frame.number  tcp.stream  method  uri        authorization                    code
+902           7           GET     /admin/
+908           7                                                               401
+912           7           GET     /admin/    Basic YWRtaW46UzNjcjN0UGFzcw==
+918           7                                                               200
+1520          13          GET     /admin/    Basic YWRtaW46MTIzNA==
+1526          13                                                              401
+1602          13          GET     /admin/    Basic YWRtaW46YWRtaW4=
+1608          13                                                              401</code></pre></div>
+<p>스트림 7은 성공, 스트림 13은 두 번 실패다. <strong><code>Authorization: Basic</code>은 Base64이므로 디코딩하면 <code>사용자:비밀번호</code>가 나온다.</strong></p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">echo &#39;YWRtaW46UzNjcjN0UGFzcw==&#39; | base64 -d
+# admin:S3cr3tPass</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(&#39;YWRtaW46UzNjcjN0UGFzcw==&#39;))</code></pre></div>
+<p>폼 로그인은 401을 쓰지 않는다. 그때의 성공 신호는 다르다.</p>
+<div class="table-wrap"><table><thead><tr><th>인증 방식</th><th>실패 시</th><th><strong>성공 시</strong></th></tr></thead><tbody><tr><td>HTTP Basic/Digest</td><td>401 반복</td><td><strong>401 → 200</strong></td></tr><tr><td>폼 로그인 (세션 쿠키)</td><td>200 (로그인 화면 재표시)</td><td><strong>302 + <code>Location: /dashboard</code> + <code>Set-Cookie</code></strong></td></tr><tr><td>REST API 토큰</td><td>401 / 403 + JSON 오류</td><td>200 + 토큰이 담긴 JSON 본문</td></tr><tr><td>리다이렉트 없는 SPA</td><td>200 + <code>{&quot;ok&quot;:false}</code></td><td>200 + <code>{&quot;ok&quot;:true}</code> — <strong>코드가 같으므로 본문을 봐야 한다</strong></td></tr></tbody></table></div>
+<p><strong>폼 로그인에서 &quot;200이니까 성공&quot;으로 읽는 것이 가장 흔한 오답이다.</strong> 200은 &quot;로그인 페이지를 다시 그려줬다&quot;는 뜻일 수 있다. 판정 근거는 <code>302</code> + <code>Set-Cookie</code> + <code>Location</code>이다.</p>
+<h3 id="5단계-206-partial-content-대용량-전송-신호">5단계 — 206 Partial Content: 대용량 전송 신호</h3>
+<p>클라이언트가 <code>Range:</code> 헤더로 바이트 범위를 요청하면 서버는 206으로 그 범위만 보낸다. 정상 용도는 동영상 시킹과 다운로드 이어받기다. 포렌식에서는:</p>
+<div class="table-wrap"><table><thead><tr><th>관찰</th><th>해석</th></tr></thead><tbody><tr><td>하나의 큰 파일에 206이 여러 개</td><td>이어받기 또는 <strong>분할 유출</strong>(작은 조각으로 나눠 탐지 회피)</td></tr><tr><td>동영상/오디오 URI에 206</td><td>정상 스트리밍</td></tr><tr><td>206 개수가 수십~수백</td><td><strong>총량을 합산해야 실제 유출량이 나온다</strong></td></tr><tr><td>416 Range Not Satisfiable</td><td>범위 요청 실패. 파일이 바뀌었거나 없다</td></tr></tbody></table></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">http.response.code == 206</code></pre></div>
+<p>범위 정보는 헤더 라인에 들어 있다. 개별 헤더 라인을 담는 필드로 조건을 걸 수 있다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">http.response.line contains &quot;Content-Range&quot;
+http.request.line contains &quot;Range:&quot;</code></pre></div>
+<p>가장 확실한 확인은 Follow HTTP Stream으로 헤더를 눈으로 읽는 것이다 (<a href="./follow-tcp-stream.html">FOR-0162</a>).</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">GET /backup/db.zip HTTP/1.1
+Range: bytes=2097152-4194303
+
+HTTP/1.1 206 Partial Content
+Content-Range: bytes 2097152-4194303/8388608
+Content-Length: 2097152</code></pre></div>
+<p>마지막 값 <code>8388608</code>이 <strong>원본 전체 크기</strong>다. 206 조각들의 <code>Content-Length</code>를 다 합쳐 이 값과 비교하면 전송이 완결됐는지 알 수 있다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 206 응답의 본문 크기 합계
+tshark -r capture.pcapng -Y &#39;http.response.code == 206&#39; \
+  -T fields -e http.content_length |
+  awk &#39;{s+=$1} END {print &quot;총 &quot; s &quot; bytes (&quot; s/1048576 &quot; MB)&quot;}&#39;</code></pre></div>
+<h3 id="6단계-404-급증-스캔-그리고-무엇을-훑었는지">6단계 — 404 급증 = 스캔, 그리고 무엇을 훑었는지</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 시간대별 404 개수 — 급증 구간을 찾는다
+tshark -r capture.pcapng -Y &#39;http.response.code == 404&#39; \
+  -T fields -e frame.time_epoch |
+  awk &#39;{printf &quot;%d\n&quot;, $1/60}&#39; | uniq -c</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">      2 29557875
+     71 29557876      &lt;-- 1분 사이 71건
+     17 29557877
+      1 29557890</code></pre></div>
+<p>사람의 브라우징으로는 1분에 71개의 404가 나오지 않는다. 무엇을 시도했는지가 도구의 지문이다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;http.response.code == 404&#39; \
+  -T fields -e http.response_for.uri | sed &#39;s|.*://[^/]*||&#39; | sort -u | head -30</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">/.env
+/.git/config
+/admin
+/backup.zip
+/phpmyadmin/
+/wp-admin/
+/wp-login.php</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>시도한 경로 집합</th><th>추정 도구/워드리스트</th></tr></thead><tbody><tr><td><code>/wp-admin</code>, <code>/wp-login.php</code>, <code>/wp-content</code></td><td>WordPress 대상 스캔</td></tr><tr><td><code>/.git/config</code>, <code>/.env</code>, <code>/.svn/entries</code></td><td>설정 파일 노출 정찰</td></tr><tr><td><code>/phpmyadmin/</code>, <code>/adminer.php</code></td><td>DB 관리 도구 탐색</td></tr><tr><td>무작위 확장자 조합이 방대함</td><td>dirb/gobuster/ffuf 계열</td></tr><tr><td><code>/nikto-test-*</code> 같은 특유 경로</td><td>Nikto</td></tr></tbody></table></div>
+<p><strong>404 사이에 섞인 200과 403이 진짜 소득이다.</strong> 스캔 구간 안에서 성공만 골라낸다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">http.response.code in {200 301 302 403} &amp;&amp; tcp.stream in {17 18 19 20}</code></pre></div>
+<p>응답 코드와 함께 User-Agent를 보면 도구가 특정된다 (<a href="./http-get-find.html">FOR-0157</a>).</p>
+<h3 id="7단계-server-헤더로-기술-스택-파악">7단계 — <code>Server</code> 헤더로 기술 스택 파악</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;http.response&#39; -T fields -e http.server |
+  grep . | sort | uniq -c | sort -nr</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">    502 Apache/2.4.52 (Ubuntu)
+     31 nginx/1.18.0
+      8 Microsoft-IIS/10.0</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th><code>Server</code> 값</th><th>함의</th><th>다음에 볼 것</th></tr></thead><tbody><tr><td><code>Apache/...</code></td><td>Linux/Unix 계열이 많다</td><td><code>access.log</code>, <code>error_log</code>, <code>.htaccess</code></td></tr><tr><td><code>nginx/...</code></td><td>리버스 프록시일 수 있다 → 뒤에 다른 서버</td><td><code>access.log</code>, <code>X-Forwarded-For</code></td></tr><tr><td><code>Microsoft-IIS/...</code></td><td>Windows 서버</td><td>W3C Extended 로그(<code>u_ex*.log</code>), EVTX</td></tr><tr><td>헤더가 없다</td><td>헤더를 지우도록 설정됨</td><td>다른 지문(<code>X-Powered-By</code>, 쿠키 이름)으로 추정</td></tr><tr><td><code>Server</code>가 요청마다 다르다</td><td>로드밸런서 뒤에 여러 서버</td><td>어느 노드가 응답했는지</td></tr></tbody></table></div>
+<p>쿠키 이름도 스택 지문이다. <code>PHPSESSID</code>=PHP, <code>JSESSIONID</code>=Java, <code>ASP.NET_SessionId</code>=ASP.NET, <code>csrftoken</code>+<code>sessionid</code>=Django.</p>
+<p><strong>서버 종류를 알면 다음에 어떤 로그 파일을 요구해야 하는지가 정해진다.</strong> 이것이 상태 코드 분석의 마지막 소득이다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>의미</th><th>주의</th></tr></thead><tbody><tr><td><code>http.response.code</code></td><td>상태 코드</td><td><strong>숫자 필드.</strong> 부등호·범위 비교 가능</td></tr><tr><td><code>http.response.phrase</code></td><td>사유구(<code>OK</code>, <code>Not Found</code>)</td><td>서버가 임의로 바꿀 수 있다. <strong>판정 근거 아님</strong></td></tr><tr><td><code>http.request_in</code></td><td>대응 요청 프레임 번호</td><td><strong>짝짓기 1순위.</strong> 더블클릭으로 점프</td></tr><tr><td><code>http.response_in</code></td><td>(요청 측) 대응 응답 프레임 번호</td><td>없으면 서버 무응답 또는 캡처 잘림</td></tr><tr><td><code>http.response_for.uri</code></td><td>이 응답이 답한 요청 URI</td><td>표로 뽑을 때 필수</td></tr><tr><td><code>http.content_length</code></td><td>본문 길이</td><td><strong>chunked면 비어 있다.</strong> 실제 크기는 Conversations에서</td></tr><tr><td><code>http.content_type</code></td><td>본문 MIME</td><td><code>octet-stream</code>=파일, <code>text/html</code>=페이지</td></tr><tr><td><code>http.content_encoding</code></td><td><code>gzip</code> 등</td><td>압축된 크기 기준임을 유의</td></tr><tr><td><code>http.transfer_encoding</code></td><td><code>chunked</code></td><td><code>Content-Length</code> 부재의 원인</td></tr><tr><td><code>http.server</code></td><td>서버 소프트웨어</td><td>기술 스택</td></tr><tr><td><code>http.location</code></td><td>리다이렉트 대상</td><td><strong>로그인 성공 판정</strong></td></tr><tr><td><code>http.set_cookie</code></td><td>발급된 쿠키</td><td>세션 생성 = 인증 성공 시점</td></tr><tr><td><code>http.time</code></td><td>요청→응답 경과 초</td><td>큰 값 = 대용량 전송 또는 서버 지연. blind SQLi의 <code>sleep()</code>도 여기 드러난다</td></tr><tr><td><code>tcp.stream</code></td><td>연결 인덱스</td><td>Follow로 직행 (<a href="./tcp-stream-filter.html">FOR-0164</a>)</td></tr></tbody></table></div>
+<p><code>http.time</code>이 의외로 강력하다. Time-based blind SQL Injection은 응답이 정확히 5초·10초씩 지연되므로 코드는 200이어도 <code>http.time</code>으로 잡힌다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">http.time &gt; 4</code></pre></div>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>응답에서 얻은 것</th><th>다음 목표</th><th>확인할 것</th></tr></thead><tbody><tr><td>401 → 200 전환 프레임</td><td>그 사이 요청의 <code>http.authorization</code></td><td>Base64 디코딩한 자격증명</td></tr><tr><td>302 + <code>Set-Cookie</code></td><td>그 요청의 POST 본문 (<a href="./http-post-find.html">FOR-0158</a>)</td><td>아이디/비밀번호</td></tr><tr><td>자격증명</td><td>EVTX 4624/4625 (<a href="./event-4624-logon.html">FOR-0083</a>)</td><td>실제 로그온 성공 여부</td></tr><tr><td>200 + 큰 <code>content_length</code></td><td>Export Objects (<a href="./export-objects-http.html">FOR-0165</a>)</td><td>나간 파일 실물</td></tr><tr><td>206 여러 건</td><td><code>Content-Range</code> 합산</td><td>총 유출량과 완결 여부</td></tr><tr><td>500 응답</td><td>그 응답 본문(Follow Stream)</td><td>스택 트레이스·DB 오류·경로 노출</td></tr><tr><td>404 급증 구간</td><td>그 구간의 <code>http.user_agent</code> (<a href="./http-get-find.html">FOR-0157</a>)</td><td>스캐너 특정</td></tr><tr><td>404 사이의 403</td><td>그 경로 (<a href="./http-request-uri-filter.html">FOR-0159</a>)</td><td><strong>실재하는 경로</strong></td></tr><tr><td>101 Switching Protocols</td><td><code>websocket</code> 필터</td><td>업그레이드 이후의 채널</td></tr><tr><td><code>http.server</code> 값</td><td>서버 접근 로그 (<a href="./powershell-select-string.html">FOR-0121</a>)</td><td>서버 측 상태 코드와 대조</td></tr><tr><td><code>http.time</code> 이 큰 응답</td><td>그 요청의 쿼리</td><td>time-based blind SQLi</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>요청만 보고 성공으로 판정하는 것.</strong> <code>?cmd=whoami</code> 요청이 있어도 응답이 404/403이면 실행되지 않았다. 이것이 pcap 문제 최다 오답이다.</li><li><strong>폼 로그인에서 200을 성공으로 읽는 것.</strong> 200은 로그인 페이지 재표시일 수 있다. 성공은 <strong>302 + <code>Location</code> + <code>Set-Cookie</code></strong> 로 판정한다.</li><li><strong><code>http.response.phrase</code>로 판정하는 것.</strong> 사유구는 서버가 바꿀 수 있다. 숫자만 신뢰한다.</li><li><strong><code>http.content_length</code>가 없으면 본문이 없다고 판단하는 것.</strong> <code>Transfer-Encoding: chunked</code>면 헤더가 아예 없다. 실제 크기는 <code>Statistics &gt; Conversations</code>의 Bytes로 본다.</li><li><strong><code>304 Not Modified</code>를 다운로드 성공으로 세는 것.</strong> 본문이 전송되지 않았다. 캐시 적중이다.</li><li><strong><code>tcp.stream</code>만으로 요청과 응답을 짝짓는 것.</strong> Keep-Alive 연결에는 요청/응답이 여러 쌍 들어 있다. 짝짓기는 <code>http.request_in</code>으로 한다.</li><li><strong>404와 403을 같은 실패로 묶는 것.</strong> 403은 <strong>경로가 실재한다</strong>는 정보다. 스캔 결과에서 403은 성공에 가깝다.</li><li><strong>500을 서버 문제로 넘기는 것.</strong> 공격 맥락의 500은 <strong>주입이 서버 코드에 도달했다는 증거</strong>다. 응답 본문에 DB 오류·파일 경로가 유출된다.</li><li><strong>206을 무시하는 것.</strong> 조각난 전송의 총량을 합산하지 않으면 유출량을 과소평가한다. <code>Content-Range</code>의 마지막 값이 원본 크기다.</li><li><strong>101 이후를 <code>http</code>로 찾는 것.</strong> WebSocket으로 전환된 뒤의 트래픽은 <code>websocket</code> 필터의 몫이다. <code>http</code>로는 0건이다.</li><li><strong>응답이 없는 요청을 놓치는 것.</strong> <code>http.request &amp;&amp; !http.response_in</code> 을 확인한다. 서버 무응답과 캡처 잘림을 <code>Expert Information</code>으로 구분한다.</li><li><strong><code>http.response.code &gt;= 400</code> 을 문자열 비교로 착각하는 것.</strong> 숫자 필드이므로 부등호가 정상 동작한다. 반대로 <code>http.request.method</code>에는 부등호를 쓸 수 없다.</li><li><strong>시간을 상대 초로 두고 판정하는 것.</strong> <code>View &gt; Time Display Format &gt; UTC Date and Time of Day</code>가 먼저다. KST = UTC+9이므로 <code>07:22:41 UTC</code> = <code>16:22:41 KST</code>다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) 코드 분포 — 사건 성격 판정
+tshark -r capture.pcapng -Y &#39;http.response&#39; -T fields -e http.response.code |
+  sort | uniq -c | sort -nr
+
+# 2) 요청 수 vs 응답 수 — 차이가 크면 캡처가 잘렸다
+tshark -r capture.pcapng -Y &#39;http.request&#39;  | wc -l
+tshark -r capture.pcapng -Y &#39;http.response&#39; | wc -l
+
+# 3) 응답 없는 요청
+tshark -r capture.pcapng -Y &#39;http.request &amp;&amp; !http.response_in&#39; \
+  -T fields -e frame.number -e http.request.uri
+
+# 4) 실패한 요청의 경로 집합
+tshark -r capture.pcapng -Y &#39;http.response.code &gt;= 400&#39; \
+  -T fields -e http.response.code -e http.response_for.uri | sort -u | head -40
+
+# 5) 성공하고 데이터가 실제로 나간 응답
+tshark -r capture.pcapng -Y &#39;http.response.code == 200 &amp;&amp; http.content_length &gt; 10000&#39; \
+  -T fields -e http.content_length -e http.content_type -e http.response_for.uri |
+  sort -nr | head -20
+
+# 6) 파서를 우회한 상태 라인 원문
+strings -n 8 capture.pcapng | grep -E &#39;^HTTP/1\.[01] [0-9]{3}&#39; | sort | uniq -c | sort -nr
+
+# 7) 서버 로그와 대조 (있다면) — 상태 코드가 같은 값으로 남는다
+awk &#39;{print $9}&#39; access.log | sort | uniq -c | sort -nr</code></pre></div>
+<p>1)과 6)의 개수가 다르면 HTTP로 파싱되지 않은 응답이 있다(비표준 포트·잘린 캡처). 2)에서 요청 수가 응답 수보다 크게 많으면 캡처 구간이 응답을 담지 못한 것이다. 서버 로그가 함께 주어졌다면 7)이 최종 근거다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;관리자 페이지 인증에 성공한 계정과 비밀번호, 그리고 성공 시각(UTC)을 구하세요.&quot;
+첨부: bruteforce.pcapng (9,880 packets)
+
+1. 첫 시도 (실패):
+   &quot;성공은 200 일 것&quot;이라고 보고
+   필터: http.response.code == 200
+
+   -&gt; 502건. 이미지·CSS·정상 페이지가 전부 200 이라 판정이 불가능했다.
+      게다가 이 사이트의 관리자 페이지는 HTTP Basic 인증을 쓰고 있어
+      &quot;실패한 시도&quot;도 화면상으로는 401 이었는데, 200 만 보다가
+      /admin/ 관련 응답이 어느 것인지 특정하지 못했다.
+
+2. 접근 변경 — 코드 분포부터 본다
+   tshark -r bruteforce.pcapng -Y &#39;http.response&#39; \
+     -T fields -e http.response.code | sort | uniq -c | sort -nr
+
+      502 200
+       47 401     &lt;-- 인증 구간이 있다
+       12 404
+        1 206
+
+   -&gt; 401 이 47건. 브루트포스다. 성공은 &quot;401 다음의 200&quot;.
+
+3. 401 이 난 스트림 목록
+   tshark -r bruteforce.pcapng -Y &#39;http.response.code == 401&#39; \
+     -T fields -e tcp.stream | sort -un | tr &#39;\n&#39; &#39; &#39;
+   7 9 11 13 15 17 19 21 23 25 ... 51
+
+   -&gt; 시도마다 새 연결. 스트림이 23개.
+
+4. 그 스트림들의 코드 흐름과 Authorization 을 한 표로
+   tshark -r bruteforce.pcapng -Y &#39;http &amp;&amp; tcp.stream &gt;= 7 &amp;&amp; tcp.stream &lt;= 51&#39; \
+     -T fields -e frame.number -e tcp.stream -e http.authorization \
+               -e http.response.code -e http.response_for.uri -E header=y |
+     grep -E &#39;admin|Basic|40[13]|200&#39;
+
+   frame  stream  authorization                    code  uri
+   902    7                                        401   http://portal.example.com/admin/
+   912    7       Basic YWRtaW46MTIzNDU2
+   918    7                                        401
+   1020   9       Basic YWRtaW46cGFzc3dvcmQ=
+   1026   9                                        401
+   ...
+   4402   49      Basic YWRtaW46UzNjcjN0UGFzcw==
+   4408   49                                       200   http://portal.example.com/admin/
+
+   -&gt; 스트림 49 에서만 200. 여기가 성공 지점.
+
+5. 자격증명 디코딩
+   $ echo &#39;YWRtaW46UzNjcjN0UGFzcw==&#39; | base64 -d
+   admin:S3cr3tPass
+
+6. 성공 시각 — 응답이 아니라 요청 프레임 기준으로 본다
+   tshark -r bruteforce.pcapng -Y &#39;frame.number == 4408&#39; \
+     -T fields -e http.request_in -e http.time
+   4402   0.019
+
+   tshark -r bruteforce.pcapng -Y &#39;frame.number == 4402&#39; \
+     -T fields -e frame.time -e frame.time_epoch
+   2026-03-14 07:31:08.442000000 UTC   1773473468.442
+
+   KST = 16:31:08
+
+7. 교차검증 — 성공 후 실제로 뭘 했는가
+   필터: http.authorization == &quot;Basic YWRtaW46UzNjcjN0UGFzcw==&quot;
+   -&gt; 이후 12건의 요청이 같은 자격증명으로 200 을 받았다.
+      그중 하나가 206 Partial Content (파일 이어받기).
+
+   tshark -r bruteforce.pcapng -Y &#39;http.response.code == 206&#39; \
+     -T fields -e http.content_length -e http.response_for.uri
+   2097152   http://portal.example.com/admin/export/users.csv
+
+   -&gt; 인증 성공 후 users.csv 를 부분 전송으로 가져갔다.
+
+8. 실패 횟수 확인 — 브루트포스 규모
+   tshark -r bruteforce.pcapng -Y &#39;http.response.code == 401&#39; | wc -l
+   47
+
+정답: admin / S3cr3tPass / 2026-03-14 07:31:08 UTC (16:31:08 KST)
+      (부수 소득: 47회 실패 후 성공, 이후 users.csv 2 MB 유출)</code></pre></div>
+<p>1단계의 실패가 이 글의 요점이다. <strong><code>http.response.code == 200</code> 단독은 판정 도구가 아니다.</strong> 200은 캡처의 절반을 차지한다. 쓸모 있는 것은 <strong>코드 분포(어떤 코드가 존재하는가) → 전환 지점(401 다음의 200) → 짝짓기(<code>http.request_in</code>)</strong> 순서다. 그리고 성공 시각은 응답이 아니라 <strong>요청 프레임의 시각</strong>으로 적는 것이 맞다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>http.response.code</code> <strong>분포표</strong>를 먼저 뽑았는가 — 사건 성격이 여기서 정해진다</li><li><code>http.response.code &gt;= 400</code> 으로 실패만 따로 봤는가</li><li>401이 있는가 → <strong>401 다음의 200</strong>을 찾았는가</li><li>폼 로그인인가 → <strong>302 + <code>Location</code> + <code>Set-Cookie</code></strong> 로 성공을 판정했는가</li><li>요청과 응답을 <code>http.request_in</code> 으로 짝지었는가 — <code>tcp.stream</code> 만으로는 부정확하다</li><li><code>http.response_for.uri</code> 를 컬럼으로 올렸는가</li><li><code>http.content_length</code> 를 함께 봤는가 — 200이라도 0바이트면 아무것도 안 나갔다</li><li><code>content_length</code>가 비었으면 <code>http.transfer_encoding == &quot;chunked&quot;</code> 를 확인했는가</li><li>404가 급증한 구간이 있는가 → 그 구간의 URI 집합과 User-Agent를 봤는가</li><li>404 사이에 <strong>403·200·301</strong> 이 섞여 있는가 — 그것이 소득이다</li><li>500이 있는가 → 그 응답 본문에서 스택 트레이스·DB 오류를 읽었는가</li><li>206이 있는가 → <code>Content-Range</code> 를 합산해 총량과 원본 크기를 냈는가</li><li>101이 있는가 → <code>websocket</code> 필터로 전환했는가</li><li><code>http.time &gt; 4</code> 로 지연 응답(blind SQLi)을 확인했는가</li><li><code>http.request &amp;&amp; !http.response_in</code> 으로 무응답 요청을 봤는가</li><li><code>http.server</code> 로 기술 스택을 파악해 다음에 볼 로그를 정했는가</li><li>시간을 UTC 절대시각으로 바꿨는가 (KST = UTC+9)</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-064 — RFC 9110 HTTP Semantics: 상태 코드 클래스와 개별 코드(100, 101, 200, 201, 204, 206, 301~308, 400, 401, 403, 404, 405, 413, 414, 416, 429, 500~504)의 정의, <code>WWW-Authenticate</code> / <code>Authorization</code> / <code>Location</code> / <code>Range</code> / <code>Content-Range</code> / <code>Transfer-Encoding</code> 헤더 의미</li><li>SRC-002 — Wireshark Display Filter Reference: <code>http.response.code</code>(숫자 필드), <code>http.response.phrase</code>, <code>http.request_in</code>, <code>http.response_in</code>, <code>http.response_for.uri</code>, <code>http.time</code>, <code>http.server</code>, <code>http.location</code>, <code>http.set_cookie</code> 필드 정의</li><li><code>http.request.line</code> / <code>http.response.line</code>(개별 헤더 라인) 과 <code>http.response.code.desc</code> 는 Wireshark 버전에 따라 이름·존재가 다를 수 있다. 필터 입력창이 초록으로 바뀌는지로 확인하고, 확실하지 않으면 Follow HTTP Stream 으로 헤더를 직접 읽을 것</li><li><code>Server</code> 헤더 값과 세션 쿠키 이름으로 하는 스택 추정은 <strong>정황 근거</strong>다. 서버가 헤더를 위조·삭제할 수 있으므로 단정하지 말 것</li><li>메뉴 경로(<code>Analyze &gt; Expert Information</code>, <code>Statistics &gt; Conversations</code>, <code>View &gt; Time Display Format</code>)는 도구 버전에 따라 다를 수 있으므로 실제 화면에서 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./http-request-basics.html">
+    <span class="rel-id">FOR-0156 · Network/PCAP</span>
+    Wireshark HTTP 필터 필드 레퍼런스: http.request부터 http.request_in까지
+  </a>
+  <a class="related-item" href="./http-get-find.html">
+    <span class="rel-id">FOR-0157 · Network/PCAP</span>
+    pcap에서 HTTP GET 요청 분석: 쿼리 명령·다운로드 파일·User-Agent 도구 식별
+  </a>
+  <a class="related-item" href="./wireshark-30sec-triage.html">
+    <span class="rel-id">FOR-0146 · Network/PCAP</span>
+    Wireshark 30초 트리아지: pcap을 받고 처음 할 다섯 가지
+  </a>
+  <a class="related-item" href="./capture-vs-display-filter.html">
+    <span class="rel-id">FOR-0147 · Network/PCAP</span>
+    Capture Filter와 Display Filter 차이: 필터가 안 먹을 때
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./http-host-filter.html"><span class="rel-id">← FOR-0160</span>http.host 필터로 접속 도메인 전부 뽑기: 가상 호스트·IP 직접 접속·DNS 없는 Host</a>
+<a class="related-item" href="./ftp-commands.html"><span class="rel-id">FOR-0166 →</span>FTP 명령과 파일 전송 추적: ftp.request.command로 STOR/RETR 잡기</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-코드별-의미와-포렌식-해석">1단계 — 코드별 의미와 포렌식 해석</a></li>
+<li class="toc-l3"><a href="#2단계-필터-단일-값과-범위">2단계 — 필터: 단일 값과 범위</a></li>
+<li class="toc-l3"><a href="#3단계-요청과-응답을-짝짓는-절차">3단계 — 요청과 응답을 짝짓는 절차</a></li>
+<li class="toc-l3"><a href="#4단계-401200-전환이-인증-성공-지점">4단계 — 401→200 전환이 인증 성공 지점</a></li>
+<li class="toc-l3"><a href="#5단계-206-partial-content-대용량-전송-신호">5단계 — 206 Partial Content: 대용량 전송 신호</a></li>
+<li class="toc-l3"><a href="#6단계-404-급증-스캔-그리고-무엇을-훑었는지">6단계 — 404 급증 = 스캔, 그리고 무엇을 훑었는지</a></li>
+<li class="toc-l3"><a href="#7단계-server-헤더로-기술-스택-파악">7단계 — `Server` 헤더로 기술 스택 파악</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

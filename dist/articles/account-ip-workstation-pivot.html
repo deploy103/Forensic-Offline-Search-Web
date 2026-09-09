@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>계정·IP·WorkstationName 3축 pivot: 공격자 단말과 측면 이동 경로 특정 · FOR-0106 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Event%20Log">Event Log</a> / FOR-0106
+      </div>
+      <header class="article-head">
+        <h1>계정·IP·WorkstationName 3축 pivot: 공격자 단말과 측면 이동 경로 특정</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Event Log</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>계정·IP·WorkstationName 세 축은 이벤트마다 다른 필드 이름으로 흩어져 있고, 한 축을 잡으면 나머지 두 축으로 확장해 공격자 단말을 특정할 수 있다 — 단 WorkstationName 은 클라이언트가 스스로 신고한 값이라 위조 가능하므로 IP는 pcap/DHCP/ARP로, 계정은 SID로 각각 고정해야 확증이 된다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>EvtxECmd, Timeline Explorer, PowerShell, Wireshark, tshark</td></tr>
+<tr><th>artifact</th><td><code>IpAddress</code> · <code>WorkstationName</code> · <code>TargetUserName</code> · <code>ShareName</code> · <code>Security.evtx</code> · <code>EVTX</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Windows\System32\winevt\Logs\Security.evtx</code> · <code>C:\Windows\System32\dhcp</code> · <code>C:\Windows\System32\winevt\Logs\Microsoft-Windows-TerminalServices-RemoteConnectionManager%4Operational.evtx</code></td></tr>
+<tr><th>레지스트리</th><td><code>HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces</code></td></tr>
+<tr><th>프로토콜</th><td>SMB, RDP, NTLM, Kerberos, DHCP, ARP</td></tr>
+<tr><th>Wireshark 필터</th><td><code>ip.addr == 203.0.113.77</code> · <code>smb2 || smb</code></td></tr>
+<tr><th>tshark field</th><td><code>ip.src</code> · <code>ip.dst</code> · <code>eth.src</code> · <code>nbns.name</code></td></tr>
+<tr><th>regex</th><td><code>\b(?:\d{1,3}\.){3}\d{1,3}\b</code> · <code>&quot;WorkstationName&quot;:\s*&quot;([^&quot;]*)&quot;</code></td></tr>
+<tr><th>로그 필드</th><td><code>IpAddress</code> · <code>IpPort</code> · <code>WorkstationName</code> · <code>Workstation</code> · <code>TargetUserName</code> · <code>SubjectUserName</code> · <code>TargetServerName</code> · <code>ShareName</code> · <code>RelativeTargetName</code> · <code>SourceIp</code> · <code>DestinationIp</code></td></tr>
+<tr><th>파일 형식</th><td><code>evtx</code> · <code>csv</code> · <code>pcapng</code></td></tr>
+<tr><th>검색 별칭</th><td>ip로 계정 찾기 · workstationname 위조 · 공격자 pc 이름 · 측면 이동 경로 · 접속 ip 추적 · 어느 단말에서 접속했나 · IpAddress가 -로 나온다</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>계정·IP·<code>WorkstationName</code> 세 축은 <strong>이벤트마다 다른 필드 이름으로 흩어져 있고</strong>, 한 축을 잡으면 나머지 두 축으로 확장해 공격자 단말을 특정할 수 있다 — 단 <code>WorkstationName</code> 은 클라이언트가 스스로 신고한 값이라 위조 가능하므로 IP는 pcap/DHCP/ARP로, 계정은 SID로 각각 고정해야 확증이 된다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;공격자가 어느 단말에서 접속했는가&quot; — IP만으로는 단말 이름이 안 나오는 문제</li><li>&quot;이 IP로 접속한 계정 전부를 나열하라&quot; — 한 축에서 나머지로 확장하는 문제</li><li>여러 호스트의 EVTX가 주어지고 측면 이동 경로를 그려야 하는 문제</li><li><code>IpAddress</code> 가 <code>-</code> 또는 <code>::1</code> 로 나와 출처를 못 잡는 문제</li><li>도메인 환경에서 어느 계정이 어느 서버에 접근했는지 매트릭스를 만들어야 하는 문제</li></ul>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>지문에 IP 하나가 주어졌다 → <code>IpAddress</code> 로 전 채널 검색. 가장 빠른 시작점</li><li>지문에 계정 하나가 주어졌다 → <code>TargetUserName</code> → 그 계정의 IP 집합 → 그 IP의 다른 계정</li><li>지문에 PC 이름이 주어졌다 → <code>WorkstationName</code> / <code>Workstation</code> / <code>Computer</code></li><li>EVTX가 여러 호스트 분량이다 → <code>Computer</code> 컬럼으로 호스트를 구분하고 호스트 간 IP를 잇는다</li><li>pcap이 함께 있다 → IP↔MAC 고정이 가능하다. 여기서 위조 판정이 끝난다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">EvtxECmd.exe -d &#39;C:\case\winevt&#39; --csv &#39;C:\case\out&#39; --csvf all.csv</code></pre></div>
+<p>세 축을 한 번에 훑는 집계다. <strong>어느 축이 가장 좁은지 보고 시작점을 정한다.</strong></p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$csv = Import-Csv &#39;C:\case\out\all.csv&#39;
+
+# IP 축
+$csv | Where-Object { $_.RemoteHost -and $_.RemoteHost -ne &#39;-&#39; } |
+  Group-Object RemoteHost | Sort-Object Count -Descending |
+  Select-Object -First 20 Name, Count
+
+# 계정 축 (컴퓨터 계정 제외)
+$csv | Where-Object { $_.UserName -and $_.UserName -notmatch &#39;\$$&#39; } |
+  Group-Object UserName | Sort-Object Count -Descending |
+  Select-Object -First 20 Name, Count</code></pre></div>
+<p><code>RemoteHost</code> / <code>UserName</code> 컬럼은 EvtxECmd가 payload에서 뽑아 채우는 편의 컬럼이다. <strong>비어 있는 이벤트가 있으므로 정확한 집계는 <code>Payload</code> 원본에서 필드 이름으로 뽑는다.</strong></p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-세-축이-어느-이벤트의-어느-필드에-있는가">1단계 — 세 축이 어느 이벤트의 어느 필드에 있는가</h3>
+<p>이 표가 이 글의 본체다. 필드 이름이 조금씩 달라서 한 이름으로 검색하면 절반이 빠진다.</p>
+<div class="table-wrap"><table><thead><tr><th>이벤트</th><th>채널</th><th>계정 필드</th><th>IP 필드</th><th>단말/서버 필드</th></tr></thead><tbody><tr><td>4624 (로그온 성공)</td><td>Security</td><td><code>TargetUserName</code>, <code>TargetDomainName</code>, <code>TargetUserSid</code></td><td><code>IpAddress</code>, <code>IpPort</code></td><td><code>WorkstationName</code></td></tr><tr><td>4625 (로그온 실패)</td><td>Security</td><td><code>TargetUserName</code>, <code>TargetDomainName</code></td><td><code>IpAddress</code>, <code>IpPort</code></td><td><code>WorkstationName</code></td></tr><tr><td>4648 (명시적 자격증명)</td><td>Security</td><td><code>SubjectUserName</code>(시도한 쪽), <code>TargetUserName</code>(사용한 계정)</td><td><code>IpAddress</code>, <code>IpPort</code></td><td><strong><code>TargetServerName</code></strong>, <code>TargetInfo</code></td></tr><tr><td>4776 (NTLM 검증)</td><td>Security</td><td><code>TargetUserName</code></td><td><strong>없음</strong></td><td><strong><code>Workstation</code></strong> (<code>Name</code> 접미사 없음)</td></tr><tr><td>4768 / 4769 (Kerberos)</td><td>Security</td><td><code>TargetUserName</code>, <code>ServiceName</code></td><td><code>IpAddress</code>, <code>IpPort</code></td><td>없음</td></tr><tr><td>5140 (공유 접근)</td><td>Security</td><td><code>SubjectUserName</code>, <code>SubjectUserSid</code></td><td><code>IpAddress</code>, <code>IpPort</code></td><td><code>ShareName</code>, <code>ShareLocalPath</code></td></tr><tr><td>5145 (공유 객체 접근 검사)</td><td>Security</td><td><code>SubjectUserName</code></td><td><code>IpAddress</code>, <code>IpPort</code></td><td><code>ShareName</code>, <code>RelativeTargetName</code></td></tr><tr><td>1149 (RDP 인증 성공)</td><td>TerminalServices-RemoteConnectionManager/Operational</td><td><code>Param1</code>(사용자), <code>Param2</code>(도메인)</td><td><strong><code>Param3</code></strong>(원본 주소)</td><td>없음</td></tr><tr><td>21 / 24 / 25 (RDP 세션)</td><td>TerminalServices-LocalSessionManager/Operational</td><td><code>User</code></td><td>원본 주소 필드</td><td><code>SessionID</code></td></tr><tr><td>Sysmon 3 (네트워크 연결)</td><td>Sysmon/Operational</td><td><code>User</code></td><td><strong><code>SourceIp</code>, <code>DestinationIp</code></strong> (+ 포트)</td><td><code>SourceHostname</code>, <code>DestinationHostname</code></td></tr><tr><td>모든 이벤트</td><td>공통</td><td>—</td><td>—</td><td><code>Computer</code> (<strong>로그를 남긴 호스트 자신</strong>)</td></tr></tbody></table></div>
+<p>주의점 세 가지.</p>
+<ul><li><strong>4776에는 IP가 없다.</strong> NTLM 검증은 인증 서버가 남기는 이벤트이고 원본 IP가 들어가지 않는다. 계정 + <code>Workstation</code> + 시각으로만 엮는다</li><li><strong>1149와 21/24/25는 <code>EventData</code> 가 아니라 <code>UserData</code> 구조</strong>다. <code>Get-WinEvent</code> 의 XPath를 <code>EventData[...]</code> 로 쓰면 매칭되지 않는다</li><li><strong><code>Computer</code> 는 접속한 쪽이 아니라 기록한 쪽</strong>이다. 여러 호스트의 EVTX를 합쳤을 때 이 컬럼이 &quot;목적지 호스트&quot;가 된다</li></ul>
+<h3 id="2단계-ipaddress-값-해석">2단계 — IpAddress 값 해석</h3>
+<div class="table-wrap"><table><thead><tr><th>값</th><th>의미</th><th>실전 판정</th></tr></thead><tbody><tr><td><code>-</code></td><td>네트워크 출처가 없다</td><td>콘솔 로그온(Type 2), 서비스(Type 5), 배치(Type 4). <strong>&quot;숨겼다&quot;가 아니다</strong></td></tr><tr><td><code>127.0.0.1</code> / <code>::1</code></td><td>루프백</td><td>로컬에서 실행된 원격 도구, 포트 포워딩, 터널의 끝단</td></tr><tr><td><code>::ffff:192.168.1.10</code></td><td>IPv4-mapped IPv6</td><td>실제로는 <code>192.168.1.10</code>. <strong>문자열 검색이 빗나가는 원인</strong></td></tr><tr><td><code>fe80::...</code></td><td>링크 로컬 IPv6</td><td>같은 세그먼트. MAC 기반 주소면 EUI-64에서 MAC 추출 가능</td></tr><tr><td><code>10.x</code> / <code>172.16-31.x</code> / <code>192.168.x</code></td><td>사설 IP</td><td>내부망. <strong>측면 이동 후보</strong></td></tr><tr><td>공인 IP</td><td>외부 직접 접속</td><td>방화벽/포트 포워딩 노출</td></tr><tr><td><code>0.0.0.0</code></td><td>미확정</td><td>드라이버·서비스 계층 기록. 출처 근거로 쓰지 않는다</td></tr></tbody></table></div>
+<p>IPv4/IPv6 표기 혼재 때문에 검색이 빗나가므로, 검색 전에 정규화한다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">function Get-IpNormalized {
+  param([string]$Text)
+  if ([string]::IsNullOrWhiteSpace($Text)) { return &#39;&#39; }
+  $t = $Text.Trim()
+  if ($t -match &#39;^::ffff:(\d{1,3}(\.\d{1,3}){3})$&#39;) { return $Matches[1] }
+  if ($t -eq &#39;::1&#39;) { return &#39;127.0.0.1&#39; }
+  return $t
+}
+
+Get-IpNormalized &#39;::ffff:192.168.10.24&#39;   # 192.168.10.24
+Get-IpNormalized &#39;::1&#39;                    # 127.0.0.1</code></pre></div>
+<p>IPv4 추출 정규식 자체가 필요하면 <a href="./ipv4-regex.html">FOR-0128</a>의 패턴을 쓴다. 여기서는 필드 값이 이미 IP이므로 정규화만 한다.</p>
+<h3 id="3단계-workstationname-은-자기-신고-값이다">3단계 — WorkstationName 은 자기 신고 값이다</h3>
+<p><code>WorkstationName</code> 은 클라이언트가 인증 요청에 실어 보내는 문자열이다. 서버는 검증하지 않는다. <strong>즉 위조가 가능하다.</strong></p>
+<p>그런데 이것이 오히려 강한 지표가 된다. 공격 도구는 사람이 쓰는 PC와 다른 형태의 값을 남긴다.</p>
+<div class="table-wrap"><table><thead><tr><th>관찰 형태</th><th>해석</th><th>확증 방법</th></tr></thead><tbody><tr><td>정상 호스트명 (<code>DESKTOP-A1B2C3</code>, <code>PC-JHKIM</code>)</td><td>사내 자산일 가능성</td><td>자산 목록·DHCP·다른 호스트 EVTX와 대조</td></tr><tr><td><strong>빈 값 / <code>-</code></strong></td><td>클라이언트가 값을 안 보냈다. 스크립트·라이브러리 기반 도구에서 흔하다</td><td>같은 IP의 다른 이벤트에서 이름이 나오는지</td></tr><tr><td>무의미한 무작위 문자열</td><td>도구가 임의 생성한 값</td><td>같은 IP의 다른 접속에서 값이 매번 바뀌는지 확인</td></tr><tr><td>사내 명명 규칙에서 벗어난 이름</td><td>외부 단말</td><td>자산 목록에 없으면 확정적 신호</td></tr><tr><td>IP 자체가 이름으로 들어옴</td><td>이름 대신 주소를 넣는 클라이언트</td><td>도구 종류 추정 단서</td></tr><tr><td><strong>같은 IP인데 이름이 여러 개</strong></td><td>위조 또는 NAT 뒤의 여러 단말</td><td>세션 시각으로 분리</td></tr><tr><td><strong>같은 이름인데 IP가 여러 개</strong></td><td>이름 위조 또는 DHCP 재할당</td><td>DHCP 로그로 시각별 IP 확인</td></tr></tbody></table></div>
+<p><strong>특정 공격 도구의 기본 <code>WorkstationName</code> 값을 단정하지 않는다.</strong> 도구·버전·옵션에 따라 다르다. 판정은 &quot;그 조직의 정상 패턴에서 벗어났는가&quot;로 한다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 같은 IP 에서 관측된 WorkstationName 이 여러 개인가 (위조 신호)
+Get-WinEvent -Path &#39;C:\case\Security.evtx&#39; -Oldest -FilterXPath &#39;*[System[(EventID=4624 or EventID=4625)]]&#39; |
+  ForEach-Object {
+    $x = [xml]$_.ToXml(); $d = @{}
+    $x.Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.&#39;#text&#39; }
+    [pscustomobject]@{
+      TimeUTC = $x.Event.System.TimeCreated.SystemTime
+      EventId = $_.Id
+      User    = $d[&#39;TargetUserName&#39;]
+      Ip      = Get-IpNormalized $d[&#39;IpAddress&#39;]
+      Wks     = $d[&#39;WorkstationName&#39;]
+    }
+  } |
+  Where-Object { $_.Ip -and $_.Ip -ne &#39;-&#39; } |
+  Group-Object Ip |
+  ForEach-Object {
+    $names = ($_.Group.Wks | Sort-Object -Unique) -join &#39;, &#39;
+    [pscustomobject]@{ Ip = $_.Name; Count = $_.Count; Workstations = $names }
+  } | Sort-Object Count -Descending | Format-Table -AutoSize</code></pre></div>
+<p>출력 예시:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Ip              Count Workstations
+192.168.10.24    1842 PC-JHKIM
+203.0.113.77      219 , KALI, X7QZL2
+10.0.0.15          64 SRV-FILE01</code></pre></div>
+<p><code>203.0.113.77</code> 은 이름이 세 개(빈 값 포함)다. <strong>한 IP에서 이름이 흔들리면 그 이름은 증거로 못 쓴다.</strong> IP만 확증값으로 남긴다.</p>
+<h3 id="4단계-한-축에서-나머지-두-축으로-확장">4단계 — 한 축에서 나머지 두 축으로 확장</h3>
+<div class="table-wrap"><table><thead><tr><th>시작 축</th><th>1차 확장</th><th>2차 확장</th><th>확증 기준</th></tr></thead><tbody><tr><td>IP</td><td>그 IP의 4624/4625 → 계정 집합</td><td>그 계정의 다른 IP → 재사용 여부</td><td>pcap에서 같은 시각 같은 IP의 세션 존재</td></tr><tr><td>계정</td><td>그 계정의 4624 → IP 집합</td><td>그 IP의 다른 계정 → 도구가 여러 계정을 시도했나</td><td>4625 시도 계정 목록과 겹침</td></tr><tr><td>단말명</td><td><code>WorkstationName</code> 일치 → IP 집합</td><td>그 IP의 계정 집합</td><td>다른 호스트 EVTX의 <code>Computer</code> 와 이름 일치</td></tr><tr><td>공유 경로</td><td>5140/5145의 <code>ShareName</code> → <code>SubjectLogonId</code></td><td>Logon ID로 세션 전체 (FOR-0104)</td><td>같은 시각 <code>$MFT</code>/<code>$J</code> 의 파일 접근</td></tr></tbody></table></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$csv = Import-Csv &#39;C:\case\out\all.csv&#39;
+
+# 1) IP -&gt; 계정 집합
+$ip = &#39;203.0.113.77&#39;
+$csv | Where-Object { $_.Payload -match [regex]::Escape($ip) } |
+  ForEach-Object { if ($_.Payload -match &#39;&quot;TargetUserName&quot;:\s*&quot;([^&quot;]*)&quot;&#39;) { $Matches[1] } } |
+  Group-Object | Sort-Object Count -Descending | Select-Object Name, Count
+
+# 2) 계정 -&gt; IP 집합
+$user = &#39;svc_backup&#39;
+$csv | Where-Object { $_.Payload -match (&#39;&quot;TargetUserName&quot;:\s*&quot;&#39; + [regex]::Escape($user) + &#39;&quot;&#39;) } |
+  ForEach-Object { if ($_.Payload -match &#39;&quot;IpAddress&quot;:\s*&quot;([^&quot;]*)&quot;&#39;) { $Matches[1] } } |
+  Group-Object | Sort-Object Count -Descending | Select-Object Name, Count
+
+# 3) 계정 x IP x 이벤트 매트릭스
+$csv | Where-Object { $_.EventId -in 4624,4625 } |
+  ForEach-Object {
+    $u = if ($_.Payload -match &#39;&quot;TargetUserName&quot;:\s*&quot;([^&quot;]*)&quot;&#39;) { $Matches[1] } else { &#39;&#39; }
+    $i = if ($_.Payload -match &#39;&quot;IpAddress&quot;:\s*&quot;([^&quot;]*)&quot;&#39;) { $Matches[1] } else { &#39;&#39; }
+    [pscustomobject]@{ User = $u; Ip = $i; EventId = $_.EventId }
+  } |
+  Where-Object { $_.User -notmatch &#39;\$$&#39; -and $_.Ip -and $_.Ip -ne &#39;-&#39; } |
+  Group-Object User, Ip, EventId |
+  Select-Object Name, Count | Sort-Object Count -Descending | Format-Table -AutoSize</code></pre></div>
+<p>payload의 JSON 키 표기는 EvtxECmd 버전에 따라 다르다. <strong>정규식을 쓰기 전에 payload 한 줄을 눈으로 확인한다.</strong> 확실하게 하려면 3단계처럼 <code>Get-WinEvent</code> + XML 파싱으로 필드 이름을 직접 지정한다.</p>
+<p>각 확장 단계의 확증 기준:</p>
+<div class="table-wrap"><table><thead><tr><th>주장</th><th>이것만으로는 부족</th><th>확증에 필요한 것</th></tr></thead><tbody><tr><td>&quot;이 IP가 공격자다&quot;</td><td>4624 하나</td><td>4625 실패 누적 또는 그 세션의 악성 행위(4688/5145)</td></tr><tr><td>&quot;이 계정이 탈취됐다&quot;</td><td>로그온 성공 기록</td><td>정상 사용 패턴(시간대·IP·Logon Type)과의 이탈</td></tr><tr><td>&quot;이 PC가 공격 단말이다&quot;</td><td><code>WorkstationName</code> 일치</td><td>그 PC의 EVTX에 대응하는 발신 흔적(4648/4624 Type 3의 반대편)</td></tr><tr><td>&quot;여기서 저기로 이동했다&quot;</td><td>목적지의 4624</td><td>출발지의 4648 또는 발신 프로세스(Sysmon 3)</td></tr></tbody></table></div>
+<h3 id="5단계-여러-호스트-evtx로-측면-이동-경로-그리기">5단계 — 여러 호스트 EVTX로 측면 이동 경로 그리기</h3>
+<p>호스트별 EVTX를 각각 CSV로 만들고 <code>Computer</code> 컬럼을 유지한 채 합친다(방법은 FOR-0107).</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 호스트별로 폴더를 나눠 뽑는다
+EvtxECmd.exe -d &#39;C:\case\host-WS01\winevt&#39; --csv &#39;C:\case\out&#39; --csvf ws01.csv
+EvtxECmd.exe -d &#39;C:\case\host-SRV01\winevt&#39; --csv &#39;C:\case\out&#39; --csvf srv01.csv
+
+# 로그온 엣지 목록: (출발 IP) -&gt; (도착 호스트, 계정, Logon Type)
+$edges = @(&#39;ws01.csv&#39;,&#39;srv01.csv&#39;) | ForEach-Object {
+  Import-Csv (Join-Path &#39;C:\case\out&#39; $_) | Where-Object { $_.EventId -eq 4624 }
+} | ForEach-Object {
+  $u = if ($_.Payload -match &#39;&quot;TargetUserName&quot;:\s*&quot;([^&quot;]*)&quot;&#39;) { $Matches[1] } else { &#39;&#39; }
+  $i = if ($_.Payload -match &#39;&quot;IpAddress&quot;:\s*&quot;([^&quot;]*)&quot;&#39;) { $Matches[1] } else { &#39;&#39; }
+  $t = if ($_.Payload -match &#39;&quot;LogonType&quot;:\s*&quot;?(\d+)&#39;) { $Matches[1] } else { &#39;&#39; }
+  [pscustomobject]@{ SrcIp = $i; DstHost = $_.Computer; User = $u; Type = $t; TimeUTC = $_.TimeCreated }
+}
+
+$edges | Where-Object { $_.SrcIp -notin @(&#39;-&#39;,&#39;127.0.0.1&#39;,&#39;::1&#39;) -and $_.User -notmatch &#39;\$$&#39; } |
+  Sort-Object TimeUTC | Format-Table TimeUTC, SrcIp, DstHost, User, Type -AutoSize</code></pre></div>
+<p>출력 예시가 곧 경로다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">TimeUTC                 SrcIp           DstHost   User        Type
+2026-03-14 07:19:02Z    203.0.113.77    WS01      svc_backup  10
+2026-03-14 07:33:41Z    192.168.10.24   SRV01     svc_backup  3
+2026-03-14 07:35:12Z    192.168.10.24   SRV01     Administrator 3</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">외부 203.0.113.77 --RDP(Type 10)--&gt; WS01(192.168.10.24) --SMB(Type 3)--&gt; SRV01</code></pre></div>
+<p><strong>두 번째 줄의 <code>SrcIp</code> 가 첫 번째 줄의 목적지 호스트 IP와 같다는 것이 경로의 연결 증거다.</strong> 이 대응이 안 맞으면 경유지가 하나 더 있다.</p>
+<p>호스트 IP를 확정하려면 그 호스트의 로그에서 자기 IP를 찾는다.</p>
+<div class="table-wrap"><table><thead><tr><th>방법</th><th>무엇을 보나</th></tr></thead><tbody><tr><td>다른 호스트의 4624 <code>IpAddress</code></td><td>그 호스트가 접속했을 때 남은 주소</td></tr><tr><td>그 호스트의 Sysmon 3 <code>SourceIp</code></td><td>자기 발신 주소가 직접 기록된다</td></tr><tr><td><code>SYSTEM</code> hive <code>Services\Tcpip\Parameters\Interfaces\&lt;GUID&gt;</code></td><td><code>IPAddress</code> / <code>DhcpIPAddress</code> 값</td></tr><tr><td>DHCP 서버 로그 (<code>%SystemRoot%\System32\dhcp\DhcpSrvLog-*.log</code>)</td><td>시각별 IP↔MAC↔호스트명</td></tr><tr><td>pcap의 ARP / NBNS / DHCP</td><td>IP↔MAC↔이름</td></tr></tbody></table></div>
+<h3 id="6단계-ip단말을-외부-증거로-고정">6단계 — IP↔단말을 외부 증거로 고정</h3>
+<p><code>WorkstationName</code> 이 위조 가능하므로 최종 확증은 EVTX 밖에서 온다.</p>
+<div class="table-wrap"><table><thead><tr><th>증거원</th><th>얻는 것</th><th>한계</th></tr></thead><tbody><tr><td>DHCP 서버 로그</td><td>임대 시각, IP, MAC, 신고된 호스트명</td><td>고정 IP 단말은 안 나온다. 호스트명은 여기서도 자기 신고 값</td></tr><tr><td>ARP 캐시 / pcap의 ARP</td><td>IP↔MAC (같은 세그먼트에서만)</td><td>라우터를 넘으면 MAC이 바뀐다</td></tr><tr><td>pcap의 NBNS/mDNS 이름 등록</td><td>단말이 방송한 이름</td><td>이것도 자기 신고 값</td></tr><tr><td>pcap의 실제 세션</td><td>그 시각 그 IP가 정말 통신했는가</td><td>캡처 구간 밖은 불가</td></tr><tr><td>스위치/방화벽 로그</td><td>포트 단위 위치</td><td>보통 첨부되지 않는다</td></tr><tr><td>MAC의 OUI</td><td>제조사</td><td>가상화·MAC 랜덤화로 무의미할 수 있다</td></tr></tbody></table></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># pcap 에서 해당 IP 의 MAC 을 고정한다
+tshark -r cap.pcapng -Y &quot;ip.addr==203.0.113.77&quot; -T fields -e frame.time -e eth.src -e ip.src -e ip.dst | head
+
+# ARP 로 IP&lt;-&gt;MAC 대응 확인
+tshark -r cap.pcapng -Y &quot;arp&quot; -T fields -e arp.src.proto_ipv4 -e arp.src.hw_mac | sort -u
+
+# 단말이 방송한 이름 (NBNS)
+tshark -r cap.pcapng -Y &quot;nbns&quot; -T fields -e ip.src -e nbns.name | sort -u</code></pre></div>
+<p>pcap 쪽 절차의 상세는 <a href="./wireshark-30sec-triage.html">FOR-0146</a>에 있다.</p>
+<p><strong>EVTX <code>SystemTime</code> 은 UTC</strong>이고, pcap의 프레임 시각은 캡처 장비의 시각(보통 로컬)이다. 두 축을 맞추려면 EVTX는 UTC로 두고 pcap 시각을 UTC로 환산한 뒤 비교한다. 답이 KST면 마지막에 +9시간.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>의미</th><th>신뢰도</th></tr></thead><tbody><tr><td><code>IpAddress</code></td><td>접속 원본 IP</td><td><strong>높다.</strong> TCP 세션이 실제로 있었다는 뜻 (NAT/프록시 경유는 별개)</td></tr><tr><td><code>IpPort</code></td><td>원본 포트</td><td>값이 있으면 실제 소켓이 있었다. <code>0</code> 이면 네트워크 세션이 아니다</td></tr><tr><td><code>WorkstationName</code></td><td>클라이언트가 신고한 이름</td><td><strong>낮다.</strong> 위조 가능. 패턴 단서로만</td></tr><tr><td><code>Workstation</code> (4776)</td><td>같은 성질의 값, 필드 이름만 다름</td><td>낮다</td></tr><tr><td><code>TargetUserName</code></td><td>로그온 대상 계정</td><td>높다. <code>$</code> 로 끝나면 컴퓨터 계정</td></tr><tr><td><code>TargetUserSid</code></td><td>계정 SID</td><td><strong>가장 높다.</strong> 이름 변경·중복에 영향받지 않는다</td></tr><tr><td><code>SubjectUserName</code></td><td>행위 주체 계정</td><td>높다</td></tr><tr><td><code>TargetServerName</code> (4648)</td><td>접속 대상 서버 이름</td><td>중간. 발신 측 기록</td></tr><tr><td><code>ShareName</code> / <code>RelativeTargetName</code> (5140/5145)</td><td>접근한 공유와 그 안의 경로</td><td>높다</td></tr><tr><td><code>Computer</code></td><td><strong>로그를 기록한 호스트</strong></td><td>높다. 접속자가 아니라 목적지</td></tr><tr><td><code>SourceIp</code> / <code>DestinationIp</code> (Sysmon 3)</td><td>발신·수신 주소</td><td>높다. 출발지 관점의 유일한 직접 증거</td></tr><tr><td><code>Status</code> / <code>SubStatus</code> (4625)</td><td>실패 이유 코드</td><td>계정 존재 여부·비밀번호 오류 구분에 쓴다</td></tr></tbody></table></div>
+<p>계정은 이름보다 <strong>SID로 고정</strong>한다. 이름은 바뀌고 재사용되지만 <code>S-1-5-21-...-1001</code> 은 그 시스템에서 유일하다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>여기서 얻은 것</th><th>다음 목표</th><th>무엇을 확인하나</th></tr></thead><tbody><tr><td>확정된 IP</td><td>pcap <code>ip.addr == &lt;IP&gt;</code> (<a href="./wireshark-30sec-triage.html">FOR-0146</a>)</td><td>실제 전송 내용, MAC</td></tr><tr><td>확정된 계정</td><td>그 계정의 4624 <code>TargetLogonId</code> (FOR-0104)</td><td>세션 내 활동 전부</td></tr><tr><td>계정 SID</td><td>SAM / ProfileList</td><td>계정 생성 시각, 프로필 폴더</td></tr><tr><td><code>WorkstationName</code></td><td>다른 호스트의 EVTX <code>Computer</code></td><td>그 단말의 발신 기록</td></tr><tr><td><code>ShareName</code> / <code>RelativeTargetName</code></td><td><code>$MFT</code> / <code>$J</code> (<a href="./ntfs-artifact-timeline.html">FOR-0050</a>)</td><td>실제로 읽힌/복사된 파일</td></tr><tr><td>Logon Type 10 + IP</td><td>TerminalServices 채널 (1149, 21/24/25)</td><td>RDP 클라이언트 주소 재확인</td></tr><tr><td>Logon Type 3 + NTLM</td><td>4776의 <code>Workstation</code></td><td>인증 요청의 신고 단말명</td></tr><tr><td>외부 IP</td><td>방화벽/프록시 로그</td><td>반출 트래픽</td></tr><tr><td>IP↔MAC</td><td>DHCP 로그, ARP</td><td>물리 단말 특정</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>WorkstationName</code> 을 확증 증거로 쓰는 것.</strong> 클라이언트가 신고한 문자열이고 서버는 검증하지 않는다. → 패턴 단서로만 쓰고, 단말 특정은 IP+MAC으로 한다.</li><li><strong><code>IpAddress = -</code> 를 은폐로 읽는 것.</strong> 콘솔·서비스·배치 로그온은 원래 네트워크 출처가 없다. → <code>LogonType</code> 을 함께 보고 <code>-</code> 가 정상인 유형인지 판정한다.</li><li><strong><code>::ffff:192.168.10.24</code> 를 문자열로 검색하는 것.</strong> <code>192.168.10.24</code> 로 검색하면 앞의 접두사 때문에 매칭이 빗나가거나, 반대로 IPv6 표기만 검색해 IPv4 기록을 놓친다. → 정규화 함수를 거친다.</li><li><strong>4776에서 IP를 찾는 것.</strong> 이 이벤트에는 IP 필드가 없다. → 계정 + <code>Workstation</code> + 시각으로 4624/4625와 엮는다.</li><li><strong><code>Computer</code> 를 접속자 이름으로 읽는 것.</strong> 로그를 남긴 호스트 자신이다. → 여러 호스트를 합쳤을 때 목적지 컬럼으로 쓴다.</li><li><strong>1149/21/24/25를 <code>EventData</code> XPath로 찾는 것.</strong> 이 이벤트는 <code>UserData</code> 구조다. → <code>Get-WinEvent</code> 결과의 XML을 직접 파싱하거나 EvtxECmd CSV의 payload를 쓴다.</li><li><strong>NAT/프록시를 고려하지 않는 것.</strong> 여러 단말이 같은 공인 IP로 보인다. → 포트·세션 시각·<code>WorkstationName</code> 조합으로 분리하고, 불확실하면 &quot;이 IP 뒤의 단말&quot;이라고 서술한다.</li><li><strong>한 축만으로 결론 내는 것.</strong> IP만 있으면 누가, 계정만 있으면 어디서가 빈다. → 세 축을 모두 채운 뒤 서술한다.</li><li><strong>DHCP 임대 시각을 무시하는 것.</strong> 같은 IP가 하루 뒤에 다른 단말에 할당된다. → 사건 시각의 임대 기록으로 한정한다.</li><li><strong>성공(4624)만 보고 실패(4625)를 빠뜨리는 것.</strong> 4625의 계정 목록이 공격 도구의 사전을 드러낸다. → 두 이벤트를 같은 축에 올린다.</li><li><strong>계정을 이름으로 고정하는 것.</strong> 이름 변경·동일 이름 재생성이 있다. → SID로 고정한다.</li><li><strong>UTC/로컬 혼동.</strong> EVTX는 UTC, pcap은 캡처 장비 로컬 시각인 경우가 많다. → 전부 UTC로 환산해 비교하고, 답을 낼 때만 KST(+9시간).</li><li><strong>같은 초 순서를 시각으로 정하는 것.</strong> 로그온 폭주 구간에서 인과가 뒤집힌다. → <code>EventRecordId</code> 로 정렬한다 (FOR-0103).</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) 그 IP 로 성공한 로그온과 실패한 로그온을 나란히 본다
+$ip = &#39;203.0.113.77&#39;
+Get-WinEvent -Path &#39;C:\case\Security.evtx&#39; -Oldest -FilterXPath &quot;*[EventData[Data[@Name=&#39;IpAddress&#39;]=&#39;$ip&#39;]]&quot; |
+  Select-Object RecordId, TimeCreated, Id | Sort-Object RecordId | Format-Table -AutoSize
+
+# 2) 그 IP 의 WorkstationName 이 일관적인가
+Get-WinEvent -Path &#39;C:\case\Security.evtx&#39; -Oldest -FilterXPath &quot;*[EventData[Data[@Name=&#39;IpAddress&#39;]=&#39;$ip&#39;]]&quot; |
+  ForEach-Object {
+    $x = [xml]$_.ToXml(); $d = @{}
+    $x.Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.&#39;#text&#39; }
+    $d[&#39;WorkstationName&#39;]
+  } | Group-Object | Select-Object Name, Count
+
+# 3) 그 계정이 접근한 공유 경로
+Get-WinEvent -Path &#39;C:\case\Security.evtx&#39; -Oldest -FilterXPath &#39;*[System[(EventID=5145)]]&#39; |
+  ForEach-Object {
+    $x = [xml]$_.ToXml(); $d = @{}
+    $x.Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.&#39;#text&#39; }
+    if ($d[&#39;SubjectUserName&#39;] -eq &#39;svc_backup&#39;) {
+      &#39;{0} {1} {2} {3}&#39; -f $x.Event.System.TimeCreated.SystemTime, $d[&#39;IpAddress&#39;], $d[&#39;ShareName&#39;], $d[&#39;RelativeTargetName&#39;]
+    }
+  }
+
+# 4) RDP 채널의 원본 주소가 4624 의 IpAddress 와 일치하는가 (UserData 구조)
+Get-WinEvent -Path &#39;C:\case\Microsoft-Windows-TerminalServices-RemoteConnectionManager%4Operational.evtx&#39; -Oldest |
+  Where-Object { $_.Id -eq 1149 } |
+  ForEach-Object { ([xml]$_.ToXml()).Event.UserData.InnerXml } | Select-Object -First 5</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 5) pcap 으로 그 IP 가 실제로 통신했는지, MAC 이 무엇인지 고정
+tshark -r cap.pcapng -Y &quot;ip.addr==203.0.113.77&quot; -T fields -e frame.time -e eth.src -e tcp.dstport | head -20</code></pre></div>
+<p>4번은 <code>UserData</code> 구조라 <code>EventData</code> 파싱 코드가 통하지 않는다. <code>InnerXml</code> 을 그대로 보고 <code>Param1</code>/<code>Param2</code>/<code>Param3</code> 을 읽는다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;세 대의 호스트 EVTX 가 있습니다. 최초 침입 단말의 IP 와,
+ 공격자가 마지막으로 도달한 호스트를 구하세요.
+ 첨부: host-WS01/, host-SRV01/, host-DC01/ (각 winevt 폴더)&quot;
+
+1. 세 호스트를 각각 CSV 로 뽑는다
+   EvtxECmd.exe -d &#39;C:\case\host-WS01\winevt&#39;  --csv &#39;C:\case\out&#39; --csvf ws01.csv
+   EvtxECmd.exe -d &#39;C:\case\host-SRV01\winevt&#39; --csv &#39;C:\case\out&#39; --csvf srv01.csv
+   EvtxECmd.exe -d &#39;C:\case\host-DC01\winevt&#39;  --csv &#39;C:\case\out&#39; --csvf dc01.csv
+
+2. 첫 시도 (실패):
+   WorkstationName 축으로 시작했다.
+
+   Import-Csv out\ws01.csv | Where-Object { $_.EventId -eq 4624 } |
+     ForEach-Object { if ($_.Payload -match &#39;&quot;WorkstationName&quot;:\s*&quot;([^&quot;]*)&quot;&#39;) { $Matches[1] } } |
+     Group-Object | Sort-Object Count -Descending
+
+   Name              Count
+   WS01               1402
+   PC-JHKIM            188
+   KALI                 12
+   X7QZL2                9
+   (빈 값)               7
+
+   &quot;KALI 가 공격 단말&quot; 이라고 답했다. 오답 처리.
+
+   무엇이 틀렸나:
+     WorkstationName 은 클라이언트가 신고하는 값이다.
+     같은 IP 에서 KALI / X7QZL2 / 빈 값이 섞여 나왔으므로
+     이름 자체가 위조되고 있다. 이름은 단말 식별자로 쓸 수 없다.
+     문제가 요구한 것은 IP 다.
+
+3. 접근 변경 — IP 축으로 다시 시작
+   IP 별로 4624/4625 를 집계하고 WorkstationName 의 다양성을 함께 본다.
+
+   Ip              Count Workstations
+   192.168.10.24    1842 PC-JHKIM
+   203.0.113.77      219 (빈 값), KALI, X7QZL2
+   10.0.0.15          64 SRV-FILE01
+
+   203.0.113.77 : 공인 IP + 이름 불일치 + 4625 다수 -&gt; 최초 침입 단말
+
+4. 두 번째 시도 (실패):
+   203.0.113.77 로 SRV01/DC01 의 4624 를 검색했다.
+   Import-Csv out\srv01.csv | Where-Object { $_.Payload -match &#39;203\.0\.113\.77&#39; }
+   -&gt; 0건.
+
+   &quot;공격자는 WS01 에서 멈췄다&quot; 로 결론? 오답.
+
+   무엇이 틀렸나:
+     측면 이동은 공격자 IP 로 일어나지 않는다.
+     WS01 을 발판으로 삼으면 SRV01 에는 WS01 의 내부 IP 로 접속한다.
+     즉 다음 엣지의 SrcIp 는 192.168.10.24 다.
+
+5. 접근 변경 — 엣지 목록을 만들어 연결한다
+   TimeUTC                 SrcIp           DstHost  User          Type
+   2026-03-14 07:19:02Z    203.0.113.77    WS01     svc_backup    10
+   2026-03-14 07:33:41Z    192.168.10.24   SRV01    svc_backup     3
+   2026-03-14 07:35:12Z    192.168.10.24   SRV01    Administrator  3
+   2026-03-14 07:52:08Z    10.0.0.15       DC01     Administrator  3
+
+   경로:
+     203.0.113.77 --RDP--&gt; WS01(192.168.10.24)
+                   --SMB--&gt; SRV01(10.0.0.15)
+                   --SMB--&gt; DC01
+
+   각 엣지의 SrcIp 가 앞 엣지 목적지의 자기 IP 와 일치한다.
+
+6. 호스트 IP 확증
+   WS01 의 IP 가 정말 192.168.10.24 인가:
+     - SRV01 의 4624 IpAddress = 192.168.10.24, WorkstationName = WS01
+     - WS01 의 Sysmon 3 SourceIp = 192.168.10.24
+     - WS01 의 SYSTEM hive Interfaces\&lt;GUID&gt;\DhcpIPAddress = 192.168.10.24
+   세 근거가 일치 -&gt; 확정.
+
+7. 세 번째 시도 (실패):
+   &quot;마지막 도달 호스트는 DC01&quot; 로 답을 내려다가, DC01 의 4624 Type 3 이
+   Administrator 로 되어 있어 정상 관리 작업일 가능성을 확인하지 않았다.
+
+   확증:
+     DC01 의 그 세션 LogonId 로 4688/5145 를 조인 -&gt; ntdsutil 실행 기록
+     같은 시각 DC01 에 4672(SeDebugPrivilege 포함) 존재
+   -&gt; 정상 관리 작업이 아니다. 침해 확정.
+
+8. 시간대 정리
+   전부 UTC 기록이다. KST 로 답하면 +9시간.
+   07:19:02Z -&gt; 16:19:02 KST (침입 시작)
+   07:52:08Z -&gt; 16:52:08 KST (DC01 도달)
+
+정답: 최초 침입 단말 IP = 203.0.113.77
+      마지막 도달 호스트 = DC01 (2026-03-14 16:52:08 KST)</code></pre></div>
+<p>세 번의 교정이 핵심이다. <strong>① <code>WorkstationName</code> 으로 시작하면 위조된 이름을 답으로 낸다</strong> — IP를 축으로 잡는다. <strong>② 측면 이동의 다음 엣지는 공격자 IP가 아니라 발판 호스트의 내부 IP다.</strong> <strong>③ 도착 호스트의 로그온이 정상 관리 작업이 아님을 세션 활동으로 확증</strong>해야 경로가 완성된다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li>IP를 정규화했는가 (<code>::ffff:</code> 접두사, <code>::1</code>)</li><li><code>IpAddress</code> 가 <code>-</code> 인 이유가 <code>LogonType</code> 으로 설명되는가</li><li>같은 IP에서 <code>WorkstationName</code> 이 여러 개인가 — 위조 신호</li><li>4776에서 IP를 찾으려 하지 않았는가 (필드 없음)</li><li><code>Computer</code> 를 목적지로 읽었는가</li><li>1149/21/24/25를 <code>UserData</code> 로 파싱했는가</li><li>4625를 함께 봤는가 — 시도 계정 목록이 도구를 드러낸다</li><li>계정을 SID로 고정했는가</li><li>측면 이동 엣지의 <code>SrcIp</code> 가 앞 엣지 목적지의 자기 IP와 일치하는가</li><li>호스트 IP를 두 가지 이상의 근거로 확증했는가</li><li>DHCP 임대 시각으로 IP↔단말을 사건 시각에 한정했는가</li><li>pcap이 있으면 IP↔MAC을 고정했는가</li><li>NAT/프록시 가능성을 서술에 반영했는가</li><li>같은 초 순서를 <code>EventRecordId</code> 로 정렬했는가</li><li>답 시각이 UTC인지 KST(+9시간)인지 확인했는가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-001 — Microsoft Learn, Event 4624: <code>TargetUserName</code>, <code>TargetUserSid</code>, <code>IpAddress</code>, <code>IpPort</code>, <code>WorkstationName</code> 필드 정의와 <code>WorkstationName</code> 이 클라이언트가 제공하는 값이라는 근거, <code>IpAddress</code> 가 <code>-</code> 로 기록되는 경우</li><li>SRC-020 — Microsoft Learn, Event 4625: 실패 로그온의 <code>TargetUserName</code>, <code>IpAddress</code>, <code>WorkstationName</code>, <code>Status</code>/<code>SubStatus</code> 필드 정의</li><li>SRC-022 — Microsoft Learn, 고급 보안 감사 정책 설정: 4648(<code>TargetServerName</code>, <code>TargetInfo</code>), 4776(<code>Workstation</code>, IP 필드 없음), 4768/4769(<code>IpAddress</code>), 5140/5145(<code>ShareName</code>, <code>RelativeTargetName</code>, <code>IpAddress</code>)의 EventData 구성</li><li>EvtxECmd CSV의 <code>RemoteHost</code>/<code>UserName</code> 편의 컬럼과 <code>Payload</code> JSON 키 표기는 버전에 따라 다르므로 실제 CSV를 확인한 뒤 정규식을 작성할 것</li><li>TerminalServices 채널의 1149(<code>Param1</code>~<code>Param3</code>)와 21/24/25는 <code>UserData</code> 구조라는 점만 사용했다. 각 이벤트의 정식 필드 이름과 의미는 Microsoft의 RDS 이벤트 문서에서 확인할 것</li><li>특정 공격 도구가 남기는 <code>WorkstationName</code> 기본값은 도구·버전·옵션에 따라 다르므로 이 글에서는 단정하지 않았다. 판정은 조직의 정상 패턴과의 이탈로 한다</li><li>DHCP 서버 로그 경로(<code>%SystemRoot%\System32\dhcp\DhcpSrvLog-*.log</code>)와 형식은 Windows Server 버전에 따라 다를 수 있으므로 실제 파일에서 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./event-4624-logon.html">
+    <span class="rel-id">FOR-0083 · Event Log</span>
+    Event ID 4624 성공 로그온 분석: 누가 어디서 어떻게 들어왔나
+  </a>
+  <a class="related-item" href="./logon-id-session-linking.html">
+    <span class="rel-id">FOR-0104 · Event Log</span>
+    Logon ID로 세션 전체 조립하기: TargetLogonId·SubjectLogonId 조인 절차
+  </a>
+  <a class="related-item" href="./attack-timeline-from-eventlog.html">
+    <span class="rel-id">FOR-0108 · Event Log</span>
+    Event Log만으로 공격 타임라인 만들기: 침해 단계별 Event ID 지도
+  </a>
+  <a class="related-item" href="./event-4625-failed-logon.html">
+    <span class="rel-id">FOR-0084 · Event Log</span>
+    Event ID 4625 실패 로그온: Status/SubStatus 코드로 공격 유형을 판정한다
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./pid-processname-pivot.html"><span class="rel-id">← FOR-0105</span>PID·ProcessName으로 pivot하기: 16진수 함정과 프로세스 계보 재구성</a>
+<a class="related-item" href="./merge-evtx-csv.html"><span class="rel-id">FOR-0107 →</span>여러 EVTX를 하나의 CSV로 합치기: 채널 통합·컬럼 정규화·sqlite 조인</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-세-축이-어느-이벤트의-어느-필드에-있는가">1단계 — 세 축이 어느 이벤트의 어느 필드에 있는가</a></li>
+<li class="toc-l3"><a href="#2단계-ipaddress-값-해석">2단계 — IpAddress 값 해석</a></li>
+<li class="toc-l3"><a href="#3단계-workstationname-은-자기-신고-값이다">3단계 — WorkstationName 은 자기 신고 값이다</a></li>
+<li class="toc-l3"><a href="#4단계-한-축에서-나머지-두-축으로-확장">4단계 — 한 축에서 나머지 두 축으로 확장</a></li>
+<li class="toc-l3"><a href="#5단계-여러-호스트-evtx로-측면-이동-경로-그리기">5단계 — 여러 호스트 EVTX로 측면 이동 경로 그리기</a></li>
+<li class="toc-l3"><a href="#6단계-ip단말을-외부-증거로-고정">6단계 — IP↔단말을 외부 증거로 고정</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

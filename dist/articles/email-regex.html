@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>이메일 주소 regex: 실용 패턴과 RFC 문법의 간극 · FOR-0132 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%A1%9C%EA%B7%B8%2FRegex">로그/Regex</a> / FOR-0132
+      </div>
+      <header class="article-head">
+        <h1>이메일 주소 regex: 실용 패턴과 RFC 문법의 간극</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">로그/Regex</span>
+      <span class="badge badge-type">레퍼런스</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>RFC 문법의 이메일 주소는 인용 로컬 파트·주석·도메인 리터럴까지 허용해서 정규식 한 줄로 완전히 표현할 수 없다. 실무에서는 [A-Za-z0-9._%+-]+@도메인패턴으로 99%를 회수하고, 남는 오탐(logo@2x.png, hmac-sha2-256-etm@openssh.com)은 도메인 쪽 규칙과 파서로 걸러낸다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>grep, ripgrep, PowerShell, Python, strings, bulk_extractor</td></tr>
+<tr><th>artifact</th><td><code>eml</code> · <code>maillog</code> · <code>auth.log</code> · <code>memory strings</code> · <code>docx</code> · <code>pst</code></td></tr>
+<tr><th>파일 경로</th><td><code>/var/log/maillog</code> · <code>/var/log/mail.log</code></td></tr>
+<tr><th>프로토콜</th><td>SMTP, IMAP, HTTP</td></tr>
+<tr><th>Wireshark 필터</th><td><code>smtp.req.parameter contains &quot;@&quot;</code> · <code>imf.from</code></td></tr>
+<tr><th>tshark field</th><td><code>smtp.req.parameter</code> · <code>imf.from</code> · <code>imf.to</code></td></tr>
+<tr><th>regex</th><td><code>[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,63}</code> · <code>(?&lt;![\w.%+-])[A-Za-z0-9._%+-]+@(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}(?![\w.-])</code> · <code>&lt;[^&lt;&gt;@[:space:]]+@[^&lt;&gt;[:space:]]+&gt;</code> · <code>&quot;[^&quot;]+&quot;@[A-Za-z0-9.-]+\.[A-Za-z]{2,63}</code> · <code>[A-Za-z0-9._%+-]+@\[(?:IPv6:)?[0-9A-Fa-f:.]+\]</code> · <code>(?:MAIL FROM|RCPT TO):\s*&lt;([^&gt;]*)&gt;</code></td></tr>
+<tr><th>로그 필드</th><td><code>from=</code> · <code>to=</code> · <code>MAIL FROM</code> · <code>RCPT TO</code> · <code>From</code> · <code>Return-Path</code></td></tr>
+<tr><th>파일 형식</th><td><code>eml</code> · <code>log</code> · <code>txt</code> · <code>csv</code> · <code>docx</code></td></tr>
+<tr><th>검색 별칭</th><td>이메일 정규식 · 메일 주소 정규식 · 이메일 추출 · 메일 주소 뽑기 · grep 이메일 · email 주소 찾기 · 이메일 수집 정규식</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>RFC 문법의 이메일 주소는 인용 로컬 파트·주석·도메인 리터럴까지 허용해서 정규식 한 줄로 완전히 표현할 수 없다. 실무에서는 <code>[A-Za-z0-9._%+-]+@도메인패턴</code>으로 99%를 회수하고, 남는 오탐(<code>logo@2x.png</code>, <code>hmac-sha2-256-etm@openssh.com</code>)은 도메인 쪽 규칙과 파서로 걸러낸다.</p>
+<h2 id="개념">개념</h2>
+<p>이메일 주소는 <code>로컬파트@도메인</code> 두 조각이다. 문제는 각 조각이 허용하는 것이 생각보다 훨씬 넓다는 점이다.</p>
+<div class="table-wrap"><table><thead><tr><th>조각</th><th>형태</th><th>예</th></tr></thead><tbody><tr><td>로컬 파트 (dot-atom)</td><td>영숫자와 특수문자, 점으로 구분</td><td><code>first.last</code>, <code>user+tag</code>, <code>a_b-c</code></td></tr><tr><td>로컬 파트 (quoted)</td><td>큰따옴표로 감싸면 거의 아무 문자나</td><td><code>&quot;very.unusual.@.unusual&quot;</code></td></tr><tr><td>도메인 (dot-atom)</td><td>일반 도메인 이름</td><td><code>example.co.kr</code></td></tr><tr><td>도메인 (literal)</td><td>대괄호 안에 IP</td><td><code>[192.0.2.1]</code>, <code>[IPv6:2001:db8::1]</code></td></tr></tbody></table></div>
+<p>로컬 파트에 합법적으로 들어가는 특수문자가 이렇게 많다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">! # $ % &amp; &#39; * + - / = ? ^ _ ` { | } ~ .</code></pre></div>
+<p>여기에 <strong>주석</strong>(<code>user(comment)@example.com</code>)과 <strong>접힘 공백</strong>까지 문법에 있다. 이 전부를 정규식으로 표현한 결과물이 유명한 &quot;6,000자 이메일 정규식&quot;이다. <strong>실무에서는 쓰지 않는다.</strong></p>
+<div class="table-wrap"><table><thead><tr><th>길이 제한</th><th>값</th></tr></thead><tbody><tr><td>로컬 파트</td><td>64옥텟</td></tr><tr><td>도메인</td><td>255옥텟</td></tr></tbody></table></div>
+<h3 id="실무에서-내리는-결정">실무에서 내리는 결정</h3>
+<div class="table-wrap"><table><thead><tr><th>문법에 있는 것</th><th>실무 패턴에서</th><th>왜</th></tr></thead><tbody><tr><td>dot-atom 로컬 파트</td><td><strong>포함한다</strong></td><td>실제 주소의 99.9%</td></tr><tr><td><code>+</code>, <code>_</code>, <code>-</code>, <code>.</code></td><td><strong>포함한다</strong></td><td>태그 주소·회사 계정에 흔하다</td></tr><tr><td><code>!#$%&amp;&#39;*/=?^\</code>{|}~`</td><td>보통 뺀다</td><td>실제로 거의 안 쓰이고 오탐을 늘린다</td></tr><tr><td>인용 로컬 파트</td><td>별도 패턴으로</td><td>흔치 않지만 있으면 놓치면 안 된다</td></tr><tr><td>도메인 리터럴 <code>[IP]</code></td><td>별도 패턴으로</td><td>스팸·직접 발송에서 나온다</td></tr><tr><td>주석 <code>(...)</code></td><td>무시한다</td><td>로그·문서에 실질적으로 없다</td></tr><tr><td>연속 점 <code>a..b</code></td><td>무시한다</td><td>문법 위반이지만 걸러도 얻는 것이 없다</td></tr></tbody></table></div>
+<p><strong>&quot;정규식으로 이메일을 검증한다&quot;는 목표를 버려야 한다.</strong> 목표는 &quot;텍스트에서 주소 후보를 회수한다&quot;다. 검증은 파서와 도메인 규칙이 한다.</p>
+<h2 id="파일-경로">파일 / 경로</h2>
+<div class="table-wrap"><table><thead><tr><th>대상</th><th>경로/필드</th><th>주소가 나오는 형태</th></tr></thead><tbody><tr><td>메일 파일</td><td><code>*.eml</code>, <code>*.msg</code></td><td><code>From:</code>, <code>To:</code>, <code>Cc:</code>, <code>Return-Path:</code>, <code>Received:</code></td></tr><tr><td>Postfix/sendmail 로그</td><td><code>/var/log/maillog</code>, <code>/var/log/mail.log</code></td><td><code>from=&lt;a@b.com&gt;</code>, <code>to=&lt;c@d.com&gt;</code></td></tr><tr><td>SMTP 세션 (pcap)</td><td><code>*.pcapng</code></td><td><code>MAIL FROM:&lt;...&gt;</code>, <code>RCPT TO:&lt;...&gt;</code></td></tr><tr><td>웹 로그</td><td><code>access.log</code></td><td>쿼리스트링·POST 본문의 <code>email=</code></td></tr><tr><td>문서</td><td><code>*.docx</code>, <code>*.xlsx</code>, <code>*.pdf</code></td><td>본문·메타데이터 작성자</td></tr><tr><td>브라우저</td><td><code>Login Data</code>, <code>Web Data</code> (SQLite)</td><td>자동완성 값</td></tr><tr><td>메모리 덤프</td><td><code>*.raw</code></td><td><code>strings</code> 결과 (로그인 폼 입력값이 남는다)</td></tr><tr><td>SSH 인증 로그</td><td><code>/var/log/auth.log</code></td><td>주소가 아니라 <strong>알고리즘 이름</strong>이 <code>@</code> 를 쓴다</td></tr></tbody></table></div>
+<h2 id="주요-필드">주요 필드</h2>
+<h3 id="패턴-1-실무-표준-패턴-가장-많이-쓴다">패턴 1 — 실무 표준 패턴 (가장 많이 쓴다)</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,63}</code></pre></div>
+<p><code>grep -Ei</code> 로 그대로 돌아간다. 짧아서 손으로 칠 수 있다.</p>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>값</th></tr></thead><tbody><tr><td>매칭됨</td><td><code>user@example.com</code>, <code>first.last@sub.example.co.kr</code>, <code>user+tag@example.org</code></td></tr><tr><td>매칭 안 됨</td><td><code>admin@localhost</code> (TLD 없음), <code>user@[192.0.2.1]</code>, 인용 로컬 파트</td></tr><tr><td><strong>오탐</strong></td><td><code>logo@2x.png</code>, <code>hmac-sha2-256-etm@openssh.com</code>, <code>%s@%s.com</code>, <code>v1.0@2026.03.14</code></td></tr></tbody></table></div>
+<p><code>[a-z0-9.-]+\.[a-z]{2,63}</code> 부분이 느슨해서 <code>@2x.png</code> 같은 것이 통과한다. 하이픈·점의 위치를 검증하지 않기 때문이다.</p>
+<h3 id="패턴-2-도메인-쪽을-조인-실전-패턴-pcre-net-python">패턴 2 — 도메인 쪽을 조인 실전 패턴 (PCRE / .NET / Python)</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">(?&lt;![\w.%+-])[A-Za-z0-9._%+-]+@(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}(?![\w.-])</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>조각</th><th>역할</th></tr></thead><tbody><tr><td><code>(?&lt;![\w.%+-])</code></td><td>앞에 글자·점이 붙어 있으면 거부 (로컬 파트가 잘리는 것 방지)</td></tr><tr><td><code>[A-Za-z0-9._%+-]+</code></td><td>로컬 파트 (실무 문자 집합)</td></tr><tr><td><code>(?:라벨\.)+[A-Za-z]{2,63}</code></td><td>하이픈 위치까지 검증한 도메인 (FOR-0130의 라벨 조각)</td></tr><tr><td><code>(?![\w.-])</code></td><td>뒤에 더 이어지면 거부</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>값</th></tr></thead><tbody><tr><td>매칭됨</td><td><code>user@example.com</code>, <code>a.b+c@mail.example.co.kr</code></td></tr><tr><td>매칭 안 됨</td><td><code>logo@2x.png</code> — <code>2x</code> 는 라벨로 통과하지만 TLD <code>png</code>… <strong>여전히 매칭된다</strong></td></tr><tr><td>남은 오탐</td><td><code>logo@2x.png</code>, <code>hmac-sha2-256-etm@openssh.com</code> (구조상 완전히 합법적인 주소다)</td></tr></tbody></table></div>
+<p><strong>구조만으로는 못 잡는다.</strong> <code>openssh.com</code> 은 실제로 존재하는 도메인이고 <code>hmac-sha2-256-etm</code> 은 합법적인 로컬 파트다. 형태로 구별할 방법이 없다.</p>
+<h3 id="패턴-3-오탐-제거-제외-목록">패턴 3 — 오탐 제거 (제외 목록)</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text"># 파일 확장자 TLD 를 거부한다
+(?i)(?&lt;![\w.%+-])[a-z0-9._%+-]+@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?!(?:png|jpg|jpeg|gif|svg|exe|dll|zip|pdf|txt|log|js|css)(?![a-z]))[a-z]{2,63}(?![\w.-])</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>값</th></tr></thead><tbody><tr><td>매칭됨</td><td><code>user@example.com</code></td></tr><tr><td>매칭 안 됨</td><td><code>logo@2x.png</code>, <code>icon@3x.jpg</code>, <code>sprite@2x.svg</code></td></tr><tr><td>남은 오탐</td><td><code>hmac-sha2-256-etm@openssh.com</code>, <code>curve25519-sha256@libssh.org</code></td></tr></tbody></table></div>
+<p>SSH 알고리즘 이름은 <strong>도메인 제외 목록</strong>으로 처리한다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">@(?:openssh\.com|libssh\.org|openssl\.org|ssh\.com)$</code></pre></div>
+<p><code>auth.log</code>·<code>sshd</code> 디버그 로그에서 이메일을 뽑으면 결과의 대부분이 이것이다. 반드시 제외하고 세야 한다.</p>
+<h3 id="패턴-4-인용-로컬-파트">패턴 4 — 인용 로컬 파트</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">&quot;[^&quot;\\]*(?:\\.[^&quot;\\]*)*&quot;@(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>값</th></tr></thead><tbody><tr><td>매칭됨</td><td><code>&quot;user name&quot;@example.com</code>, <code>&quot;a@b&quot;@example.com</code></td></tr><tr><td>매칭 안 됨</td><td><code>user name@example.com</code> (인용 없이 공백)</td></tr><tr><td>오탐</td><td>JSON/코드의 <code>&quot;key&quot;@value</code> 형태 문자열</td></tr></tbody></table></div>
+<p>실전에서는 드물지만, <strong>헤더 인젝션이나 파서 우회에 쓰이므로 메일 조사에서는 한 번 돌려 본다.</strong></p>
+<h3 id="패턴-5-도메인-리터럴">패턴 5 — 도메인 리터럴</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">[A-Za-z0-9._%+-]+@\[(?:IPv6:)?[0-9A-Fa-f:.]+\]</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>값</th></tr></thead><tbody><tr><td>매칭됨</td><td><code>user@[192.0.2.1]</code>, <code>admin@[IPv6:2001:db8::1]</code></td></tr><tr><td>매칭 안 됨</td><td><code>user@192.0.2.1</code> (대괄호 없음 — 이건 문법 위반이지만 실제로 나온다)</td></tr><tr><td>오탐</td><td>배열 인덱스 표기 <code>arr@[0]</code>, 로그의 <code>pid@[1234]</code></td></tr></tbody></table></div>
+<p>대괄호 없는 <code>user@192.0.2.1</code> 도 함께 잡으려면 별도 패턴을 쓴다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">[A-Za-z0-9._%+-]+@[0-9]{1,3}(?:\.[0-9]{1,3}){3}\b</code></pre></div>
+<h3 id="패턴-6-smtp-명령과-메일-헤더에서">패턴 6 — SMTP 명령과 메일 헤더에서</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text"># SMTP 세션 / Postfix 로그
+(?:MAIL FROM|RCPT TO|from|to)=?:?\s*&lt;([^&gt;]*)&gt;
+
+# 메일 헤더 (표시 이름 + 주소)
+^(?:From|To|Cc|Bcc|Return-Path|Reply-To):\s*(.*)$
+
+# 꺾쇠 안의 주소만
+&lt;([^&lt;&gt;@\s]+@[^&lt;&gt;\s]+)&gt;</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>값</th></tr></thead><tbody><tr><td>매칭됨</td><td><code>MAIL FROM:&lt;a@b.com&gt;</code>, <code>from=&lt;a@b.com&gt;</code>, <code>To: &quot;홍길동&quot; &lt;a@b.com&gt;</code></td></tr><tr><td>매칭 안 됨</td><td>꺾쇠 없이 쓴 <code>To: a@b.com</code> (헤더 패턴으로는 잡히지만 꺾쇠 패턴으로는 안 잡힌다)</td></tr><tr><td>오탐</td><td>반송 메시지의 빈 발신자 <code>MAIL FROM:&lt;&gt;</code>, HTML 태그 <code>&lt;b@i&gt;</code></td></tr></tbody></table></div>
+<p><strong><code>MAIL FROM:&lt;&gt;</code> 은 빈 주소가 정상이다.</strong> 반송(bounce) 메일의 발신자다. 파싱 코드가 여기서 죽지 않게 한다.</p>
+<h3 id="패턴-7-메모리문서에서-대량-수집할-때">패턴 7 — 메모리·문서에서 대량 수집할 때</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">(?i)(?&lt;![\w.%+-])[a-z0-9](?:[a-z0-9._%+-]{0,62}[a-z0-9])?@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}(?![\w.-])</code></pre></div>
+<p>로컬 파트의 <strong>첫/마지막 문자를 영숫자로 제한</strong>하고 길이를 64자로 묶었다. <code>.user@</code>·<code>user.@</code>·<code>-x@</code> 같은 조각 매칭이 사라진다.</p>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>값</th></tr></thead><tbody><tr><td>매칭됨</td><td><code>user@example.com</code>, <code>a@b.io</code></td></tr><tr><td>매칭 안 됨</td><td><code>.user@example.com</code> 의 선행 점, 65자 이상 로컬 파트</td></tr><tr><td>오탐</td><td>여전히 <code>logo@2x.png</code> 계열 (확장자 제외 목록과 함께 써야 한다)</td></tr></tbody></table></div>
+<h2 id="빠른-명령">빠른 명령</h2>
+<h3 id="grep-ripgrep">grep / ripgrep</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) 실무 표준 패턴 (ERE)
+grep -Eoi &#39;[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,63}&#39; mail.log | sort -u
+
+# 2) 도메인 규칙까지 검증 + 경계 (PCRE 전용)
+grep -Poi &#39;(?&lt;![\w.%+-])[a-z0-9._%+-]+@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}(?![\w.-])&#39; strings.txt | sort -u
+
+# 3) 오탐 제거 후 빈도 — 실전 1회차 명령
+grep -Eoi &#39;[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,63}&#39; auth.log |
+  tr &#39;A-Z&#39; &#39;a-z&#39; |
+  grep -Ev &#39;@(openssh\.com|libssh\.org|openssl\.org|ssh\.com)$&#39; |
+  grep -Ev &#39;@[0-9]+x\.(png|jpg|jpeg|gif|svg)$&#39; |
+  grep -Ev &#39;\.(png|jpg|jpeg|gif|svg|exe|dll|zip|pdf|txt|log|js|css)$&#39; |
+  sort | uniq -c | sort -nr | head -20
+
+# 4) 도메인별로 묶어 세기 — 조직 파악
+grep -Eoi &#39;[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,63}&#39; *.eml |
+  tr &#39;A-Z&#39; &#39;a-z&#39; | awk -F@ &#39;{print $2}&#39; | sort | uniq -c | sort -nr | head
+
+# 5) 메일 로그에서 발신/수신 분리
+grep -Eo &#39;from=&lt;[^&gt;]*&gt;&#39; /var/log/maillog | sed &#39;s/from=&lt;//; s/&gt;//&#39; | sort | uniq -c | sort -nr
+grep -Eo &#39;to=&lt;[^&gt;]*&gt;&#39;   /var/log/maillog | sed &#39;s/to=&lt;//;   s/&gt;//&#39; | sort | uniq -c | sort -nr
+
+# 6) eml 헤더만 (본문의 인용 주소를 제외한다)
+awk &#39;BEGIN{RS=&quot;&quot;} NR==1&#39; msg.eml |
+  grep -Ei &#39;^(From|To|Cc|Bcc|Return-Path|Reply-To|Received):&#39; -A0
+
+# 7) 메모리 덤프 — 두 인코딩 모두
+strings -a -n 6 mem.raw     | grep -Eoi &#39;[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,63}&#39; | sort -u
+strings -a -n 6 -el mem.raw | grep -Eoi &#39;[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,63}&#39; | sort -u
+
+# 8) 인용 로컬 파트 / 도메인 리터럴 (파서 우회 시도 확인)
+grep -Eo &#39;&quot;[^&quot;]+&quot;@[a-z0-9.-]+\.[a-z]{2,63}&#39; msg.eml
+grep -Eo &#39;[a-z0-9._%+-]+@\[(IPv6:)?[0-9a-fA-F:.]+\]&#39; msg.eml
+
+# 9) docx 안의 주소 (zip 이므로 풀어서 본다)
+unzip -p report.docx word/document.xml |
+  grep -Eoi &#39;[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,63}&#39; | sort -u
+
+# 10) ripgrep — 바이너리까지 훑는다
+rg -aoiP &#39;(?&lt;![\w.%+-])[a-z0-9._%+-]+@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}(?![\w.-])&#39; . | sort -u</code></pre></div>
+<p>출력 예:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">$ grep -Eoi &#39;[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,63}&#39; auth.log | sort | uniq -c | sort -nr | head -4
+  41208 hmac-sha2-256-etm@openssh.com
+  41208 hmac-sha2-512-etm@openssh.com
+  20604 curve25519-sha256@libssh.org
+      3 admin@example.co.kr</code></pre></div>
+<p><strong>상위 3개가 전부 SSH 알고리즘 이름이다.</strong> 제외하지 않으면 결과를 읽을 수 없다.</p>
+<h3 id="powershell">PowerShell</h3>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 정규식은 항상 작은따옴표
+$re = &#39;(?i)(?&lt;![\w.%+-])[a-z0-9._%+-]+@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}(?![\w.-])&#39;
+$cand = Select-String -Path .\strings.txt -Pattern $re -AllMatches |
+  ForEach-Object { $_.Matches.Value } |
+  ForEach-Object { $_.ToLower() } | Sort-Object -Unique
+
+# .NET 파서가 최종 판정자다 — 정규식보다 정확하다
+$parsed = foreach ($c in $cand) {
+  try {
+    $m = [System.Net.Mail.MailAddress]::new($c)
+    [pscustomobject]@{ Address = $m.Address; User = $m.User; Host = $m.Host; Valid = $true }
+  } catch {
+    [pscustomobject]@{ Address = $c; User = $null; Host = $null; Valid = $false }
+  }
+}
+
+# 오탐 제외 — 도메인 화이트/블랙리스트로 관리한다
+$badHost = &#39;openssh.com&#39;,&#39;libssh.org&#39;,&#39;openssl.org&#39;,&#39;ssh.com&#39;
+$badTld  = &#39;png&#39;,&#39;jpg&#39;,&#39;jpeg&#39;,&#39;gif&#39;,&#39;svg&#39;,&#39;exe&#39;,&#39;dll&#39;,&#39;zip&#39;,&#39;pdf&#39;,&#39;txt&#39;,&#39;log&#39;,&#39;js&#39;,&#39;css&#39;
+$real = $parsed | Where-Object {
+  $_.Valid -and $_.Host -notin $badHost -and ($_.Host -split &#39;\.&#39;)[-1] -notin $badTld
+}
+
+# 도메인별 집계
+$real | Group-Object Host | Sort-Object Count -Descending |
+  Select-Object -First 20 Count, Name
+
+# 표시 이름까지 함께 파싱 (헤더 원문에서)
+$hdr = &#39;To: &quot;홍길동&quot; &lt;hong@example.co.kr&gt;, admin@example.co.kr&#39;
+[System.Net.Mail.MailAddress[]] ($hdr -replace &#39;^To:\s*&#39;,&#39;&#39; -split &#39;,(?=(?:[^&quot;]*&quot;[^&quot;]*&quot;)*[^&quot;]*$)&#39;) |
+  Select-Object DisplayName, User, Host, Address
+
+# 로컬 파트 64자 / 도메인 255자 제한 검증
+$real | Where-Object { $_.User.Length -gt 64 -or $_.Host.Length -gt 255 }</code></pre></div>
+<h3 id="python">Python</h3>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import re, collections
+from email.utils import getaddresses, parseaddr
+
+EMAIL = re.compile(r&#39;&#39;&#39;
+    (?&lt;![\w.%+-])
+    [a-z0-9](?:[a-z0-9._%+-]{0,62}[a-z0-9])?          # 로컬 파트: 양끝은 영숫자, 최대 64
+    @
+    (?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+       # 도메인 라벨
+    [a-z]{2,63}                                        # TLD
+    (?![\w.-])
+&#39;&#39;&#39;, re.IGNORECASE | re.VERBOSE)
+
+BAD_HOST = {&#39;openssh.com&#39;, &#39;libssh.org&#39;, &#39;openssl.org&#39;, &#39;ssh.com&#39;}
+BAD_TLD  = {&#39;png&#39;,&#39;jpg&#39;,&#39;jpeg&#39;,&#39;gif&#39;,&#39;svg&#39;,&#39;exe&#39;,&#39;dll&#39;,&#39;zip&#39;,&#39;pdf&#39;,&#39;txt&#39;,&#39;log&#39;,&#39;js&#39;,&#39;css&#39;}
+
+def keep(addr: str) -&gt; bool:
+    &quot;&quot;&quot;정규식이 아니라 규칙으로 판정한다.&quot;&quot;&quot;
+    local, _, host = addr.rpartition(&#39;@&#39;)
+    if not local or not host:
+        return False
+    if len(local) &gt; 64 or len(host) &gt; 255:
+        return False
+    if host in BAD_HOST or host.rsplit(&#39;.&#39;, 1)[-1] in BAD_TLD:
+        return False
+    if re.fullmatch(r&#39;\d+x&#39;, host.split(&#39;.&#39;)[0]):   # logo@2x.png 계열
+        return False
+    return True
+
+text = open(&#39;strings.txt&#39;, encoding=&#39;utf-8&#39;, errors=&#39;replace&#39;).read()
+cand = {m.group().lower() for m in EMAIL.finditer(text)}
+addrs = sorted(a for a in cand if keep(a))
+
+# 1) 도메인별 집계
+for host, n in collections.Counter(a.rpartition(&#39;@&#39;)[2] for a in addrs).most_common(20):
+    print(f&#39;{n:6d}  {host}&#39;)
+
+# 2) 헤더는 정규식이 아니라 표준 라이브러리로 분해한다
+hdr = &#39;To: &quot;Hong, Gildong&quot; &lt;hong@example.co.kr&gt;, admin@example.co.kr&#39;
+print(getaddresses([hdr.split(&#39;:&#39;, 1)[1]]))
+# [(&#39;Hong, Gildong&#39;, &#39;hong@example.co.kr&#39;), (&#39;&#39;, &#39;admin@example.co.kr&#39;)]
+
+# 쉼표가 표시 이름 안에 들어간 경우를 정규식으로 쪼개면 반드시 틀린다.
+# getaddresses 는 인용 문자열을 이해한다.
+
+# 3) eml 전체를 파서로 읽는다 — 첨부·인코딩까지 처리된다
+import email, email.policy
+msg = email.message_from_binary_file(open(&#39;msg.eml&#39;, &#39;rb&#39;), policy=email.policy.default)
+print(msg[&#39;From&#39;], &#39;|&#39;, msg[&#39;Return-Path&#39;])
+for k in (&#39;To&#39;, &#39;Cc&#39;, &#39;Bcc&#39;):
+    if msg[k]:
+        print(k, getaddresses([str(msg[k])]))
+for part in msg.walk():                      # base64/quoted-printable 본문도 디코딩된다
+    if part.get_content_type() == &#39;text/plain&#39;:
+        body = part.get_content()
+        print(sorted({m.group().lower() for m in EMAIL.finditer(body)}))
+
+# 4) parseaddr 는 검증기가 아니라 분해기다 — 이 차이를 기억한다
+print(parseaddr(&#39;완전히 잘못된 값&#39;))     # (&#39;&#39;, &#39;완전히&#39;) 처럼 이상한 결과가 나온다</code></pre></div>
+<p><strong><code>email.utils.parseaddr</code> / <code>getaddresses</code> 는 검증기가 아니라 분해기다.</strong> 잘못된 입력도 조용히 뭔가를 돌려준다. 반면 .NET 의 <code>MailAddress</code> 생성자는 실제로 예외를 던지므로 검증에 쓸 수 있다. 두 언어에서 하는 일이 다르다는 것을 알고 쓴다.</p>
+<h2 id="함께-보는-artifact">함께 보는 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>주소를 얻은 뒤</th><th>다음에 볼 것</th></tr></thead><tbody><tr><td>발신 도메인 확정</td><td>그 도메인의 DNS 조회·SPF·MX 흔적 (FOR-0130)</td></tr><tr><td>피싱 메일 발신자</td><td><code>Received:</code> 헤더 체인의 최초 IP → 전 로그 재검색 (<a href="./ipv4-regex.html">FOR-0128</a>)</td></tr><tr><td>메일 본문의 링크</td><td>URL 추출 후 무해화 (<a href="./url-regex.html">FOR-0131</a>)</td></tr><tr><td>첨부 파일명</td><td>확장자·시그니처 대조 (<a href="./30sec-triage.html">FOR-0001</a>)</td></tr><tr><td>메모리에서만 발견된 주소</td><td>그 프로세스의 명령행 (<a href="./volatility-pslist.html">FOR-0214</a>)</td></tr><tr><td>Windows 에서 대량 집계</td><td><code>Select-String -AllMatches</code> (<a href="./powershell-select-string.html">FOR-0121</a>)</td></tr><tr><td>유사 도메인 발신자</td><td><code>xn--</code> punycode 여부와 브랜드 유사도</td></tr></tbody></table></div>
+<h2 id="흔한-실수">흔한 실수</h2>
+<ul><li><strong><code>.+@.+\..+</code> 로 시작하는 것.</strong> 문장 전체가 하나로 잡힌다. <code>.+</code> 는 공백까지 먹기 때문에 <code>보낸사람 a@b.com 받는사람 c@d.com</code> 이 한 덩어리가 된다. 문자 클래스를 명시하고 공백을 배제한다.</li><li><strong>SSH 알고리즘 이름을 걸러내지 않는 것.</strong> <code>auth.log</code>·<code>sshd -ddd</code> 출력에서 이메일을 뽑으면 <code>hmac-sha2-256-etm@openssh.com</code>, <code>curve25519-sha256@libssh.org</code> 가 상위를 전부 차지한다. 형태로는 구별 불가능하므로 도메인 제외 목록으로 처리한다.</li><li><strong><code>@2x</code> 파일명을 놓치는 것.</strong> <code>logo@2x.png</code>, <code>icon@3x.jpg</code> 는 고해상도 이미지 관례다. 웹 자산이 포함된 이미지·문서를 뒤지면 대량으로 나온다. 확장자 TLD 제외 목록이 필요하다.</li><li><strong>쉼표로 헤더를 쪼개는 것.</strong> <code>To: &quot;Hong, Gildong&quot; &lt;a@b.com&gt;, c@d.com</code> 을 <code>split(&#39;,&#39;)</code> 하면 표시 이름이 두 동로 갈린다. <code>getaddresses</code> / <code>MailAddress</code> 처럼 인용 문자열을 이해하는 파서를 쓴다.</li><li><strong>로컬 파트 대소문자를 마음대로 합치는 것.</strong> 도메인은 대소문자를 구분하지 않지만 로컬 파트의 대소문자 취급은 수신 서버가 정한다. 집계할 때는 소문자로 정규화하되 <strong>원문 표기를 함께 보존</strong>한다. 보고서에 원문 그대로 써야 하는 경우가 있다.</li><li><strong><code>+태그</code> 를 지워 버리는 것.</strong> <code>user+github@example.com</code> 의 <code>+github</code> 는 어디서 유출됐는지 알려주는 결정적 단서다. 정규화한다고 지우면 안 된다.</li><li><strong><code>MAIL FROM:&lt;&gt;</code> 에서 파싱이 죽는 것.</strong> 빈 발신자는 반송 메일의 정상 형태다. 빈 문자열을 허용하는 패턴(<code>&lt;([^&gt;]*)&gt;</code>)을 쓴다.</li><li><strong>메일 본문을 디코딩하지 않고 뒤지는 것.</strong> 본문이 base64 또는 quoted-printable 이면 주소가 원문 형태로 존재하지 않는다. <code>=3D</code> 가 보이면 quoted-printable 이다. <code>email</code> 모듈로 파싱해 디코딩된 본문에서 검색한다.</li><li><strong>표시 이름의 encoded-word 를 주소로 착각하는 것.</strong> <code>=?utf-8?B?...?=</code> 는 표시 이름 인코딩이다. 주소 자체는 인코딩되지 않는다. 디코딩해 보고 주소와 표시 이름이 서로 다른 조직을 가리키면 그것이 피싱 지표다.</li><li><strong><code>user@localhost</code>, <code>root@srv01</code> 을 버리는 것.</strong> TLD 가 없어 실무 패턴에 걸리지 않지만 내부 메일·cron 알림의 정상 형태다. TLD 없는 형태를 따로 한 번 훑는다.</li><li><strong>메모리에서 ASCII 만 훑는 것.</strong> 윈도우 프로세스 문자열은 UTF-16LE 가 많다. <code>strings -el</code> 을 함께 돌리지 않으면 로그인 폼에 입력된 주소를 놓친다.</li></ul>
+<h2 id="mini-example">mini example</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;침해된 리눅스 서버에서 공격자가 정보를 보낸 외부 메일 주소를 구하세요.&quot;
+첨부: auth.log, maillog, mem.raw
+
+1. 첫 시도 (실패) — 전체 로그에 표준 패턴을 돌렸다
+   $ cat auth.log maillog | grep -Eoi &#39;[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,63}&#39; |
+       sort | uniq -c | sort -nr | head -5
+      41208 hmac-sha2-256-etm@openssh.com
+      41208 hmac-sha2-512-etm@openssh.com
+      20604 curve25519-sha256@libssh.org
+      20604 umac-128-etm@openssh.com
+       1204 root@web01.example.co.kr
+
+   -&gt; 상위 전부 SSH 암호 알고리즘 이름이다. openssh.com 은 실제 도메인이고
+      hmac-sha2-256-etm 은 합법적인 로컬 파트라서 정규식으로는 구별할 수 없다.
+      제외 목록이 필요하다.
+
+2. 두 번째 시도 (실패) — 제외 목록을 적용했다
+   $ cat auth.log maillog | grep -Eoi &#39;[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,63}&#39; |
+       tr &#39;A-Z&#39; &#39;a-z&#39; |
+       grep -Ev &#39;@(openssh\.com|libssh\.org|openssl\.org)$&#39; |
+       sort | uniq -c | sort -nr | head -5
+       1204 root@web01.example.co.kr
+        612 cron@web01.example.co.kr
+         88 admin@example.co.kr
+          4 backup@example.co.kr
+
+   -&gt; 전부 내부 도메인(example.co.kr)이다. &quot;외부&quot; 주소가 없다.
+      maillog 를 직접 보니 발송 자체가 로컬 MTA 를 거치지 않았다.
+
+   $ grep -c &#39;to=&lt;&#39; maillog
+   0
+
+3. 메일 로그에 없다면 프로세스가 직접 SMTP 를 말했다는 뜻이다.
+   메모리를 본다. ASCII 와 UTF-16LE 를 모두 훑는다.
+   $ strings -a -n 6 mem.raw | grep -Eoi &#39;[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,63}&#39; |
+       tr &#39;A-Z&#39; &#39;a-z&#39; | grep -Ev &#39;@(openssh\.com|libssh\.org)$&#39; |
+       grep -v &#39;example\.co\.kr&#39; | sort -u
+   drop.box.rcv@mail-relay.example-cdn.top
+   noreply@ubuntu.com
+   support@nginx.org
+
+   -&gt; ubuntu.com / nginx.org 는 패키지 메타데이터다.
+      mail-relay.example-cdn.top 이 낯설다.
+
+4. 그 주소가 어떤 문맥에 있었는지 확인 (주변 문자열을 함께 본다)
+   $ strings -a -n 6 mem.raw | grep -B3 -A3 &#39;drop.box.rcv@&#39;
+   MAIL FROM:&lt;web01@localhost&gt;
+   RCPT TO:&lt;drop.box.rcv@mail-relay.example-cdn.top&gt;
+   DATA
+   Subject: WS01 dump 2026-03-14
+   Content-Type: application/octet-stream; name=&quot;shadow.tar.gz&quot;
+
+   -&gt; SMTP 세션이 메모리에 그대로 남아 있다. 첨부 이름이 shadow.tar.gz 다.
+
+5. RCPT TO 만 정확히 다시 뽑는다 (꺾쇠 패턴이 가장 정확하다)
+   $ strings -a -n 6 mem.raw | grep -Eo &#39;RCPT TO:&lt;[^&gt;]*&gt;&#39; | sort | uniq -c
+         12 RCPT TO:&lt;drop.box.rcv@mail-relay.example-cdn.top&gt;
+
+6. 교차검증 — 그 호스트로의 25/587 세션이 있는지
+   $ grep -E &#39;mail-relay\.example-cdn\.top|:(25|587)\b&#39; /var/log/syslog | head -2
+   Mar 14 07:31:02 web01 kernel: [UFW ALLOW] SRC=10.10.20.5 DST=198.51.100.9 DPT=25
+   -&gt; 확정.
+
+정답: drop.box.rcv@mail-relay.example-cdn.top (12회, shadow.tar.gz 첨부)</code></pre></div>
+<p>1·2단계가 이 글의 핵심이다. <strong><code>@</code> 를 쓰는 문자열은 이메일 말고도 많다.</strong> SSH 알고리즘 이름과 <code>@2x</code> 파일명은 정규식으로 구별할 수 없으므로 제외 목록으로 관리하고, 결과가 전부 내부 도메인이면 발송 경로 자체가 MTA 를 우회했다는 신호로 읽는다.</p>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-076 — RFC 5321 / 5322 및 이메일 주소 문법: <code>local-part@domain</code> 구조, dot-atom 과 quoted-string 두 형태, 도메인 리터럴 대괄호 표기, 로컬 파트 64옥텟 / 도메인 255옥텟 길이 제한</li><li>SRC-057 — Python 문서 <code>re</code>: <code>re.VERBOSE</code>, lookbehind, <code>fullmatch</code>. <code>email.utils.getaddresses</code> / <code>parseaddr</code> 와 <code>email</code> 패키지의 동작 근거는 같은 표준 라이브러리 문서</li><li>로컬 파트에 허용되는 특수문자 전체 목록과 주석(comment)·접힘 공백 문법은 이 글에서 &quot;존재한다&quot;는 사실만 서술하고, 어떤 조합이 유효한지는 단정하지 않았다. 실무 패턴은 dot-atom 만 대상으로 한다</li><li><code>System.Net.Mail.MailAddress</code> 가 어떤 입력을 거부하는지는 .NET 버전에 따라 다를 수 있으므로 실제 환경에서 확인할 것</li><li>SSH 알고리즘 이름(<code>hmac-sha2-256-etm@openssh.com</code> 등)이 <code>@</code> 를 포함한다는 것은 로그에서 관측되는 형태다. 정확한 알고리즘 목록은 대상 시스템의 <code>ssh -Q</code> 출력으로 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./domain-regex.html">
+    <span class="rel-id">FOR-0130 · 로그/Regex</span>
+    도메인·호스트명 regex: 라벨 규칙과 DNS 터널링 탐지 패턴
+  </a>
+  <a class="related-item" href="./url-regex.html">
+    <span class="rel-id">FOR-0131 · 로그/Regex</span>
+    URL regex: 어디서 URL이 끝나는지 정하는 문제
+  </a>
+  <a class="related-item" href="./powershell-select-string.html">
+    <span class="rel-id">FOR-0121 · 로그/Regex</span>
+    PowerShell Select-String으로 로그 검색하기 (Windows용 grep)
+  </a>
+  <a class="related-item" href="./ipv4-regex.html">
+    <span class="rel-id">FOR-0128 · 로그/Regex</span>
+    IPv4 주소 regex: 느슨한 패턴과 엄격한 패턴 골라 쓰기
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./url-regex.html"><span class="rel-id">← FOR-0131</span>URL regex: 어디서 URL이 끝나는지 정하는 문제</a>
+<a class="related-item" href="./windows-path-regex.html"><span class="rel-id">FOR-0137 →</span>Windows 경로 regex: 백슬래시 이스케이프와 UNC·확장 길이 접두</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#개념">개념</a></li>
+<li class="toc-l3"><a href="#실무에서-내리는-결정">실무에서 내리는 결정</a></li>
+<li class="toc-l2"><a href="#파일-경로">파일 / 경로</a></li>
+<li class="toc-l2"><a href="#주요-필드">주요 필드</a></li>
+<li class="toc-l3"><a href="#패턴-1-실무-표준-패턴-가장-많이-쓴다">패턴 1 — 실무 표준 패턴 (가장 많이 쓴다)</a></li>
+<li class="toc-l3"><a href="#패턴-2-도메인-쪽을-조인-실전-패턴-pcre-net-python">패턴 2 — 도메인 쪽을 조인 실전 패턴 (PCRE / .NET / Python)</a></li>
+<li class="toc-l3"><a href="#패턴-3-오탐-제거-제외-목록">패턴 3 — 오탐 제거 (제외 목록)</a></li>
+<li class="toc-l3"><a href="#패턴-4-인용-로컬-파트">패턴 4 — 인용 로컬 파트</a></li>
+<li class="toc-l3"><a href="#패턴-5-도메인-리터럴">패턴 5 — 도메인 리터럴</a></li>
+<li class="toc-l3"><a href="#패턴-6-smtp-명령과-메일-헤더에서">패턴 6 — SMTP 명령과 메일 헤더에서</a></li>
+<li class="toc-l3"><a href="#패턴-7-메모리문서에서-대량-수집할-때">패턴 7 — 메모리·문서에서 대량 수집할 때</a></li>
+<li class="toc-l2"><a href="#빠른-명령">빠른 명령</a></li>
+<li class="toc-l3"><a href="#grep-ripgrep">grep / ripgrep</a></li>
+<li class="toc-l3"><a href="#powershell">PowerShell</a></li>
+<li class="toc-l3"><a href="#python">Python</a></li>
+<li class="toc-l2"><a href="#함께-보는-artifact">함께 보는 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-실수">흔한 실수</a></li>
+<li class="toc-l2"><a href="#mini-example">mini example</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Protocol Hierarchy: 프로토콜 비중과 End Packets 읽는 법 · FOR-0148 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Network%2FPCAP">Network/PCAP</a> / FOR-0148
+      </div>
+      <header class="article-head">
+        <h1>Protocol Hierarchy: 프로토콜 비중과 End Packets 읽는 법</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Network/PCAP</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>Statistics &gt; Protocol Hierarchy 는 pcap 에 어떤 프로토콜이 얼마나 실려 있는지 한 화면으로 알려주는 유일한 창이다. Bytes 가 큰 행은 파일 전송, Packets 가 과다한 행은 터널링·스캔, End Packets/End Bytes 가 큰 행은 그 계층에서 해석이 끝났다는 뜻이므로 data 나 Line-based text data 에 몰려 있으면 파서가 못 읽은 커스텀 페이로드가 있다는 신호다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Wireshark, tshark</td></tr>
+<tr><th>artifact</th><td><code>pcap</code> · <code>pcapng</code></td></tr>
+<tr><th>프로토콜</th><td>TCP, UDP, HTTP, DNS, ICMP, TLS, ARP, SMB2, FTP</td></tr>
+<tr><th>Wireshark 필터</th><td><code>data</code> · <code>data.len &gt; 32</code> · <code>icmp</code> · <code>dns</code> · <code>tls</code> · <code>!(arp || icmp || dns || tls)</code> · <code>frame contains &quot;flag&quot;</code></td></tr>
+<tr><th>tshark field</th><td><code>frame.protocols</code> · <code>frame.len</code> · <code>data.len</code></td></tr>
+<tr><th>로그 필드</th><td><code>Percent Packets</code> · <code>Percent Bytes</code> · <code>End Packets</code> · <code>End Bytes</code> · <code>End Bits/s</code> · <code>PDUs</code></td></tr>
+<tr><th>파일 형식</th><td><code>pcap</code> · <code>pcapng</code></td></tr>
+<tr><th>검색 별칭</th><td>프로토콜 계층 · 프로토콜 비중 보기 · 어떤 프로토콜이 있나 · io phs · protocol hierarchy 읽기 · 프로토콜 통계 와이어샤크</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>Statistics &gt; Protocol Hierarchy</code> 는 pcap 에 <strong>어떤 프로토콜이 얼마나</strong> 실려 있는지 한 화면으로 알려주는 유일한 창이다. <code>Bytes</code> 가 큰 행은 파일 전송, <code>Packets</code> 가 과다한 행은 터널링·스캔, <strong><code>End Packets</code>/<code>End Bytes</code> 가 큰 행은 그 계층에서 해석이 끝났다는 뜻</strong>이므로 <code>data</code> 나 <code>Line-based text data</code> 에 몰려 있으면 파서가 못 읽은 커스텀 페이로드가 있다는 신호다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>pcap 을 열었는데 패킷이 수만 개라 어디를 볼지 정하지 못하는 모든 상황</li><li>&quot;정상 트래픽 중에 숨겨진 통신을 찾으세요&quot; 류의 지문</li><li>특정 프로토콜(<code>http</code>, <code>ftp</code>, <code>smtp</code>)로 필터를 걸었는데 0건이라 그 프로토콜이 실제로 있는지 확인해야 할 때</li><li>Export Objects 나 Follow Stream 을 시도하기 <strong>전에</strong> 목표를 하나로 좁혀야 할 때</li></ul>
+<p>전체 트리아지 순서는 <a href="./wireshark-30sec-triage.html">FOR-0146</a> 에 있다. 이 글은 그 2단계 한 칸을 끝까지 파는 글이다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li><strong>트리의 깊이</strong> — <code>Frame &gt; Ethernet &gt; IPv4 &gt; TCP</code> 까지만 있고 그 아래가 없으면 애플리케이션 페이로드가 없거나 파서가 못 읽었다는 뜻이다.</li><li><strong><code>Bytes</code> 최댓값</strong> — 전체 바이트의 절반 이상을 차지하는 행이 있으면 그것이 파일 전송이다.</li><li><strong><code>Packets</code> 최댓값</strong> — 바이트는 작은데 패킷 수가 많으면 스캔, 플러딩, 터널링, keep-alive 중 하나다.</li><li><strong>없어야 할 프로토콜</strong> — Telnet, FTP 평문, TFTP, IRC, SMB1, LLMNR/NBNS 는 존재 자체가 단서다.</li><li><strong><code>data</code> 또는 <code>Line-based text data</code></strong> — 파서가 포기한 바이트. C2 나 커스텀 프로토콜 후보.</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -q -z io,phs</code></pre></div>
+<p>GUI 로는 이렇게 한다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1. Statistics &gt; Protocol Hierarchy
+2. 상단 필터 입력창을 먼저 비운다 (통계가 표시 중인 패킷 기준으로 계산된다)
+3. Bytes 컬럼을 본다      -&gt; 가장 큰 행 = 파일/데이터 전송
+4. Packets 컬럼을 본다    -&gt; 비정상적으로 많은 행 = 터널링/스캔
+5. End Bytes 컬럼을 본다  -&gt; data / Line-based text data 에 몰렸는가
+6. 목표 행 우클릭 &gt; Apply as Filter &gt; Selected</code></pre></div>
+<p>읽은 결과를 한 줄 필터로 옮긴 뒤 <a href="./conversations.html">FOR-0149</a> 로 &quot;누가 얼마나&quot; 를 확정한다.</p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-창을-여는-세-가지-경로">1단계 — 창을 여는 세 가지 경로</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Statistics &gt; Protocol Hierarchy</code></pre></div>
+<p>이 창에는 진행 중 캡처의 실시간 갱신 개념이 없고, <strong>현재 표시 중인 패킷</strong>을 기준으로 계산된다. 표시 필터가 걸려 있으면 창 하단에 그 필터 문자열이 표시되므로, 전체 파일의 그림을 보려면 먼저 필터를 지운다.</p>
+<h3 id="2단계-컬럼-의미">2단계 — 컬럼 의미</h3>
+<div class="table-wrap"><table><thead><tr><th>컬럼</th><th>정의</th><th>실전에서 쓰는 방법</th></tr></thead><tbody><tr><td><code>Protocol</code></td><td>프로토콜 이름. 들여쓰기가 계층 관계다</td><td>트리의 깊이로 해석 성공 여부를 판단</td></tr><tr><td><code>Percent Packets</code></td><td>전체 패킷 대비 이 프로토콜을 <strong>포함한</strong> 패킷 비율</td><td>상대 비중. 합계는 100%를 넘는다</td></tr><tr><td><code>Packets</code></td><td>이 프로토콜을 포함한 패킷의 총 개수</td><td>과다 프로토콜 탐지</td></tr><tr><td><code>Percent Bytes</code></td><td>전체 바이트 대비 비율</td><td>데이터가 어디 실렸는지</td></tr><tr><td><code>Bytes</code></td><td>이 프로토콜의 총 바이트</td><td><strong>파일 전송 판정의 1순위 지표</strong></td></tr><tr><td><code>Bits/s</code></td><td>캡처 시간 기준 이 프로토콜의 대역폭</td><td>지속적 대량 전송 여부</td></tr><tr><td><code>End Packets</code></td><td>이 프로토콜이 <strong>스택의 최상위였던</strong>(마지막으로 해석된) 패킷의 절대 개수</td><td>여기서 해석이 끝난 양</td></tr><tr><td><code>End Bytes</code></td><td>같은 조건의 절대 바이트 수</td><td><strong>해석되지 못한 페이로드의 크기</strong></td></tr><tr><td><code>End Bits/s</code></td><td>같은 조건의 대역폭</td><td>위와 동일</td></tr><tr><td><code>PDUs</code></td><td>이 프로토콜의 PDU 총 개수</td><td>한 패킷에 여러 PDU 가 들어가면 Packets 보다 커진다</td></tr></tbody></table></div>
+<h3 id="3단계-end-packets-end-bytes-가-이-창의-핵심이다">3단계 — End Packets / End Bytes 가 이 창의 핵심이다</h3>
+<p><code>Packets</code> 와 <code>End Packets</code> 의 차이를 이해하면 이 창의 절반을 얻는다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">    Transmission Control Protocol   Packets 15125   End Packets 12761
+      Hypertext Transfer Protocol   Packets   631   End Packets   512
+        Line-based text data        Packets    78   End Packets    78
+        Media Type                  Packets    41   End Packets    41</code></pre></div>
+<ul><li><code>TCP</code> 의 <code>Packets</code> 15,125 는 &quot;TCP 헤더를 가진 모든 패킷&quot; 이다. ACK, SYN, 재전송, 상위 프로토콜 패킷이 전부 포함된다.</li><li><code>TCP</code> 의 <code>End Packets</code> 12,761 은 &quot;TCP 까지만 해석되고 그 위가 없던 패킷&quot; 이다. <strong>순수 ACK 와 미해석 페이로드가 여기 모인다.</strong></li><li><code>Line-based text data</code> 는 항상 <code>Packets == End Packets</code> 다. 그 아래에 아무것도 없으므로.</li></ul>
+<p>판정 규칙 두 개.</p>
+<div class="table-wrap"><table><thead><tr><th>관찰</th><th>해석</th></tr></thead><tbody><tr><td><code>TCP</code> 의 <code>End Bytes</code> 가 전체 바이트의 큰 비중</td><td>상위 파서가 읽지 못한 페이로드가 크다. 비표준 포트 HTTP, 커스텀 C2, 암호화 페이로드 후보 → <code>Decode As</code> 또는 Follow Stream</td></tr><tr><td><code>TCP</code> 의 <code>End Packets</code> 는 많은데 <code>End Bytes</code> 는 작다</td><td>그냥 ACK 다. 정상</td></tr></tbody></table></div>
+<p><code>End Bytes</code> 가 큰 <code>TCP</code> 행을 보고 필터를 만드는 방법.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">data
+data.len &gt; 32
+tcp.len &gt; 0 &amp;&amp; !http &amp;&amp; !tls</code></pre></div>
+<p><code>data</code> 필터는 &quot;Wireshark 가 최종적으로 미해석 바이트로 처리한 부분&quot; 을 잡는다. <code>data.len</code> 으로 크기 하한을 주면 잡음이 사라진다.</p>
+<h3 id="4단계-읽는-순서">4단계 — 읽는 순서</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">(1) 트리 최상단 Frame / Ethernet / IPv4 의 Packets 로 전체 규모를 잡는다
+(2) Bytes 내림차순으로 머릿속 정렬 -&gt; 1위가 &quot;데이터가 있는 곳&quot;
+(3) Packets 로 다시 훑는다        -&gt; 1위가 &quot;빈도가 이상한 곳&quot;
+(4) (2)와 (3)이 다른 프로토콜이면 문제는 대개 두 개다
+(5) End Bytes 가 data / Line-based text data 에 몰려 있으면 파서 우회 라인
+(6) 리스트에 있으면 안 되는 프로토콜을 눈으로 스캔한다</code></pre></div>
+<p><code>(4)</code> 가 실전에서 가장 자주 나온다. 큰 파일 전송(FTP/HTTP)과 은닉 채널(DNS/ICMP)이 같은 캡처에 함께 들어 있는 문제 구성이 흔하다.</p>
+<h3 id="5단계-이상-판정-기준">5단계 — 이상 판정 기준</h3>
+<p>정상 브라우징 캡처의 대략적인 모습과 비교한다. (환경마다 다르므로 절대 기준이 아니라 <strong>비율 감각</strong>으로 쓴다.)</p>
+<div class="table-wrap"><table><thead><tr><th>프로토콜</th><th>정상 브라우징에서</th><th>이상하다고 볼 만한 상태</th><th>의심</th></tr></thead><tbody><tr><td>TLS</td><td>패킷·바이트 모두 최대 비중</td><td>아예 없다</td><td>평문 통신만 하는 환경 = 조작된 캡처 또는 내부망</td></tr><tr><td>HTTP</td><td>소수. 대부분 TLS 로 감</td><td>바이트 비중 1위</td><td>파일 다운로드/업로드</td></tr><tr><td>DNS</td><td>전체 패킷의 수 % 이내</td><td><strong>10% 이상, 또는 수천 패킷</strong></td><td>DNS 터널링 (<a href="./dns-tunneling.html">FOR-0155</a>)</td></tr><tr><td>ICMP</td><td>거의 0</td><td>수백~수천 패킷, <code>data</code> 동반</td><td>ICMP 터널링, ping sweep</td></tr><tr><td>ARP</td><td>소수</td><td>폭증</td><td>ARP 스캔/스푸핑</td></tr><tr><td>TCP <code>End Bytes</code></td><td>작다 (ACK 뿐)</td><td>전체 바이트의 상당 부분</td><td>미해석 페이로드 = 커스텀 프로토콜</td></tr><tr><td><code>data</code></td><td>없거나 극소</td><td>존재하고 <code>End Bytes</code> 가 크다</td><td>파서가 못 읽는 채널</td></tr><tr><td><code>Line-based text data</code></td><td>HTTP 응답 본문 정도</td><td>비중이 크다</td><td>평문 텍스트 대량 전송 (스크립트, 명령 결과)</td></tr><tr><td>Telnet / FTP / TFTP / IRC</td><td>없다</td><td>존재한다</td><td>존재 자체가 답에 가깝다</td></tr><tr><td>NBNS / LLMNR / MDNS</td><td>내부망이면 정상</td><td>외부로 나간다</td><td>정보 유출/열거</td></tr><tr><td>SMB2</td><td>내부망이면 정상</td><td>외부 IP 와 445</td><td>유출 경로</td></tr></tbody></table></div>
+<p><code>data</code> 와 <code>Line-based text data</code> 의 정확한 의미를 구분한다.</p>
+<div class="table-wrap"><table><thead><tr><th>행 이름</th><th>의미</th></tr></thead><tbody><tr><td><code>Data</code> (<code>data</code>)</td><td>어떤 dissector 도 해석하지 못한 바이트 덩어리. 필터는 <code>data</code>, 길이는 <code>data.len</code></td></tr><tr><td><code>Line-based text data</code></td><td>텍스트로는 보이지만 구조를 모르는 본문. 주로 HTTP 응답 본문(HTML, JS, 텍스트)</td></tr><tr><td><code>Media Type</code></td><td>Content-Type 은 알지만 전용 파서가 없는 본문. 이미지·바이너리 첨부</td></tr><tr><td><code>Malformed Packet</code></td><td>파서가 중간에 실패. 조작된 패킷 또는 잘린 캡처 (<a href="./expert-information.html">FOR-0151</a>)</td></tr></tbody></table></div>
+<h3 id="6단계-행-우클릭으로-필터-만들기">6단계 — 행 우클릭으로 필터 만들기</h3>
+<p>행에서 우클릭하면 그 프로토콜에 대한 필터를 바로 만들 수 있다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">행 우클릭
+  Apply as Filter   &gt; Selected / Not Selected / ... and Selected / ... or Selected
+  Prepare as Filter &gt; (적용하지 않고 입력창에만 넣는다)
+  Copy              &gt; 창 내용을 CSV / YAML 로</code></pre></div>
+<p>손으로 프로토콜 필터 이름을 타이핑하지 않는다. <code>Line-based text data</code> 의 필터 이름이 <code>data-text-lines</code> 라는 것을 외울 필요가 없어진다.</p>
+<h3 id="7단계-필터를-적용한-상태의-계층-통계">7단계 — 필터를 적용한 상태의 계층 통계</h3>
+<p>이 창의 진짜 힘은 <strong>필터와 조합할 때</strong> 나온다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">(1) 메인 필터창:  ip.addr == 10.0.0.15
+(2) Statistics &gt; Protocol Hierarchy 를 다시 연다
+    -&gt; 그 호스트 하나가 쓴 프로토콜만 보인다</code></pre></div>
+<p>용도.</p>
+<div class="table-wrap"><table><thead><tr><th>필터</th><th>무엇을 알 수 있나</th></tr></thead><tbody><tr><td><code>ip.addr == &lt;의심 호스트&gt;</code></td><td>그 호스트가 어떤 프로토콜을 썼는가 = 행위 프로파일</td></tr><tr><td><code>ip.addr == &lt;외부 IP&gt;</code></td><td>외부와의 통신이 무엇으로 이루어졌는가</td></tr><tr><td><code>tcp.stream eq 7</code></td><td>한 세션이 어떤 계층까지 해석되는가</td></tr><tr><td><code>frame.time &gt;= &quot;2026-03-14 07:30:00&quot;</code></td><td>특정 구간의 프로토콜 구성 변화</td></tr><tr><td><code>!(ip.addr == 10.0.0.0/8)</code></td><td>외부로 나간 트래픽만의 구성</td></tr></tbody></table></div>
+<p>CLI 에서는 <code>-z io,phs</code> 에 필터를 붙인다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -q -z io,phs,ip.addr==10.0.0.15
+tshark -r capture.pcapng -q -z &#39;io,phs,!(arp || icmp)&#39;</code></pre></div>
+<p><code>-z io,phs</code> 의 필터는 메인 <code>-Y</code> 필터와 <strong>독립적으로</strong> 계산된다. 두 개를 동시에 써도 서로 영향을 주지 않으므로, 의도한 대로 나오지 않으면 필터를 <code>-z</code> 쪽에 붙였는지 확인한다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p><code>tshark -q -z io,phs</code> 의 출력은 GUI 와 같은 트리다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">===================================================================
+Protocol Hierarchy Statistics
+Filter:
+
+eth                                      frames:18422 bytes:12894011
+  ip                                     frames:18311 bytes:12851233
+    tcp                                  frames:15125 bytes:11204418
+      http                               frames:631   bytes:1892044
+        data-text-lines                  frames:78    bytes:412009
+        media                            frames:41    bytes:983221
+      ftp-data                           frames:1621  bytes:8104332
+      ftp                                frames:112   bytes:11204
+      data                               frames:96    bytes:271882
+    udp                                  frames:3186  bytes:264880
+      dns                                frames:3112  bytes:258110
+    icmp                                 frames:171   bytes:28442
+  arp                                    frames:111   bytes:42778
+===================================================================</code></pre></div>
+<p>CLI 출력에서 유의할 점.</p>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>설명</th></tr></thead><tbody><tr><td>표시 이름</td><td>GUI 는 <code>Hypertext Transfer Protocol</code>, CLI 는 <strong>필터 이름</strong> <code>http</code> 를 쓴다. 필터를 만들 때는 CLI 이름이 그대로 쓰인다</td></tr><tr><td><code>Line-based text data</code></td><td>CLI 에서는 <code>data-text-lines</code></td></tr><tr><td><code>Media Type</code></td><td>CLI 에서는 <code>media</code></td></tr><tr><td><code>Data</code></td><td>CLI 에서도 <code>data</code></td></tr><tr><td><code>Filter:</code> 줄</td><td><code>-z io,phs,&lt;filter&gt;</code> 로 준 필터가 여기 표시된다. 비어 있으면 전체 파일 기준</td></tr><tr><td>End 컬럼</td><td>CLI 기본 출력에는 End Packets/End Bytes 컬럼이 없다. 필요하면 GUI 를 쓰거나 <code>frame.protocols</code> 집계로 대체한다</td></tr></tbody></table></div>
+<p>End 정보에 해당하는 CLI 대체 수단은 <code>frame.protocols</code> 집계다. 이것은 각 프레임의 <strong>프로토콜 스택 전체</strong>를 콜론으로 이어 준다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -T fields -e frame.protocols | sort | uniq -c | sort -nr | head -15</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">  10842 eth:ethertype:ip:tcp
+   3112 eth:ethertype:ip:udp:dns
+   1621 eth:ethertype:ip:tcp:ftp-data
+    512 eth:ethertype:ip:tcp:http
+    171 eth:ethertype:ip:icmp:data
+    111 eth:ethertype:arp
+     96 eth:ethertype:ip:tcp:data
+     78 eth:ethertype:ip:tcp:http:data-text-lines</code></pre></div>
+<p>각 줄의 <strong>마지막 토큰이 그 프레임의 최상위 프로토콜</strong>이므로, 이 집계가 곧 End Packets 다. <code>eth:ethertype:ip:tcp</code> 10,842건이 TCP 에서 끝난 패킷(대부분 ACK)이고, <code>...:tcp:data</code> 96건이 미해석 페이로드다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>Protocol Hierarchy 에서 본 것</th><th>다음에 할 일</th></tr></thead><tbody><tr><td><code>Bytes</code> 1위가 <code>ftp-data</code> / <code>http</code></td><td><a href="./conversations.html">FOR-0149</a> 로 그 대화를 찾고 Follow Stream / Export Objects</td></tr><tr><td><code>dns</code> 패킷이 수천 개</td><td><code>dns.qry.name</code> 을 빈도순으로 뽑는다 (<a href="./dns-qry-name-filter.html">FOR-0153</a>)</td></tr><tr><td><code>dns</code> 서브도메인이 길다</td><td>DNS 터널링 판정 (<a href="./dns-tunneling.html">FOR-0155</a>)</td></tr><tr><td><code>icmp</code> 과다 + <code>data</code></td><td><code>icmp &amp;&amp; data.len &gt; 32</code> 로 페이로드 확인</td></tr><tr><td><code>data</code> / <code>data-text-lines</code> 의 <code>End Bytes</code> 가 크다</td><td><code>data</code> 필터 → Follow TCP Stream → <code>Decode As</code> 시도</td></tr><tr><td><code>Malformed Packet</code> 존재</td><td><a href="./expert-information.html">FOR-0151</a> 로 캡처 신뢰도 먼저 판정</td></tr><tr><td><code>http</code> 존재</td><td><code>http.request</code> → Export Objects, POST 는 <a href="./http-post-find.html">FOR-0158</a></td></tr><tr><td><code>arp</code> 폭증</td><td><code>arp.opcode == 1</code> 로 스캔 범위 확인</td></tr><tr><td>Telnet / FTP 평문</td><td>Follow TCP Stream 이 곧 자격증명</td></tr><tr><td>프로토콜 목록에 외부 IP 가 낀 내부 프로토콜</td><td><a href="./endpoints.html">FOR-0150</a> 로 IP 를 뽑아 다른 artifact 로 pivot</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>퍼센트 합이 100%를 넘는다고 버그로 오해하는 것.</strong> 한 패킷은 여러 프로토콜을 동시에 포함하므로 <code>Percent Packets</code> 의 합은 당연히 100%를 넘는다. IPv4 100% + TCP 82% + HTTP 3% 는 정상이다.</li><li><strong>상위 프로토콜 <code>Packets</code> 합이 부모와 안 맞는다고 놓친 패킷을 찾는 것.</strong> 재조립 때문에 상위 PDU 가 다른 프레임에서 완성되고, TCP 헤더 오버헤드와 미해석 데이터가 따로 계산된다. 합이 안 맞는 것이 정상이다.</li><li><strong><code>End Packets</code> 를 그냥 <code>Packets</code> 의 다른 표현으로 읽는 것.</strong> &quot;그 계층에서 끝난&quot; 양이다. TCP 의 <code>End Bytes</code> 가 크면 반드시 미해석 페이로드를 열어 봐야 한다.</li><li><strong>필터가 걸린 상태로 창을 열고 전체 통계라고 믿는 것.</strong> 통계는 표시 중인 패킷 기준이다. 창 하단의 <code>Filter</code> 표시를 확인하고, 전체를 보려면 필터를 지운다.</li><li><strong>비중이 작은 프로토콜을 무시하는 것.</strong> 18,000개 중 12개뿐인 Telnet 이 정답인 문제가 흔하다. <strong>비중이 아니라 존재 여부</strong>로 판단해야 하는 프로토콜 목록(Telnet/FTP/TFTP/IRC)을 따로 본다.</li><li><strong><code>http</code> 행이 없으면 HTTP 가 없다고 결론 내리는 것.</strong> 비표준 포트의 HTTP 는 <code>tcp</code> 에서 끝나 <code>data</code> 로 잡힌다. <code>End Bytes</code> 가 큰 <code>tcp</code> 를 보면 <code>Decode As</code> 를 떠올린다 (<a href="./capture-vs-display-filter.html">FOR-0147</a>).</li><li><strong>GUI 표시 이름을 그대로 필터에 넣는 것.</strong> <code>Line-based text data</code> 는 필터 이름이 아니다. <code>data-text-lines</code> 다. 행 우클릭 <code>Apply as Filter</code> 를 쓴다.</li><li><strong><code>Bytes</code> 만 보고 끝내는 것.</strong> 은닉 채널은 바이트가 작다. <code>Packets</code> 기준으로 한 번 더 훑어야 DNS/ICMP 터널링이 보인다.</li><li><strong>TLS 가 대부분이라 포기하는 것.</strong> TLS 비중이 정상적으로 높은 것과, TLS 안에 숨은 비정상 세션이 있는 것은 다르다. Conversations 로 목적지별 바이트를 봐야 판단된다.</li><li><strong><code>icmp</code> 아래 <code>data</code> 를 못 보는 것.</strong> 트리를 접어 두면 하위 행이 숨는다. 창을 열면 모든 노드를 펼치고 본다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) GUI Protocol Hierarchy 와 같은 값
+tshark -r capture.pcapng -q -z io,phs
+
+# 2) End Packets 상당물 — 각 프레임의 최상위 프로토콜 집계
+tshark -r capture.pcapng -T fields -e frame.protocols | sort | uniq -c | sort -nr
+
+# 3) 특정 호스트만의 프로토콜 구성
+tshark -r capture.pcapng -q -z io,phs,ip.addr==10.0.0.15
+
+# 4) 미해석 페이로드가 실제로 얼마나 되는가
+tshark -r capture.pcapng -Y &#39;data.len &gt; 32&#39; -T fields -e frame.number -e ip.src -e ip.dst -e data.len | head
+
+# 5) 시간 구간별 프로토콜 변화 (60초 버킷, 프로토콜별 프레임 수)
+tshark -r capture.pcapng -q -z io,stat,60,&#39;FRAMES()dns&#39;,&#39;FRAMES()http&#39;,&#39;FRAMES()icmp&#39;
+
+# 6) 파서를 완전히 우회한 확인
+strings -n 8 capture.pcapng | grep -Ei &#39;HTTP/1\.|USER |PASS |flag\{&#39; | head</code></pre></div>
+<p><code>(2)</code> 와 GUI 의 <code>End Packets</code> 가 크게 다르면 재조립 설정이나 <code>Decode As</code> 상태가 GUI 쪽에만 적용되어 있는 것이다. <code>(5)</code> 는 &quot;정상 구간과 이상 구간이 시간으로 나뉘는&quot; 문제에서 결정적이다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;이 캡처에는 정상 업무 트래픽과 공격자의 C2 통신이 섞여 있다.
+ C2 서버의 IP 와 사용된 포트를 구하세요.&quot;
+첨부: office.pcapng (24,908 packets, 31 MB)
+
+1. 첫 시도 (실패)
+   패킷 목록에서 Protocol 컬럼을 정렬해 눈으로 훑었다.
+   TLS 가 대부분이고 HTTP 몇 개, DNS 몇 개.
+   &quot;TLS 뿐이니 내용은 못 본다&quot; 고 판단하고 SNI 를 전부 뽑았다.
+   -&gt; 전부 microsoft.com, google.com, 사내 도메인. 수상한 것이 없다.
+   원인: 눈으로 본 Protocol 컬럼은 &quot;그 패킷의 최종 프로토콜&quot; 이라
+        비중을 보여주지 않는다. 그리고 C2 는 TLS 가 아니었다.
+
+2. 접근 변경 — Statistics &gt; Protocol Hierarchy (필터 비운 상태)
+
+   Protocol                     Percent Packets  Packets  Percent Bytes  Bytes      End Packets  End Bytes
+   Frame                        100.0            24908    100.0          31402118   0            0
+    Ethernet                    100.0            24908      1.1           348712    0            0
+     Internet Protocol Ver 4     99.6            24801      1.6           496020    0            0
+      Transmission Control Prot  96.2            23962     92.3         28983664   19884        4127554
+       Transport Layer Security  58.1            14471     78.0         24493651   14471       24493651
+       Hypertext Transfer Proto   1.4              349      2.1           659444      302         88112
+        Line-based text data      0.2               61      0.4           125611       61        125611
+       Data                       0.9              228      8.9          2795880      228      2795880   &lt;-- 여기
+      User Datagram Protocol      3.4              839      0.9           282640    0            0
+       Domain Name System         3.3              812      0.8           251200      812        251200
+      Internet Control Message    0.0                4      0.0              392        4          392
+
+   눈에 걸리는 것:
+     - Data 행이 존재한다. 228 패킷 / 2.79 MB.
+       End Bytes 2,795,880 = 전체 바이트의 8.9%.
+       Wireshark 가 전혀 해석하지 못한 데이터가 2.8 MB 있다.
+     - TCP 의 End Bytes 4,127,554 도 크다.
+       순수 ACK 이라면 이만큼 크지 않다.
+
+3. Data 행 우클릭 &gt; Apply as Filter &gt; Selected
+   필터창: data
+   -&gt; 228 패킷. 목적지가 한 곳으로 수렴한다.
+
+4. 필터를 좁힌다
+   data.len &gt; 64
+   Source/Destination 컬럼:
+     10.0.0.42 &lt;-&gt; 198.51.100.77   포트 8443
+
+5. Statistics &gt; Conversations 로 확정
+   10.0.0.42:51442  &lt;-&gt; 198.51.100.77:8443   228 packets  2,795,880 bytes  stream 61
+
+6. 왜 TLS 로 잡히지 않았는가
+   8443 은 Wireshark 기본 TLS 포트가 아니다. 그리고 페이로드가
+   TLS 핸드셰이크로 시작하지도 않았다 -&gt; data 로 떨어졌다.
+
+   패킷 우클릭 &gt; Follow &gt; TCP Stream (Show data as = Hex Dump)
+   -&gt; 앞부분이 고정 8바이트 헤더 + Base64 로 보이는 본문.
+      TLS 가 아닌 커스텀 프로토콜. C2 확정.
+
+7. 필터를 걸고 계층 통계를 다시 본다 (구간 검증)
+   메인 필터: ip.addr == 198.51.100.77
+   Statistics &gt; Protocol Hierarchy
+   -&gt; tcp 228 / data 228. 이 IP 와의 통신은 100% 미해석 데이터다.
+      정상 서비스라면 이런 구성이 나오지 않는다.
+
+8. CLI 재확인
+   $ tshark -r office.pcapng -T fields -e frame.protocols | sort | uniq -c | sort -nr | head -5
+     19884 eth:ethertype:ip:tcp
+     14471 eth:ethertype:ip:tcp:tls
+       812 eth:ethertype:ip:udp:dns
+       302 eth:ethertype:ip:tcp:http
+       228 eth:ethertype:ip:tcp:data     &lt;- End Packets 와 일치
+
+정답: 198.51.100.77 / TCP 8443
+
+핵심은 1단계의 실패다. Protocol 컬럼을 눈으로 훑으면 0.9% 짜리 Data 행은
+절대 보이지 않는다. 반면 End Bytes 8.9% 는 Protocol Hierarchy 에서 즉시 눈에 띈다.</code></pre></div>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li>필터 입력창을 비운 상태로 창을 열었는가 — 통계는 표시 중인 패킷 기준이다</li><li>모든 트리 노드를 펼쳤는가 — 접힌 하위 행에 답이 있다</li><li><code>Bytes</code> 기준과 <code>Packets</code> 기준을 <strong>둘 다</strong> 훑었는가</li><li><code>End Bytes</code> 가 <code>data</code> / <code>data-text-lines</code> / <code>tcp</code> 에 몰려 있는가</li><li>목록에 Telnet, FTP, TFTP, IRC, SMB1 같은 &quot;있으면 안 되는&quot; 프로토콜이 있는가</li><li><code>dns</code> 나 <code>icmp</code> 의 패킷 수가 트래픽 성격에 비해 과다한가</li><li><code>http</code> 행이 없는데 웹 트래픽이 있어야 할 상황인가 → <code>Decode As</code></li><li><code>Malformed Packet</code> 행이 있는가 → <a href="./expert-information.html">FOR-0151</a></li><li>의심 호스트 하나로 필터를 걸고 계층 통계를 다시 봤는가</li><li><code>frame.protocols</code> 집계와 GUI 값이 일치하는가</li><li>시간 구간을 나눠(<code>-z io,stat,60,...</code>) 프로토콜 구성이 변하는 지점을 찾았는가</li><li>목표 프로토콜을 정했으면 <a href="./conversations.html">FOR-0149</a> 로 넘어갔는가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-003 — Wireshark User&#39;s Guide, &quot;The Protocol Hierarchy Window&quot;: 컬럼 정의 원문(<code>Protocol</code>, <code>Percent Packets</code>, <code>Packets</code>, <code>Percent Bytes</code>, <code>Bytes</code>, <code>Bits/s</code>, <code>End Packets</code>, <code>End Bytes</code>, <code>End Bits/s</code>, <code>PDUs</code>)과 &quot;the highest protocol in the stack (last dissected)&quot; 라는 End 컬럼의 정의, 퍼센트 합이 100%를 넘을 수 있는 이유, 재조립·TCP 오버헤드로 상위 계층 합이 부모와 어긋난다는 주의사항, 표시 필터가 설정되면 창 하단에 표시된다는 점, Copy 버튼의 CSV/YAML 출력</li><li>SRC-010 — tshark man page: <code>-z io,phs[,filter]</code>, <code>-z io,stat,interval[,filter]</code> 및 <code>FRAMES()</code>/<code>BYTES()</code> 형식, <code>-q</code>, <code>-T fields</code>, <code>-e frame.protocols</code></li><li><code>PDUs</code> 컬럼과 행 우클릭 컨텍스트 메뉴(<code>Apply as Filter</code> / <code>Prepare as Filter</code>)는 최근 버전에서 제공되며 버전에 따라 항목 구성이 다를 수 있으므로 실제 화면에서 확인할 것</li><li>&quot;정상 브라우징에서의 프로토콜 비중&quot; 표는 절대 기준이 아니라 판단용 비율 감각이다. 환경(내부망/외부망, OS, 보안 제품)에 따라 크게 달라진다</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./wireshark-30sec-triage.html">
+    <span class="rel-id">FOR-0146 · Network/PCAP</span>
+    Wireshark 30초 트리아지: pcap을 받고 처음 할 다섯 가지
+  </a>
+  <a class="related-item" href="./conversations.html">
+    <span class="rel-id">FOR-0149 · Network/PCAP</span>
+    Conversations: 가장 큰 대화를 찾아 tcp.stream으로 직행하기
+  </a>
+  <a class="related-item" href="./tshark-display-filter.html">
+    <span class="rel-id">FOR-0185 · Network/PCAP</span>
+    tshark -Y 로 디스플레이 필터 쓰기: bash / PowerShell / cmd 인용 문제
+  </a>
+  <a class="related-item" href="./capture-vs-display-filter.html">
+    <span class="rel-id">FOR-0147 · Network/PCAP</span>
+    Capture Filter와 Display Filter 차이: 필터가 안 먹을 때
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./capture-vs-display-filter.html"><span class="rel-id">← FOR-0147</span>Capture Filter와 Display Filter 차이: 필터가 안 먹을 때</a>
+<a class="related-item" href="./conversations.html"><span class="rel-id">FOR-0149 →</span>Conversations: 가장 큰 대화를 찾아 tcp.stream으로 직행하기</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-창을-여는-세-가지-경로">1단계 — 창을 여는 세 가지 경로</a></li>
+<li class="toc-l3"><a href="#2단계-컬럼-의미">2단계 — 컬럼 의미</a></li>
+<li class="toc-l3"><a href="#3단계-end-packets-end-bytes-가-이-창의-핵심이다">3단계 — End Packets / End Bytes 가 이 창의 핵심이다</a></li>
+<li class="toc-l3"><a href="#4단계-읽는-순서">4단계 — 읽는 순서</a></li>
+<li class="toc-l3"><a href="#5단계-이상-판정-기준">5단계 — 이상 판정 기준</a></li>
+<li class="toc-l3"><a href="#6단계-행-우클릭으로-필터-만들기">6단계 — 행 우클릭으로 필터 만들기</a></li>
+<li class="toc-l3"><a href="#7단계-필터를-적용한-상태의-계층-통계">7단계 — 필터를 적용한 상태의 계층 통계</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

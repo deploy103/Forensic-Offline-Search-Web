@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>tshark -Y 로 디스플레이 필터 쓰기: bash / PowerShell / cmd 인용 문제 · FOR-0185 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Network%2FPCAP">Network/PCAP</a> / FOR-0185
+      </div>
+      <header class="article-head">
+        <h1>tshark -Y 로 디스플레이 필터 쓰기: bash / PowerShell / cmd 인용 문제</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Network/PCAP</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>GUI 에서 잘 돌던 필터가 tshark 에서 isn&#39;t a valid display filter 로 죽으면 필터가 틀린 것이 아니라 셸이 따옴표를 먹은 것이다. bash 는 -Y &#39;필터 &quot;값&quot;&#39;, cmd 는 -Y &quot;필터 \&quot;값\&quot;&quot;, PowerShell 은 -Y &#39;필터 \&quot;값\&quot;&#39; 로 각각 다르게 써야 한다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>tshark, Wireshark, editcap, mergecap, capinfos</td></tr>
+<tr><th>artifact</th><td><code>pcap</code> · <code>pcapng</code></td></tr>
+<tr><th>프로토콜</th><td>HTTP, DNS, TCP, UDP, TLS, FTP</td></tr>
+<tr><th>Wireshark 필터</th><td><code>http.host == &quot;evil.com&quot;</code> · <code>http.request.method == &quot;POST&quot;</code> · <code>frame contains 66:6c:61:67</code> · <code>frame matches r&quot;flag\{.*\}&quot;</code> · <code>!(arp || icmp || dns)</code> · <code>tcp.port in {80, 443, 8000..8010}</code> · <code>dns.qry.name.len &gt; 40</code> · <code>tcp.flags.syn == 1 &amp;&amp; tcp.flags.ack == 0</code></td></tr>
+<tr><th>tshark field</th><td><code>frame.number</code> · <code>frame.time_epoch</code> · <code>ip.src</code> · <code>http.host</code> · <code>dns.qry.name</code> · <code>tcp.stream</code></td></tr>
+<tr><th>regex</th><td><code>flag\{[^}]+\}</code></td></tr>
+<tr><th>파일 형식</th><td><code>pcap</code> · <code>pcapng</code></td></tr>
+<tr><th>검색 별칭</th><td>tshark 필터 · tshark -Y 안됨 · 파워쉘 tshark 따옴표 · cmd tshark 필터 · 필터 문법 오류 · isn&#39;t a valid display filter · tshark 필터 따옴표</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>GUI 에서 잘 돌던 필터가 tshark 에서 <code>isn&#39;t a valid display filter</code> 로 죽으면 필터가 틀린 것이 아니라 <strong>셸이 따옴표를 먹은 것</strong>이다. bash 는 <code>-Y &#39;필터 &quot;값&quot;&#39;</code>, cmd 는 <code>-Y &quot;필터 \&quot;값\&quot;&quot;</code>, PowerShell 은 <code>-Y &#39;필터 \&quot;값\&quot;&#39;</code> 로 각각 다르게 써야 한다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>Wireshark GUI 로 찾은 필터를 스크립트로 옮겨 여러 pcap 에 반복 적용해야 할 때</li><li>문제 파일이 <code>part1.pcapng</code>, <code>part2.pcapng</code> 처럼 쪼개져 있을 때</li><li>캡처가 수백 MB 라 GUI 가 뜨지 않을 때</li><li>같은 필터를 필드 추출(<a href="./tshark-extract-fields.html">FOR-0186</a>)·통계·객체 추출에 재사용해야 할 때</li></ul>
+<p>GUI 는 필터 입력창이 셸을 거치지 않으므로 따옴표 문제가 없다. <strong>CLI 로 넘어오는 순간 셸이 한 겹 끼어든다.</strong> 이 글은 그 한 겹을 다룬다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li><code>tshark: &quot;…&quot; isn&#39;t a valid display filter: …</code> — <strong>오류 메시지에 tshark 가 실제로 받은 문자열이 그대로 찍힌다.</strong> 여기서 따옴표가 사라졌는지 확인한다.</li><li>오류 없이 <strong>0줄</strong>이 나온다 → 필터는 유효하지만 매칭이 없다. 필드 이름 또는 값이 틀렸다.</li><li>GUI 에서는 컬럼에 값이 보이는데 <code>-e</code> 로는 빈칸 → <code>-2</code> 또는 <code>-o</code> preference 문제다 (<a href="./tshark-basics.html">FOR-0184</a>).</li><li><code>&quot;xxx&quot; is neither a field nor a protocol name</code> → 필드 이름 오타 또는 그 버전에 없는 필드.</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -n -Y &#39;http.request&#39; -c 5</code></pre></div>
+<p><strong>필터를 새로 쓸 때는 항상 <code>-c 5</code> 를 먼저 붙인다.</strong> 문법이 맞는지, 매칭이 있는지 1초 안에 확인된다. 통과하면 <code>-c</code> 를 떼고 전량 처리한다.</p>
+<p>세 환경의 최소 동작 확인 명령:</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># bash / zsh
+tshark -r capture.pcapng -Y &#39;http.request.method == &quot;POST&quot;&#39; -c 3</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># PowerShell
+tshark -r capture.pcapng -Y &#39;http.request.method == \&quot;POST\&quot;&#39; -c 3</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">:: cmd.exe
+tshark -r capture.pcapng -Y &quot;http.request.method == \&quot;POST\&quot;&quot; -c 3</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계--y--r--2-를-구분한다">1단계 — <code>-Y</code> / <code>-R</code> / <code>-2</code> 를 구분한다</h3>
+<div class="table-wrap"><table><thead><tr><th>옵션</th><th>언제 평가되나</th><th><code>-2</code> 필요</th><th>쓰는 상황</th></tr></thead><tbody><tr><td><code>-Y &lt;filter&gt;</code></td><td>해석 후 출력 직전</td><td>아니오</td><td><strong>기본.</strong> 저장 파일 분석의 99%</td></tr><tr><td><code>-R &lt;filter&gt;</code></td><td>1차 패스에서 걸러 이후 패스로 넘기지 않는다</td><td><strong>예</strong></td><td>대용량에서 2-pass 비용을 줄일 때</td></tr><tr><td><code>-2</code></td><td>전체를 두 번 읽는다</td><td>—</td><td>미래 정보가 필요한 필드를 채울 때</td></tr></tbody></table></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 잘못됨 — -R 를 단독으로
+tshark -r capture.pcapng -R &#39;http.request&#39;
+# tshark: -R without -2 is deprecated / 무시되거나 오류
+
+# 올바름 — 단일 패스
+tshark -r capture.pcapng -Y &#39;http.request&#39;
+
+# 올바름 — 2-pass. 1차에서 http 만 남기고, 그 중 1초 넘게 걸린 요청만 출력
+tshark -r capture.pcapng -2 -R &#39;http&#39; -Y &#39;http.time &gt; 1&#39;</code></pre></div>
+<p><code>-2</code> 가 없으면 값이 채워지지 않는 대표 필드:</p>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>의미</th><th>왜 2-pass 가 필요한가</th></tr></thead><tbody><tr><td><code>http.time</code></td><td>요청→응답 소요 시간</td><td>응답이 뒤에 있다</td></tr><tr><td><code>http.response_in</code></td><td>응답 프레임 번호</td><td>같음</td></tr><tr><td><code>http.request_in</code></td><td>요청 프레임 번호 (응답 쪽에서)</td><td>앞을 참조하므로 단일 패스에서도 대개 채워진다</td></tr><tr><td><code>dns.response_in</code> / <code>dns.time</code></td><td>DNS 응답 시간</td><td>응답이 뒤에 있다</td></tr><tr><td><code>smb2.time</code></td><td>SMB 응답 시간</td><td>응답이 뒤에 있다</td></tr></tbody></table></div>
+<h3 id="2단계-셸별-인용-세-환경-대조표">2단계 — 셸별 인용: 세 환경 대조표</h3>
+<p><code>-Y</code> 뒤의 필터는 <strong>공백을 포함한 하나의 인자</strong>여야 하고, 필터 안의 문자열 리터럴은 <strong>디스플레이 필터 문법상 큰따옴표</strong>여야 한다. 이 두 요구가 셸마다 다르게 충돌한다.</p>
+<div class="table-wrap"><table><thead><tr><th>필터 (GUI 입력창에 쓰는 원본)</th><th>bash / zsh</th><th>cmd.exe</th><th>PowerShell</th></tr></thead><tbody><tr><td><code>http.request</code></td><td><code>-Y &#39;http.request&#39;</code></td><td><code>-Y &quot;http.request&quot;</code></td><td><code>-Y &#39;http.request&#39;</code></td></tr><tr><td><code>tcp.stream eq 4</code></td><td><code>-Y &#39;tcp.stream eq 4&#39;</code></td><td><code>-Y &quot;tcp.stream eq 4&quot;</code></td><td><code>-Y &#39;tcp.stream eq 4&#39;</code></td></tr><tr><td><code>!(arp || icmp)</code></td><td><code>-Y &#39;!(arp || icmp)&#39;</code></td><td><code>-Y &quot;!(arp || icmp)&quot;</code></td><td><code>-Y &#39;!(arp || icmp)&#39;</code></td></tr><tr><td><code>http.host == &quot;evil.com&quot;</code></td><td><code>-Y &#39;http.host == &quot;evil.com&quot;&#39;</code></td><td><code>-Y &quot;http.host == \&quot;evil.com\&quot;&quot;</code></td><td><code>-Y &#39;http.host == \&quot;evil.com\&quot;&#39;</code></td></tr><tr><td><code>frame contains &quot;flag&quot;</code></td><td><code>-Y &#39;frame contains &quot;flag&quot;&#39;</code></td><td><code>-Y &quot;frame contains \&quot;flag\&quot;&quot;</code></td><td><code>-Y &#39;frame contains \&quot;flag\&quot;&#39;</code></td></tr><tr><td><code>frame matches r&quot;flag\{.*\}&quot;</code></td><td><code>-Y &#39;frame matches r&quot;flag\{.*\}&quot;&#39;</code></td><td><code>-Y &quot;frame matches r\&quot;flag\{.*\}\&quot;&quot;</code></td><td><code>-Y &#39;frame matches r\&quot;flag\{.*\}\&quot;&#39;</code></td></tr><tr><td><code>frame contains 66:6c:61:67</code></td><td><code>-Y &#39;frame contains 66:6c:61:67&#39;</code></td><td><code>-Y &quot;frame contains 66:6c:61:67&quot;</code></td><td><code>-Y &#39;frame contains 66:6c:61:67&#39;</code></td></tr></tbody></table></div>
+<p>규칙을 문장으로:</p>
+<div class="table-wrap"><table><thead><tr><th>셸</th><th>바깥 따옴표</th><th>안쪽 큰따옴표</th><th>이유</th></tr></thead><tbody><tr><td>bash / zsh</td><td><strong>작은따옴표</strong></td><td>그대로 <code>&quot;</code></td><td>작은따옴표 안에서는 <code>$</code> `<code> </code> `<code> </code>!<code> </code>*<code> </code>|` 가 전부 리터럴이다</td></tr><tr><td>cmd.exe</td><td><strong>큰따옴표</strong></td><td><code>\&quot;</code></td><td>cmd 는 작은따옴표를 특수문자로 취급하지 않는다. <code>&#39;...&#39;</code> 는 따옴표째로 tshark 에 넘어간다</td></tr><tr><td>PowerShell</td><td><strong>작은따옴표</strong></td><td><code>\&quot;</code></td><td>작은따옴표로 PowerShell 의 변수 확장은 막지만, 네이티브 exe 로 넘길 때 안쪽 <code>&quot;</code> 가 소실되므로 <code>\&quot;</code> 로 미리 이스케이프한다</td></tr></tbody></table></div>
+<p><strong>PowerShell 이 가장 위험하다.</strong> 작은따옴표만 쓰고 안쪽에 <code>&quot;</code> 를 그대로 두면, PowerShell 이 인자를 다시 인용하는 과정에서 큰따옴표가 사라져 tshark 는 <code>http.host == evil.com</code> 을 받는다. 실행은 되지만 결과가 다르거나 오류가 난다.</p>
+<p>확인 방법 — 일부러 틀린 필터를 넣어 <strong>tshark 가 무엇을 받았는지 되읽는다</strong>.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">tshark -r capture.pcapng -Y &#39;http.host == \&quot;evil.com\&quot; &amp;&amp;&amp;&#39;</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">tshark: &quot;http.host == &quot;evil.com&quot; &amp;&amp;&amp;&quot; isn&#39;t a valid display filter: ...
+                       ^^^^^^^^^^  &lt;- 큰따옴표가 살아 있으면 인용 성공</code></pre></div>
+<p>큰따옴표가 안 보이면 인용이 실패한 것이다. 이 되읽기 기법이 인용 문제를 5초 만에 판정한다.</p>
+<p>PowerShell 의 우회로 두 가지:</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) --% 이후는 PowerShell 이 손대지 않고 그대로 넘긴다 (가장 확실)
+tshark.exe --% -r capture.pcapng -Y &quot;http.host == \&quot;evil.com\&quot;&quot; -c 3
+
+# 2) 따옴표가 필요 없는 형태로 필터를 바꾼다
+tshark -r capture.pcapng -Y &#39;http.host contains 65:76:69:6c&#39;   # &quot;evil&quot; 의 hex</code></pre></div>
+<p>PowerShell 7.3 이상에서는 <code>$PSNativeCommandArgumentPassing</code> 이 <code>Standard</code> 면 <code>\&quot;</code> 없이 <code>&quot;</code> 를 그대로 써야 하고, <code>Windows</code>(레거시) 면 <code>\&quot;</code> 가 맞다. 값을 확인한 뒤 형태를 고정한다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">$PSNativeCommandArgumentPassing</code></pre></div>
+<h3 id="3단계-따옴표를-아예-안-쓰는-회피법">3단계 — 따옴표를 아예 안 쓰는 회피법</h3>
+<p>세 환경에서 <strong>똑같이 동작하는</strong> 표기법이 있다. 스크립트를 이식할 때 이쪽을 쓴다.</p>
+<div class="table-wrap"><table><thead><tr><th>하고 싶은 것</th><th>따옴표 쓰는 형태</th><th>따옴표 없는 대체</th></tr></thead><tbody><tr><td>문자열 포함 검색</td><td><code>frame contains &quot;flag&quot;</code></td><td><code>frame contains 66:6c:61:67</code></td></tr><tr><td>HTTP POST 만</td><td><code>http.request.method == &quot;POST&quot;</code></td><td><code>http.request.method == 50:4f:53:54</code> 은 안 된다 — <code>http.request.method</code> 는 문자열 필드다. 대신 <code>http.request &amp;&amp; frame contains 50:4f:53:54</code></td></tr><tr><td>특정 포트 여러 개</td><td><code>tcp.port == 80 || tcp.port == 443</code></td><td><code>tcp.port in {80, 443, 8000..8010}</code></td></tr><tr><td>대소문자 무시 문자열</td><td><code>frame matches &quot;(?i)flag&quot;</code></td><td><code>matches</code> 는 기본적으로 대소문자를 구분하지 않는다. <code>(?i)</code> 는 붙여도 무해하다</td></tr><tr><td>필드 존재 여부</td><td>—</td><td><code>http.authorization</code> (필드명만 쓰면 &quot;존재하는 패킷&quot;)</td></tr></tbody></table></div>
+<p>문자열을 hex 로 바꾸는 방법:</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">printf &#39;flag&#39; | xxd -i -c 16 | head -1     # 참고용
+printf &#39;flag&#39; | od -An -tx1 | tr &#39; &#39; &#39;:&#39; | sed &#39;s/^://;s/:$//&#39;
+# 66:6c:61:67</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># PowerShell: 문자열 -&gt; 콜론 구분 hex
+(([Text.Encoding]::ASCII.GetBytes(&#39;flag&#39;) | ForEach-Object { $_.ToString(&#39;x2&#39;) }) -join &#39;:&#39;)
+# 66:6c:61:67</code></pre></div>
+<p>UTF-16LE 로 전송된 한글/영문은 바이트 사이에 <code>00</code> 이 끼므로 hex 검색이 유일한 방법이다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">frame contains 66:00:6c:00:61:00:67:00</code></pre></div>
+<h3 id="4단계-필터-문법-오류-진단표">4단계 — 필터 문법 오류 진단표</h3>
+<div class="table-wrap"><table><thead><tr><th>오류 메시지 / 증상</th><th>원인</th><th>고치는 법</th></tr></thead><tbody><tr><td><code>&quot;tcp port 80&quot; isn&#39;t a valid display filter</code></td><td>캡처 필터(BPF) 문법을 <code>-Y</code> 에 넣었다</td><td><code>tcp.port == 80</code></td></tr><tr><td><code>&quot;…&quot; is neither a field nor a protocol name</code></td><td>필드 이름 오타 또는 그 버전에 없는 필드</td><td><code>tshark -G fields | grep &lt;조각&gt;</code> 으로 실명 확인</td></tr><tr><td><code>Unexpected end of filter expression</code></td><td>괄호·따옴표가 짝이 안 맞는다. <strong>셸이 따옴표를 먹은 대표 증상</strong></td><td>위 인용 대조표</td></tr><tr><td><code>&quot;POST&quot; 가 필터에 없다</code>처럼 값이 벗겨져 있다</td><td>PowerShell 인자 재인용</td><td><code>\&quot;</code> 또는 <code>--%</code></td></tr><tr><td>오류는 없고 0줄</td><td>필터는 유효, 매칭 없음</td><td>필드만 남겨 단계적으로 넓힌다 (5단계)</td></tr><tr><td><code>!=</code> 결과가 직관과 다르다</td><td>Wireshark 3.6 부터 <code>!=</code> 는 <code>all_ne</code>(모든 occurrence 가 다름) 의미다</td><td>하나라도 다르면 참을 원하면 <code>!==</code>(<code>any_ne</code>), 특정 값 제외는 <code>!(field == value)</code></td></tr><tr><td><code>matches</code> 안의 백슬래시가 먹힌다</td><td>필터 엔진과 PCRE2 가 문자열을 <strong>두 번</strong> 파싱한다</td><td>raw string 접두 <code>r</code> 사용: <code>matches r&quot;flag\{.*\}&quot;</code></td></tr><tr><td>PDF/한글 문서에서 복사한 필터가 안 먹는다</td><td>둥근 따옴표(<code>“ ”</code>)가 섞였다</td><td>최신 버전은 둥근 따옴표를 허용하지만, 구버전은 오류다. <strong>직접 타이핑한다</strong></td></tr><tr><td><code>-Y</code> 를 두 번 썼는데 하나만 적용된다</td><td><code>-Y</code> 는 마지막 것만 유효하다</td><td><code>&amp;&amp;</code> 로 한 줄에 합친다</td></tr></tbody></table></div>
+<p>비교 연산자와 영문 별칭:</p>
+<div class="table-wrap"><table><thead><tr><th>영문</th><th>C 스타일</th><th>의미</th></tr></thead><tbody><tr><td><code>eq</code> (= <code>any_eq</code>)</td><td><code>==</code></td><td>같음 (여러 occurrence 중 하나라도)</td></tr><tr><td><code>ne</code> (= <code>all_ne</code>)</td><td><code>!=</code></td><td>다름 (<strong>모든</strong> occurrence 가)</td></tr><tr><td>— (<code>all_eq</code>)</td><td><code>===</code></td><td>모든 occurrence 가 같음</td></tr><tr><td>— (<code>any_ne</code>)</td><td><code>!==</code></td><td>하나라도 다름</td></tr><tr><td><code>gt</code> / <code>lt</code></td><td><code>&gt;</code> / <code>&lt;</code></td><td>큼 / 작음</td></tr><tr><td><code>ge</code> / <code>le</code></td><td><code>&gt;=</code> / <code>&lt;=</code></td><td>크거나 같음 / 작거나 같음</td></tr><tr><td><code>and</code> / <code>or</code> / <code>not</code></td><td><code>&amp;&amp;</code> / <code>||</code> / <code>!</code></td><td>논리 연산</td></tr><tr><td><code>contains</code></td><td>—</td><td>바이트/문자열 포함. <strong>대소문자 구분</strong></td></tr><tr><td><code>matches</code> / <code>~</code></td><td>—</td><td>PCRE2 정규식. <strong>대소문자 무시</strong></td></tr><tr><td><code>in</code></td><td>—</td><td><code>tcp.port in {80, 443, 8000..8010}</code></td></tr></tbody></table></div>
+<p><code>contains</code> 는 대소문자를 구분하고 <code>matches</code> 는 구분하지 않는다. 이 비대칭이 &quot;필터가 안 걸리는&quot; 흔한 원인이다.</p>
+<h3 id="5단계-필터를-단계적으로-좁힌다">5단계 — 필터를 단계적으로 좁힌다</h3>
+<p>0줄이 나왔을 때 필터를 통째로 고치지 말고 <strong>가장 넓은 것에서 한 조건씩 붙인다.</strong></p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) 프로토콜만
+tshark -r capture.pcapng -Y &#39;http&#39; -c 3
+# -&gt; 3줄 나옴. HTTP 는 존재한다.
+
+# 2) 요청만
+tshark -r capture.pcapng -Y &#39;http.request&#39; -c 3
+# -&gt; 3줄. 요청도 있다.
+
+# 3) 필드가 채워지는지 (값 비교 없이 필드 존재만)
+tshark -r capture.pcapng -Y &#39;http.host&#39; -T fields -e http.host -c 5
+# -&gt; shop.example.com / cdn.example.com / ...
+#    실제 값을 눈으로 확인한다. 여기서 오타/서브도메인 차이가 드러난다.
+
+# 4) 이제 값 비교
+tshark -r capture.pcapng -Y &#39;http.host == &quot;shop.example.com&quot;&#39; -c 3
+
+# 5) == 이 0줄이면 contains 로 완화
+tshark -r capture.pcapng -Y &#39;http.host contains &quot;shop&quot;&#39; -c 3</code></pre></div>
+<p><strong>3단계가 핵심이다.</strong> <code>필드명만</code> 쓴 필터는 &quot;그 필드가 존재하는 패킷&quot;을 뜻하므로, 값을 모를 때 실제 값 목록을 먼저 뽑아 볼 수 있다.</p>
+<h3 id="6단계-여러-파일을-한-번에">6단계 — 여러 파일을 한 번에</h3>
+<p>pcap 이 여러 개로 쪼개져 있으면 합치거나 루프를 돈다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 시간순 병합 (기본). 이후 tcp.stream 번호가 재계산되므로 GUI 와 함께 쓰기 좋다
+mergecap -w merged.pcapng part1.pcapng part2.pcapng part3.pcapng
+capinfos merged.pcapng
+
+# 병합하지 않고 파일별로 같은 필터를 돌린다 (원본 프레임 번호 유지)
+for f in *.pcapng; do
+  echo &quot;=== $f&quot;
+  tshark -r &quot;$f&quot; -n -Y &#39;http.request&#39; -T fields -e frame.time_epoch -e http.host -e http.request.uri
+done
+
+# 결과를 한 CSV 로 모으면서 파일명 컬럼을 붙인다
+for f in *.pcapng; do
+  tshark -r &quot;$f&quot; -n -Y &#39;dns.flags.response == 0&#39; -T fields -e frame.time_epoch -e dns.qry.name |
+    awk -v F=&quot;$f&quot; -F&#39;\t&#39; &#39;{print F&quot;\t&quot;$0}&#39;
+done &gt; all_dns.tsv</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># PowerShell 루프 — 파일명 컬럼을 앞에 붙여 한 파일로 모은다
+Get-ChildItem *.pcapng | ForEach-Object {
+  $name = $_.Name
+  tshark -r $_.FullName -n -Y &#39;http.request&#39; -T fields -e frame.time_epoch -e http.host -e http.request.uri |
+    ForEach-Object { &quot;$name`t$_&quot; }
+} | Set-Content all_http.tsv</code></pre></div>
+<p><code>editcap</code> 으로 자르기·시간 보정:</p>
+<div class="table-wrap"><table><thead><tr><th>목적</th><th>명령</th></tr></thead><tbody><tr><td>20,000 패킷 단위로 분할</td><td><code>editcap -c 20000 big.pcapng chunk.pcapng</code></td></tr><tr><td>60초 단위로 분할</td><td><code>editcap -i 60 big.pcapng slice.pcapng</code></td></tr><tr><td>시간 범위만 남기기</td><td><code>editcap -A 2026-03-16T09:00:00 -B 2026-03-16T10:00:00 in.pcapng out.pcapng</code></td></tr><tr><td>특정 프레임 번호만 남기기</td><td><code>editcap -r in.pcapng picked.pcapng 100-200 350 900-1000</code></td></tr><tr><td>특정 프레임 번호 <strong>제외</strong></td><td><code>editcap in.pcapng cut.pcapng 100-200</code> (<code>-r</code> 없으면 삭제)</td></tr><tr><td>타임스탬프를 -9시간 이동</td><td><code>editcap -t -32400 in.pcapng shifted.pcapng</code></td></tr><tr><td>pcapng → 구형 pcap 변환</td><td><code>editcap -F pcap in.pcapng out.pcap</code></td></tr><tr><td>중복 패킷 제거</td><td><code>editcap -d in.pcapng dedup.pcapng</code></td></tr></tbody></table></div>
+<p><code>-t -32400</code> 은 <strong>KST 로 잘못 기록된 캡처를 UTC 로 되돌릴 때</strong> 쓴다. 9시간 = 32400초다. 원본은 반드시 보존하고 사본에만 적용한다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p><code>-Y</code> 로 걸러낸 결과를 확인할 때 보는 것.</p>
+<div class="table-wrap"><table><thead><tr><th>출력</th><th>의미</th><th>함정</th></tr></thead><tbody><tr><td>첫 컬럼 숫자</td><td>프레임 번호</td><td><strong>필터를 걸어도 원본 번호를 유지한다.</strong> 1, 2, 3 이 아니라 842, 1204 처럼 나온��</td></tr><tr><td>두 번째 컬럼</td><td>시각. 기본은 <strong>상대 초</strong></td><td><code>-t ud</code> 로 UTC 절대시각으로 바꾼다</td></tr><tr><td><code>Protocol</code> 컬럼</td><td>최종 판정 프로토콜</td><td>비표준 포트는 <code>TCP</code> 로만 — <code>-d</code> 필요</td></tr><tr><td><code>Info</code> 컬럼</td><td>요약</td><td><code>-e _ws.col.Info</code> 로 필드처럼 뽑을 수 있다</td></tr><tr><td>stderr 의 경고</td><td>dissector 경고, preference 경고</td><td><code>-Q</code> 로 죽이지 말고 한 번은 읽는다</td></tr></tbody></table></div>
+<p>프레임 번호가 원본 유지라는 점이 중요하다. 필터 결과에서 얻은 번호를 그대로 <code>-Y &#39;frame.number == 842&#39; -V</code> 에 넣어 상세를 볼 수 있다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>필터로 확정한 것</th><th>다음 목표</th></tr></thead><tbody><tr><td>관심 <code>tcp.stream</code> 번호</td><td><code>-q -z follow,tcp,ascii,&lt;n&gt;</code> 또는 Follow Stream (<a href="./wireshark-30sec-triage.html">FOR-0146</a>)</td></tr><tr><td>관심 프레임 번호</td><td><code>-Y &#39;frame.number == N&#39; -V -x</code> 로 전체 트리·hex</td></tr><tr><td>HTTP 요청 목록</td><td>필드 추출로 표 만들기 (<a href="./tshark-extract-fields.html">FOR-0186</a>)</td></tr><tr><td>POST 요청 존재</td><td>본문·자격증명 (<a href="./http-post-find.html">FOR-0158</a>)</td></tr><tr><td>자격증명 후보</td><td>프로토콜별 위치 (<a href="./pcap-credentials.html">FOR-0187</a>)</td></tr><tr><td>파일 전송 스트림</td><td>파일 추출 (<a href="./pcap-file-extraction.html">FOR-0189</a>)</td></tr><tr><td><code>frame.time_epoch</code></td><td>EVTX·access.log 대조 (<a href="./event-4624-logon.html">FOR-0083</a>)</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>PowerShell 에서 작은따옴표만 쓰고 안쪽 큰따옴표를 그대로 두는 것.</strong> PowerShell 이 네이티브 exe 로 인자를 넘길 때 안쪽 <code>&quot;</code> 가 소실되어 tshark 는 <code>http.host == evil.com</code> 을 받는다. 오류가 안 날 수도 있어서 더 위험하다. <code>\&quot;</code> 로 이스케이프하거나 <code>--%</code> 를 쓴다.</li><li><strong>cmd.exe 에서 작은따옴표를 쓰는 것.</strong> cmd 는 <code>&#39;</code> 를 특수문자로 보지 않으므로 <code>&#39;http.request&#39;</code> 가 따옴표째 tshark 에 전달되어 <code>&#39;http.request&#39; isn&#39;t a valid display filter</code> 가 된다. cmd 에서는 무조건 큰따옴표다.</li><li><strong><code>-Y</code> 에 캡처 필터 문법을 넣는 것.</strong> <code>-Y &#39;tcp port 80&#39;</code> 은 오류다. BPF 는 <code>-f</code> 전용이고 저장 파일에는 적용되지 않는다. 디스플레이 필터는 <code>tcp.port == 80</code>.</li><li><strong><code>-R</code> 를 <code>-2</code> 없이 쓰는 것.</strong> <code>-R</code> 는 1차 패스 필터라서 단일 패스에서는 의미가 없다. 버전에 따라 경고 후 무시되거나 오류가 난다. 기본은 항상 <code>-Y</code>.</li><li><strong>0줄이 나오면 필터를 통째로 고치는 것.</strong> 프로토콜만 → 필드만 → 값 비교 순서로 한 조건씩 붙여야 어디가 틀렸는지 드러난다. 특히 <code>필드명만</code> 쓴 필터로 <strong>실제 값 목록</strong>을 먼저 확인한다.</li><li><strong><code>contains</code> 의 대소문자를 잊는 것.</strong> <code>contains</code> 는 구분하고 <code>matches</code> 는 구분하지 않는다. <code>frame contains &quot;Password&quot;</code> 가 0줄이면 <code>frame matches &quot;password&quot;</code> 로 바꾼다.</li><li><strong><code>matches</code> 정규식에서 백슬래시를 한 번만 쓰는 것.</strong> 필터 엔진과 PCRE2 가 문자열을 두 번 파싱하므로 <code>\{</code> 가 사라진다. raw string 접두 <code>r</code> 을 붙여 <code>matches r&quot;flag\{.*\}&quot;</code> 로 쓴다.</li><li><strong><code>!=</code> 를 &quot;그 값이 아닌 패킷&quot;으로 이해하는 것.</strong> Wireshark 3.6 이후 <code>!=</code> 는 <code>all_ne</code>(모든 occurrence 가 다름)다. <code>ip.addr != 10.0.0.1</code> 은 src/dst 둘 다 다른 패킷만 걸린다 — 의도가 &quot;10.0.0.1 이 안 끼어 있는 패킷&quot;이면 맞고, &quot;10.0.0.1 이 dst 가 아닌 패킷&quot;이면 틀리다. 명확하게 <code>!(ip.addr == 10.0.0.1)</code> 로 쓴다.</li><li><strong>문제 지문 PDF 에서 필터를 복사하는 것.</strong> 둥근 따옴표(U+201C/U+201D)와 전각 공백이 섞여 들어온다. 최신 Wireshark 는 둥근 따옴표를 허용하지만 구버전은 오류이고, 전각 공백은 어느 버전에서도 오류다. <strong>직접 타이핑한다.</strong></li><li><strong><code>mergecap</code> 후에도 원본 프레임 번호를 쓰는 것.</strong> 병합하면 프레임 번호와 <code>tcp.stream</code> 이 전부 재계산된다. 파일별 번호를 유지해야 하면 병합하지 말고 루프를 돈다.</li><li><strong><code>-Y</code> 를 여러 번 쓰는 것.</strong> 마지막 하나만 적용된다. 조건은 <code>&amp;&amp;</code> 로 합친다.</li><li><strong><code>editcap -t</code> 를 원본에 적용하는 것.</strong> 타임스탬프를 되돌릴 수 없다. 항상 사본에 적용하고 원본 해시를 먼저 남긴다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) tshark 가 실제로 받은 필터 문자열 확인 — 일부러 오류를 낸다
+tshark -r capture.pcapng -Y &#39;http.host == &quot;evil.com&quot; &amp;&amp;&amp;&#39; 2&gt;&amp;1 | head -2
+
+# 2) 같은 조건을 두 표기로 세어 같은지 본다
+tshark -r capture.pcapng -Y &#39;http.request.method == &quot;POST&quot;&#39; | wc -l
+tshark -r capture.pcapng -Y &#39;http.request &amp;&amp; frame contains 50:4f:53:54&#39; | wc -l
+
+# 3) 필드 존재 개수 vs 값 비교 개수
+tshark -r capture.pcapng -Y &#39;http.host&#39; | wc -l
+tshark -r capture.pcapng -Y &#39;http.host contains &quot;example&quot;&#39; | wc -l
+
+# 4) 필드 이름이 이 버전에 있는지
+tshark -G fields | grep -P &#39;\thttp\.host\t&#39; | head -1
+tshark -v | head -1
+
+# 5) GUI 와 대조 — 같은 필터를 GUI 입력창에 넣고 우하단 Displayed 개수 비교</code></pre></div>
+<p>1)과 5)를 함께 쓰면 &quot;필터가 틀렸는가 / 셸이 먹었는가 / 버전에 필드가 없는가&quot;가 완전히 갈린다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;내부 호스트가 접속한 C2 도메인 하나를 찾으세요. HTTP Host 헤더에 있습니다.&quot;
+첨부: beacon.pcapng (24,880 packets)
+환경: Windows 10, PowerShell 7.4
+
+1. 첫 시도 (실패)
+   PS&gt; tshark -r beacon.pcapng -Y &#39;http.host == &quot;cdn-update.example.net&quot;&#39; -c 5
+   (아무 출력 없음, 오류도 없음)
+
+   &quot;도메인이 틀렸나?&quot; 하고 도메인만 여러 번 바꿔 넣었지만 계속 0줄.
+
+2. 무엇이 잘못됐나 — tshark 가 받은 문자열을 되읽는다
+   PS&gt; tshark -r beacon.pcapng -Y &#39;http.host == &quot;cdn-update.example.net&quot; &amp;&amp;&amp;&#39;
+   tshark: &quot;http.host == cdn-update.example.net &amp;&amp;&amp;&quot; isn&#39;t a valid display filter: ...
+                        ^^^^ 큰따옴표가 사라졌다
+
+   원인: PowerShell 이 네이티브 exe 에 인자를 넘길 때 안쪽 큰따옴표를 벗겼다.
+        tshark 는 `http.host == cdn-update.example.net` 을 받았고,
+        이것은 문법상 유효하지 않거나 다르게 해석되어 0줄이 되었다.
+
+3. 접근 변경 — 안쪽 큰따옴표를 \&quot; 로 이스케이프
+   PS&gt; tshark -r beacon.pcapng -Y &#39;http.host == \&quot;cdn-update.example.net\&quot;&#39; -c 5
+   (여전히 0줄)
+
+   -&gt; 인용은 고쳐졌다. 이제는 정말 값이 틀린 것이다.
+      필터를 통째로 고치지 말고 넓은 쪽에서 다시 시작한다.
+
+4. 단계적으로 좁힌다 — 값을 모를 때는 필드 존재만
+   PS&gt; tshark -r beacon.pcapng -n -Y &#39;http.host&#39; -T fields -e http.host |
+         Group-Object | Sort-Object Count -Descending | Select-Object -First 6 Count, Name
+
+   Count  Name
+   1842   cdn.example.com
+    311   shop.example.com
+    288   ocsp.digicert.com
+    204   updatesvc-cdn.example.net      &lt;-- 이름이 비슷하지만 다르다
+      9   www.example.org
+
+   -&gt; 기억한 도메인은 cdn-update... 였지만 실제는 updatesvc-cdn... 이었다.
+
+5. 비콘 여부 확정 — 요청 간격이 일정한지
+   PS&gt; tshark -r beacon.pcapng -n -Y &#39;http.host contains \&quot;updatesvc\&quot;&#39; `
+         -T fields -e frame.time_epoch -e http.request.uri |
+         Select-Object -First 6
+
+   1773645302.418221  /api/v1/ping
+   1773645362.501990  /api/v1/ping
+   1773645422.489113  /api/v1/ping
+   1773645482.512004  /api/v1/ping
+   1773645542.498771  /api/v1/ping
+   1773645602.505330  /api/v1/ping
+
+   간격이 정확히 60초 ±0.1초. 사람 트래픽이 아니다. C2 비콘 확정.
+
+6. 시각 환산
+   1773645302 -&gt; UTC 2026-03-16 09:55:02 -&gt; KST 2026-03-16 18:55:02
+
+7. 이식 가능한 형태로 고정 — 따옴표를 없앤다
+   PS&gt; tshark -r beacon.pcapng -n -Y &#39;http.host contains 75:70:64:61:74:65:73:76:63&#39; `
+         -T fields -e frame.time_epoch -e http.host -e http.request.uri
+   (bash / cmd / PowerShell 어디서든 같은 문자열로 동작한다)
+
+정답: updatesvc-cdn.example.net (60초 간격 비콘)</code></pre></div>
+<p>1단계에서 &quot;0줄이니까 도메인이 틀렸다&quot;고 결론짓고 도메인만 바꿔 넣은 것이 시간 낭비였다. <strong>0줄과 오류를 구분하고, 인용을 먼저 검증한 다음 값을 의심하는 순서</strong>가 정답이다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li>오류인가 0줄인가 — 오류면 인용/문법, 0줄이면 값/필드</li><li>일부러 <code>&amp;&amp;&amp;</code> 를 붙여 tshark 가 받은 필터 문자열을 되읽었는가</li><li>셸에 맞는 인용을 썼는가 — bash <code>&#39;…&quot;…&quot;…&#39;</code> / cmd <code>&quot;…\&quot;…\&quot;…&quot;</code> / PowerShell <code>&#39;…\&quot;…\&quot;…&#39;</code></li><li>PowerShell 이면 <code>--%</code> 로 우회해 봤는가, <code>$PSNativeCommandArgumentPassing</code> 을 확인했는가</li><li><code>-c 5</code> 를 붙여 빠르게 반복했는가</li><li><code>필드명만</code> 쓴 필터로 실제 값 목록을 먼저 뽑았는가</li><li><code>==</code> 대신 <code>contains</code> 로 완화해 봤는가</li><li><code>contains</code>(대소문자 구분) 를 <code>matches</code>(무시) 로 바꿔 봤는가</li><li><code>matches</code> 정규식에 raw string 접두 <code>r</code> 을 붙였는가</li><li><code>-2</code> 가 필요한 필드(<code>http.time</code>, <code>http.response_in</code>)인가</li><li><code>tshark -G fields | grep &lt;조각&gt;</code> 으로 이 버전에 필드가 있는지 확인했는가</li><li><code>!=</code> 를 <code>!(… == …)</code> 로 바꿔 봤는가</li><li>필터를 문서에서 복사했는가 — 둥근 따옴표/전각 공백을 지우고 직접 타이핑</li><li>파일이 여러 개인가 → <code>mergecap</code> 또는 루프</li><li>파일이 너무 큰가 → <code>editcap -A/-B</code> 로 시간 범위를 먼저 잘라낸다</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-010 — Wireshark tshark man page: <code>-Y</code>(디스플레이 필터, 단일 패스), <code>-R</code>(1차 패스 읽기 필터, <code>-2</code> 필요), <code>-2</code>(2-pass, 되감기 가능한 입력 필요), <code>-f</code>(pcap-filter), <code>-c</code>(필터에 걸러진 패킷도 포함), <code>-G fields</code></li><li>SRC-002 — Wireshark Display Filter Reference: <code>http.host</code>, <code>http.time</code>, <code>http.response_in</code>, <code>dns.qry.name</code>, <code>frame.time_epoch</code>, <code>tcp.stream</code> 필드 정의</li><li>Wireshark User&#39;s Guide &quot;Building Display Filter Expressions&quot; 절: 비교 연산자와 영문 별칭(<code>eq</code>/<code>any_eq</code>, <code>ne</code>/<code>all_ne</code>, <code>all_eq</code>/<code>===</code>, <code>any_ne</code>/<code>!==</code>), <code>contains</code> 의 콜론 구분 바이트열 지원, <code>matches</code> 가 대소문자를 구분하지 않는다는 점, raw string 접두 <code>r</code>, 문자열 리터럴은 큰따옴표라는 규칙, Wireshark 3.6 에서 <code>!=</code> 의미가 <code>all_ne</code> 로 변경된 사실</li><li>PowerShell 의 네이티브 명령 인자 전달 방식은 버전과 <code>$PSNativeCommandArgumentPassing</code> 설정에 따라 달라진다. 7.3 이상에서 <code>Standard</code> 모드면 <code>\&quot;</code> 대신 <code>&quot;</code> 를 그대로 쓴다. <strong>실제 환경에서 <code>&amp;&amp;&amp;</code> 되읽기로 한 번 확인한 뒤 형태를 고정할 것</strong></li><li><code>editcap -A/-B</code> 의 시각 문법은 버전에 따라 <code>YYYY-MM-DDTHH:MM:SS</code>(ISO 8601) 와 <code>YYYY-MM-DD HH:MM:SS</code> 를 각각 받으므로 <code>editcap -h</code> 로 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./tshark-basics.html">
+    <span class="rel-id">FOR-0184 · Network/PCAP</span>
+    tshark 옵션 레퍼런스: -r -Y -T fields -z 를 한 장에
+  </a>
+  <a class="related-item" href="./wireshark-30sec-triage.html">
+    <span class="rel-id">FOR-0146 · Network/PCAP</span>
+    Wireshark 30초 트리아지: pcap을 받고 처음 할 다섯 가지
+  </a>
+  <a class="related-item" href="./protocol-hierarchy.html">
+    <span class="rel-id">FOR-0148 · Network/PCAP</span>
+    Protocol Hierarchy: 프로토콜 비중과 End Packets 읽는 법
+  </a>
+  <a class="related-item" href="./capture-vs-display-filter.html">
+    <span class="rel-id">FOR-0147 · Network/PCAP</span>
+    Capture Filter와 Display Filter 차이: 필터가 안 먹을 때
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./tshark-basics.html"><span class="rel-id">← FOR-0184</span>tshark 옵션 레퍼런스: -r -Y -T fields -z 를 한 장에</a>
+<a class="related-item" href="./chrome-history.html"><span class="rel-id">FOR-0191 →</span>Chrome History DB 구조: urls / visits / downloads 읽기</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계--y--r--2-를-구분한다">1단계 — `-Y` / `-R` / `-2` 를 구분한다</a></li>
+<li class="toc-l3"><a href="#2단계-셸별-인용-세-환경-대조표">2단계 — 셸별 인용: 세 환경 대조표</a></li>
+<li class="toc-l3"><a href="#3단계-따옴표를-아예-안-쓰는-회피법">3단계 — 따옴표를 아예 안 쓰는 회피법</a></li>
+<li class="toc-l3"><a href="#4단계-필터-문법-오류-진단표">4단계 — 필터 문법 오류 진단표</a></li>
+<li class="toc-l3"><a href="#5단계-필터를-단계적으로-좁힌다">5단계 — 필터를 단계적으로 좁힌다</a></li>
+<li class="toc-l3"><a href="#6단계-여러-파일을-한-번에">6단계 — 여러 파일을 한 번에</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

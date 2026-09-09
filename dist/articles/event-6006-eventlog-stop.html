@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Event ID 6006 EventLog 서비스 종료: 정상 종료와 강제 차단을 가른다 · FOR-0094 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Event%20Log">Event Log</a> / FOR-0094
+      </div>
+      <header class="article-head">
+        <h1>Event ID 6006 EventLog 서비스 종료: 정상 종료와 강제 차단을 가른다</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Event Log</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>6006은 EventLog 서비스가 정상적인 종료 절차 안에서 멈췄음을 기록하므로 정상 종료 시각의 지표다. 6006 없이 다음 6005 가 나오면 비정상 종료이고, 그때 종료 시각은 다음 부팅 직후의 6008 페이로드와 Kernel-Power 41 에서 얻는다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>EvtxECmd, Event Viewer, PowerShell, Registry Explorer, Timeline Explorer</td></tr>
+<tr><th>artifact</th><td><code>System.evtx</code> · <code>6006</code> · <code>6008</code> · <code>Kernel-Power 41</code> · <code>1074</code> · <code>종료 시각</code> · <code>EVTX</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Windows\System32\winevt\Logs\System.evtx</code> · <code>C:\Windows\System32\config\SYSTEM</code> · <code>C:\Windows\MEMORY.DMP</code> · <code>C:\Windows\Minidump</code></td></tr>
+<tr><th>레지스트리</th><td><code>HKLM\SYSTEM\CurrentControlSet\Control\Windows</code> · <code>HKLM\SYSTEM\CurrentControlSet\Control\CrashControl</code></td></tr>
+<tr><th>Event ID</th><td><code>6006</code> · <code>6008</code> · <code>1074</code> · <code>41</code></td></tr>
+<tr><th>로그 필드</th><td><code>TimeCreated</code> · <code>SystemTime</code> · <code>EventRecordID</code> · <code>Computer</code> · <code>BugcheckCode</code> · <code>StopTime</code></td></tr>
+<tr><th>파일 형식</th><td><code>evtx</code></td></tr>
+<tr><th>검색 별칭</th><td>6006 · 언제 껐나 · 종료 시각 찾기 · 비정상 종료 판정 · 6008 무슨 뜻 · 강제 종료 흔적 · 누가 껐나 · kernel-power 41</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>6006은 EventLog 서비스가 정상적인 종료 절차 안에서 멈췄음을 기록하므로 <strong>정상 종료 시각의 지표</strong>다. <strong>6006 없이 다음 6005 가 나오면 비정상 종료</strong>이고, 그때 종료 시각은 다음 부팅 직후의 6008 페이로드와 Kernel-Power 41 에서 얻는다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;시스템이 언제 종료됐나&quot;</li><li>&quot;정상 종료인가 강제 차단인가&quot; — 반포렌식 판정의 출발점</li><li>&quot;누가 왜 껐나&quot; (1074)</li><li>&quot;종료 직전에 무슨 일이 있었나&quot; — 공격의 마지막 국면이 여기 있다</li><li>&quot;시스템 가동 구간표를 만들어 사건을 배치해야 한다&quot;</li><li>&quot;메모리 증거가 왜 없나&quot; (전원 차단으로 파괴)</li></ul>
+<p>종료는 사건의 끝을 표시한다. <strong>공격자가 흔적을 지운 뒤 전원을 내리는 패턴</strong>이 흔하므로, 종료 방식 자체가 증거가 된다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>지문에 &quot;종료&quot;, &quot;껐다&quot;, &quot;전원&quot;, &quot;마지막으로&quot; → 6006 + 6008 확인</li><li>로그가 특정 시각에서 뚝 끊겼다 → 그 지점이 종료 또는 로그 삭제</li><li>6006 이 없다 → 비정상 종료. 6008 / 41 로 이동</li><li>메모리 덤프가 없거나 손상됐다 → 강제 차단 가능성</li><li>1102(로그 삭제) 직후 로그가 끝난다 → 삭제 후 전원 차단. 전형적인 반포렌식 순서</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\System.evtx&#39;;Id=6006,6008,41,1074}</code></pre></div>
+<p>종료 관련 이벤트를 한 표로 세운다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\System.evtx&#39;;Id=6005,6006,6008,41,1074,13} -ErrorAction SilentlyContinue |
+  Select-Object @{n=&#39;UTC&#39;;e={$_.TimeCreated.ToUniversalTime().ToString(&#39;yyyy-MM-dd HH:mm:ss&#39;)}},
+                @{n=&#39;KST&#39;;e={$_.TimeCreated.ToUniversalTime().AddHours(9).ToString(&#39;yyyy-MM-dd HH:mm:ss&#39;)}},
+                Id, RecordId,
+                @{n=&#39;Msg&#39;;e={($_.Message -split &quot;`n&quot;)[0]}} |
+  Sort-Object UTC | Format-Table -AutoSize</code></pre></div>
+<p>출력 예시:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">UTC                 KST                 Id   RecordId Msg
+---                 ---                 --   -------- ---
+2026-03-11 02:14:07 2026-03-11 11:14:07 6005    10021 이벤트 로그 서비스가 시작되었습니다.
+2026-03-13 21:38:02 2026-03-14 06:38:02 1074    10390 프로세스 C:\Windows\System32\shutdown.exe 가 종료를 시작했습니다...
+2026-03-13 21:38:44 2026-03-14 06:38:44 6006    10394 이벤트 로그 서비스가 중지되었습니다.
+2026-03-14 06:02:09 2026-03-14 15:02:09 41      10401 시스템이 먼저 정상적으로 종료되지 않고 다시 부팅되었습니다.
+2026-03-14 06:02:20 2026-03-14 15:02:20 6008    10406 이전 시스템 종료(2026-03-13 23:51:07)가 예기치 않았습니다.</code></pre></div>
+<p>이 표에서 <strong>1074 → 6006 은 정상 종료</strong>, <strong>41 + 6008 은 비정상 종료</strong>로 읽는다. 위 예에서는 03-13 21:38 에 정상 종료가 있었고, 그 뒤 다시 켜진 다음 03-13 23:51:07 에 비정상 종료가 한 번 더 있었다.</p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-6006-의-성질을-이해한다">1단계 — 6006 의 성질을 이해한다</h3>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>값</th></tr></thead><tbody><tr><td>채널</td><td><code>System</code> (<code>C:\Windows\System32\winevt\Logs\System.evtx</code>)</td></tr><tr><td>Provider / Source</td><td><code>EventLog</code></td></tr><tr><td>메시지</td><td>&quot;The Event log service was stopped.&quot; (한국어 OS: &quot;이벤트 로그 서비스가 중지되었습니다.&quot;)</td></tr><tr><td>페이로드</td><td>사실상 없다. <strong>값은 시각 자체</strong></td></tr><tr><td>감사 정책 필요 여부</td><td><strong>불필요.</strong> 기본으로 기록된다</td></tr><tr><td>언제 기록되나</td><td><strong>정상 종료/재시작 절차에서 서비스가 멈출 때</strong></td></tr><tr><td>기록되지 않는 경우</td><td>전원 차단, 강제 리셋, 배터리 소진, 커널 크래시(BSOD), VM 강제 정지</td></tr><tr><td>대응 시작 이벤트</td><td>6005 (<a href="./event-6005-eventlog-start.html">FOR-0093</a>)</td></tr></tbody></table></div>
+<p><strong>6006 은 &quot;종료가 있었다&quot;가 아니라 &quot;질서 있는 종료가 있었다&quot;를 뜻한다.</strong> 이 구분이 이 글의 전부다.</p>
+<p>원본 XML:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">&lt;Event xmlns=&quot;http://schemas.microsoft.com/win/2004/08/events/event&quot;&gt;
+  &lt;System&gt;
+    &lt;Provider Name=&quot;EventLog&quot; /&gt;
+    &lt;EventID Qualifiers=&quot;32768&quot;&gt;6006&lt;/EventID&gt;
+    &lt;Level&gt;4&lt;/Level&gt;
+    &lt;TimeCreated SystemTime=&quot;2026-03-13T21:38:44.8812470Z&quot; /&gt;
+    &lt;EventRecordID&gt;10394&lt;/EventRecordID&gt;
+    &lt;Channel&gt;System&lt;/Channel&gt;
+    &lt;Computer&gt;WIN10-DEV&lt;/Computer&gt;
+  &lt;/System&gt;
+  &lt;EventData /&gt;
+&lt;/Event&gt;</code></pre></div>
+<p><code>TimeCreated SystemTime</code> 은 <strong>UTC</strong> 로 저장된다. Event Viewer 는 로컬 시간대로 변환해 표시하므로 두 화면의 숫자가 다르다. <strong>KST 답은 UTC + 9시간</strong>(21:38:44Z → 다음 날 06:38:44 KST). 종료는 밤에 몰리므로 날짜가 바뀌는 일이 특히 많다. 시스템 시간대는 SYSTEM hive 의 <code>TimeZoneInformation</code> 으로 확정한다(<a href="./system-timezone.html">FOR-0054</a>).</p>
+<h3 id="2단계-판정-체인-6006-유무로-갈라진다">2단계 — 판정 체인: 6006 유무로 갈라진다</h3>
+<p><strong>이 절차가 이 글의 핵심이다.</strong></p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">부팅(6005) 발견
+   |
+   +-- 다음 6005 사이에 6006 이 있는가?
+        |
+        +-- 있다  --&gt; 정상 종료. 종료 시각 = 6006 시각
+        |             1074 를 찾아 &quot;누가 왜&quot; 를 채운다
+        |             Kernel-General 13 으로 커널 종료 시각 교차확인
+        |
+        +-- 없다  --&gt; 비정상 종료 확정
+                      |
+                      +-- 다음 부팅 직후 6008 이 있는가?
+                      |     --&gt; 있다: 페이로드의 시각 = 실제 마지막 종료 시각
+                      |
+                      +-- Kernel-Power 41 이 있는가?
+                      |     --&gt; 있다: 정상 종료 없이 재부팅됨
+                      |          BugcheckCode 가 0 이 아니면 커널 크래시(BSOD)
+                      |          0 이면 전원 차단/강제 리셋 쪽
+                      |
+                      +-- 1074 가 있는가?
+                            --&gt; 있다: 종료 요청은 있었으나 완료되지 못했다
+                            --&gt; 없다: 요청 자체가 없었다 = 전원 차단/리셋</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>조합</th><th>판정</th><th>해석</th></tr></thead><tbody><tr><td><code>1074</code> → <code>6006</code> → (다음) <code>6005</code></td><td>정상 종료</td><td>사용자/프로세스가 요청하고 질서 있게 내려갔다</td></tr><tr><td><code>6006</code> 만 있고 <code>1074</code> 없음</td><td>정상 종료</td><td>요청 이벤트가 로그에서 밀렸거나 다른 경로의 종료</td></tr><tr><td><code>6006</code> 없음 + <code>6008</code> + <code>41</code>, <code>BugcheckCode</code> = 0</td><td><strong>전원 차단/강제 리셋</strong></td><td>반포렌식 의심. 아래 4단계</td></tr><tr><td><code>6006</code> 없음 + <code>6008</code> + <code>41</code>, <code>BugcheckCode</code> ≠ 0</td><td><strong>커널 크래시(BSOD)</strong></td><td><code>MEMORY.DMP</code> / <code>Minidump</code> 확인</td></tr><tr><td><code>6006</code> 없음 + <code>6008</code> 없음 + <code>41</code> 없음</td><td>로그가 잘렸거나 삭제됐다</td><td>1102 / 104 / 롤오버 확인</td></tr><tr><td><code>1074</code> 있음 + <code>6006</code> 없음</td><td>종료를 시작했지만 완료 전에 전원이 끊겼다</td><td>종료 중 강제 차단</td></tr><tr><td>마지막 <code>6005</code> 뒤에 아무 종료 이벤트 없음</td><td>이미지 획득 시점까지 가동 중이었다</td><td>라이브 획득이면 정상</td></tr></tbody></table></div>
+<h3 id="3단계-6008-에서-실제-종료-시각을-꺼낸다">3단계 — 6008 에서 실제 종료 시각을 꺼낸다</h3>
+<p>6008 은 <strong>부팅 직후에 기록되지만, 그 내용은 이전 종료에 관한 것</strong>이다.</p>
+<div class="table-wrap"><table><thead><tr><th>구분</th><th>시각</th></tr></thead><tbody><tr><td>6008 의 <code>TimeCreated</code></td><td><strong>이 부팅</strong>의 시각 (종료 시각이 아니다)</td></tr><tr><td>6008 의 페이로드에 담긴 날짜/시각</td><td><strong>직전의 비정상 종료 시각</strong></td></tr></tbody></table></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 6008 의 기록 시각과 페이로드를 함께 본다
+Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\System.evtx&#39;;Id=6008} |
+  ForEach-Object {
+    [pscustomobject]@{
+      기록시각_UTC = $_.TimeCreated.ToUniversalTime().ToString(&#39;yyyy-MM-dd HH:mm:ss&#39;)
+      페이로드     = ($_.Message -replace &quot;`r?`n&quot;, &#39; &#39;)
+    }
+  } | Format-List</code></pre></div>
+<p>출력 예시:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">기록시각_UTC : 2026-03-14 06:02:20
+페이로드     : 이전 시스템 종료(2026-03-13 23:51:07)가 예기치 않았습니다.</code></pre></div>
+<p><strong>답으로 적어야 하는 종료 시각은 <code>2026-03-13 23:51:07</code> 이다.</strong> 기록 시각 <code>06:02:20</code> 은 부팅 시각이다. 이 둘을 바꿔 적는 실수가 가장 흔하다.</p>
+<p>6008 페이로드의 시각이 UTC 인지 로컬인지는 렌더링 방식에 따라 달라질 수 있으므로, <strong>반드시 <code>ShutdownTime</code> 레지스트리 값과 대조해 확정한다.</strong></p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># SYSTEM hive 의 마지막 종료 시각 (FILETIME, 8바이트 리틀엔디언)
+$bytes = (Get-ItemProperty &#39;HKLM:\SYSTEM\CurrentControlSet\Control\Windows&#39; -Name ShutdownTime).ShutdownTime
+[DateTime]::FromFileTimeUtc([BitConverter]::ToInt64($bytes, 0)).ToString(&#39;yyyy-MM-dd HH:mm:ss&#39;) + &#39; UTC&#39;</code></pre></div>
+<p>FILETIME 은 <strong>1601-01-01 UTC 기준 100나노초 단위</strong>이며, Unix epoch 와의 차이는 <code>11644473600</code> 초다. 오프라인 hive 라면 Registry Explorer 로 같은 값을 읽는다.</p>
+<h3 id="4단계-1074-를-읽어-누가-왜를-채운다">4단계 — 1074 를 읽어 &quot;누가 왜&quot;를 채운다</h3>
+<p><strong>종료 관련 이벤트 중 정보량이 가장 많은 것은 1074 다.</strong> 6006 은 시각만 주지만, 1074 는 종료를 요청한 프로세스·사용자·이유·종료 유형·주석까지 담는다.</p>
+<div class="table-wrap"><table><thead><tr><th>1074 가 담는 정보</th><th>포렌식 활용</th></tr></thead><tbody><tr><td>종료를 시작한 <strong>프로세스 이름</strong></td><td><code>shutdown.exe</code> → 명령행 종료. <code>explorer.exe</code> → 시작 메뉴. <code>wusa.exe</code>/<code>TrustedInstaller.exe</code> → 업데이트</td></tr><tr><td>요청한 <strong>사용자 계정</strong></td><td>그 시각의 4624 세션과 연결</td></tr><tr><td><strong>이유(reason) 텍스트와 코드</strong></td><td>계획된 종료인지 예기치 않은 것인지, 운영 체제/애플리케이션/하드웨어 구분</td></tr><tr><td><strong>종료 유형</strong></td><td><code>restart</code> 인지 <code>power off</code> 인지</td></tr><tr><td>주석(comment)</td><td><code>shutdown /c &quot;...&quot;</code> 로 넣은 문자열이 그대로 남는다</td></tr><tr><td>대상 컴퓨터 이름</td><td>원격 종료(<code>shutdown /m \\host</code>) 판별</td></tr></tbody></table></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\System.evtx&#39;;Id=1074} |
+  Select-Object @{n=&#39;UTC&#39;;e={$_.TimeCreated.ToUniversalTime()}}, Message | Format-List</code></pre></div>
+<p>메시지에 렌더된 값을 그대로 읽는 편이 안전하다. 원본 XML 에서는 이 값들이 <strong>이름 없는 위치 기반 <code>param1</code>~<code>param7</code> 형태</strong>로 저장되므로, 파서에 따라 순서만 보이고 의미가 붙지 않는다.</p>
+<p>판정 포인트:</p>
+<div class="table-wrap"><table><thead><tr><th>관찰</th><th>해석</th></tr></thead><tbody><tr><td>1074 의 프로세스가 <code>shutdown.exe</code> 이고 사용자가 공격 계정</td><td>공격자가 직접 재부팅했다. 지속성 발동을 확인하려는 목적일 수 있다</td></tr><tr><td>1074 가 원격 종료(<code>\\host</code> 형태)</td><td>다른 호스트에서 명령을 보냈다. 측면 이동 정황</td></tr><tr><td>1074 가 아예 없는데 시스템이 꺼졌다</td><td><strong>종료 요청이 없었다 = 전원 차단/강제 리셋</strong></td></tr><tr><td>1074 뒤에 6006 이 없다</td><td>종료 절차 중에 전원이 끊겼다</td></tr><tr><td>업데이트 프로세스의 1074</td><td>정상 재부팅. 배경 노이즈</td></tr></tbody></table></div>
+<h3 id="5단계-강제-종료를-반포렌식으로-해석한다">5단계 — 강제 종료를 반포렌식으로 해석한다</h3>
+<p>전원을 내리는 행위는 단순한 사고일 수도 있지만, 침해 사건의 마지막 국면에서는 <strong>의도적 증거 파괴</strong>일 수 있다.</p>
+<div class="table-wrap"><table><thead><tr><th>강제 종료가 파괴하는 것</th><th>이유</th></tr></thead><tbody><tr><td><strong>메모리 증거</strong></td><td>프로세스 목록, 복호화된 자격증명, C2 연결, 인젝션 코드가 전부 사라진다</td></tr><tr><td><strong>아직 디스크에 기록되지 않은 이벤트 로그</strong></td><td>EventLog 서비스가 정상 종료 절차에서 버퍼를 내보내지 못한다. 마지막 몇 초~몇 분의 로그가 유실될 수 있다</td></tr><tr><td>파일 시스템 일관성</td><td><code>$LogFile</code> 에 미완료 트랜잭션이 남는다. 반대로 이것이 증거가 되기도 한다</td></tr><tr><td>임시 파일·프리페치 갱신</td><td>마지막 실행 정보가 갱신되지 않을 수 있다</td></tr><tr><td>서비스의 정상 종료 로그(7036 등)</td><td>남지 않는다</td></tr></tbody></table></div>
+<p>역으로, 강제 종료는 <strong>자신의 흔적을 남긴다.</strong></p>
+<div class="table-wrap"><table><thead><tr><th>강제 종료가 남기는 흔적</th><th>어디서 확인</th></tr></thead><tbody><tr><td>다음 부팅의 <code>6008</code></td><td>System 채널. 종료 시각 포함</td></tr><tr><td><code>Kernel-Power 41</code></td><td>System 채널. 정상 종료 없이 재부팅됨</td></tr><tr><td><code>6006</code> 의 부재</td><td>가동 구간표의 구멍</td></tr><tr><td>EVTX 파일 헤더의 dirty 상태</td><td>EVTX 포맷에는 파일이 정상적으로 닫히지 않았음을 나타내는 플래그가 있다</td></tr><tr><td><code>$LogFile</code> 의 미완료 트랜잭션</td><td>NTFS 저널</td></tr><tr><td>크래시 덤프 유무</td><td><code>C:\Windows\MEMORY.DMP</code>, <code>C:\Windows\Minidump</code> (BSOD 였다면 존재)</td></tr></tbody></table></div>
+<p><strong>판정 문장 예:</strong> &quot;6006 이 없고 다음 부팅에서 6008 과 Kernel-Power 41(BugcheckCode 0)이 관측되며 1074 가 존재하지 않으므로, 종료 요청 없이 전원이 차단된 것이다. 1102(로그 삭제)가 그 직전 4분 안에 있었으므로 흔적 삭제 후 강제 차단으로 판단한다.&quot;</p>
+<h3 id="6단계-종료-직전-구간을-집중-분석한다">6단계 — 종료 직전 구간을 집중 분석한다</h3>
+<p><strong>공격의 마지막 행동은 종료 직전에 몰린다.</strong> 종료 시각이 확정되면 그 앞 구간을 좁게 잘라 전수 검토한다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 종료 시각 기준 앞 15분을 모든 채널에서 뽑는다
+$stop  = [datetime]::ParseExact(&#39;2026-03-13 23:51:07&#39;, &#39;yyyy-MM-dd HH:mm:ss&#39;, $null)
+$from  = $stop.AddMinutes(-15)
+
+Get-ChildItem &#39;C:\case\winevt\Logs\*.evtx&#39; | ForEach-Object {
+  Get-WinEvent -FilterHashtable @{Path=$_.FullName; StartTime=$from; EndTime=$stop} -ErrorAction SilentlyContinue
+} |
+  Select-Object @{n=&#39;UTC&#39;;e={$_.TimeCreated.ToUniversalTime()}}, LogName, Id,
+                @{n=&#39;Msg&#39;;e={($_.Message -split &quot;`n&quot;)[0]}} |
+  Sort-Object UTC | Format-Table -AutoSize</code></pre></div>
+<p>이 구간에서 특히 찾을 것:</p>
+<div class="table-wrap"><table><thead><tr><th>찾을 것</th><th>Event ID / 위치</th><th>의미</th></tr></thead><tbody><tr><td>로그 삭제</td><td>1102 (Security), 104 (System)</td><td>흔적 제거 (<a href="./event-1102-log-cleared.html">FOR-0091</a>)</td></tr><tr><td>감사 정책 변경</td><td>4719</td><td>기록을 끊었다</td></tr><tr><td>이벤트 로그 서비스 종료</td><td>1100</td><td>정상 종료 시에도 나오지만 순서를 본다</td></tr><tr><td>대량 파일 삭제</td><td><code>$UsnJrnl</code> 의 <code>FileDelete</code>, 4663</td><td>데이터 파괴/증거 삭제</td></tr><tr><td>섀도 복사본 삭제</td><td>4688 의 <code>vssadmin delete shadows</code></td><td>복구 방해</td></tr><tr><td>아카이브 생성·반출</td><td>4688 의 <code>7z</code>/<code>rar</code>/<code>rclone</code>, 프록시 로그</td><td>데이터 반출 완료</td></tr><tr><td>서비스 삭제</td><td>7045 이후 레지스트리 부재</td><td>지속성 회수</td></tr><tr><td>계정 삭제/비활성</td><td>4726, 4725</td><td>계정 흔적 제거</td></tr><tr><td>시각 변경</td><td>4616</td><td>타임라인 교란</td></tr></tbody></table></div>
+<h3 id="7단계-가동-구간표를-만들어-사건을-배치한다">7단계 — 가동 구간표를 만들어 사건을 배치한다</h3>
+<p>부팅(6005)과 종료(6006 또는 6008 페이로드)를 짝지어 표를 만든다. <strong>이 표가 모든 타임라인의 골격이다.</strong></p>
+<div class="table-wrap"><table><thead><tr><th>세션</th><th>부팅 (UTC)</th><th>종료 (UTC)</th><th>가동</th><th>종료 방식</th><th>근거</th></tr></thead><tbody><tr><td>1</td><td>2026-03-11 02:14:07</td><td>2026-03-13 21:38:44</td><td>67.4시간</td><td>정상</td><td><code>1074</code>(shutdown.exe) + <code>6006</code></td></tr><tr><td>2</td><td>2026-03-13 22:05:31</td><td>2026-03-13 23:51:07</td><td>1.8시간</td><td><strong>강제 차단</strong></td><td><code>6006</code> 부재, 다음 부팅의 <code>6008</code> + <code>41</code>, <code>1074</code> 없음</td></tr><tr><td>3</td><td>2026-03-14 06:02:11</td><td>(없음)</td><td>—</td><td>획득 시점까지 가동</td><td>마지막 <code>6005</code> 이후 종료 이벤트 없음</td></tr></tbody></table></div>
+<p>이제 임의의 이벤트를 세션에 배치할 수 있다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 관심 이벤트가 어느 세션에 속하는지
+$sessions = @(
+  [pscustomobject]@{ N=1; From=[datetime]&#39;2026-03-11T02:14:07Z&#39;; To=[datetime]&#39;2026-03-13T21:38:44Z&#39; },
+  [pscustomobject]@{ N=2; From=[datetime]&#39;2026-03-13T22:05:31Z&#39;; To=[datetime]&#39;2026-03-13T23:51:07Z&#39; },
+  [pscustomobject]@{ N=3; From=[datetime]&#39;2026-03-14T06:02:11Z&#39;; To=[datetime]&#39;9999-12-31T00:00:00Z&#39; }
+)
+
+$t = [datetime]&#39;2026-03-13T23:47:10Z&#39;
+($sessions | Where-Object { $t -ge $_.From -and $t -le $_.To }).N</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>배치 결과</th><th>판정</th></tr></thead><tbody><tr><td>사건 이벤트가 강제 차단된 세션의 <strong>끝 부분</strong>에 몰려 있다</td><td>활동 직후 전원을 내렸다. 반포렌식</td></tr><tr><td>지속성 흔적이 세션 2에 등록되고 세션 3에서 실행됐다</td><td>부팅 경계를 넘었다 → 지속성 확정 (<a href="./event-4608-startup.html">FOR-0092</a>)</td></tr><tr><td>세션 사이 공백(꺼져 있던 구간)에 사건 시각이 놓였다</td><td>시각이 잘못됐다. 4616 또는 타임스탬프 조작 확인</td></tr><tr><td>세션 2의 로그가 종료 몇 분 전부터 비어 있다</td><td>강제 차단으로 버퍼가 유실됐거나 로그를 지웠다</td></tr></tbody></table></div>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="table-wrap"><table><thead><tr><th>이벤트</th><th>채널</th><th>읽을 것</th><th>주의</th></tr></thead><tbody><tr><td><code>6006</code></td><td>System</td><td><code>TimeCreated</code>(UTC), <code>EventRecordID</code></td><td>페이로드 없음. <strong>정상 종료에서만 존재</strong></td></tr><tr><td><code>6008</code></td><td>System</td><td><code>TimeCreated</code>(= 부팅 시각), 페이로드의 날짜/시각(= <strong>이전 종료 시각</strong>)</td><td>두 시각을 혼동하지 않는다</td></tr><tr><td><code>41</code></td><td>System, Kernel-Power</td><td><code>BugcheckCode</code>, 전원 관련 타임스탬프 필드</td><td><code>BugcheckCode</code> ≠ 0 이면 커널 크래시. 필드 구성은 버전에 따라 다르다</td></tr><tr><td><code>1074</code></td><td>System, User32 등</td><td>렌더된 메시지 전체</td><td>원본 XML 은 이름 없는 <code>param1</code>~<code>param7</code>. 메시지를 읽는 편이 안전</td></tr><tr><td><code>13</code></td><td>System, Kernel-General</td><td><code>StopTime</code></td><td>커널 관점의 종료 시각. 6006 과 근접해야 한다</td></tr><tr><td><code>1100</code></td><td>Security</td><td><code>TimeCreated</code></td><td>이벤트 로그 서비스 종료. 정상 종료 시에도 기록된다</td></tr><tr><td><code>4609</code></td><td>Security</td><td><code>TimeCreated</code></td><td>Windows 종료(감사). 정상 종료에서만</td></tr><tr><td><code>ShutdownTime</code></td><td>SYSTEM hive</td><td>FILETIME 8바이트</td><td>마지막 종료 시각. 6006/6008 과 대조</td></tr></tbody></table></div>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>6006 에서 얻은 것(또는 부재)</th><th>다음 목표</th><th>확인할 것</th></tr></thead><tbody><tr><td>종료 시각</td><td>6005 (<a href="./event-6005-eventlog-start.html">FOR-0093</a>)</td><td>다음 부팅 시각, 가동 구간 완성</td></tr><tr><td>6006 부재</td><td>6008 / 41</td><td>실제 종료 시각과 강제 여부</td></tr><tr><td>종료 방식</td><td>1074</td><td>누가 왜 껐는지</td></tr><tr><td>종료 시각</td><td>그 앞 15분의 전 채널</td><td>공격의 마지막 행동</td></tr><tr><td>종료 시각</td><td>1102 / 104 (<a href="./event-1102-log-cleared.html">FOR-0091</a>)</td><td>종료 직전 로그 삭제</td></tr><tr><td>종료 시각</td><td><code>$UsnJrnl</code> / <code>$MFT</code> (<a href="./mft-basics.html">FOR-0021</a>)</td><td>종료 직전 파일 삭제·생성</td></tr><tr><td>강제 차단 판정</td><td><code>C:\Windows\MEMORY.DMP</code>, <code>Minidump</code></td><td>BSOD 였는지, 메모리 증거가 남았는지</td></tr><tr><td>강제 차단 판정</td><td><code>$LogFile</code></td><td>미완료 트랜잭션</td></tr><tr><td>가동 구간표</td><td>모든 사건 이벤트</td><td>세션 배치, 지속성 판정</td></tr><tr><td>종료 시각</td><td><code>ShutdownTime</code> (SYSTEM hive)</td><td>로그와 레지스트리의 정합성</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>로그의 마지막 레코드 시각을 종료 시각으로 답한다.</strong> 강제 차단에서는 종료 자체가 기록되지 않으므로 마지막 레코드는 종료와 무관한 아무 이벤트다. 종료 시각은 6006, 없으면 <strong>다음 부팅의 6008 페이로드</strong>에서 얻는다.</li><li><strong>6008 의 기록 시각을 종료 시각으로 읽는다.</strong> 6008 은 부팅 직후에 기록된다. 종료 시각은 페이로드 안에 있다. <strong>이것이 이 주제에서 가장 흔한 오답이다.</strong></li><li><strong>6006 이 없으니 로그가 손실됐다고 본다.</strong> 비정상 종료에서는 6006 이 원래 없다. 부재 자체가 판정 근거다.</li><li><strong>6006 이 있으면 무조건 정상 종료라고 본다.</strong> 6006 뒤에 다시 41/6008 이 나오면 그 이후 별도의 비정상 종료가 있었다는 뜻이다. 세션 단위로 끊어서 본다.</li><li><strong>1074 를 빠뜨린다.</strong> 종료 관련 이벤트 중 정보량이 가장 많다. &quot;누가 왜 껐나&quot;는 여기서만 나온다.</li><li><strong><code>param1</code>~<code>param7</code> 을 필드 이름으로 착각한다.</strong> 1074 의 원본 XML 은 이름 없는 위치 기반 데이터다. 의미는 렌더된 메시지에서 읽는다.</li><li><strong>강제 종료를 무조건 반포렌식으로 단정한다.</strong> 정전·하드웨어 장애·VM 강제 정지도 같은 흔적을 남긴다. <code>BugcheckCode</code>, 크래시 덤프, 직전 구간의 활동을 함께 보고 판단한다.</li><li><strong>UTC/로컬 혼동.</strong> EVTX <code>SystemTime</code> 은 UTC 다. 종료는 밤에 몰려 +9시간을 적용하면 날짜가 바뀐다. 6008 페이로드의 시각이 UTC 인지도 <code>ShutdownTime</code> 과 대조해 확인한다.</li><li><strong>종료 직전 구간을 건너뛴다.</strong> 사건의 결말(반출 완료, 로그 삭제, 서비스 회수)이 대부분 여기 있다. 종료 시각이 나오면 반드시 앞 구간을 좁게 훑는다.</li><li><strong>가동 구간표 없이 사건 시각을 나열한다.</strong> 시스템이 꺼져 있던 구간에 놓인 타임스탬프는 그 자체로 조작 신호다. 구간표가 있어야 그것을 알아챌 수 있다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) 종료 관련 이벤트 전체
+Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\System.evtx&#39;;Id=6006,6008,41,1074,13} -ErrorAction SilentlyContinue |
+  Select-Object @{n=&#39;UTC&#39;;e={$_.TimeCreated.ToUniversalTime()}}, Id, RecordId | Sort-Object UTC
+
+# 2) Security 채널의 종료 이벤트와 대조
+Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\Security.evtx&#39;;Id=4609,1100} -ErrorAction SilentlyContinue |
+  Select-Object @{n=&#39;UTC&#39;;e={$_.TimeCreated.ToUniversalTime()}}, Id
+
+# 3) 41 의 상세 (커널 크래시인지 전원 차단인지)
+Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\System.evtx&#39;;Id=41} | ForEach-Object {
+  ([xml]$_.ToXml()).Event.EventData.Data | Select-Object Name, &#39;#text&#39;
+}
+
+# 4) 1074 의 요청 주체와 이유
+Get-WinEvent -FilterHashtable @{Path=&#39;C:\case\System.evtx&#39;;Id=1074} | Format-List TimeCreated, Message
+
+# 5) 종료 직전 15분의 Security 채널
+$stop = [datetime]&#39;2026-03-13T23:51:07Z&#39;
+Get-WinEvent -FilterHashtable @{
+  Path=&#39;C:\case\Security.evtx&#39;; StartTime=$stop.AddMinutes(-15); EndTime=$stop
+} -ErrorAction SilentlyContinue | Sort-Object RecordId |
+  Select-Object @{n=&#39;UTC&#39;;e={$_.TimeCreated.ToUniversalTime()}}, Id</code></pre></div>
+<p>오프라인 레지스트리 대조:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Registry Explorer 로 SYSTEM hive 를 열고
+  SYSTEM\Select\Current                              -&gt; 1
+  SYSTEM\ControlSet001\Control\Windows\ShutdownTime   -&gt; FILETIME (마지막 종료 시각)
+  SYSTEM\ControlSet001\Control\CrashControl           -&gt; 덤프 설정 (덤프가 없는 이유 확인)</code></pre></div>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;시스템이 마지막으로 종료된 시각과 방식(정상/강제)을 판정하고,
+ 종료 직전 활동을 요약하세요.
+ 첨부: System.evtx, Security.evtx, SYSTEM hive&quot;
+
+1. 첫 시도 (실패):
+   System.evtx 의 마지막 레코드를 종료 시각으로 답했다.
+     Get-WinEvent -Path System.evtx -MaxEvents 1
+       2026-03-13 23:50:58Z  Id 7036  &quot;Windows Update 서비스가 중지됨&quot;
+   &quot;23:50:58Z 에 종료&quot; 라고 적었다.
+
+2. 왜 틀렸나:
+   7036 은 서비스 상태 변경일 뿐 시스템 종료가 아니다.
+   6006 을 확인하니 이 구간에는 0건.
+   즉 정상 종료 절차가 실행되지 않았다.
+   로그의 마지막 레코드는 &quot;마지막으로 기록에 성공한 이벤트&quot;일 뿐이며,
+   강제 차단에서는 종료 자체가 기록되지 않는다.
+   -&gt; 마지막 레코드를 종료 시각으로 쓴 것이 실수.
+
+3. 방향 전환 — 다음 부팅의 6008 을 본다:
+   6005  2026-03-14 06:02:11Z  (다음 부팅)
+   41    2026-03-14 06:02:09Z  Kernel-Power, BugcheckCode = 0
+   6008  2026-03-14 06:02:20Z  &quot;이전 시스템 종료(2026-03-13 23:51:07)가 예기치 않았습니다&quot;
+
+   실제 종료 시각 = 2026-03-13 23:51:07.
+   마지막 레코드(23:50:58)보다 9초 뒤였다.
+
+4. 강제 차단 확증:
+   1074 검색 -&gt; 이 구간에 0건. 종료 요청 자체가 없었다.
+   BugcheckCode = 0 -&gt; BSOD 가 아니다.
+   C:\Windows\MEMORY.DMP, Minidump -&gt; 없음.
+   =&gt; 전원 차단 또는 강제 리셋.
+
+5. 시각 정합성:
+   SYSTEM hive ShutdownTime = 2026-03-13 23:51:07 UTC
+   -&gt; 6008 페이로드와 일치. 페이로드 시각이 UTC 기준임을 확인했다.
+
+6. 종료 직전 15분 (23:36 ~ 23:51) 전 채널:
+   23:38:14Z  4688  vssadmin.exe delete shadows /all /quiet
+   23:41:52Z  4688  7z.exe a -p out.7z C:\Users\jhkim\Documents
+   23:45:03Z  4104  Invoke-WebRequest ... (반출)
+   23:47:10Z  $UsnJrnl FileDelete 대량 (도구 파일 정리)
+   23:48:22Z  1102  Security 로그 삭제 (svc_backup)
+   23:50:58Z  7036  Windows Update 서비스 중지
+   (23:51:07Z 전원 차단)
+
+   순서가 명확하다: 복구 방해 -&gt; 아카이브 -&gt; 반출 -&gt; 도구 삭제 -&gt; 로그 삭제 -&gt; 전원 차단.
+
+7. 가동 구간표:
+   세션 2 : 2026-03-13 22:05:31Z ~ 2026-03-13 23:51:07Z (1.8시간, 강제 차단)
+   세션 3 : 2026-03-14 06:02:11Z ~ (획득 시점까지)
+
+8. 시각 변환:
+   2026-03-13 23:51:07Z -&gt; KST +9 -&gt; 2026-03-14 08:51:07.
+   날짜가 넘어간다.
+
+정답: 마지막 종료 2026-03-13 23:51:07 UTC (KST 2026-03-14 08:51:07),
+      방식은 강제 차단(6006 부재, 6008 + Kernel-Power 41, 1074 없음).
+      직전 활동은 섀도 삭제 -&gt; 데이터 아카이브 -&gt; 반출 -&gt; 도구/로그 삭제.</code></pre></div>
+<p>1단계의 실패가 이 글의 핵심이다. <strong>로그의 마지막 레코드는 종료 시각이 아니다.</strong> 강제 차단에서는 종료가 기록되지 않으므로, 종료 시각은 오직 <strong>다음 부팅의 6008 페이로드</strong>(또는 <code>ShutdownTime</code> 레지스트리)에만 남는다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li>6006 이 있는지 세션별로 확인했는가 — 부재 자체가 판정 근거다</li><li>6006 이 없으면 <strong>다음 부팅의 6008 페이로드</strong>를 읽었는가</li><li>6008 의 기록 시각(부팅)과 페이로드 시각(종료)을 구분했는가</li><li>Kernel-Power 41 의 <code>BugcheckCode</code> 로 크래시/전원 차단을 갈랐는가</li><li>1074 를 찾아 요청 주체·이유·종료 유형을 확인했는가</li><li>1074 가 없다는 사실을 &quot;요청 없는 차단&quot;의 근거로 썼는가</li><li><code>ShutdownTime</code> 레지스트리 값과 로그의 종료 시각이 일치하는가</li><li>크래시 덤프(<code>MEMORY.DMP</code>, <code>Minidump</code>) 존재 여부를 확인했는가</li><li>종료 직전 15분을 <strong>모든 채널</strong>에서 훑었는가</li><li>그 구간에 1102 / 4719 / 4616 이 있는지 확인했는가</li><li>가동 구간표를 만들고 사건 이벤트를 세션에 배치했는가</li><li>답을 UTC 로 낼지 KST(+9)로 낼지 지문을 다시 읽었는가 — 종료는 날짜가 바뀌기 쉽다</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-022 — Microsoft Learn, Advanced security audit policy settings: Security 채널의 4609 / 1100 과 System 채널 EventLog Provider 이벤트의 역할 구분, 감사 정책 의존성 여부</li><li>SRC-026 — Libyal libevtx / EVTX 파일 포맷 문서: 파일 헤더의 플래그(정상적으로 닫히지 않은 파일 표시)와 청크·레코드 구조, <code>EventRecordID</code> 의 단조 증가 성질</li><li>SRC-109 — MITRE ATT&amp;CK T1070 (Indicator Removal): 로그 삭제·흔적 제거 기법과, 종료 직전 구간에 반포렌식 행위가 집중되는 패턴의 근거</li><li>6008 페이로드에 담긴 날짜/시각이 UTC 인지 로컬 시간인지는 렌더링과 OS 버전에 따라 달라질 수 있다. <strong>반드시 <code>ShutdownTime</code> 레지스트리 값과 대조해 확정할 것</strong></li><li>Kernel-Power 41 의 EventData 필드 구성(<code>BugcheckCode</code> 등)과 1074 의 <code>param1</code>~<code>param7</code> 배치는 Windows 버전에 따라 다르므로 실제 이벤트 XML 에서 확인할 것</li><li>강제 차단 시 이벤트 로그 버퍼가 유실되는 범위는 시스템 상태에 따라 다르다. &quot;마지막 몇 초의 로그가 없다&quot;를 단정하지 말고 마지막 레코드 시각과 실제 종료 시각의 차이로 제시할 것</li></ul>
+<p>&lt;/content&gt;</p>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./event-6005-eventlog-start.html">
+    <span class="rel-id">FOR-0093 · Event Log</span>
+    Event ID 6005 EventLog 서비스 시작: 가장 믿을 수 있는 부팅 시각 지표
+  </a>
+  <a class="related-item" href="./event-4608-startup.html">
+    <span class="rel-id">FOR-0092 · Event Log</span>
+    Event ID 4608 Windows 시작: 부팅 세션으로 로그를 구간화한다
+  </a>
+  <a class="related-item" href="./event-1102-log-cleared.html">
+    <span class="rel-id">FOR-0091 · Event Log</span>
+    Event ID 1102 감사 로그 삭제: UserData 구조와 삭제 구간 역추적
+  </a>
+  <a class="related-item" href="./event-record-id-tracking.html">
+    <span class="rel-id">FOR-0103 · Event Log</span>
+    EventRecordID로 이벤트 순서 확정하기: 같은 초의 인과와 번호 gap 판독
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./event-6005-eventlog-start.html"><span class="rel-id">← FOR-0093</span>Event ID 6005 EventLog 서비스 시작: 가장 믿을 수 있는 부팅 시각 지표</a>
+<a class="related-item" href="./rdp-localsessionmanager.html"><span class="rel-id">FOR-0095 →</span>RDP 세션 로그 LocalSessionManager: 21/24/25로 접속 구간 나누기</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-6006-의-성질을-이해한다">1단계 — 6006 의 성질을 이해한다</a></li>
+<li class="toc-l3"><a href="#2단계-판정-체인-6006-유무로-갈라진다">2단계 — 판정 체인: 6006 유무로 갈라진다</a></li>
+<li class="toc-l3"><a href="#3단계-6008-에서-실제-종료-시각을-꺼낸다">3단계 — 6008 에서 실제 종료 시각을 꺼낸다</a></li>
+<li class="toc-l3"><a href="#4단계-1074-를-읽어-누가-왜를-채운다">4단계 — 1074 를 읽어 &quot;누가 왜&quot;를 채운다</a></li>
+<li class="toc-l3"><a href="#5단계-강제-종료를-반포렌식으로-해석한다">5단계 — 강제 종료를 반포렌식으로 해석한다</a></li>
+<li class="toc-l3"><a href="#6단계-종료-직전-구간을-집중-분석한다">6단계 — 종료 직전 구간을 집중 분석한다</a></li>
+<li class="toc-l3"><a href="#7단계-가동-구간표를-만들어-사건을-배치한다">7단계 — 가동 구간표를 만들어 사건을 배치한다</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>
