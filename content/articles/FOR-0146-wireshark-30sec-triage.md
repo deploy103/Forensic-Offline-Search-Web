@@ -19,6 +19,7 @@ wireshark_filters: ["http.request", "dns", "ftp || ftp-data", "smtp", "tcp.flags
 tshark_fields: ["ip.src", "ip.dst", "tcp.stream", "http.host", "http.request.uri", "dns.qry.name"]
 log_fields: []
 file_formats: ["pcap", "pcapng"]
+primary_terms: ["wireshark 트리아지", "pcap 트리아지", "pcap 처음", "와이어샤크 시작"]
 keywords: ["Wireshark", "pcap 트리아지", "Protocol Hierarchy", "Conversations", "Endpoints", "Export Objects", "Follow TCP Stream", "네트워크 문제 시작", "패킷 분석 순서"]
 aliases: ["와이어샤크 시작", "pcap 처음", "pcap 뭐부터", "패킷 분석 순서", "와이어샤크 트리아지", "wireshark 처음", "pcap 열었는데 뭘 봐야하나"]
 symptom_keywords: ["패킷이 너무 많다", "pcap을 받았는데 뭘 봐야 할지 모르겠다", "어디서 시작할지", "필터를 모르겠다", "파일을 추출하고 싶다", "flag가 어디 있는지"]

@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>File Slack(RAM slack / drive slack) 계산과 추출 · FOR-0034 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%94%94%EC%8A%A4%ED%81%AC%2FNTFS">디스크/NTFS</a> / FOR-0034
+      </div>
+      <header class="article-head">
+        <h1>File Slack(RAM slack / drive slack) 계산과 추출</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">디스크/NTFS</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>NTFS는 파일에 클러스터 단위로 공간을 주기 때문에 파일의 논리 크기와 물리 점유 크기 사이에 항상 빈 틈이 생기고, 이 틈(slack)에는 그 클러스터를 예전에 쓰던 파일의 바이트가 그대로 남아 있으므로 icat -s나 blkls -s로 반드시 함께 꺼내 본다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Sleuth Kit, HxD, FTK Imager, Autopsy, strings, MFTECmd</td></tr>
+<tr><th>artifact</th><td><code>file slack</code> · <code>RAM slack</code> · <code>drive slack</code> · <code>cluster</code> · <code>$DATA</code> · <code>resident</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\$MFT</code> · <code>$MFT</code></td></tr>
+<tr><th>로그 필드</th><td><code>Sector Size</code> · <code>Cluster Size</code> · <code>Size</code> · <code>init_size</code> · <code>Allocated Size</code></td></tr>
+<tr><th>파일 형식</th><td><code>ntfs</code> · <code>dd</code> · <code>raw</code></td></tr>
+<tr><th>검색 별칭</th><td>슬랙 영역 · file slack · 램 슬랙 · 클러스터 남는 공간 · 슬랙에 숨긴 데이터 · 논리크기 물리크기 차이</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>NTFS는 파일에 클러스터 단위로 공간을 주기 때문에 파일의 논리 크기와 물리 점유 크기 사이에 항상 빈 틈이 생기고, 이 틈(slack)에는 그 클러스터를 예전에 쓰던 파일의 바이트가 그대로 남아 있으므로 <code>icat -s</code>나 <code>blkls -s</code>로 반드시 함께 꺼내 본다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>파일을 정상적으로 열어봤는데 아무것도 없고, 지문은 &quot;이 파일에 숨겨져 있다&quot;라고 하는 경우</li><li><code>$MFT</code>의 논리 크기와 Autopsy의 점유 크기가 다른 이유를 설명해야 하는 경우</li><li>&quot;삭제된 파일의 일부&quot;만 필요한데 비할당 카빙으로는 안 나오는 경우 (<a href="./unallocated-space.html">FOR-0033</a>)</li><li>지문에 &quot;slack&quot;, &quot;잔여 공간&quot;, &quot;클러스터 나머지&quot;가 등장하는 경우</li><li>작은 텍스트 조각(flag, 암호, 계좌번호)을 찾아야 하는 경우 — slack에 남는 전형적인 크기다</li></ul>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li><code>fsstat</code>의 <code>Sector Size</code>와 <code>Cluster Size</code> — slack 계산의 두 단위다</li><li>대상 파일의 논리 크기 — 클러스터 크기로 나눈 나머지가 slack의 크기를 결정한다</li><li>파일 크기가 클러스터 배수와 아주 가까운가 — 그러면 slack이 거의 없어 볼 가치가 낮다</li><li><code>strings</code>가 파일 본문에서 끝나지 않고 이어지는가 — HxD로 열었을 때 논리 끝 이후에 텍스트가 보이면 확정</li><li>파일이 resident인가 — 클러스터가 없으면 클러스터 slack도 없다 (아래 참고)</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">icat -s -o 2048 image.dd 84213 &gt; with_slack.bin</code></pre></div>
+<p><code>-s</code>가 slack 포함이다. 그 다음:</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">fsstat -o 2048 image.dd | grep -iE &#39;sector size|cluster size&#39;
+istat -o 2048 image.dd 84213 | head -40      # 논리 크기와 클러스터 목록
+ls -l with_slack.bin                          # 물리 점유 크기와 같아야 한다
+strings -t d -n 6 with_slack.bin | tail -20   # 논리 끝 이후의 문자열</code></pre></div>
+<p>볼륨 전체의 slack만 모으려면:</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">blkls -s -o 2048 image.dd &gt; slack.dd
+strings -n 8 slack.dd | grep -Ei &#39;flag|password|http&#39;</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-세-가지-크기를-구분한다">1단계 — 세 가지 크기를 구분한다</h3>
+<div class="table-wrap"><table><thead><tr><th>이름</th><th>정의</th><th>어디서 보나</th></tr></thead><tbody><tr><td><strong>논리 크기 (logical size)</strong></td><td>파일 내용의 실제 바이트 수</td><td>탐색기의 &quot;크기&quot;, <code>$MFT</code>의 <code>FileSize</code>, <code>ls -l</code></td></tr><tr><td><strong>물리 크기 (physical / allocated size)</strong></td><td>파일에 배정된 클러스터의 총 바이트 = 클러스터 크기의 배수</td><td>탐색기의 &quot;디스크 할당 크기&quot;, <code>istat</code>의 클러스터 개수 × 클러스터 크기</td></tr><tr><td><strong>초기화 크기 (initialized size)</strong></td><td>실제로 쓰기가 일어난 바이트 수</td><td><code>istat</code>의 <code>init_size</code> (버전에 따라 표기 다름)</td></tr></tbody></table></div>
+<p><code>slack = 물리 크기 - 논리 크기</code>. 이 정의만 잡아 두면 나머지는 산수다.</p>
+<h3 id="2단계-계산-예시-이-글의-핵심">2단계 — 계산 예시 (이 글의 핵심)</h3>
+<p>클러스터 4096바이트, 섹터 512바이트, 파일 논리 크기 5000바이트를 가정한다.</p>
+<div class="table-wrap"><table><thead><tr><th>단계</th><th>계산</th><th>값</th></tr></thead><tbody><tr><td>필요한 클러스터 수</td><td><code>ceil(5000 / 4096)</code></td><td>2개</td></tr><tr><td>물리 점유 크기</td><td><code>2 × 4096</code></td><td>8192 바이트</td></tr><tr><td><strong>전체 slack</strong></td><td><code>8192 - 5000</code></td><td><strong>3192 바이트</strong></td></tr><tr><td>데이터가 걸친 마지막 섹터</td><td><code>ceil(5000 / 512)</code> = 10번째 섹터</td><td>논리 끝은 그 섹터 중간</td></tr><tr><td>마지막 섹터의 끝까지</td><td><code>10 × 512</code></td><td>5120 바이트</td></tr><tr><td><strong>RAM slack</strong> (섹터 나머지)</td><td><code>5120 - 5000</code></td><td><strong>120 바이트</strong></td></tr><tr><td><strong>drive slack</strong> (클러스터 나머지 = 남은 섹터들)</td><td><code>8192 - 5120</code></td><td><strong>3072 바이트</strong></td></tr><tr><td>검산</td><td><code>120 + 3072</code></td><td>3192 = 전체 slack</td></tr></tbody></table></div>
+<p>두 종류의 성격이 완전히 다르다.</p>
+<div class="table-wrap"><table><thead><tr><th>구분</th><th>범위</th><th>무엇이 들어 있나</th></tr></thead><tbody><tr><td><strong>RAM slack</strong></td><td>논리 끝 → 그 섹터의 끝</td><td>과거 Win9x는 메모리 내용을 그대로 흘렸다. <strong>NT 계열(현재 Windows)은 0x00으로 채운다</strong></td></tr><tr><td><strong>drive slack (file slack)</strong></td><td>마지막 섹터 다음 → 클러스터의 끝</td><td><strong>OS가 건드리지 않는다.</strong> 그 섹터를 예전에 쓴 파일의 바이트가 그대로 남는다</td></tr></tbody></table></div>
+<p>즉 <strong>실전 포렌식에서 값이 있는 쪽은 drive slack</strong>이다. RAM slack이 0으로 채워져 있다고 실망하고 멈추면 안 된다. 0의 구간이 끝난 다음부터가 본론이다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">클러스터 0                                클러스터 1
+|&lt;-------------- 4096 --------------&gt;|&lt;-------------- 4096 --------------&gt;|
+[  파일 데이터 5000 바이트           ][   904   |0x00×120|  이전 파일 3072  ]
+                                       ^         ^        ^
+                                   논리 끝   RAM slack   drive slack
+                                   (5000)   (섹터 채움)  (건드리지 않음)</code></pre></div>
+<h3 id="3단계-sleuth-kit으로-꺼내기">3단계 — Sleuth Kit으로 꺼내기</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># (1) 파일 하나의 slack 포함 전체 (= 물리 점유 전체)
+icat -s -o 2048 image.dd 84213 &gt; with_slack.bin
+
+# (2) slack 없는 원본
+icat -o 2048 image.dd 84213 &gt; logical.bin
+
+# (3) 차이가 곧 slack
+ls -l logical.bin with_slack.bin
+#  -rw-r--r-- 5000 logical.bin
+#  -rw-r--r-- 8192 with_slack.bin
+dd if=with_slack.bin of=slack_only.bin bs=1 skip=5000
+strings -n 4 slack_only.bin</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># (4) 볼륨 전체의 slack 만 한 파일로
+blkls -s -o 2048 image.dd &gt; slack.dd
+ls -lh slack.dd
+strings -t d -n 8 slack.dd | grep -Ei &#39;flag|BEGIN |@&#39;</code></pre></div>
+<p><code>blkls -s</code> 결과 안의 오프셋은 원본 이미지 오프셋이 아니다. <code>blkcalc -s &lt;addr&gt;</code>로 원본 블록 번호로 되돌린다 (<a href="./unallocated-space.html">FOR-0033</a>).</p>
+<h3 id="4단계-클러스터-번호를-직접-확인하고-blkcat으로-읽기">4단계 — 클러스터 번호를 직접 확인하고 blkcat으로 읽기</h3>
+<p><code>icat -s</code>가 안 통하거나 구조를 눈으로 봐야 할 때는 <code>istat</code>으로 클러스터 목록을 얻어 마지막 클러스터를 <code>blkcat</code>으로 직접 읽는다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">istat -o 2048 image.dd 84213</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">MFT Entry Header Values:
+Entry: 84213        Sequence: 3
+$LogFile Sequence Number: 118273940
+Allocated File
+Links: 1
+
+$STANDARD_INFORMATION Attribute Values:
+Flags: Archive
+Owner ID: 0
+Created:        2026-03-14 07:22:41.1284416 (UTC)
+File Modified:  2026-03-14 07:24:03.9013120 (UTC)
+MFT Modified:   2026-03-14 07:24:03.9013120 (UTC)
+Accessed:       2026-03-14 07:22:41.1284416 (UTC)
+
+Attributes:
+Type: $STANDARD_INFORMATION (16-0)   Name: N/A   Resident   size: 72
+Type: $FILE_NAME (48-2)   Name: N/A   Resident   size: 84
+Type: $DATA (128-1)   Name: N/A   Non-Resident   size: 5000  init_size: 5000
+1892 1893</code></pre></div>
+<p>마지막 줄의 <code>1892 1893</code>이 이 파일이 점유한 클러스터 번호다. slack은 <strong>1893 클러스터의 뒷부분</strong>에 있다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">blkcat -o 2048 image.dd 1893 | xxd | tail -20</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">000000d0: 0000 0000 0000 0000 0000 0000 0000 0000  ................
+000000e0: 5052 4f4a 4543 5420 4b45 593a 2073 6b32  PROJECT KEY: sk2
+000000f0: 3961 6633 6231 640a 0000 0000 0000 0000  9af3b1d.........</code></pre></div>
+<p><code>1893 - 1892 = 1</code>번째(0부터 두 번째) 클러스터이므로, 논리 데이터는 이 클러스터에서 <code>5000 - 4096 = 904</code>바이트만 차지한다. 그 이후 바이트가 slack이며, 위 출력의 <code>PROJECT KEY:</code> 문자열은 <strong>이전 파일의 잔존 데이터</strong>다.</p>
+<h3 id="5단계-hxd로-직접-보기">5단계 — HxD로 직접 보기</h3>
+<p>HxD로 <strong>파일을 열면 논리 크기까지만 보인다.</strong> slack은 파일이 아니라 볼륨의 일부이므로, 볼륨(또는 이미지)을 열어 클러스터 오프셋으로 점프해야 한다 (<a href="./hxd-header-check.html">FOR-0037</a>).</p>
+<div class="table-wrap"><table><thead><tr><th>목표</th><th>방법</th></tr></thead><tbody><tr><td>slack을 보고 싶다</td><td>이미지 파일 또는 디스크를 열고 <strong>클러스터의 절대 오프셋</strong>으로 이동</td></tr><tr><td>오프셋 계산</td><td><code>파티션 시작 섹터 × 섹터 크기 + 클러스터 번호 × 클러스터 크기</code></td></tr><tr><td>위 예시</td><td><code>2048 × 512 + 1893 × 4096 = 1048576 + 7753728 = 8802304</code></td></tr><tr><td>편한 우회</td><td><code>icat -s</code>로 뽑은 <code>with_slack.bin</code>을 HxD로 열고 논리 크기 지점부터 본다</td></tr></tbody></table></div>
+<p>CTF에서는 후자가 훨씬 빠르다. <code>icat -s</code> 결과 파일에서 논리 크기(5000 = 0x1388) 오프셋으로 점프하면 그 지점부터가 slack이다.</p>
+<h3 id="6단계-resident-파일에는-이-계산이-적용되지-않는다">6단계 — resident 파일에는 이 계산이 적용되지 않는다</h3>
+<p><code>$DATA</code>가 MFT 레코드 안에 들어가는 resident 파일(대략 700바이트 이하)은 <strong>클러스터를 하나도 배정받지 않는다</strong> (<a href="./mft-basics.html">FOR-0021</a>).</p>
+<div class="table-wrap"><table><thead><tr><th>상황</th><th>클러스터 slack</th><th>그럼 잔존 데이터는 어디에</th></tr></thead><tbody><tr><td>non-resident (클러스터 배정)</td><td>있다. 이 글의 계산대로</td><td>마지막 클러스터의 뒷부분</td></tr><tr><td><strong>resident</strong> (레코드 내부)</td><td><strong>없다.</strong> 배정된 클러스터가 없다</td><td>MFT 레코드(보통 1024바이트) 안에서 속성 뒤에 남은 여유 공간</td></tr><tr><td>resident였다가 커져서 non-resident로 전환</td><td>있다</td><td>레코드 안의 옛 데이터 + 새 클러스터의 slack <strong>양쪽</strong></td></tr></tbody></table></div>
+<p>resident 파일의 레코드 여유 공간은 HxD로 MFT 레코드를 직접 보는 것이 가장 확실하다. 레코드 오프셋 = <code>EntryNumber × 1024</code>. 속성 목록이 끝나는 <code>FF FF FF FF</code> 종료 표식 이후의 바이트를 본다.</p>
+<h3 id="7단계-slack에-데이터를-숨기는-기법과-탐지">7단계 — slack에 데이터를 숨기는 기법과 탐지</h3>
+<div class="table-wrap"><table><thead><tr><th>기법</th><th>원리</th><th>탐지</th></tr></thead><tbody><tr><td>논리 크기를 줄여 뒷부분을 slack으로 만들기</td><td>파일 끝에 데이터를 붙인 뒤 크기 필드를 원래대로 되돌린다</td><td><code>init_size</code>와 <code>size</code> 불일치, slack에 고엔트로피 데이터</td></tr><tr><td>전용 slack 은닉 도구 사용</td><td>클러스터 나머지에 직접 쓴다</td><td>slack 구간이 0이 아니고 <strong>주변 파일과 무관한 내용</strong></td></tr><tr><td>slack에 암호문 분산 저장</td><td>여러 파일의 slack에 조각 저장</td><td><code>blkls -s</code> 결과 전체에 엔트로피/문자열 스캔</td></tr></tbody></table></div>
+<p>정상 slack과 은닉 slack을 구별하는 기준:</p>
+<div class="table-wrap"><table><thead><tr><th>관찰</th><th>해석</th></tr></thead><tbody><tr><td>slack 전체가 0x00</td><td>새로 배정된 클러스터. 볼 것 없다</td></tr><tr><td>slack에 다른 파일 형식의 조각(문서 XML, HTML 태그)</td><td><strong>정상적인 잔존 데이터.</strong> 이전 파일의 흔적</td></tr><tr><td>slack이 난수처럼 보인다 (엔트로피 높음)</td><td>암호화된 은닉 데이터 후보</td></tr><tr><td>slack에 완결된 매직 바이트가 있다</td><td>파일을 통째로 숨긴 것. <code>binwalk</code>로 확인</td></tr><tr><td>여러 파일의 slack에 동일한 패턴</td><td>도구로 분산 저장한 흔적</td></tr></tbody></table></div>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p><code>istat</code>의 <code>$DATA</code> 줄이 핵심이다.</p>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>의미</th><th>slack 판정에서의 역할</th></tr></thead><tbody><tr><td><code>Non-Resident</code> / <code>Resident</code></td><td>클러스터 배정 여부</td><td>Resident면 클러스터 slack이 없다</td></tr><tr><td><code>size:</code></td><td><strong>논리 크기</strong></td><td>slack 시작 지점</td></tr><tr><td><code>init_size:</code></td><td>초기화된 크기</td><td><code>size</code>보다 작으면 뒤쪽이 0으로 읽힌다. <code>size</code>보다 큰 값이 보이면 크기 조작 의심</td></tr><tr><td>마지막 줄의 숫자 목록</td><td>점유 클러스터 번호 (데이터런)</td><td>마지막 번호가 slack이 있는 클러스터</td></tr><tr><td><code>Allocated File</code> / <code>Not Allocated</code></td><td>삭제 여부</td><td>삭제된 파일이면 slack 이전에 본문부터 재할당 위험</td></tr></tbody></table></div>
+<p><code>fsstat</code>에서:</p>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>값 예</th><th>쓰임</th></tr></thead><tbody><tr><td><code>Sector Size</code></td><td>512</td><td>RAM slack 경계 계산</td></tr><tr><td><code>Cluster Size</code></td><td>4096</td><td>drive slack 경계 계산</td></tr></tbody></table></div>
+<p>타임스탬프는 <code>istat</code> 출력에서 <strong>UTC로 표시된다</strong>(FILETIME은 1601-01-01 UTC 기준 100ns 단위). 문제가 KST를 요구하면 +9시간 한다. Unix epoch와의 차이는 11644473600초다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>여기서 얻은 것</th><th>다음 목표</th></tr></thead><tbody><tr><td>slack에서 나온 문자열</td><td>그 문자열로 볼륨 전체 키워드 검색 (<a href="./autopsy-ingest.html">FOR-0018</a>)</td></tr><tr><td>slack에 남은 이전 파일 조각</td><td><code>$MFT</code>의 <code>InUse=False</code> 항목과 대조해 이전 파일 이름 추정 (<a href="./mft-basics.html">FOR-0021</a>)</td></tr><tr><td>그 클러스터를 예전에 쓴 파일</td><td><code>$UsnJrnl</code>에서 같은 시기 <code>FILE_DELETE</code> 검색 (<a href="./usnjrnl-basics.html">FOR-0027</a>)</td></tr><tr><td>slack이 전부 0</td><td>비할당 영역으로 전환 (<a href="./unallocated-space.html">FOR-0033</a>)</td></tr><tr><td>논리 크기 조작 의심</td><td>HxD로 MFT 레코드의 <code>$DATA</code> 헤더 직접 확인 (<a href="./hxd-header-check.html">FOR-0037</a>)</td></tr><tr><td>slack 안의 완결된 파일</td><td><code>binwalk</code>/<code>foremost</code>로 추출 후 형식 확인 (<a href="./signature-extension-mismatch.html">FOR-0036</a>)</td></tr><tr><td>resident 파일</td><td>MFT 레코드 여유 공간을 HxD로 확인</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>탐색기나 HxD에서 파일을 열어 slack을 찾는 것.</strong> 파일 핸들은 논리 크기까지만 읽게 되어 있으므로 slack은 애초에 보이지 않는다. 볼륨/이미지를 열거나 <code>icat -s</code>를 쓴다.</li><li><strong><code>icat</code>에 <code>-s</code>를 빼먹는 것.</strong> <code>-s</code> 없는 <code>icat</code>은 논리 크기까지만 출력하므로 slack이 통째로 빠진다. 출력 파일 크기가 클러스터 배수인지로 즉시 검증한다.</li><li><strong>RAM slack이 0이라서 slack 전체가 비었다고 결론 내리는 것.</strong> NT 계열 Windows는 RAM slack을 0으로 채운다. <strong>0 구간 뒤의 drive slack</strong>부터가 본론이다.</li><li><strong><code>blkls -s</code>의 오프셋을 원본 이미지 오프셋으로 쓰는 것.</strong> slack 이미지는 별도 좌표계다. <code>blkcalc -s</code>로 변환한다.</li><li><strong>resident 파일에 클러스터 slack을 기대하는 것.</strong> 700바이트짜리 텍스트 파일은 클러스터를 안 받는다. MFT 레코드 내부 여유 공간을 봐야 한다.</li><li><strong>클러스터 크기를 4096으로 가정하는 것.</strong> exFAT/큰 볼륨은 32 KB~128 KB인 경우도 있다. 클러스터가 크면 slack도 커진다(= 잔존 데이터가 많다). 반드시 <code>fsstat</code>으로 확인한다.</li><li><strong>slack의 내용을 그 파일의 내용으로 보고하는 것.</strong> slack은 <strong>다른 파일</strong>의 잔재다. &quot;A.docx의 slack에서 발견&quot;이라고 쓰되 &quot;A.docx에 들어 있었다&quot;라고 쓰지 않는다.</li><li><strong>압축/암호화된 <code>$DATA</code>에 단순 계산을 적용하는 것.</strong> NTFS 압축(sparse/compressed) 파일은 클러스터 배정 방식이 달라 <code>물리 - 논리</code> 산수가 성립하지 않는다. <code>istat</code>의 속성 플래그를 먼저 본다.</li><li><strong>slack에서 찾은 타임스탬프를 신뢰하는 것.</strong> 잔존 데이터의 시각 값은 이전 파일의 것이고, 그 파일이 언제 삭제됐는지는 slack만으로 알 수 없다.</li><li><strong><code>dd ... bs=1 skip=N</code>으로 큰 파일을 자르는 것.</strong> <code>bs=1</code>은 매우 느리다. 큰 대상은 <code>bs=4096 skip=&lt;클러스터수&gt;</code>로 클러스터 단위로 자른 뒤 미세 조정한다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) 물리 크기가 정말 클러스터 배수인가
+ls -l with_slack.bin                      # 8192 = 4096 * 2  (OK)
+
+# 2) 논리 부분이 원본과 동일한가 (앞부분 해시 비교)
+head -c 5000 with_slack.bin | md5sum
+icat -o 2048 image.dd 84213 | md5sum
+
+# 3) istat 의 클러스터 번호로 직접 읽은 것과 icat -s 의 꼬리가 같은가
+blkcat -o 2048 image.dd 1893 | md5sum
+dd if=with_slack.bin bs=4096 skip=1 count=1 2&gt;/dev/null | md5sum
+
+# 4) 볼륨 전체 slack 에도 같은 문자열이 있는가
+blkls -s -o 2048 image.dd | strings -n 6 | grep -c &#39;PROJECT KEY&#39;
+
+# 5) 그 클러스터가 지금 할당 상태인가
+blkstat -o 2048 image.dd 1893</code></pre></div>
+<p>Autopsy에서 같은 파일을 열면 하단 <code>Hex</code> 탭이 <strong>점유 클러스터 전체</strong>를 보여주므로 CLI 결과와 육안 대조가 가능하다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;보고서 파일 하나를 드립니다. 이 파일이 있던 자리에 남은
+ 이전 문서의 프로젝트 키를 찾으세요.&quot;
+첨부: disk.dd (2 GB, NTFS), 지문에 report.docx 언급
+
+1. mmls disk.dd
+   -&gt; 002: 000002048  0004194303  ...  NTFS
+
+   fls -o 2048 -r -p disk.dd | grep -i report
+   -&gt; r/r 84213-128-1:  Users/jhkim/Documents/report.docx
+
+2. 첫 시도 (실패한 접근):
+   icat -o 2048 disk.dd 84213 &gt; report.docx
+   7z l report.docx  &amp;&amp;  strings report.docx | grep -i &#39;project\|key&#39;
+   -&gt; 정상 docx. 내부에 프로젝트 키 없음.
+      binwalk report.docx -&gt; 붙어 있는 파일 없음.
+      exiftool report.docx -&gt; 특이사항 없음.
+
+   무엇이 틀렸나: 문제는 &quot;이 파일 안&quot;이 아니라 &quot;이 파일이 있던 자리&quot;를
+   물었다. -s 없는 icat 은 논리 크기까지만 뽑기 때문에
+   slack 이 처음부터 출력에 포함되지 않았다.
+
+3. 접근 변경 — slack 포함으로 다시 추출
+   fsstat -o 2048 disk.dd | grep -iE &#39;sector size|cluster size&#39;
+   -&gt; Sector Size: 512
+      Cluster Size: 4096
+
+   istat -o 2048 disk.dd 84213 | tail -5
+   -&gt; Type: $DATA (128-1) ... Non-Resident  size: 5000  init_size: 5000
+      1892 1893
+
+   icat -s -o 2048 disk.dd 84213 &gt; with_slack.bin
+   ls -l with_slack.bin
+   -&gt; 8192          (5000 -&gt; 8192. slack 3192 바이트 확보)
+
+4. slack 만 분리
+   dd if=with_slack.bin of=slack_only.bin bs=1 skip=5000
+   xxd slack_only.bin | head -12
+   -&gt; 00000000: 0000 0000 ... 0000                (RAM slack 120 바이트 = 0)
+      00000078: 5052 4f4a 4543 5420 4b45 593a 2073  PROJECT KEY: s
+      00000088: 6b32 3961 6633 6231 640a            k29af3b1d.
+
+   0x78 = 120. RAM slack 이 끝나는 정확히 그 지점부터
+   drive slack 이 시작되고, 거기에 이전 파일 내용이 있다.
+
+5. 검산 — 계산과 실제가 맞는가
+   ceil(5000/4096) = 2 클러스터 -&gt; 8192 바이트 점유
+   RAM slack  = ceil(5000/512)*512 - 5000 = 5120 - 5000 = 120   (0x78) OK
+   drive slack = 8192 - 5120 = 3072                              OK
+   전체 slack = 120 + 3072 = 3192                                OK
+
+6. 이전 파일이 무엇이었나 (교차검증)
+   MFTECmd 로 뽑은 CSV 에서 InUse=False 항목 중
+   삭제 시각이 report.docx 생성 직전인 것:
+   -&gt; 프로젝트계획_v3.docx (삭제 2026-03-14 07:20:11 UTC = 16:20:11 KST)
+      report.docx 생성 2026-03-14 07:22:41 UTC
+   같은 클러스터를 재사용한 것이 시간순으로 일치한다.
+
+정답: sk29af3b1d (삭제된 프로젝트계획_v3.docx 의 잔존 데이터, report.docx 의 drive slack)</code></pre></div>
+<p>2→3단계가 전부다. <strong><code>-s</code> 한 글자가 3192바이트를 보이게 만든다.</strong> 그리고 4단계에서 0x78(=120)이 RAM slack 계산값과 정확히 일치한 것이 &quot;우연히 붙은 쓰레기가 아니라 구조적인 slack&quot;임을 증명한다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>icat</code>에 <code>-s</code>를 넣었는가 — 출력 크기가 클러스터 배수인지로 확인</li><li><code>fsstat</code>으로 실제 <code>Cluster Size</code>/<code>Sector Size</code>를 확인했는가 (4096/512로 가정하지 않았는가)</li><li><code>istat</code>에서 <code>Resident</code>인가 — 그렇다면 MFT 레코드 내부를 봐야 한다</li><li><code>strings -el</code>(UTF-16LE)로도 slack을 훑었는가 — 한글 문서 잔재는 ASCII로 안 잡힌다</li><li>볼륨 전체 slack을 봤는가 — <code>blkls -s -o N image.dd &gt; slack.dd</code></li><li>slack이 전부 0인가 → 새 클러스터다. 비할당 영역으로 전환 (<a href="./unallocated-space.html">FOR-0033</a>)</li><li>파일이 NTFS 압축/sparse인가 — <code>istat</code>의 속성 플래그 확인. 단순 산수가 안 통한다</li><li>MFT 레코드 slack(속성 종료 표식 이후)을 봤는가</li><li>디렉터리의 <code>$INDEX_ALLOCATION</code> slack도 있다 — 삭제된 파일 이름이 인덱스 slack에 남는다</li><li><code>binwalk with_slack.bin</code>으로 slack 안의 완결된 파일을 확인했는가</li><li>엔트로피가 높은가 — 암호화된 은닉 데이터일 수 있다. 암호를 찾는 문제로 방향 전환</li><li>같은 폴더의 다른 파일 slack도 확인했는가 — 조각을 분산 저장한 경우</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-032 — The Sleuth Kit 도구 문서: <code>icat -s</code>(slack 포함 출력), <code>blkls -s</code>(slack만 추출), <code>istat</code>(속성별 resident/non-resident, <code>size</code>/<code>init_size</code>, 데이터런 클러스터 목록), <code>blkcat</code>, <code>fsstat</code>의 <code>Sector Size</code>/<code>Cluster Size</code></li><li>SRC-005 — Microsoft Learn, Master File Table: NTFS의 클러스터 단위 할당과 resident <code>$DATA</code>(레코드 내부 저장) 구조. 논리/물리 크기 차이의 근거</li><li>SRC-088 — HxD 문서: 파일 열기와 디스크 열기의 차이, 오프셋 이동. 파일 핸들로는 논리 크기까지만 보이므로 slack 확인에는 볼륨 열기가 필요하다는 점</li><li><code>istat</code> 출력의 컬럼명(<code>init_size</code> 등)과 데이터런 표시 형식은 Sleuth Kit 버전에 따라 다를 수 있으므로 실제 출력에서 확인할 것</li><li>resident 전환 임계값(약 700바이트)은 레코드 크기와 속성 구성에 따라 달라지므로 개별 파일은 <code>istat</code>으로 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./unallocated-space.html">
+    <span class="rel-id">FOR-0033 · 디스크/NTFS</span>
+    비할당 영역(Unallocated Space) 추출과 카빙
+  </a>
+  <a class="related-item" href="./mft-basics.html">
+    <span class="rel-id">FOR-0021 · 디스크/NTFS</span>
+    $MFT 기본 구조와 포렌식 활용
+  </a>
+  <a class="related-item" href="./hxd-header-check.html">
+    <span class="rel-id">FOR-0037 · 디스크/NTFS</span>
+    HxD로 헤더 확인·오프셋 점프·손상 시그니처 복구
+  </a>
+  <a class="related-item" href="./alternate-data-streams.html">
+    <span class="rel-id">FOR-0035 · 디스크/NTFS</span>
+    ADS(Alternate Data Stream)와 Zone.Identifier로 다운로드 출처 찾기
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./unallocated-space.html"><span class="rel-id">← FOR-0033</span>비할당 영역(Unallocated Space) 추출과 카빙</a>
+<a class="related-item" href="./alternate-data-streams.html"><span class="rel-id">FOR-0035 →</span>ADS(Alternate Data Stream)와 Zone.Identifier로 다운로드 출처 찾기</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-세-가지-크기를-구분한다">1단계 — 세 가지 크기를 구분한다</a></li>
+<li class="toc-l3"><a href="#2단계-계산-예시-이-글의-핵심">2단계 — 계산 예시 (이 글의 핵심)</a></li>
+<li class="toc-l3"><a href="#3단계-sleuth-kit으로-꺼내기">3단계 — Sleuth Kit으로 꺼내기</a></li>
+<li class="toc-l3"><a href="#4단계-클러스터-번호를-직접-확인하고-blkcat으로-읽기">4단계 — 클러스터 번호를 직접 확인하고 blkcat으로 읽기</a></li>
+<li class="toc-l3"><a href="#5단계-hxd로-직접-보기">5단계 — HxD로 직접 보기</a></li>
+<li class="toc-l3"><a href="#6단계-resident-파일에는-이-계산이-적용되지-않는다">6단계 — resident 파일에는 이 계산이 적용되지 않는다</a></li>
+<li class="toc-l3"><a href="#7단계-slack에-데이터를-숨기는-기법과-탐지">7단계 — slack에 데이터를 숨기는 기법과 탐지</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 03:39 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

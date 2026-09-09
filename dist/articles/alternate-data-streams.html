@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>ADS(Alternate Data Stream)와 Zone.Identifier로 다운로드 출처 찾기 · FOR-0035 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%94%94%EC%8A%A4%ED%81%AC%2FNTFS">디스크/NTFS</a> / FOR-0035
+      </div>
+      <header class="article-head">
+        <h1>ADS(Alternate Data Stream)와 Zone.Identifier로 다운로드 출처 찾기</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">디스크/NTFS</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>NTFS 파일은 파일명:스트림명:$DATA 문법으로 본문과 별개의 데이터 스트림을 여러 개 가질 수 있고, 실전에서 가장 값이 큰 스트림은 다운로드 출처 URL이 그대로 적혀 있는 Zone.Identifier이므로 Get-Content -Path &lt;파일&gt; -Stream Zone.Identifier를 먼저 돌린다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>PowerShell, Sleuth Kit, MFTECmd, FTK Imager, Autopsy, HxD, streams.exe</td></tr>
+<tr><th>artifact</th><td><code>ADS</code> · <code>Alternate Data Stream</code> · <code>Zone.Identifier</code> · <code>$DATA</code> · <code>MOTW</code> · <code>HasAds</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Users\&lt;user&gt;\Downloads</code> · <code>report.docx:Zone.Identifier:$DATA</code> · <code>C:\$MFT</code> · <code>C:\$Extend\$UsnJrnl</code></td></tr>
+<tr><th>regex</th><td><code>HostUrl=(.*)</code> · <code>ZoneId=([0-4])</code></td></tr>
+<tr><th>로그 필드</th><td><code>ZoneId</code> · <code>ReferrerUrl</code> · <code>HostUrl</code> · <code>Stream</code> · <code>Length</code> · <code>HasAds</code></td></tr>
+<tr><th>파일 형식</th><td><code>ntfs</code></td></tr>
+<tr><th>검색 별칭</th><td>ads · 대체 데이터 스트림 · zone identifier · 다운로드 출처 · 어디서 받았나 · 숨겨진 스트림 · dir /r · motw</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>NTFS 파일은 <code>파일명:스트림명:$DATA</code> 문법으로 본문과 별개의 데이터 스트림을 여러 개 가질 수 있고, 실전에서 가장 값이 큰 스트림은 다운로드 출처 URL이 그대로 적혀 있는 <code>Zone.Identifier</code>이므로 <code>Get-Content -Path &lt;파일&gt; -Stream Zone.Identifier</code>를 먼저 돌린다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li><strong>&quot;이 파일을 어디서 받았는가&quot;</strong>를 답해야 하는 경우 — 브라우저 기록이 지워졌어도 <code>Zone.Identifier</code>가 남아 있다</li><li>파일 크기는 작은데 디스크 점유가 크거나, <code>$MFT</code> 파서의 <code>HasAds</code>가 <code>True</code>인 경우</li><li>지문이 &quot;숨겨진 데이터&quot;, &quot;스트림&quot;, &quot;보이지 않는 파일&quot;을 언급하는 경우</li><li>악성 실행 파일이 정상 문서 뒤에 붙어 있는지 확인해야 하는 경우</li><li><code>$UsnJrnl</code>에 <code>STREAM_CHANGE</code>나 <code>NAMED_DATA_*</code> 플래그가 보이는 경우 (<a href="./usnjrnl-basics.html">FOR-0027</a>)</li></ul>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li><code>$MFT</code> 파서 CSV의 <code>HasAds</code> 컬럼이 <code>True</code>인 항목 — 여기서 후보가 좁혀진다</li><li><code>Downloads</code> 폴더의 파일 — 브라우저가 저장한 파일은 대부분 <code>Zone.Identifier</code>를 가진다</li><li><code>dir /r</code> 출력에서 파일명 아래에 들여쓰여 나오는 줄</li><li><code>fls</code> 출력에서 <code>파일명:스트림명</code> 형태로 <strong>별도 항목으로 등장하는 줄</strong></li><li>파일을 열 때 Windows가 &quot;차단 해제&quot; 경고나 Office 보호된 보기를 띄웠는가 — MOTW가 붙어 있다는 뜻이다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Get-Content -Path .\report.docx -Stream Zone.Identifier</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">[ZoneTransfer]
+ZoneId=3
+ReferrerUrl=https://drive.example.com/share/9f2a
+HostUrl=https://cdn.example.com/files/report.docx</code></pre></div>
+<p>폴더 전체를 훑을 때:</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 스트림을 가진 파일만, 기본 스트림 제외
+Get-ChildItem -Recurse -File | ForEach-Object {
+  Get-Item $_.FullName -Stream * -ErrorAction SilentlyContinue
+} | Where-Object { $_.Stream -ne &#39;:$DATA&#39; } |
+  Select-Object FileName, Stream, Length</code></pre></div>
+<div class="code-block" data-lang="cmd"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-cmd">dir /r /s C:\Users\jhkim\Downloads</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-문법과-구조">1단계 — 문법과 구조</h3>
+<p>NTFS의 파일 내용은 <code>$DATA</code> 속성에 들어간다. 이 속성은 <strong>이름을 가질 수 있고, 여러 개 존재할 수 있다.</strong> 이름 있는 <code>$DATA</code>가 곧 ADS다.</p>
+<div class="table-wrap"><table><thead><tr><th>표기</th><th>의미</th></tr></thead><tbody><tr><td><code>report.docx</code></td><td>기본(이름 없는) 스트림</td></tr><tr><td><code>report.docx::$DATA</code></td><td>위와 동일. 명시적 표기</td></tr><tr><td><code>report.docx:Zone.Identifier</code></td><td><code>Zone.Identifier</code> 라는 이름의 ADS</td></tr><tr><td><code>report.docx:Zone.Identifier:$DATA</code></td><td>완전 표기 (<code>파일명:스트림명:속성타입</code>)</td></tr><tr><td><code>folder:hidden.txt</code></td><td><strong>디렉터리에도 ADS를 붙일 수 있다</strong></td></tr><tr><td><code>C:\dir:$I30:$INDEX_ALLOCATION</code></td><td>디렉터리 인덱스 (참고용. ADS가 아니라 다른 속성 타입)</td></tr></tbody></table></div>
+<p>핵심 성질:</p>
+<ul><li><strong><code>dir</code>의 기본 출력과 탐색기의 &quot;크기&quot;에 ADS 크기가 포함되지 않는다.</strong> 5 KB 문서에 50 MB ADS가 붙어도 목록에서는 5 KB로 보인다</li><li>ADS는 NTFS 기능이다. <strong>FAT32/exFAT/USB로 복사하거나 ZIP으로 압축하면 조용히 사라진다</strong></li><li>본문을 지우지 않고 ADS만 삭제할 수 있다</li><li>파일 해시(본문 기준)는 ADS 유무에 영향받지 않는다</li></ul>
+<h3 id="2단계-zoneidentifier가-실전에서-가장-중요하다">2단계 — Zone.Identifier가 실전에서 가장 중요하다</h3>
+<p>Windows는 인터넷에서 받은 파일에 <code>Zone.Identifier</code> ADS를 붙인다(Mark of the Web, MOTW). 내용은 INI 형식이다.</p>
+<div class="table-wrap"><table><thead><tr><th>키</th><th>내용</th><th>포렌식 가치</th></tr></thead><tbody><tr><td><code>[ZoneTransfer]</code></td><td>섹션 헤더</td><td>—</td></tr><tr><td><code>ZoneId</code></td><td>보안 영역 번호</td><td>어디서 왔는지의 대분류</td></tr><tr><td><code>ReferrerUrl</code></td><td><strong>파일 링크가 있던 페이지 URL</strong></td><td>사용자가 어느 페이지를 보고 있었는지</td></tr><tr><td><code>HostUrl</code></td><td><strong>파일 자체의 실제 다운로드 URL</strong></td><td>가장 결정적인 값</td></tr><tr><td><code>LastWriterPackageFamilyName</code></td><td>파일을 쓴 앱의 패키지 이름</td><td>어느 앱이 저장했는지 (있는 버전에서만)</td></tr><tr><td><code>AppZoneId</code></td><td>앱 기준 영역 값</td><td>있는 버전에서만</td></tr></tbody></table></div>
+<p><code>ZoneId</code> 값:</p>
+<div class="table-wrap"><table><thead><tr><th>값</th><th>영역</th><th>해석</th></tr></thead><tbody><tr><td>0</td><td>Local machine</td><td>로컬에서 만들어짐</td></tr><tr><td>1</td><td>Local intranet</td><td>사내망/UNC 공유</td></tr><tr><td>2</td><td>Trusted sites</td><td>신뢰 사이트</td></tr><tr><td><strong>3</strong></td><td><strong>Internet</strong></td><td><strong>인터넷에서 다운로드. 실전에서 거의 항상 이 값</strong></td></tr><tr><td>4</td><td>Restricted sites</td><td>제한된 사이트</td></tr></tbody></table></div>
+<p><code>ZoneId=3</code>이면 &quot;이 파일은 인터넷에서 왔다&quot;가 확정된다. <code>HostUrl</code>이 함께 있으면 <strong>URL 자체가 답인 문제</strong>가 많다.</p>
+<p>브라우저에 따라 채워지는 필드가 다르다.</p>
+<div class="table-wrap"><table><thead><tr><th>저장 경로</th><th>보통 채워지는 필드</th></tr></thead><tbody><tr><td>Chrome/Edge 다운로드</td><td><code>ZoneId</code>, <code>ReferrerUrl</code>, <code>HostUrl</code></td></tr><tr><td>메일 첨부 저장</td><td><code>ZoneId</code>만 있는 경우가 많다</td></tr><tr><td>UNC/네트워크 공유 복사</td><td><code>ZoneId=1</code> 또는 없음</td></tr><tr><td>압축 파일 내부에서 압축 해제</td><td>압축 프로그램에 따라 전파되거나 사라진다</td></tr></tbody></table></div>
+<p><code>Zone.Identifier</code>의 시각 정보는 스트림 자체에 없다. <strong>파일의 생성 시각과 브라우저 다운로드 기록으로 시각을 보강한다</strong> (<a href="./chrome-history.html">FOR-0191</a>).</p>
+<h3 id="3단계-탐지-라이브-시스템">3단계 — 탐지: 라이브 시스템</h3>
+<div class="code-block" data-lang="cmd"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-cmd">REM 스트림을 포함해 목록 표시
+dir /r</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text"> 2026-03-14  16:22             5,120 report.docx
+                                  26 report.docx:Zone.Identifier:$DATA
+ 2026-03-14  16:31           184,320 notes.txt
+                             451,584 notes.txt:payload.exe:$DATA
+               2 File(s)        189,440 bytes</code></pre></div>
+<p>두 번째 항목이 결정적이다. <code>notes.txt</code>는 목록상 184 KB인데 그 안에 451 KB짜리 실행 파일이 숨어 있다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 특정 파일의 모든 스트림
+Get-Item -Path .\notes.txt -Stream *
+
+# 특정 스트림 읽기 (텍스트)
+Get-Content -Path .\report.docx -Stream Zone.Identifier
+
+# 바이너리 스트림 추출 (PowerShell 7+)
+Get-Content -Path .\notes.txt -Stream payload.exe -AsByteStream -Raw |
+  Set-Content -Path .\payload.exe -AsByteStream
+
+# PowerShell 5.1 에서는
+Get-Content -Path .\notes.txt -Stream payload.exe -Encoding Byte -Raw |
+  Set-Content -Path .\payload.exe -Encoding Byte
+
+# 스트림 삭제 (분석 중에는 쓰지 않는다)
+Remove-Item -Path .\report.docx -Stream Zone.Identifier
+Unblock-File -Path .\report.docx      # Zone.Identifier 제거의 표준 방법</code></pre></div>
+<div class="code-block" data-lang="cmd"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-cmd">REM cmd 에서 텍스트 스트림 읽기
+more &lt; report.docx:Zone.Identifier
+notepad report.docx:Zone.Identifier</code></pre></div>
+<p>Sysinternals <code>streams.exe</code>는 재귀 목록화에 편하다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">streams -s C:\Users\jhkim\Downloads</code></pre></div>
+<h3 id="4단계-탐지-이미지오프라인">4단계 — 탐지: 이미지/오프라인</h3>
+<p>라이브 접근이 불가능한 CTF 이미지에서는 이쪽이 본류다.</p>
+<div class="table-wrap"><table><thead><tr><th>방법</th><th>명령/위치</th><th>특징</th></tr></thead><tbody><tr><td><strong>Sleuth Kit <code>fls</code></strong></td><td><code>fls -o 2048 -r -p image.dd</code></td><td>ADS가 <strong>별도 항목</strong>으로 나온다</td></tr><tr><td><strong>Sleuth Kit <code>istat</code></strong></td><td><code>istat -o 2048 image.dd 84213</code></td><td>속성 목록에 이름 있는 <code>$DATA</code>가 보인다</td></tr><tr><td><strong><code>icat</code></strong></td><td><code>icat -o 2048 image.dd 84213-128-5</code></td><td>속성 ID까지 지정해 스트림만 추출</td></tr><tr><td><strong><code>$MFT</code> 파서</strong></td><td>MFTECmd CSV의 <code>HasAds</code> 컬럼</td><td>볼륨 전체를 한 번에 스크리닝</td></tr><tr><td><strong>FTK Imager</strong></td><td>파일 트리에서 스트림이 별도 항목으로 표시</td><td>Export로 꺼낸다 (<a href="./ftk-imager-open-image.html">FOR-0016</a>)</td></tr><tr><td><strong>Autopsy</strong></td><td>파일 목록에 스트림 항목이 함께 나온다</td><td>(<a href="./autopsy-ingest.html">FOR-0018</a>)</td></tr></tbody></table></div>
+<p><code>fls</code> 출력이 핵심이다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">$ fls -o 2048 -r -p image.dd | grep -i notes
+r/r 84213-128-1:   Users/jhkim/Desktop/notes.txt
+r/r 84213-128-5:   Users/jhkim/Desktop/notes.txt:payload.exe</code></pre></div>
+<p>같은 MFT 엔트리(<code>84213</code>)에 <code>$DATA</code>(타입 <code>128</code>)가 <strong>속성 ID만 다르게 두 개</strong> 존재한다. 두 번째가 ADS다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># ADS 만 골라 보기
+fls -o 2048 -r -p image.dd | grep &#39;:&#39; | grep -E &#39;:[^/:]+$&#39; | grep -v &#39;^d&#39;
+
+# 스트림 추출 — 엔트리-타입-ID 를 그대로 넣는다
+icat -o 2048 image.dd 84213-128-5 &gt; payload.exe
+file payload.exe</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">payload.exe: PE32+ executable (console) x86-64, for MS Windows</code></pre></div>
+<p><code>$MFT</code>만 주어진 문제라면:</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">MFTECmd.exe -f &#39;C:\case\$MFT&#39; --csv &quot;C:\case\out&quot; --csvf mft.csv
+Import-Csv .\out\mft.csv | Where-Object { $_.HasAds -eq &#39;True&#39; } |
+  Select-Object EntryNumber, ParentPath, FileName, FileSize</code></pre></div>
+<h3 id="5단계-ads로-숨기는-기법">5단계 — ADS로 숨기는 기법</h3>
+<div class="table-wrap"><table><thead><tr><th>기법</th><th>명령 예</th><th>흔적</th></tr></thead><tbody><tr><td>파일을 ADS로 복사</td><td><code>type payload.exe &gt; notes.txt:p.exe</code></td><td><code>dir /r</code>에 스트림 크기가 노출된다</td></tr><tr><td>디렉터리에 ADS</td><td><code>echo secret &gt; C:\temp:hidden.txt</code></td><td>폴더 항목에 스트림이 붙는다. 탐색기로는 안 보인다</td></tr><tr><td>텍스트/키를 ADS에 보관</td><td><code>echo flag{...} &gt; a.txt:s</code></td><td><code>more &lt; a.txt:s</code>로 읽힌다</td></tr><tr><td>실행 파일을 ADS에서 실행</td><td>경로에 <code>호스트:스트림</code>을 지정해 프로세스 생성</td><td>프로세스 이미지 경로에 <code>:</code>이 들어간다</td></tr><tr><td>MOTW 제거로 경고 회피</td><td><code>Unblock-File</code>, ADS 삭제, ZIP 경유 복사</td><td><code>Zone.Identifier</code>의 <strong>부재</strong> 자체가 단서</td></tr></tbody></table></div>
+<p>ADS에 놓인 실행 파일을 직접 실행하는 것은 Windows 버전과 보안 제품에 따라 차단되는 경우가 있으므로, &quot;가능하다/불가능하다&quot;를 단정하기보다 <strong>흔적</strong>으로 판단한다. 프로세스 경로나 명령줄에 <code>파일명:스트림명</code> 형태의 콜론이 포함된 기록(EVTX 4688, Sysmon 1)이 있으면 결정적이다.</p>
+<p>반대 방향의 단서도 중요하다. <strong><code>Downloads</code> 폴더의 파일에 <code>Zone.Identifier</code>가 없다면</strong> 다음 중 하나다.</p>
+<div class="table-wrap"><table><thead><tr><th>원인</th><th>확인 방법</th></tr></thead><tbody><tr><td>사용자가 <code>Unblock-File</code>/우클릭 차단 해제를 실행</td><td>PowerShell 기록, <code>$UsnJrnl</code>의 <code>STREAM_CHANGE</code></td></tr><tr><td>ZIP/USB(FAT32) 경유로 복사되어 소실</td><td>압축 파일 원본과 <code>$UsnJrnl</code> 대조</td></tr><tr><td>로컬에서 직접 만든 파일</td><td>브라우저 다운로드 기록에 없다</td></tr><tr><td>브라우저가 MOTW를 안 붙임(구버전/특정 클라이언트)</td><td>다른 다운로드 파일에는 있는지 비교</td></tr></tbody></table></div>
+<h3 id="6단계-usnjrnl과-연결하기">6단계 — $UsnJrnl과 연결하기</h3>
+<p>ADS 조작은 <code>$UsnJrnl</code>에 고유한 플래그를 남긴다. <code>$Extend\$UsnJrnl:$J</code>를 파싱해 이 플래그를 검색하면 <strong>&quot;언제 어떤 파일에 스트림이 붙었는가&quot;</strong>를 시각과 함께 얻을 수 있다.</p>
+<div class="table-wrap"><table><thead><tr><th>USN Reason</th><th>값</th><th>의미</th></tr></thead><tbody><tr><td><code>USN_REASON_STREAM_CHANGE</code></td><td><code>0x00200000</code></td><td><strong>이름 있는 스트림이 추가/삭제/이름변경됨</strong></td></tr><tr><td><code>USN_REASON_NAMED_DATA_OVERWRITE</code></td><td><code>0x00000010</code></td><td>이름 있는 스트림의 데이터를 덮어씀</td></tr><tr><td><code>USN_REASON_NAMED_DATA_EXTEND</code></td><td><code>0x00000020</code></td><td>이름 있는 스트림에 데이터를 추가</td></tr><tr><td><code>USN_REASON_NAMED_DATA_TRUNCATION</code></td><td><code>0x00000040</code></td><td>이름 있는 스트림을 잘라냄</td></tr><tr><td><code>USN_REASON_DATA_OVERWRITE</code></td><td><code>0x00000001</code></td><td>(비교용) <strong>기본</strong> 스트림 덮어쓰기</td></tr><tr><td><code>USN_REASON_DATA_EXTEND</code></td><td><code>0x00000002</code></td><td>(비교용) 기본 스트림에 추가</td></tr><tr><td><code>USN_REASON_CLOSE</code></td><td><code>0x80000000</code></td><td>마지막 레코드에 함께 표시된다</td></tr></tbody></table></div>
+<p>판독 규칙:</p>
+<ul><li><code>NAMED_DATA_EXTEND</code> + <code>STREAM_CHANGE</code>가 붙어 있으면 <strong>그 시각에 ADS를 만들어 데이터를 넣었다</strong></li><li><code>STREAM_CHANGE</code>만 단독으로 있으면 스트림 추가 또는 <strong>삭제</strong>다. 어느 쪽인지는 현재 상태와 대조한다</li><li><code>Downloads</code> 폴더 파일에 다운로드 직후가 아닌 시각의 <code>STREAM_CHANGE</code>가 있으면 <strong>MOTW 제거 의심</strong></li></ul>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p><code>Get-Item -Stream *</code> 출력:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">   PSPath        : ...\notes.txt::$DATA
+   PSChildName   : notes.txt::$DATA
+   FileName      : C:\Users\jhkim\Desktop\notes.txt
+   Stream        : :$DATA
+   Length        : 184320
+
+   FileName      : C:\Users\jhkim\Desktop\notes.txt
+   Stream        : payload.exe
+   Length        : 451584</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>의미</th><th>판정</th></tr></thead><tbody><tr><td><code>Stream</code></td><td>스트림 이름. <code>:$DATA</code>가 기본 스트림</td><td><code>:$DATA</code> 외의 값이 ADS</td></tr><tr><td><code>Length</code></td><td>그 스트림의 바이트 수</td><td>기본 스트림보다 크면 강한 은닉 신호</td></tr><tr><td><code>FileName</code></td><td>호스트 파일 경로</td><td>—</td></tr></tbody></table></div>
+<p><code>fls</code>의 <code>r/r 84213-128-5</code> 표기:</p>
+<div class="table-wrap"><table><thead><tr><th>조각</th><th>의미</th></tr></thead><tbody><tr><td><code>r/r</code></td><td>파일 타입 (디렉터리는 <code>d/d</code>)</td></tr><tr><td><code>84213</code></td><td>MFT 엔트리 번호</td></tr><tr><td><code>128</code></td><td>속성 타입 (<code>0x80</code> = <code>$DATA</code>)</td></tr><tr><td><code>5</code></td><td>속성 ID. <strong>같은 엔트리에서 ID가 다른 <code>$DATA</code>가 ADS</strong></td></tr><tr><td>뒤의 <code>*</code> 표시</td><td>삭제된 항목</td></tr></tbody></table></div>
+<p><code>Zone.Identifier</code> 판독:</p>
+<div class="table-wrap"><table><thead><tr><th>관찰</th><th>결론</th></tr></thead><tbody><tr><td><code>ZoneId=3</code> + <code>HostUrl</code> 존재</td><td>인터넷 다운로드. URL이 확정 증거</td></tr><tr><td><code>ZoneId=3</code>인데 URL 필드 없음</td><td>인터넷 유래는 맞으나 출처 URL은 브라우저 기록에서 찾아야 한다</td></tr><tr><td><code>ZoneId=1</code></td><td>사내망/UNC. 내부 이동</td></tr><tr><td>스트림 자체가 없음</td><td>로컬 생성, 또는 MOTW가 제거/소실됨</td></tr></tbody></table></div>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>여기서 얻은 것</th><th>다음 목표</th></tr></thead><tbody><tr><td><code>HostUrl</code> / <code>ReferrerUrl</code></td><td>브라우저 History·Downloads에서 같은 URL 검색 (<a href="./chrome-history.html">FOR-0191</a>)</td></tr><tr><td>다운로드 URL의 호스트</td><td>pcap에서 같은 호스트로의 요청 확인 (<a href="./http-post-find.html">FOR-0158</a>)</td></tr><tr><td>ADS에서 추출한 실행 파일</td><td>형식 확인 → <code>strings</code>/DIE (<a href="./signature-extension-mismatch.html">FOR-0036</a>)</td></tr><tr><td>ADS 생성 시각</td><td><code>$UsnJrnl</code>의 <code>STREAM_CHANGE</code> 레코드 (<a href="./usnjrnl-basics.html">FOR-0027</a>)</td></tr><tr><td>ADS에 실행 파일이 있었다</td><td>Prefetch·Amcache·EVTX 4688에서 실행 여부</td></tr><tr><td><code>HasAds=True</code> 목록</td><td>각 항목을 <code>icat</code>으로 스트림 추출 (<a href="./mft-basics.html">FOR-0021</a>)</td></tr><tr><td><code>Zone.Identifier</code>가 사라진 파일</td><td>PowerShell 로그의 <code>Unblock-File</code>, 4104 스크립트 블록</td></tr><tr><td>스트림에 아무것도 없다</td><td>slack/비할당으로 은닉 위치 전환 (<a href="./file-slack.html">FOR-0034</a>)</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>dir</code>만 보고 스트림이 없다고 결론 내리는 것.</strong> 기본 <code>dir</code>은 ADS를 표시하지 않는다. 반드시 <code>dir /r</code> 또는 <code>Get-Item -Stream *</code>을 쓴다.</li><li><strong>파일 크기로 은닉을 판단하는 것.</strong> ADS 크기는 파일 크기에 포함되지 않는다. 184 KB로 보이는 파일에 451 KB가 들어 있을 수 있다.</li><li><strong>증거 파일을 FAT32 USB나 ZIP으로 옮긴 뒤 분석하는 것.</strong> ADS가 조용히 사라진다. <strong>이 과정 자체가 증거를 파괴한다.</strong> 원본 이미지에서 <code>fls</code>/<code>icat</code>으로 다룬다.</li><li><strong><code>Zone.Identifier</code>가 없는 것을 &quot;다운로드하지 않았다&quot;로 읽는 것.</strong> 제거되었거나 전송 과정에서 소실된 경우가 흔하다. 부재는 부재의 이유를 함께 조사해야 한다.</li><li><strong><code>ZoneId</code>만 읽고 끝내는 것.</strong> 값 있는 정보는 <code>HostUrl</code>/<code>ReferrerUrl</code>이다. 필드가 잘려 보이지 않는지 스트림 전체를 출력해 확인한다.</li><li><strong><code>icat</code>에 엔트리 번호만 넣는 것.</strong> <code>icat image.dd 84213</code>은 기본 스트림을 뽑는다. ADS는 <code>84213-128-5</code>처럼 <strong>타입과 속성 ID까지</strong> 지정해야 한다.</li><li><strong>PowerShell 5.1에서 <code>-AsByteStream</code>을 쓰는 것.</strong> 5.1에는 없는 파라미터다. 5.1은 <code>-Encoding Byte</code>, 7+는 <code>-AsByteStream</code>이다.</li><li><strong><code>Unblock-File</code>이나 <code>Remove-Item -Stream</code>을 분석 중에 실행하는 것.</strong> 증거를 지운다. 읽기만 한다.</li><li><strong><code>$MFT</code>의 <code>HasAds=True</code>를 모두 은닉으로 보는 것.</strong> 정상 시스템에도 <code>Zone.Identifier</code>, <code>SmartScreen</code>, macOS 경유 파일의 <code>com.apple.*</code> 스트림이 대량으로 존재한다. 스트림 <strong>이름</strong>으로 걸러낸다.</li><li><strong>스트림 이름의 콜론을 경로 구분자로 착각해 셸에서 잘못 인용하는 것.</strong> <code>bash</code>에서는 문제없지만 PowerShell/<code>cmd</code>에서는 경로에 콜론이 들어가면 파싱이 달라진다. PowerShell은 <code>-Stream</code> 파라미터를 쓰고, <code>cmd</code>는 <code>more &lt;</code>로 리다이렉트한다.</li><li><strong>디렉터리 ADS를 잊는 것.</strong> <code>C:\temp:hidden.txt</code>처럼 폴더에도 붙는다. <code>dir /r</code>을 폴더 자체에 대해서도 확인한다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) 스트림 목록을 두 도구로
+dir /r .\notes.txt
+Get-Item .\notes.txt -Stream * | Select-Object Stream, Length
+
+# 2) 스트림 내용의 해시가 추출본과 같은가
+Get-FileHash -Path &#39;.\notes.txt:payload.exe&#39; -Algorithm MD5
+Get-FileHash -Path .\payload_extracted.exe -Algorithm MD5</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 3) 이미지에서 본 것과 라이브에서 본 것이 같은가
+fls -o 2048 -r -p image.dd | grep -c &#39;:&#39;
+icat -o 2048 image.dd 84213-128-5 | md5sum
+
+# 4) Zone.Identifier 의 URL 을 브라우저 DB 와 대조
+sqlite3 History &quot;SELECT target_path, tab_url FROM downloads
+                 JOIN downloads_url_chains USING(id) LIMIT 20;&quot;
+
+# 5) $UsnJrnl 에 그 시각의 STREAM_CHANGE 가 있는가
+#    (MFTECmd -f \$J 로 CSV 변환 후)
+rg -i &#39;STREAM_CHANGE|NAMED_DATA&#39; usnjrnl.csv | rg &#39;notes.txt&#39;</code></pre></div>
+<p><code>Zone.Identifier</code>의 <code>HostUrl</code>과 브라우저 <code>downloads</code> 테이블의 URL이 일치하면 다운로드 경로가 두 출처로 확정된다. 불일치하면 파일이 다른 경로로 들어왔거나 스트림이 조작된 것이다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;사내 PC에서 유출 도구가 발견되었습니다.
+ 이 파일을 내려받은 URL을 답하세요.&quot;
+첨부: pc01.E01, 지문에 &#39;Downloads 폴더의 update.txt&#39; 언급
+
+1. FTK Imager 로 열고 Users/jhkim/Downloads 확인
+   update.txt   (184 KB)   -&gt; Export 후
+   file update.txt
+   -&gt; ASCII text
+   strings update.txt | head
+   -&gt; 그냥 설치 안내 텍스트. URL 없음.
+
+2. 첫 시도 (실패한 접근):
+   strings -a update.txt | grep -Ei &#39;http|://&#39;
+   binwalk update.txt
+   exiftool update.txt
+   -&gt; 전부 무소득. &quot;파일 안에 없다&quot;고 판단하고
+      브라우저 History 로 넘어갔으나 History 가 삭제되어 있었다.
+
+   무엇이 틀렸나: update.txt 를 파일로만 다뤘다.
+   ADS 는 파일을 읽는 어떤 방법으로도 보이지 않는다.
+   본문이 아니라 &#39;같은 MFT 엔트리의 다른 $DATA 속성&#39;을 봐야 했다.
+
+3. 접근 변경 — 스트림을 본다
+   fls -o 2048 -r -p pc01.E01 | grep -i update.txt
+   -&gt; r/r 91002-128-1:   Users/jhkim/Downloads/update.txt
+      r/r 91002-128-4:   Users/jhkim/Downloads/update.txt:Zone.Identifier
+      r/r 91002-128-6:   Users/jhkim/Downloads/update.txt:svc.exe
+
+   같은 엔트리 91002 에 $DATA 가 3 개. ADS 2 개 확정.
+
+4. Zone.Identifier 추출
+   icat -o 2048 pc01.E01 91002-128-4
+   -&gt; [ZoneTransfer]
+      ZoneId=3
+      ReferrerUrl=http://files.badhost.example/dl/index.php?id=77
+      HostUrl=http://files.badhost.example/dl/svc_pack.bin
+
+   ZoneId=3 = 인터넷. HostUrl 이 실제 다운로드 URL.
+
+5. 두 번째 ADS 도 확인
+   icat -o 2048 pc01.E01 91002-128-6 &gt; svc.exe
+   file svc.exe
+   -&gt; PE32+ executable (console) x86-64, for MS Windows
+   184 KB 텍스트 파일에 451 KB 실행 파일이 숨어 있었다.
+
+6. 교차검증 — 언제 붙었나
+   (FTK Imager 로 C:\$Extend\$UsnJrnl 의 $J 스트림을 C:\case\$J 로 Export)
+   MFTECmd.exe -f &#39;C:\case\$J&#39; --csv out --csvf j.csv
+   rg &#39;update.txt&#39; out\j.csv
+   -&gt; 2026-03-14 07:19:58 UTC  FileCreate|Close
+      2026-03-14 07:20:02 UTC  NamedDataExtend|StreamChange
+      2026-03-14 07:20:02 UTC  NamedDataExtend|StreamChange|Close
+
+   07:19:58 에 파일이 생기고 4 초 뒤 ADS 두 개가 붙었다.
+   UTC 07:20:02 = KST 16:20:02.
+
+7. 실행 여부
+   Prefetch 에 SVC.EXE-xxxxxxxx.pf 존재 -&gt; 실행됨
+
+정답: http://files.badhost.example/dl/svc_pack.bin
+      (Zone.Identifier 의 HostUrl. ADS 로 svc.exe 가 함께 은닉되어 있었다)</code></pre></div>
+<p>2→3단계가 이 글의 요지다. <strong><code>strings</code>/<code>binwalk</code>/<code>exiftool</code>은 모두 &quot;파일 본문&quot;만 읽으므로 ADS를 절대 못 본다.</strong> 스트림은 스트림을 보는 명령(<code>fls</code>, <code>dir /r</code>, <code>Get-Item -Stream *</code>)으로만 드러난다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>dir /r</code> 또는 <code>Get-Item -Stream *</code>을 실행했는가 (<code>dir</code>만으로는 안 보인다)</li><li><code>$MFT</code> 파서 CSV의 <code>HasAds</code> 컬럼으로 볼륨 전체를 스크리닝했는가</li><li><code>fls -r -p</code>에서 <code>파일명:스트림명</code> 형태의 줄을 찾았는가</li><li><code>icat</code>에 <code>엔트리-128-속성ID</code> 형식으로 스트림을 지정했는가</li><li><strong>디렉터리</strong>에도 ADS가 있는지 확인했는가</li><li><code>Zone.Identifier</code>의 전체 내용을 봤는가 — <code>HostUrl</code>이 잘리지 않았는지</li><li>스트림이 없다면 왜 없는지 조사했는가 — <code>Unblock-File</code> 실행 흔적, ZIP/USB 경유</li><li><code>$UsnJrnl</code>에서 <code>STREAM_CHANGE</code>/<code>NAMED_DATA_*</code>를 검색했는가</li><li>증거를 FAT32/ZIP 경유로 복사한 적이 있는가 — 그렇다면 원본 이미지로 되돌아간다</li><li>ADS에서 나온 바이너리를 <code>file</code>/DIE로 판정했는가</li><li>다운로드 URL을 브라우저 DB·pcap과 대조했는가</li><li>스트림 이름이 정상 시스템 스트림(<code>SmartScreen</code>, <code>com.apple.*</code>)인지 확인했는가 — 전부 은닉은 아니다</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-081 — Microsoft Learn, File Streams: <code>파일명:스트림명:$DATA</code> 명명 규칙, 이름 있는 <code>$DATA</code> 스트림의 존재와 기본 스트림(<code>::$DATA</code>)과의 관계, 파일 크기에 스트림이 포함되지 않는 동작</li><li>SRC-005 — Microsoft Learn, Master File Table: <code>$DATA</code>(속성 타입 <code>0x80</code>)가 한 MFT 레코드에 여러 개 존재할 수 있다는 구조적 근거. <code>fls</code>의 <code>엔트리-128-ID</code> 표기 해석의 기반</li><li>SRC-004 — Eric Zimmerman 문서: MFTECmd의 <code>HasAds</code> 컬럼과 <code>$J</code>(USN 저널) 파싱 출력 형식</li><li><code>Zone.Identifier</code>의 필드 구성(<code>ReferrerUrl</code>, <code>HostUrl</code>, <code>LastWriterPackageFamilyName</code> 등)은 Windows 버전과 저장한 애플리케이션에 따라 다르므로 실제 스트림 내용을 그대로 확인할 것</li><li><code>streams.exe</code>(Sysinternals)는 <code>tools/manifest.json</code>에 등재되어 있지 않다. 대회장에서는 <code>dir /r</code>/<code>Get-Item -Stream *</code>/<code>fls</code>로 대체할 수 있다</li><li>ADS에 놓인 실행 파일의 직접 실행 가능 여부는 Windows 버전·보안 제품 설정에 따라 다르므로 단정하지 말고 실행 흔적(Prefetch, 4688, Sysmon 1)으로 판정할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./mft-basics.html">
+    <span class="rel-id">FOR-0021 · 디스크/NTFS</span>
+    $MFT 기본 구조와 포렌식 활용
+  </a>
+  <a class="related-item" href="./usnjrnl-basics.html">
+    <span class="rel-id">FOR-0027 · 디스크/NTFS</span>
+    $UsnJrnl($J)로 삭제·생성·이름변경 흔적 복원하기
+  </a>
+  <a class="related-item" href="./file-slack.html">
+    <span class="rel-id">FOR-0034 · 디스크/NTFS</span>
+    File Slack(RAM slack / drive slack) 계산과 추출
+  </a>
+  <a class="related-item" href="./ntfs-structure.html">
+    <span class="rel-id">FOR-0020 · 디스크/NTFS</span>
+    NTFS 핵심 구조: 부트섹터 오프셋부터 속성·data run까지
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./file-slack.html"><span class="rel-id">← FOR-0034</span>File Slack(RAM slack / drive slack) 계산과 추출</a>
+<a class="related-item" href="./signature-extension-mismatch.html"><span class="rel-id">FOR-0036 →</span>확장자 위조 파일 대량 스캔: 시그니처와 확장자 불일치 찾기</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-문법과-구조">1단계 — 문법과 구조</a></li>
+<li class="toc-l3"><a href="#2단계-zoneidentifier가-실전에서-가장-중요하다">2단계 — Zone.Identifier가 실전에서 가장 중요하다</a></li>
+<li class="toc-l3"><a href="#3단계-탐지-라이브-시스템">3단계 — 탐지: 라이브 시스템</a></li>
+<li class="toc-l3"><a href="#4단계-탐지-이미지오프라인">4단계 — 탐지: 이미지/오프라인</a></li>
+<li class="toc-l3"><a href="#5단계-ads로-숨기는-기법">5단계 — ADS로 숨기는 기법</a></li>
+<li class="toc-l3"><a href="#6단계-usnjrnl과-연결하기">6단계 — $UsnJrnl과 연결하기</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 03:39 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

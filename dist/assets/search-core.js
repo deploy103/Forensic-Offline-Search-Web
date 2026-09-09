@@ -21,6 +21,17 @@
   'use strict';
 
   var WEIGHT = {
+    // The article that DOCUMENTS a term declares it in `primary_terms`, and
+    // validate.mjs enforces that no two articles claim the same one. That makes
+    // "which entry is the answer for `$UsnJrnl`" an explicit, checked fact
+    // rather than an accident of ID ordering.
+    primaryTerm: 2500,
+    // A multi-word primary term ("타임스탬프 조작") is tokenized by the query
+    // parser, so no single token ever equals it. These two cover that: the
+    // whole query matching the term, and one token appearing inside it.
+    primaryPhrase: 2500,
+    primaryPartial: 600,
+
     exactField: 1000, // whole-value hit on an artifact/path/event id/filter/regex
     exactFieldPartial: 420,
     titleExact: 900,
@@ -31,6 +42,17 @@
     answer: 120,
     body: 60,
     ngram: 25,
+
+    // "Aboutness" bonuses, added on top of an exact-field hit.
+    //
+    // Without these, every article that merely *uses* a tool scores the same
+    // 1000 as the article that *documents* it — `RegRipper` in a 도구 list is
+    // indistinguishable from `RegRipper` in the title — and ties then break by
+    // ID, so the lowest-numbered article wins. These lift the article the term
+    // is actually about.
+    aboutTitle: 400,
+    aboutKeyword: 250,
+    aboutAlias: 150,
   };
 
   // Tokens shorter than this are not n-gram-expanded (too noisy).
@@ -78,6 +100,8 @@
     var docs = index.docs || [];
     for (var i = 0; i < docs.length; i++) {
       var d = docs[i];
+      d._primary = (d.pt || []).map(norm);
+      d._primarySq = d._primary.map(squash);
       d._exact = (d.ex || []).map(norm);
       d._exactSq = d._exact.map(squash);
       d._title = norm(d.t);
@@ -110,16 +134,33 @@
       return { score: WEIGHT.exactField + 200, where: 'id' };
     }
 
+    // Tier 0 — this article is declared as THE answer for the term.
+    for (var p = 0; p < doc._primary.length; p++) {
+      if (doc._primary[p] === t || doc._primarySq[p] === tSq) {
+        return { score: WEIGHT.primaryTerm, where: 'primary' };
+      }
+    }
+    // Token inside a multi-word primary term.
+    if (tSq.length >= 2) {
+      for (var pp = 0; pp < doc._primarySq.length; pp++) {
+        if (doc._primarySq[pp].indexOf(tSq) !== -1) {
+          score = WEIGHT.primaryPartial;
+          where = 'primary-partial';
+          break;
+        }
+      }
+    }
+
     // Tier 1 — exact metadata values: artifacts, paths, registry paths,
     // event IDs, protocols, tools, commands, regexes, wireshark filters.
     for (var i = 0; i < doc._exact.length; i++) {
       if (doc._exact[i] === t || doc._exactSq[i] === tSq) {
-        return { score: WEIGHT.exactField, where: 'exact' };
+        return { score: WEIGHT.exactField + aboutness(doc, t, tSq), where: 'exact' };
       }
     }
     for (var j = 0; j < doc._exactSq.length; j++) {
       if (tSq.length >= 3 && doc._exactSq[j].indexOf(tSq) !== -1) {
-        score = WEIGHT.exactFieldPartial;
+        score = WEIGHT.exactFieldPartial + aboutness(doc, t, tSq);
         where = 'exact-partial';
         break;
       }
@@ -187,6 +228,19 @@
     return { score: score, where: where };
   }
 
+  /**
+   * How central is this token to the document, beyond appearing in a metadata
+   * list? Title presence is the strongest signal that the article is *about*
+   * the term; curated keywords and aliases are next.
+   */
+  function aboutness(doc, t, tSq) {
+    var bonus = 0;
+    if (doc._titleSq.indexOf(tSq) !== -1) bonus += WEIGHT.aboutTitle;
+    if (matchList(doc._kw, t, tSq)) bonus += WEIGHT.aboutKeyword;
+    if (matchList(doc._al, t, tSq)) bonus += WEIGHT.aboutAlias;
+    return bonus;
+  }
+
   function matchList(list, t, tSq) {
     for (var i = 0; i < list.length; i++) {
       var v = list[i];
@@ -235,6 +289,8 @@
     var tokens = tokenize(query || '');
     var docs = index.docs || [];
     var results = [];
+    // Whole-query form, for matching multi-word primary terms as one phrase.
+    var querySq = squash(query || '');
 
     // Empty query with filters = browse mode.
     if (tokens.length === 0) {
@@ -270,6 +326,15 @@
       total = total * coverage;
       if (coverage === 1 && tokens.length > 1) total += 150;
       total += priorityBoost(doc);
+
+      // The whole query IS one of this entry's declared primary terms.
+      for (var q = 0; q < doc._primarySq.length; q++) {
+        if (doc._primarySq[q] === querySq) {
+          total += WEIGHT.primaryPhrase;
+          if (where.indexOf('primary') === -1) where.push('primary');
+          break;
+        }
+      }
 
       results.push({ doc: doc, score: Math.round(total), matched: where, coverage: coverage });
     }

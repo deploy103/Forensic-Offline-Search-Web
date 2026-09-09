@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>SOFTWARE hive로 설치 프로그램·OS 버전·ProfileList 확인 · FOR-0055 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Registry">Registry</a> / FOR-0055
+      </div>
+      <header class="article-head">
+        <h1>SOFTWARE hive로 설치 프로그램·OS 버전·ProfileList 확인</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Registry</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>SOFTWARE hive는 Microsoft\Windows\CurrentVersion\Uninstall(설치 프로그램 목록), Microsoft\Windows NT\CurrentVersion(OS 버전·설치 시각·등록 소유자), Microsoft\Windows NT\CurrentVersion\ProfileList(SID ↔ 프로필 폴더) 세 곳으로 &quot;이 PC에 무엇이 설치되어 있었고 누구의 것인가&quot;를 답한다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>RegRipper, RegistryExplorer, rla, FTK Imager, KAPE</td></tr>
+<tr><th>artifact</th><td><code>SOFTWARE hive</code> · <code>Uninstall</code> · <code>WOW6432Node</code> · <code>ProfileList</code> · <code>Windows NT CurrentVersion</code> · <code>Run</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\Windows\System32\config\SOFTWARE</code> · <code>C:\Users\&lt;user&gt;\NTUSER.DAT</code></td></tr>
+<tr><th>레지스트리</th><td><code>SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall</code> · <code>SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall</code> · <code>SOFTWARE\Microsoft\Windows NT\CurrentVersion</code> · <code>SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList</code> · <code>SOFTWARE\Microsoft\Windows\CurrentVersion\Run</code> · <code>SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce</code> · <code>SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths</code> · <code>SOFTWARE\Classes</code></td></tr>
+<tr><th>로그 필드</th><td><code>DisplayName</code> · <code>DisplayVersion</code> · <code>InstallDate</code> · <code>InstallLocation</code> · <code>Publisher</code> · <code>UninstallString</code> · <code>ProductName</code> · <code>CurrentBuild</code> · <code>RegisteredOwner</code> · <code>ProfileImagePath</code></td></tr>
+<tr><th>파일 형식</th><td><code>regf</code></td></tr>
+<tr><th>검색 별칭</th><td>설치된 프로그램 목록 · software hive · 언인스톨 키 · 윈도우 버전 확인 · 설치 시각 · sid 프로필 경로 · profilelist · 자동실행 레지스트리</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>SOFTWARE</code> hive는 <code>Microsoft\Windows\CurrentVersion\Uninstall</code>(설치 프로그램 목록), <code>Microsoft\Windows NT\CurrentVersion</code>(OS 버전·설치 시각·등록 소유자), <code>Microsoft\Windows NT\CurrentVersion\ProfileList</code>(SID ↔ 프로필 폴더) 세 곳으로 &quot;이 PC에 무엇이 설치되어 있었고 누구의 것인가&quot;를 답한다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;이 PC에 어떤 프로그램이 설치되어 있었나&quot; / &quot;특정 도구(VPN, 원격제어, 압축, 삭제 도구)를 설치했나&quot;</li><li>&quot;Windows 버전과 빌드는? OS를 언제 설치했나? 등록 소유자는 누구인가&quot;</li><li>&quot;<code>S-1-5-21-...-1001</code>이 어느 사용자 폴더인가&quot; — 사용자별 artifact 귀속의 필수 단계</li><li>&quot;부팅 때 자동으로 실행되는 것이 있나&quot; (시스템 전역)</li><li>&quot;실행 이력에는 있는데 설치 목록에 없는 프로그램&quot; — portable 실행 파일 또는 드롭된 악성코드</li></ul>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>첨부에 <code>SOFTWARE</code>(확장자 없음, 다른 hive보다 파일이 크다)가 있다</li><li>문제가 프로그램 이름·버전·설치 시각을 묻는다</li><li>EVTX나 다른 artifact에 SID만 있고 사용자 이름이 없다</li><li>32비트 프로그램인데 <code>Uninstall</code>에 안 보인다 → <code>WOW6432Node</code> 아래를 봐야 한다</li><li>문제가 &quot;정품 등록자&quot;, &quot;조직명&quot;, &quot;OS 설치일&quot; 같은 시스템 신원을 묻는다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">rip.exe -r &quot;C:\case\SOFTWARE&quot; -p uninstall &gt; uninstall.txt</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Microsoft\Windows\CurrentVersion\Uninstall
+LastWrite Time 2026-03-14 06:41:02Z
+
+2026-03-14 06:41:02Z
+  7-Zip 23.01 (x64) v.23.01
+2026-03-12 22:07:55Z
+  Eraser 6.2.0.2993 v.6.2.0.2993
+2026-03-10 04:31:18Z
+  Google Chrome v.132.0.6834.160</code></pre></div>
+<p>이어서 OS 정보와 프로필 매핑을 뽑는다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">rip.exe -r &quot;C:\case\SOFTWARE&quot; -p winver
+rip.exe -r &quot;C:\case\SOFTWARE&quot; -p profilelist</code></pre></div>
+<p>GUI라면 RegistryExplorer로 <code>SOFTWARE</code>를 열고 다음 세 경로만 먼저 본다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall
+SOFTWARE\Microsoft\Windows NT\CurrentVersion
+SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-uninstall-키-구조">1단계 — <code>Uninstall</code> 키 구조</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall
+├── {AC76BA86-1033-1033-7760-BC15014EA700}      &lt;- MSI ProductCode(GUID)
+├── 7-Zip                                        &lt;- 설치 프로그램이 정한 이름
+└── Google Chrome</code></pre></div>
+<p>키 이름은 MSI <code>ProductCode</code> GUID이거나 프로그램이 정한 문자열이다. <strong>키 이름 자체는 표시 이름이 아니므로 <code>DisplayName</code> 값을 읽어야 한다.</strong></p>
+<div class="table-wrap"><table><thead><tr><th>값 이름</th><th>타입</th><th>의미 / 주의</th></tr></thead><tbody><tr><td><code>DisplayName</code></td><td><code>REG_SZ</code></td><td>제어판에 보이는 이름. <strong>이것이 프로그램 이름이다</strong></td></tr><tr><td><code>DisplayVersion</code></td><td><code>REG_SZ</code></td><td>버전 문자열</td></tr><tr><td><code>InstallDate</code></td><td><code>REG_SZ</code></td><td><strong><code>YYYYMMDD</code> 8자리 날짜만.</strong> 시각이 없다</td></tr><tr><td><code>InstallLocation</code></td><td><code>REG_SZ</code></td><td>설치 폴더. 비어 있는 프로그램도 많다</td></tr><tr><td><code>InstallSource</code></td><td><code>REG_SZ</code></td><td>설치 파일이 있던 경로. <strong><code>Downloads</code>/<code>Temp</code>/<code>E:\</code> 면 출처 단서</strong></td></tr><tr><td><code>Publisher</code></td><td><code>REG_SZ</code></td><td>제작사. 비어 있거나 오타면 의심</td></tr><tr><td><code>UninstallString</code></td><td><code>REG_SZ</code></td><td>제거 명령. 실제 실행 파일 경로가 여기 드러나는 경우가 많다</td></tr><tr><td><code>QuietUninstallString</code></td><td><code>REG_SZ</code></td><td>무인 제거 명령</td></tr><tr><td><code>EstimatedSize</code></td><td><code>REG_DWORD</code></td><td>대략 크기(<strong>KB 단위</strong>)</td></tr><tr><td><code>DisplayIcon</code></td><td><code>REG_SZ</code></td><td>아이콘 경로. 주 실행 파일 경로가 드러난다</td></tr><tr><td><code>ModifyPath</code></td><td><code>REG_SZ</code></td><td>변경 명령</td></tr><tr><td><code>SystemComponent</code></td><td><code>REG_DWORD</code></td><td><code>1</code>이면 제어판 목록에서 숨겨진다. <strong>은닉 수단으로 쓰일 수 있다</strong></td></tr><tr><td><code>WindowsInstaller</code></td><td><code>REG_DWORD</code></td><td><code>1</code>이면 MSI 설치</td></tr></tbody></table></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 특정 프로그램만
+Select-String -Path uninstall.txt -Pattern &#39;Eraser|CCleaner|VeraCrypt|AnyDesk|TeamViewer|7-Zip|WinRAR&#39;</code></pre></div>
+<h3 id="2단계-wow6432node-32비트-프로그램">2단계 — <code>WOW6432Node</code> (32비트 프로그램)</h3>
+<p>64비트 Windows에서 <strong>32비트 프로그램은 다른 경로에 등록된다.</strong></p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall           &lt;- 64비트 프로그램
+SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall  &lt;- 32비트 프로그램</code></pre></div>
+<p><code>WOW6432Node</code>는 <code>SOFTWARE</code> 아래 어디에나 병렬로 존재할 수 있다(<code>WOW6432Node\Microsoft\Windows\CurrentVersion\Run</code>도 있다). <strong>한쪽만 보고 &quot;설치되지 않았다&quot;고 결론 내리는 것이 이 hive의 대표적 오답 경로다.</strong></p>
+<p>사용자 단독 설치(<code>per-user install</code>)는 또 다른 곳에 있다.</p>
+<div class="table-wrap"><table><thead><tr><th>설치 범위</th><th>hive</th><th>경로</th></tr></thead><tbody><tr><td>전체 사용자, 64비트</td><td><code>SOFTWARE</code></td><td><code>Microsoft\Windows\CurrentVersion\Uninstall</code></td></tr><tr><td>전체 사용자, 32비트</td><td><code>SOFTWARE</code></td><td><code>WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall</code></td></tr><tr><td>특정 사용자만</td><td><code>NTUSER.DAT</code></td><td><code>Software\Microsoft\Windows\CurrentVersion\Uninstall</code></td></tr></tbody></table></div>
+<p>Chrome, Teams처럼 사용자 폴더에 설치되는 프로그램은 <code>NTUSER.DAT</code> 쪽에만 있는 경우가 있다. <strong>세 곳을 모두 확인한다.</strong></p>
+<h3 id="3단계-windows-ntcurrentversion-os-신원">3단계 — <code>Windows NT\CurrentVersion</code> (OS 신원)</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">SOFTWARE\Microsoft\Windows NT\CurrentVersion</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>값 이름</th><th>의미</th></tr></thead><tbody><tr><td><code>ProductName</code></td><td><code>Windows 10 Pro</code> 등 에디션 이름</td></tr><tr><td><code>EditionID</code></td><td><code>Professional</code>, <code>Enterprise</code> 등</td></tr><tr><td><code>CurrentBuild</code> / <code>CurrentBuildNumber</code></td><td>빌드 번호 (예: <code>19045</code>)</td></tr><tr><td><code>DisplayVersion</code></td><td><code>22H2</code> 같은 표시 버전 (최신 빌드에 존재)</td></tr><tr><td><code>ReleaseId</code></td><td>구버전의 릴리스 식별자 (예: <code>2009</code>)</td></tr><tr><td><code>UBR</code></td><td>Update Build Revision. 빌드 뒤에 붙는 패치 번호</td></tr><tr><td><code>CurrentMajorVersionNumber</code> / <code>CurrentMinorVersionNumber</code></td><td><code>10</code> / <code>0</code></td></tr><tr><td><code>BuildLabEx</code></td><td>상세 빌드 문자열</td></tr><tr><td><code>InstallDate</code></td><td><strong><code>REG_DWORD</code>, Unix epoch 초(UTC).</strong> OS 설치 시각</td></tr><tr><td><code>InstallTime</code></td><td><strong><code>REG_QWORD</code>, FILETIME(UTC).</strong> 같은 시각을 더 정밀하게</td></tr><tr><td><code>RegisteredOwner</code></td><td>설치 시 입력한 소유자 이름</td></tr><tr><td><code>RegisteredOrganization</code></td><td>조직명</td></tr><tr><td><code>SystemRoot</code> / <code>PathName</code></td><td><code>C:\Windows</code></td></tr><tr><td><code>ProductId</code></td><td>제품 ID</td></tr></tbody></table></div>
+<p><strong>같은 이름 <code>InstallDate</code>가 위치에 따라 완전히 다른 형식이다.</strong> 이것을 혼동하면 값이 통째로 의미를 잃는다.</p>
+<div class="table-wrap"><table><thead><tr><th>위치</th><th><code>InstallDate</code> 타입</th><th>형식</th><th>변환</th></tr></thead><tbody><tr><td><code>Uninstall\&lt;프로그램&gt;</code></td><td><code>REG_SZ</code></td><td><code>20260314</code> (날짜만)</td><td>변환 불필요. 시각 정보 없음</td></tr><tr><td><code>Windows NT\CurrentVersion</code></td><td><code>REG_DWORD</code></td><td><code>1773465600</code> (Unix 초)</td><td>UTC → KST +9h</td></tr></tbody></table></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># InstallDate (REG_DWORD, Unix 초) -&gt; KST
+$unix = 1773465600
+[datetimeoffset]::FromUnixTimeSeconds($unix).UtcDateTime.AddHours(9)</code></pre></div>
+<p><code>InstallTime</code>(<code>REG_QWORD</code>)이 있으면 그쪽이 FILETIME이므로 초 단위 이하까지 나온다. FILETIME은 1601-01-01 UTC 기준 100ns, Unix와의 차이는 <code>11644473600</code>초다 (<a href="./system-timezone.html">FOR-0054</a>).</p>
+<h3 id="4단계-profilelist-sid-프로필-폴더">4단계 — <code>ProfileList</code> (SID ↔ 프로필 폴더)</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList
+├── S-1-5-18                                              &lt;- LocalSystem
+├── S-1-5-19                                              &lt;- LocalService
+├── S-1-5-20                                              &lt;- NetworkService
+└── S-1-5-21-3419281148-2201972856-1043271217-1001        &lt;- 실제 사용자</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>값 이름</th><th>의미</th></tr></thead><tbody><tr><td><code>ProfileImagePath</code></td><td><strong>프로필 폴더 경로</strong> (<code>C:\Users\jhkim</code>). 이 글에서 가장 중요한 값</td></tr><tr><td><code>Sid</code></td><td>이진 형태의 SID. 키 이름과 같은 값</td></tr><tr><td><code>Flags</code> / <code>State</code></td><td>프로필 상태 플래그</td></tr><tr><td><code>RefCount</code></td><td>로드 참조 수</td></tr><tr><td><code>LocalProfileLoadTimeLow</code> / <code>High</code></td><td>프로필 로드 시각의 FILETIME 하위/상위 32비트 (빌드에 따라 존재)</td></tr><tr><td><code>LocalProfileUnloadTimeLow</code> / <code>High</code></td><td>프로필 언로드 시각의 FILETIME 하위/상위 32비트 (빌드에 따라 존재)</td></tr></tbody></table></div>
+<p><code>...LoadTimeLow</code>/<code>High</code>는 <strong>두 DWORD를 합쳐 하나의 64비트 FILETIME</strong>으로 읽어야 한다. 값의 존재 여부와 정확한 이름이 빌드마다 다르므로 파서 출력으로 확인한다. 존재한다면 &quot;그 사용자가 마지막으로 로그온/로그오프한 시각&quot;의 유력한 근거가 된다.</p>
+<p><code>SAM</code>의 RID와 여기 SID의 마지막 숫자를 맞추면 계정 ↔ 폴더 표가 완성된다 (<a href="./sam-user-accounts.html">FOR-0052</a>).</p>
+<div class="table-wrap"><table><thead><tr><th>SID</th><th>ProfileImagePath</th><th>SAM RID</th><th>결론</th></tr></thead><tbody><tr><td><code>...-1001</code></td><td><code>C:\Users\jhkim</code></td><td>1001</td><td>정상 사용자</td></tr><tr><td><code>...-1004</code></td><td><code>C:\Users\svc_helpdesk</code></td><td>1004</td><td>최근 생성 계정</td></tr><tr><td><code>...-1002</code></td><td><code>C:\Users\temp2</code></td><td>(SAM에 없음)</td><td><strong>삭제된 계정의 잔존 프로필</strong></td></tr><tr><td><code>S-1-5-18</code></td><td><code>C:\Windows\system32\config\systemprofile</code></td><td>—</td><td>시스템 계정</td></tr></tbody></table></div>
+<h3 id="5단계-시스템-전역-자동실행">5단계 — 시스템 전역 자동실행</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">SOFTWARE\Microsoft\Windows\CurrentVersion\Run
+SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce
+SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run
+SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run</code></pre></div>
+<p>값 이름이 표시 이름, 데이터가 실행할 명령줄이다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">SecurityHealth   REG_EXPAND_SZ  %windir%\system32\SecurityHealthSystray.exe
+OneDriveSetup    REG_SZ         C:\Windows\SysWOW64\OneDriveSetup.exe /thfirstsetup
+updater          REG_SZ         C:\Users\jhkim\AppData\Roaming\svc\updater.exe -s</code></pre></div>
+<p>의심 판단 기준은 서비스와 같다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">- 데이터 경로가 AppData / Temp / ProgramData / Users 아래다
+- powershell / mshta / rundll32 / wscript 가 인자와 함께 들어 있다
+- Base64 로 보이는 긴 문자열이 인자에 있다
+- 값 이름이 정상 항목과 한두 글자 다르다</code></pre></div>
+<p>사용자별 자동실행은 <code>NTUSER.DAT\Software\Microsoft\Windows\CurrentVersion\Run</code>이다. 시스템 전역과 사용자별을 모두 봐야 한다.</p>
+<h3 id="6단계-classes-서브키">6단계 — <code>Classes</code> 서브키</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">SOFTWARE\Classes
+├── .txt                     &lt;- 확장자 -&gt; ProgID 매핑
+├── .exe
+├── txtfile\shell\open\command
+└── CLSID\{GUID}\InProcServer32</code></pre></div>
+<p><code>SOFTWARE\Classes</code>는 <code>HKCR</code>의 <strong>머신 부분</strong>이고, 사용자 부분은 <code>UsrClass.dat</code>(=<code>HKCU\Software\Classes</code>)다. 둘을 합친 뷰가 <code>HKCR</code>이다 (<a href="./registry-hive-map.html">FOR-0051</a>).</p>
+<div class="table-wrap"><table><thead><tr><th>무엇을 보나</th><th>경로 예</th></tr></thead><tbody><tr><td>확장자 연결 하이재킹</td><td><code>SOFTWARE\Classes\&lt;ProgID&gt;\shell\open\command</code> — 정상 프로그램 대신 다른 실행 파일이 지정됨</td></tr><tr><td>COM 하이재킹</td><td><code>SOFTWARE\Classes\CLSID\{GUID}\InProcServer32</code> — 등록된 DLL 경로</td></tr><tr><td>어떤 프로그램이 확장자를 등록했나</td><td><code>SOFTWARE\Classes\.&lt;ext&gt;</code> 의 기본값(ProgID)</td></tr></tbody></table></div>
+<p><code>.exe</code> 연결이 비정상 명령으로 바뀌어 있으면 모든 실행이 그 프로그램을 경유한다.</p>
+<h3 id="7단계-그-외-자주-쓰는-software-키">7단계 — 그 외 자주 쓰는 SOFTWARE 키</h3>
+<div class="table-wrap"><table><thead><tr><th>경로 (<code>SOFTWARE\</code> 이후)</th><th>무엇을 알 수 있나</th></tr></thead><tbody><tr><td><code>Microsoft\Windows\CurrentVersion\App Paths\&lt;exe&gt;</code></td><td>실행 파일 별칭과 실제 경로</td></tr><tr><td><code>Microsoft\Windows NT\CurrentVersion\Winlogon</code></td><td><code>Shell</code>, <code>Userinit</code> — 로그온 지속성 하이재킹 지점</td></tr><tr><td><code>Microsoft\Windows NT\CurrentVersion\NetworkList\Profiles\{GUID}</code></td><td>접속한 네트워크 이름과 최초/최종 접속 시각. <strong>이 시각은 로컬 시각으로 기록되는 것으로 알려져 있으므로 파서 출력으로 확인한다</strong></td></tr><tr><td><code>Microsoft\Windows Search</code></td><td>인덱싱 설정</td></tr><tr><td><code>Policies\Microsoft\Windows Defender</code></td><td>실시간 보호 비활성화 여부</td></tr><tr><td><code>Microsoft\Windows\CurrentVersion\Explorer\FolderDescriptions</code></td><td>Known Folder 정의</td></tr></tbody></table></div>
+<h3 id="8단계-설치-시각-문제를-다루는-방법">8단계 — 설치 시각 문제를 다루는 방법</h3>
+<p><code>Uninstall</code> 항목의 시각 근거는 두 개뿐이고 둘 다 불완전하다.</p>
+<div class="table-wrap"><table><thead><tr><th>근거</th><th>정밀도</th><th>한계</th></tr></thead><tbody><tr><td><code>InstallDate</code> (<code>REG_SZ</code>)</td><td><strong>날짜만</strong> (<code>20260314</code>)</td><td>시각이 없다. 설치 프로그램이 안 쓰면 값 자체가 없다</td></tr><tr><td>그 <code>Uninstall\&lt;키&gt;</code>의 LastWrite</td><td>초 단위 (UTC)</td><td>설치 후 업데이트·수리로 갱신될 수 있다</td></tr></tbody></table></div>
+<p>&quot;몇 시 몇 분에 설치했나&quot;를 요구하면 레지스트리만으로는 부족하다. 다음으로 보강한다.</p>
+<div class="table-wrap"><table><thead><tr><th>보강 근거</th><th>무엇을 얻나</th></tr></thead><tbody><tr><td><code>InstallLocation</code> 폴더의 <code>$MFT</code> 생성 시각</td><td>파일이 실제로 디스크에 쓰인 시각 (<a href="./mft-basics.html">FOR-0021</a>)</td></tr><tr><td><code>C:\Windows\Installer\*.msi</code> 의 <code>$MFT</code> 시각</td><td>MSI 캐시 생성 시각</td></tr><tr><td>Application EVTX <code>MsiInstaller</code> 이벤트 (1033/11707 등)</td><td>설치 성공 시각과 제품명</td></tr><tr><td>Prefetch의 설치 프로그램 <code>.pf</code></td><td>설치 프로그램이 실행된 시각</td></tr><tr><td><code>Amcache.hve</code></td><td>설치 파일의 SHA-1과 최초 등록 시각</td></tr></tbody></table></div>
+<h3 id="9단계-악성-프로그램-흔적으로-해석하기">9단계 — 악성 프로그램 흔적으로 해석하기</h3>
+<p><code>Uninstall</code> 목록은 <strong>정식 설치 절차를 거친 프로그램만</strong> 기록한다. 이 성질이 오히려 판단 근거가 된다.</p>
+<div class="table-wrap"><table><thead><tr><th>관찰</th><th>해석</th></tr></thead><tbody><tr><td><code>Uninstall</code>에 없는데 Prefetch·UserAssist·Amcache에 실행 이력이 있다</td><td><strong>portable 실행 파일 또는 드롭된 악성코드.</strong> 설치 과정이 없었다</td></tr><tr><td><code>Uninstall</code>에 있는데 <code>InstallLocation</code> 폴더가 <code>$MFT</code>에 없다</td><td>제거되었거나 삭제됨. <code>$UsnJrnl</code>로 삭제 시각 확인 (<a href="./usnjrnl-basics.html">FOR-0027</a>)</td></tr><tr><td><code>SystemComponent = 1</code>인 사용자 프로그램</td><td>제어판 목록에서 일부러 숨김</td></tr><tr><td><code>Publisher</code>가 비었고 <code>InstallSource</code>가 <code>Downloads</code></td><td>인터넷에서 받은 비서명 프로그램</td></tr><tr><td>데이터 삭제·와이핑 도구가 설치되어 있다</td><td>반포렌식 시도. 설치 시각과 사고 시각을 비교</td></tr><tr><td><code>Uninstall</code> 키 LastWrite가 사고 시각대에 몰려 있다</td><td>그 시각대에 설치·제거 활동이 있었다</td></tr><tr><td><code>Run</code> 값이 <code>AppData</code> 경로를 가리킨다</td><td>지속성 확보 흔적</td></tr></tbody></table></div>
+<p>&quot;설치 목록에 없다&quot;는 <strong>부재 증거로 쓸 수 있는 강한 신호</strong>다. 실행 이력만 있고 설치 이력이 없으면 사용자가 파일을 받아 그냥 실행했다는 결론으로 이어진다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>어디서</th><th>결론에 어떻게 쓰나</th></tr></thead><tbody><tr><td><code>DisplayName</code> + <code>DisplayVersion</code></td><td><code>Uninstall\&lt;키&gt;</code></td><td>프로그램 신원. 답으로 그대로 제출하는 값</td></tr><tr><td><code>InstallDate</code> (<code>REG_SZ</code>)</td><td><code>Uninstall\&lt;키&gt;</code></td><td>설치 <strong>날짜</strong>. 시각은 다른 근거로</td></tr><tr><td><code>InstallSource</code></td><td><code>Uninstall\&lt;키&gt;</code></td><td>설치 파일 출처(다운로드 폴더, USB 드라이브 문자)</td></tr><tr><td><code>UninstallString</code> / <code>DisplayIcon</code></td><td><code>Uninstall\&lt;키&gt;</code></td><td>실제 실행 파일 경로 노출</td></tr><tr><td>키 LastWrite</td><td><code>Uninstall\&lt;키&gt;</code></td><td>설치/변경 시각(UTC). 초 단위 근거</td></tr><tr><td><code>ProductName</code> + <code>CurrentBuild</code> + <code>UBR</code></td><td><code>Windows NT\CurrentVersion</code></td><td>OS 신원. artifact 해석 기준(빌드별 동작 차이)</td></tr><tr><td><code>InstallDate</code> (<code>REG_DWORD</code>)</td><td><code>Windows NT\CurrentVersion</code></td><td>OS 설치 시각. Unix 초(UTC)</td></tr><tr><td><code>RegisteredOwner</code></td><td><code>Windows NT\CurrentVersion</code></td><td>설치자 이름. 문제의 답이 되는 경우가 많다</td></tr><tr><td><code>ProfileImagePath</code></td><td><code>ProfileList\&lt;SID&gt;</code></td><td>SID → 사용자 폴더 매핑</td></tr><tr><td><code>Run</code> 값 데이터</td><td><code>CurrentVersion\Run</code></td><td>지속성 실행 명령</td></tr></tbody></table></div>
+<p>키 LastWrite와 <code>InstallTime</code>은 FILETIME 기반이므로 <strong>UTC</strong>다. <code>InstallDate</code>(<code>REG_SZ</code>)는 시각이 없어 시간대 변환 대상이 아니다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>이 글에서 얻은 값</th><th>다음에 열 것</th><th>무엇을 확인하나</th></tr></thead><tbody><tr><td><code>ProfileImagePath</code></td><td>그 폴더의 <code>NTUSER.DAT</code></td><td>사용자별 실행 이력 (<a href="./userassist.html">FOR-0061</a>)</td></tr><tr><td><code>ProfileImagePath</code></td><td>그 폴더의 <code>UsrClass.dat</code></td><td>ShellBags</td></tr><tr><td>SID</td><td><code>SAM\Domains\Account\Users</code></td><td>계정명·RID·로그온 이력 (<a href="./sam-user-accounts.html">FOR-0052</a>)</td></tr><tr><td><code>InstallLocation</code> / <code>DisplayIcon</code> 경로</td><td>Prefetch, <code>Amcache.hve</code></td><td>그 프로그램이 실제로 실행됐는가</td></tr><tr><td><code>InstallSource</code> 경로</td><td>브라우저 Downloads, LNK, USB 이력</td><td>설치 파일을 어디서 받았는가</td></tr><tr><td><code>InstallLocation</code> 폴더</td><td><code>$MFT</code> / <code>$UsnJrnl</code></td><td>파일 생성·삭제 시각 (<a href="./mft-basics.html">FOR-0021</a>)</td></tr><tr><td><code>Run</code> 값의 실행 파일</td><td>Prefetch, 4688, Sysmon 1</td><td>실제 실행과 명령행</td></tr><tr><td><code>CurrentBuild</code></td><td>해당 빌드의 artifact 동작</td><td>빌드별로 존재하는 artifact가 다르다</td></tr><tr><td>설치 목록에 없는 실행 이력</td><td><code>Amcache.hve</code>, Shimcache</td><td>해시·경로로 파일 신원 특정</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>WOW6432Node</code>를 안 보는 것.</strong> 64비트 Windows에서 32비트 프로그램은 <code>SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall</code>에 있다. 한쪽만 보고 &quot;설치 안 됨&quot;으로 결론 내리면 오답이다. <code>Run</code> 키도 마찬가지다.</li><li><strong><code>Uninstall</code> 키 이름을 프로그램 이름으로 답하는 것.</strong> 키 이름은 <code>{AC76BA86-...}</code> 같은 GUID일 수 있다. 이름은 <code>DisplayName</code> 값이다.</li><li><strong><code>InstallDate</code> 두 종류를 혼동하는 것.</strong> <code>Uninstall</code> 아래는 <code>REG_SZ</code> <code>YYYYMMDD</code>(날짜만), <code>Windows NT\CurrentVersion</code> 아래는 <code>REG_DWORD</code> Unix 초다. 후자를 문자열로 읽거나 전자를 epoch로 변환하면 값이 무의미해진다.</li><li><strong><code>InstallDate</code>로 &quot;몇 시에 설치했나&quot;를 답하려는 것.</strong> 날짜만 있다. 시각은 키 LastWrite, <code>$MFT</code>, MsiInstaller 이벤트로 보강한다.</li><li><strong><code>Uninstall</code>에 없으니 실행되지 않았다고 결론 내리는 것.</strong> portable exe, 드롭된 악성코드, 압축 해제 후 바로 실행한 파일은 설치 흔적이 없다. Prefetch/Amcache/UserAssist로 넘어간다.</li><li><strong>사용자 단독 설치를 놓치는 것.</strong> Chrome 등은 <code>NTUSER.DAT\Software\Microsoft\Windows\CurrentVersion\Uninstall</code>에만 있을 수 있다.</li><li><strong><code>ProfileImagePath</code>의 폴더명을 계정명으로 단정하는 것.</strong> 계정 이름을 바꿔도 폴더명은 안 바뀌고, 충돌 시 <code>이름.컴퓨터명</code> 접미사가 붙는다. 계정명은 <code>SAM</code>으로 확정한다.</li><li><strong><code>ProfileList</code>에는 있는데 <code>SAM</code>에는 없는 SID를 무시하는 것.</strong> 삭제된 로컬 계정 또는 도메인 계정이다. 삭제 계정 추적의 유일한 단서일 수 있다.</li><li><strong><code>LocalProfileLoadTimeLow</code>/<code>High</code>를 각각 독립된 시각으로 읽는 것.</strong> 두 DWORD를 합쳐 하나의 64비트 FILETIME으로 읽는다. 값의 존재와 이름은 빌드마다 다르므로 파서로 확인한다.</li><li><strong>키 LastWrite를 로컬 시각으로 읽는 것.</strong> FILETIME이므로 UTC다. KST는 +9시간.</li><li><strong><code>SOFTWARE</code>가 커서 GUI 탐색만 하는 것.</strong> hive 중 가장 크다. <code>rip.exe -r SOFTWARE -a</code>로 일괄 덤프한 뒤 텍스트 검색하는 편이 빠르다 (<a href="./powershell-select-string.html">FOR-0121</a>).</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) 설치 목록 3곳 모두
+rip.exe -r SOFTWARE -p uninstall &gt; u64.txt
+# (WOW6432Node 와 NTUSER.DAT 쪽은 RegistryExplorer 로 직접 확인)
+
+# 2) OS 신원과 프로필
+rip.exe -r SOFTWARE -p winver
+rip.exe -r SOFTWARE -p profilelist
+
+# 3) 실행 이력과 대조 — 설치 없이 실행된 것 찾기
+rip.exe -r NTUSER.DAT -p userassist &gt; ua.txt
+Select-String -Path ua.txt -Pattern &#39;Downloads|Temp|AppData&#39;
+
+# 4) 파일이 실제로 있었는지
+Import-Csv mft.csv | Where-Object { $_.ParentPath -like &#39;*Program Files*Eraser*&#39; }
+
+# 5) 설치 이벤트
+EvtxECmd.exe -f Application.evtx --csv . --csvf app.csv
+Import-Csv app.csv | Where-Object { $_.Provider -like &#39;*MsiInstaller*&#39; }</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>조합</th><th>결론</th></tr></thead><tbody><tr><td><code>Uninstall</code>에 있고 <code>$MFT</code>에 폴더도 있다</td><td>정상 설치, 현재도 존재</td></tr><tr><td><code>Uninstall</code>에 있는데 폴더가 없다</td><td>제거됨. <code>$UsnJrnl</code>로 삭제 시각</td></tr><tr><td><code>Uninstall</code>에 없는데 Prefetch/UserAssist에 있다</td><td>portable 실행 또는 드롭</td></tr><tr><td><code>Uninstall</code>에 없고 실행 이력도 없는데 파일만 있다</td><td>실행되지 않은 채 남은 파일</td></tr></tbody></table></div>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;이 PC에서 증거 인멸에 사용된 것으로 보이는 도구의 이름과 버전,
+ 그리고 그 도구를 설치한 사용자의 프로필 폴더를 구하세요.
+ 첨부: SOFTWARE, SAM, SYSTEM, NTUSER.DAT (jhkim)&quot;
+
+1. 첫 시도 (실패):
+   rip.exe -r SOFTWARE -p uninstall | Select-String &#39;Eraser|CCleaner|Wipe|Shred&#39;
+   -&gt; 아무것도 안 나온다.
+      &quot;삭제 도구는 설치되지 않았다&quot;고 결론 내리고 다른 방향을 파기 시작했다.
+
+   왜 틀렸나 (두 가지):
+   (a) uninstall 플러그인이 본 것은 64비트 경로 하나뿐이었다.
+       32비트 프로그램은 SOFTWARE\WOW6432Node\...\Uninstall 에 있다.
+   (b) 검색어를 제품명으로만 좁혔다. Publisher / UninstallString 쪽에
+       단서가 남는 경우를 놓쳤다.
+
+2. 피벗: 세 위치를 모두 덤프하고 전체 텍스트에서 찾는다
+   RegistryExplorer 로 SOFTWARE 를 열고
+   SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall
+   -&gt; 항목 하나가 걸린다
+
+     키 이름         : Eraser
+     DisplayName     : Eraser 6.2.0.2993
+     DisplayVersion  : 6.2.0.2993
+     Publisher       : The Eraser Project
+     InstallDate     : 20260312            &lt;- REG_SZ, 날짜만
+     InstallLocation : C:\Program Files (x86)\Eraser\
+     InstallSource   : C:\Users\jhkim\Downloads\
+     키 LastWrite    : 2026-03-12 22:07:55Z
+
+3. 설치 시각 정밀화
+   InstallDate 는 20260312 (시각 없음).
+   키 LastWrite = 2026-03-12 22:07:55Z (UTC).
+   SYSTEM\ControlSet001\Control\TimeZoneInformation
+     TimeZoneKeyName = Korea Standard Time, Bias = -540
+   -&gt; 2026-03-13 07:07:55 KST
+
+4. 두 번째로 틀린 판단:
+   InstallSource 가 C:\Users\jhkim\Downloads\ 이므로
+   &quot;설치자는 jhkim&quot; 이라고 바로 답하려 했다.
+   -&gt; InstallSource 는 설치 파일이 있던 경로일 뿐이다.
+      전역 설치는 관리자 권한으로 다른 계정이 수행할 수도 있다.
+      사용자 귀속은 UserAssist(사용자별 hive)로 확정해야 한다.
+
+5. 사용자 귀속 확정
+   rip.exe -r NTUSER.DAT -p userassist | Select-String -i &#39;eraser&#39;
+   -&gt; 2026-03-12 22:06:41Z  C:\Users\jhkim\Downloads\Eraser 6.2.0.2993.exe (1)
+      설치 프로그램을 실행한 것이 jhkim 본인.
+
+   SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList
+     S-1-5-21-3419281148-2201972856-1043271217-1001
+       ProfileImagePath = C:\Users\jhkim
+   SAM RID 1001 = jhkim  -&gt; 매핑 일치
+
+6. 교차검증
+   - $MFT: C:\Program Files (x86)\Eraser\Eraser.exe 생성 2026-03-12 22:07:5x
+   - Prefetch: ERASER.EXE-xxxxxxxx.pf 존재 = 설치 후 실제 실행됨
+   - $UsnJrnl: 같은 날 다수 파일 삭제 레코드
+
+정답: Eraser 6.2.0.2993 / C:\Users\jhkim
+      (설치 2026-03-13 07:07:55 KST)</code></pre></div>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><strong><code>WOW6432Node</code> 아래를 봤는가</strong> — 32비트 프로그램</li><li><strong><code>NTUSER.DAT</code>의 <code>Uninstall</code>도 봤는가</strong> — 사용자 단독 설치</li><li>키 이름이 아니라 <code>DisplayName</code> 값을 읽었는가</li><li><code>InstallDate</code>가 어느 위치의 것인지 확인했는가 (<code>REG_SZ</code> 날짜 vs <code>REG_DWORD</code> Unix 초)</li><li>시각이 필요하면 키 LastWrite / <code>$MFT</code> / MsiInstaller 이벤트로 보강했는가</li><li><code>SystemComponent = 1</code>로 숨겨진 항목이 있는가</li><li><code>ProfileList</code>에는 있는데 <code>SAM</code>에는 없는 SID가 있는가 (삭제 계정)</li><li>설치 목록에 없는데 실행 이력이 있는가 → portable/드롭된 파일. Amcache로 이동</li><li><code>Run</code>/<code>RunOnce</code>와 <code>Winlogon</code>의 <code>Shell</code>/<code>Userinit</code>을 확인했는가</li><li><code>SOFTWARE</code>가 dirty인가 → <code>rla</code>로 <code>.LOG1</code>/<code>.LOG2</code> 반영</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-017 — Microsoft Learn, Windows Registry hives and file locations: <code>SOFTWARE</code> hive가 <code>HKLM\SOFTWARE</code>로 마운트되고 <code>SOFTWARE\Classes</code>가 <code>HKCR</code>의 머신 부분이라는 점, 64비트 OS에서 32비트 뷰가 <code>WOW6432Node</code>로 분리된다는 점</li><li>SRC-014 — Microsoft Learn, File Times: 키 LastWrite와 <code>InstallTime</code>이 FILETIME(UTC, 1601 기준 100ns)이라는 점, Unix epoch 차이 <code>11644473600</code>초</li><li>SRC-004 — Eric Zimmerman 문서: RegistryExplorer로 <code>SOFTWARE</code> 탐색, <code>rla</code> 로그 반영, Timeline Explorer로 CSV 정렬</li><li><code>Uninstall</code> 아래 값 구성은 설치 프로그램이 채우는 것이므로 프로그램마다 존재하는 값이 다르다. 실제 hive에서 확인할 것</li><li><code>ProfileList</code>의 <code>LocalProfileLoadTime*</code> / <code>LocalProfileUnloadTime*</code> 값은 Windows 빌드에 따라 존재 여부와 이름이 다르므로 파서 출력으로 확인할 것</li><li><code>NetworkList\Profiles</code>의 시각 필드가 로컬 시각으로 기록된다는 점은 파서 출력과 다른 artifact의 시각으로 교차확인할 것</li><li>RegRipper 플러그인 이름(<code>uninstall</code>, <code>winver</code>, <code>profilelist</code>)과 <code>-a</code> 옵션 동작은 버전에 따라 다를 수 있으므로 <code>rip.exe -l</code>로 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./registry-hive-map.html">
+    <span class="rel-id">FOR-0051 · Registry</span>
+    Registry hive 전체 지도: 루트키와 디스크상 파일 대응표
+  </a>
+  <a class="related-item" href="./sam-user-accounts.html">
+    <span class="rel-id">FOR-0052 · Registry</span>
+    SAM hive로 로컬 사용자 계정·RID·마지막 로그온 분석
+  </a>
+  <a class="related-item" href="./userassist.html">
+    <span class="rel-id">FOR-0061 · Registry</span>
+    UserAssist로 사용자가 직접 실행한 프로그램 찾기
+  </a>
+  <a class="related-item" href="./security-hive-overview.html">
+    <span class="rel-id">FOR-0056 · Registry</span>
+    SECURITY hive 개요: 감사 정책·도메인 SID·LSA Secrets
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./system-timezone.html"><span class="rel-id">← FOR-0054</span>SYSTEM hive 시간대(TimeZoneInformation)와 UTC/KST 보정</a>
+<a class="related-item" href="./security-hive-overview.html"><span class="rel-id">FOR-0056 →</span>SECURITY hive 개요: 감사 정책·도메인 SID·LSA Secrets</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-uninstall-키-구조">1단계 — `Uninstall` 키 구조</a></li>
+<li class="toc-l3"><a href="#2단계-wow6432node-32비트-프로그램">2단계 — `WOW6432Node` (32비트 프로그램)</a></li>
+<li class="toc-l3"><a href="#3단계-windows-ntcurrentversion-os-신원">3단계 — `Windows NT\CurrentVersion` (OS 신원)</a></li>
+<li class="toc-l3"><a href="#4단계-profilelist-sid-프로필-폴더">4단계 — `ProfileList` (SID ↔ 프로필 폴더)</a></li>
+<li class="toc-l3"><a href="#5단계-시스템-전역-자동실행">5단계 — 시스템 전역 자동실행</a></li>
+<li class="toc-l3"><a href="#6단계-classes-서브키">6단계 — `Classes` 서브키</a></li>
+<li class="toc-l3"><a href="#7단계-그-외-자주-쓰는-software-키">7단계 — 그 외 자주 쓰는 SOFTWARE 키</a></li>
+<li class="toc-l3"><a href="#8단계-설치-시각-문제를-다루는-방법">8단계 — 설치 시각 문제를 다루는 방법</a></li>
+<li class="toc-l3"><a href="#9단계-악성-프로그램-흔적으로-해석하기">9단계 — 악성 프로그램 흔적으로 해석하기</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 03:39 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

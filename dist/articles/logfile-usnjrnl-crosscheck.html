@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>$LogFile과 $UsnJrnl 교차검증: 한쪽에만 기록이 있을 때 무엇을 믿나 · FOR-0029 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%94%94%EC%8A%A4%ED%81%AC%2FNTFS">디스크/NTFS</a> / FOR-0029
+      </div>
+      <header class="article-head">
+        <h1>$LogFile과 $UsnJrnl 교차검증: 한쪽에만 기록이 있을 때 무엇을 믿나</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">디스크/NTFS</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>$LogFile은 짧고 상세하고 $UsnJrnl:$J는 길고 요약적이다 — 두 로그의 보존 창이 다르기 때문에 &quot;$J에는 있고 $LogFile에는 없다&quot;는 정상이고, 그 반대 방향의 불일치와 $MFT까지의 3자 대조만이 삭제·조작을 결론으로 만든다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>NTFS Log Tracker, MFTECmd, FTK Imager, Sleuth Kit, Timeline Explorer, fsutil</td></tr>
+<tr><th>artifact</th><td><code>$LogFile</code> · <code>$UsnJrnl</code> · <code>$J</code> · <code>$MFT</code> · <code>LSN</code> · <code>LFS</code> · <code>$Extend</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\$LogFile</code> · <code>C:\$MFT</code> · <code>C:\$Extend\$UsnJrnl:$J</code> · <code>C:\$Extend\$UsnJrnl:$Max</code></td></tr>
+<tr><th>regex</th><td><code>InitializeFileRecordSegment</code> · <code>DeallocateFileRecordSegment</code> · <code>AddIndexEntry(Root|Allocation)</code> · <code>DeleteIndexEntry(Root|Allocation)</code></td></tr>
+<tr><th>로그 필드</th><td><code>LSN</code> · <code>Usn</code> · <code>UpdateTimestamp</code> · <code>UpdateReasons</code> · <code>EntryNumber</code> · <code>SequenceNumber</code> · <code>InUse</code> · <code>RedoOperation</code> · <code>UndoOperation</code> · <code>TransactionId</code></td></tr>
+<tr><th>파일 형식</th><td><code>ntfs</code></td></tr>
+<tr><th>검색 별칭</th><td>logfile usnjrnl 차이 · $LogFile 분석 · 로그파일 저널 비교 · 저널이 없다 · usn 저널 삭제 · ntfs log tracker · 삭제 증명</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>$LogFile</code>은 <strong>짧고 상세</strong>하고 <code>$UsnJrnl:$J</code>는 <strong>길고 요약적</strong>이다 — 두 로그의 보존 창이 다르기 때문에 &quot;<code>$J</code>에는 있고 <code>$LogFile</code>에는 없다&quot;는 정상이고, 그 <strong>반대 방향의 불일치</strong>와 <code>$MFT</code>까지의 3자 대조만이 삭제·조작을 결론으로 만든다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;이 파일이 삭제되었음을 증명하시오&quot; — 한 artifact만으로는 반박 가능하다</li><li>&quot;<code>$J</code>에 기록이 없습니다. 정말 그 일이 없었던 겁니까&quot;</li><li>&quot;저널을 지운 흔적이 있습니까&quot; (반포렌식 판정)</li><li>&quot;<code>$MFT</code>에 레코드가 아예 없는 파일의 존재를 어떻게 주장합니까&quot;</li><li>&quot;<code>$LogFile</code>의 시각과 <code>$J</code>의 시각이 다릅니다. 어느 쪽이 맞습니까&quot;</li></ul>
+<p>플래그 시퀀스로 행위를 판정하는 단계는 <a href="./usn-reason-flags.html">FOR-0028</a>에 있다. 이 글은 <strong>판정이 끝난 뒤 그 판정을 반박 불가능하게 만드는 절차</strong>다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>첨부에 <code>$LogFile</code>이 <strong>함께</strong> 들어 있다 → 출제자가 교차검증을 요구한다는 신호다</li><li>첨부에 <code>$MFT</code>가 있고 <code>$J</code>가 없다 → &quot;언제 만들어졌나&quot;만 답할 수 있고 &quot;무슨 일이 있었나&quot;는 못 답한다</li><li>지문에 &quot;증명&quot;, &quot;확실히&quot;, &quot;반증&quot; → 3자 대조 서술이 정답 형식이다</li><li><code>$J</code>의 첫 <code>Usn</code>이 사건 시각보다 뒤다 → 저널이 잘렸거나 삭제됐다</li><li><code>$LogFile</code> 크기가 0 또는 극단적으로 작다 → 저널 초기화 의심</li><li><code>fsutil usn queryjournal</code> 결과에서 <code>첫 USN</code>이 <code>0</code> 부근 → 저널이 최근에 새로 만들어졌다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">icat -o 2048 image.dd 2 &gt; LogFile</code></pre></div>
+<p><code>$LogFile</code>은 <strong>MFT 레코드 번호 2</strong>로 고정되어 있다. 이미지에서 바로 뽑을 수 있다. <code>-o</code> 값은 <code>mmls</code>로 얻은 파티션 시작 섹터다.</p>
+<p>세 개를 한 번에 확보한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">mmls image.dd                          # 파티션 시작 섹터 확인
+icat -o 2048 image.dd 0  &gt; MFT         # 레코드 0 = $MFT
+icat -o 2048 image.dd 2  &gt; LogFile     # 레코드 2 = $LogFile
+fls -o 2048 -r -p image.dd | grep &#39;$Extend&#39;   # $UsnJrnl 레코드 번호 확인</code></pre></div>
+<p>GUI라면 FTK Imager에서 볼륨 루트의 <code>$LogFile</code>·<code>$MFT</code>와 <code>$Extend\$UsnJrnl</code>의 <code>$J</code> 스트림을 Export한다 (<a href="./ftk-imager-open-image.html">FOR-0016</a>).</p>
+<p>세 파일이 모이면 <strong>NTFS Log Tracker</strong>에 <code>$LogFile</code>·<code>$J</code>·<code>$MFT</code>를 함께 로드한다. <code>$MFT</code>를 함께 주는 것이 핵심이다 — 경로 복원이 여기서 된다.</p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-두-로그의-성질-차이를-먼저-고정한다">1단계 — 두 로그의 성질 차이를 먼저 고정한다</h3>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th><code>$LogFile</code></th><th><code>$UsnJrnl:$J</code></th></tr></thead><tbody><tr><td>목적</td><td><strong>파일시스템 정합성 복구</strong> (트랜잭션 redo/undo)</td><td>애플리케이션에 변경 알림</td></tr><tr><td>MFT 레코드</td><td>2 (고정)</td><td><code>$Extend\$UsnJrnl</code> 하위 ADS</td></tr><tr><td>저장 방식</td><td><strong>고정 크기 순환 버퍼</strong> (LFS)</td><td><strong>sparse 파일</strong>, 앞에서 잘려 나감</td></tr><tr><td>크기</td><td>볼륨 크기에 따라 결정. 현대 대용량 볼륨은 수십 MB 수준</td><td><code>$Max</code>로 설정. 기본은 볼륨에 따라 다름</td></tr><tr><td>보존 기간</td><td><strong>매우 짧다. 활동량에 따라 수십 분~수 시간</strong></td><td><strong>며칠~수 주</strong></td></tr><tr><td>기록 단위</td><td>메타데이터 <strong>트랜잭션</strong>(redo/undo 쌍)</td><td>파일별 <strong>변경 사건 요약</strong> 1건</td></tr><tr><td>상세도</td><td><strong>매우 높다.</strong> 속성 이미지, 인덱스 엔트리, 이전 값까지</td><td>낮다. <code>Reason</code> 플래그 + 이름</td></tr><tr><td>순서 기준</td><td><code>LSN</code> (Log Sequence Number)</td><td><code>Usn</code></td></tr><tr><td>레코드 자체의 시각</td><td><strong>없다.</strong> 시각은 redo/undo에 실린 <code>$SI</code>/<code>$FN</code> 속성 이미지에서 나온다</td><td><strong>있다.</strong> <code>UpdateTimestamp</code> (FILETIME, UTC)</td></tr><tr><td>이전 파일 이름</td><td>인덱스 엔트리 삭제 기록에서 복원 가능</td><td><code>RenameOldName</code> 레코드</td></tr><tr><td>삭제된 파일의 내용</td><td>상주(resident) 작은 파일이면 <strong>데이터 자체가 남을 수 있다</strong></td><td>없음</td></tr><tr><td>저널 비활성 가능</td><td>사실상 불가 (NTFS 동작에 필수)</td><td><strong>가능</strong> (<code>fsutil usn deletejournal</code>)</td></tr></tbody></table></div>
+<p>핵심 비대칭: <strong><code>$LogFile</code>이 더 자세하지만 훨씬 빨리 사라진다.</strong> 그래서 사건이 며칠 전이면 <code>$LogFile</code>에는 아무것도 없는 것이 정상이다.</p>
+<h3 id="2단계-logfile에서-실제로-읽는-오퍼레이션">2단계 — <code>$LogFile</code>에서 실제로 읽는 오퍼레이션</h3>
+<p><code>$LogFile</code>은 플래그가 아니라 <strong>오퍼레이션 이름</strong>으로 사건을 말한다. 파서가 내놓는 redo/undo 오퍼레이션 중 포렌식적으로 의미 있는 것만 본다.</p>
+<div class="table-wrap"><table><thead><tr><th>오퍼레이션</th><th>뜻</th><th>사건 해석</th></tr></thead><tbody><tr><td><code>InitializeFileRecordSegment</code></td><td>MFT 레코드를 새로 초기화</td><td><strong>파일 생성</strong> (또는 레코드 재사용)</td></tr><tr><td><code>DeallocateFileRecordSegment</code></td><td>MFT 레코드를 해제</td><td><strong>파일 삭제</strong></td></tr><tr><td><code>AddIndexEntryRoot</code> / <code>AddIndexEntryAllocation</code></td><td>부모 디렉터리 인덱스에 이름 추가</td><td>그 폴더에 이름이 생겼다</td></tr><tr><td><code>DeleteIndexEntryRoot</code> / <code>DeleteIndexEntryAllocation</code></td><td>부모 디렉터리 인덱스에서 이름 제거</td><td><strong>그 폴더에서 이름이 사라졌다.</strong> 삭제·이동·이름변경 공통</td></tr><tr><td><code>CreateAttribute</code> / <code>DeleteAttribute</code></td><td>속성 추가/제거</td><td>ADS 생성·제거, <code>$EFS</code> 부착</td></tr><tr><td><code>SetNewAttributeSizes</code></td><td>속성 크기 변경</td><td>파일 크기 변화</td></tr><tr><td><code>UpdateNonresidentValue</code></td><td>비상주 데이터 갱신</td><td>내용 변경</td></tr><tr><td><code>UpdateResidentValue</code></td><td>상주 데이터 갱신</td><td><strong>작은 파일 내용이 로그에 실려 있을 수 있다</strong></td></tr><tr><td><code>UpdateFileNameRoot</code> / <code>UpdateFileNameAllocation</code></td><td>인덱스의 <code>$FN</code> 갱신</td><td>이름·시각 변경</td></tr><tr><td><code>OpenNonresidentAttribute</code></td><td>비상주 속성 열기</td><td>접근 시점 단서</td></tr><tr><td><code>Open/Commit/ForgetTransaction</code></td><td>트랜잭션 경계</td><td>한 사용자 동작의 묶음 단위</td></tr></tbody></table></div>
+<p><strong>삭제의 <code>$LogFile</code> 시그니처</strong>는 <code>DeleteIndexEntryAllocation</code>(부모에서 이름 제거) + <code>DeallocateFileRecordSegment</code>(레코드 해제)의 조합이다. 이름 변경은 <code>DeleteIndexEntry*</code> + <code>AddIndexEntry*</code>가 짝으로 나오되 <code>Deallocate*</code>가 <strong>없다</strong>.</p>
+<p><code>UpdateResidentValue</code>가 특히 값지다. 1KB 미만의 텍스트 파일이 삭제된 경우 <strong>그 파일의 내용 전체가 <code>$LogFile</code>에 남아 있을 수 있다.</strong> 다른 어떤 artifact도 이걸 주지 않는다.</p>
+<h3 id="3단계-불일치-패턴-판정표">3단계 — 불일치 패턴 판정표</h3>
+<p>두 로그에서 같은 사건을 찾은 결과는 네 가지 조합밖에 없다.</p>
+<div class="table-wrap"><table><thead><tr><th><code>$J</code></th><th><code>$LogFile</code></th><th>가장 가능성 높은 해석</th><th>확인 방법</th></tr></thead><tbody><tr><td>있음</td><td>있음</td><td><strong>사건 확정.</strong> 두 로그가 독립적으로 같은 것을 말한다</td><td>시각·순서가 일치하는지만 확인</td></tr><tr><td>있음</td><td>없음</td><td><strong>정상.</strong> <code>$LogFile</code>이 먼저 순환 소진됐다 (사건이 오래됨)</td><td><code>$LogFile</code>에 남은 <strong>가장 오래된</strong> 사건 시각을 구한다. 그보다 앞이면 설명 완료</td></tr><tr><td>없음</td><td>있음</td><td><strong>이상.</strong> <code>$J</code>의 보존 창이 더 긴데 없다 → 저널 삭제/재생성, 또는 그 볼륨의 저널이 꺼져 있었다</td><td><code>fsutil usn queryjournal</code>의 저널 ID·첫 USN, <code>$Max</code> 스트림 확인</td></tr><tr><td>없음</td><td>없음</td><td>판단 불가. <strong>&quot;일어나지 않았다&quot;가 아니다</strong></td><td><code>$MFT</code>·카빙·다른 artifact로 이동</td></tr></tbody></table></div>
+<p>세 번째 줄이 반포렌식 판정 지점이다. <strong><code>$J</code>의 보존 기간이 <code>$LogFile</code>보다 훨씬 길다는 비대칭이 근거다.</strong></p>
+<h3 id="4단계-j가-비어-있을-때-세-원인을-가른다">4단계 — <code>$J</code>가 비어 있을 때 세 원인을 가른다</h3>
+<div class="table-wrap"><table><thead><tr><th>원인</th><th>관측되는 것</th><th>결정적 증거</th></tr></thead><tbody><tr><td><strong>보존 만료</strong> (자연 소멸)</td><td><code>$J</code>에 레코드는 많은데 <strong>최소 <code>Usn</code>의 시각이 사건보다 뒤</strong></td><td>저널 ID가 오래됐고, <code>$Max</code> 크기가 작아 회전이 빠르다</td></tr><tr><td><strong>저널 삭제 후 재생성</strong> (반포렌식)</td><td><code>$J</code>가 거의 비었거나 <strong>최소 <code>Usn</code>이 0 부근</strong>, 저널 ID가 사건 시각 이후에 생성됨</td><td><code>fsutil usn deletejournal</code> 실행 흔적: Prefetch의 <code>FSUTIL.EXE-*.pf</code>, EVTX 4688의 명령행, 콘솔 히스토리</td></tr><tr><td><strong>저널 비활성</strong> (원래 꺼져 있었음)</td><td><code>$Extend\$UsnJrnl</code> 자체가 없거나 <code>$J</code> 스트림이 없다</td><td>볼륨이 USB/외장이거나 저널을 쓰지 않는 구성. <code>$LogFile</code>은 여전히 존재한다</td></tr></tbody></table></div>
+<p>세 원인을 가르는 한 줄 기준: <strong><code>$J</code>가 &quot;존재하지만 짧다&quot;면 만료 또는 삭제, &quot;존재하지 않는다&quot;면 비활성.</strong></p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 라이브 시스템: 저널 ID와 첫 USN 이 사건 시각과 앞뒤가 맞는지
+fsutil usn queryjournal C:</code></pre></div>
+<p><code>첫 USN</code>이 <code>0x0</code> 또는 매우 작은 값이고 볼륨을 오래 써 왔다면 저널이 최근에 재생성됐다는 뜻이다.</p>
+<h3 id="5단계-mft까지-3자-대조로-결론-세우기">5단계 — <code>$MFT</code>까지 3자 대조로 결론 세우기</h3>
+<p>목표 결론: <strong>&quot;이 파일은 존재했고, 삭제되었으며, MFT 레코드까지 재사용되어 메타데이터가 소실됐다&quot;</strong>처럼 각 단계마다 근거 artifact가 붙은 문장.</p>
+<div class="table-wrap"><table><thead><tr><th>주장</th><th>근거 artifact</th><th>확인할 값</th></tr></thead><tbody><tr><td>① 그 파일이 존재했다</td><td><code>$J</code>의 <code>FileCreate</code> 또는 <code>$LogFile</code>의 <code>InitializeFileRecordSegment</code> + <code>AddIndexEntry*</code></td><td><code>EntryNumber</code>, <code>SequenceNumber</code>, <code>FileName</code></td></tr><tr><td>② 어느 경로에 있었다</td><td><code>$J</code>의 <code>ParentEntryNumber</code> → <code>$MFT</code> 조인, 또는 <code>$LogFile</code>의 인덱스 엔트리</td><td><code>ParentPath</code></td></tr><tr><td>③ 그것이 삭제됐다</td><td><code>$J</code>의 <code>FileDelete</code> <strong>또는</strong> <code>$Recycle.Bin</code>으로의 rename</td><td>삭제 시각</td></tr><tr><td>④ <code>$LogFile</code>도 같은 것을 말한다</td><td><code>DeleteIndexEntryAllocation</code> + <code>DeallocateFileRecordSegment</code></td><td>같은 <code>EntryNumber</code></td></tr><tr><td>⑤ 레코드가 재사용됐다</td><td><code>$MFT</code>의 같은 <code>EntryNumber</code>에 <strong>다른</strong> <code>FileName</code> + <strong>증가한</strong> <code>SequenceNumber</code></td><td><code>SequenceNumber</code> 비교</td></tr><tr><td>⑥ 그래서 메타데이터 복구 불가</td><td>⑤의 결과</td><td>MACB 시각 없음 → 내용은 카빙으로만</td></tr></tbody></table></div>
+<p><code>SequenceNumber</code> 비교가 ⑤⑥의 전부다. <code>$J</code>가 말하는 <code>(EntryNumber, SequenceNumber)</code>와 <code>$MFT</code>의 현재 <code>(EntryNumber, SequenceNumber)</code>가 다르면 <strong>그 사이에 다른 파일이 그 자리를 차지했다</strong>는 뜻이다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># $J 에서 관심 파일의 (EntryNumber, SequenceNumber)
+Import-Csv usn.csv | Where-Object { $_.FileName -eq &#39;payroll.xlsx&#39; } |
+  Select-Object Usn, UpdateReasons, EntryNumber, SequenceNumber | Sort-Object Usn
+
+# $MFT 의 현재 상태
+Import-Csv mft.csv | Where-Object { $_.EntryNumber -eq 204118 } |
+  Select-Object EntryNumber, SequenceNumber, InUse, FileName, ParentPath</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text"># $J
+Usn        UpdateReasons        EntryNumber  SequenceNumber
+0x81a0400  FileCreate|Close     204118       7
+0x8244c80  FileDelete|Close     204118       7
+
+# $MFT (현재)
+EntryNumber  SequenceNumber  InUse   FileName            ParentPath
+204118       9               True    Temp_a91f.tmp       .\Users\pshin\AppData\Local\Temp</code></pre></div>
+<p><code>SequenceNumber</code> 7 → 9. 레코드가 두 번 재사용됐다. 결론: <code>payroll.xlsx</code>는 존재·삭제가 <code>$J</code>로 증명되지만 <code>$MFT</code> 기반 복구는 불가능하다.</p>
+<h3 id="6단계-시각이-어긋날-때-무엇을-믿나">6단계 — 시각이 어긋날 때 무엇을 믿나</h3>
+<p><strong>신뢰도 순위. 위에서부터 신뢰한다.</strong></p>
+<div class="table-wrap"><table><thead><tr><th>순위</th><th>값</th><th>왜 신뢰하나</th><th>취약점</th></tr></thead><tbody><tr><td>1</td><td><code>$J</code>의 <code>Usn</code> <strong>순번</strong></td><td>커널이 단조 증가로 부여. 사용자 도구로 조작 불가</td><td>절대 시각이 아니라 순서만 준다</td></tr><tr><td>2</td><td><code>$LogFile</code>의 <code>LSN</code> <strong>순번</strong></td><td>같은 이유</td><td>보존 창이 매우 짧다</td></tr><tr><td>3</td><td><code>$J</code>의 <code>UpdateTimestamp</code></td><td>사건 발생 순간에 커널이 기록. 사후 수정 불가</td><td><strong>시스템 시계 자체가 조작되면 함께 틀린다</strong></td></tr><tr><td>4</td><td><code>$MFT</code>의 <code>$FILE_NAME</code>(<code>$FN</code>) 시각</td><td>생성·이름변경 시에만 갱신. 일반 timestomp 도구가 손대지 않는 경우가 많다</td><td>정교한 도구는 이것도 바꾼다</td></tr><tr><td>5</td><td><code>$MFT</code>의 <code>$STANDARD_INFORMATION</code>(<code>$SI</code>) 시각</td><td>표준 필드</td><td><strong><code>SetFileTime</code> API로 누구나 변경 가능. timestomp의 주 표적</strong></td></tr></tbody></table></div>
+<p>실전 규칙:</p>
+<ul><li><strong>순서를 물으면 <code>Usn</code>/<code>LSN</code>으로 답한다.</strong> 타임스탬프로 답하지 않는다.</li><li><strong>절대 시각을 물으면 <code>$J</code>의 <code>UpdateTimestamp</code>로 답한다.</strong> <code>$SI</code>가 이와 다르면 <code>$SI</code>가 틀린 것이다.</li><li><code>$SI</code> 시각이 <code>$J</code>의 <code>FileCreate</code> 시각보다 <strong>앞서면</strong> timestomp다. 파일이 만들어지기 전에 수정될 수는 없다.</li><li>시스템 시계 조작이 의심되면 <code>Usn</code>은 증가하는데 <code>UpdateTimestamp</code>가 역행하는 지점을 찾는다. 그 지점이 시계 변경 순간이다.</li><li><code>$J</code>·<code>$LogFile</code>·<code>$MFT</code>의 시각은 모두 <strong>UTC</strong> 기준 FILETIME(1601-01-01 UTC 기준 100ns 단위)이다. Unix epoch와의 차이는 <code>11644473600</code>초. KST 답이 필요하면 +9시간.</li></ul>
+<h3 id="7단계-실전-판정-트리">7단계 — 실전 판정 트리</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">&quot;이 파일에 무슨 일이 있었나&quot;
+
+[1] $J 에 그 이름이 있나?
+     ├─ YES → 플래그 시퀀스를 Usn 순으로 읽는다 (FOR-0028)
+     │         └─ [2] 로 진행 (확증 단계)
+     └─ NO  → [4] 로 진행 (부재의 원인 규명)
+
+[2] $LogFile 에 같은 EntryNumber 의 오퍼레이션이 있나?
+     ├─ YES → Deallocate/DeleteIndexEntry 유무로 삭제 확정.
+     │         상주 파일이면 UpdateResidentValue 에서 내용까지 회수 시도.
+     └─ NO  → $LogFile 의 최소 LSN 시각을 구한다.
+               ├─ 사건이 그보다 앞 → 정상 소진. $J 단독으로 결론.
+               └─ 사건이 그보다 뒤 → 이상. $LogFile 만 잘렸을 이유가 없다.
+                                     파서 오류 또는 부분 추출 의심. 재추출한다.
+
+[3] $MFT 의 (EntryNumber, SequenceNumber) 가 $J 와 같나?
+     ├─ 같고 InUse=False → 레코드 생존. MACB·데이터런 확보 가능. 복구 시도.
+     ├─ 같고 InUse=True  → 아직 살아 있는 파일. 삭제가 아니었다(또는 복원됐다).
+     └─ 다르다(Seq 증가) → 레코드 재사용. 메타데이터 소실. 카빙으로 전환.
+
+[4] $J 에 없다 — 왜?
+     ├─ $J 최소 Usn 의 시각 &gt; 사건 시각 → 보존 만료. 판단 불가로 정직하게 남긴다.
+     ├─ $J 최소 Usn ≈ 0 이고 볼륨 사용 이력이 길다 → 저널 재생성 = 반포렌식.
+     │    └─ Prefetch/UserAssist/4688 로 fsutil 실행 흔적을 찾는다.
+     ├─ $Extend\$UsnJrnl 자체가 없다 → 저널 비활성 볼륨. $LogFile 과 $MFT 만으로.
+     └─ 이름이 애초에 달랐다 → RenameOldName 검색, 확장자 없이 부분 문자열로 재검색.</code></pre></div>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p>NTFS Log Tracker 계열이 <code>$LogFile</code>을 파싱해 내놓는 컬럼의 의미다.</p>
+<div class="table-wrap"><table><thead><tr><th>컬럼</th><th>의미</th><th>읽는 법</th></tr></thead><tbody><tr><td><code>LSN</code></td><td>Log Sequence Number</td><td><strong>순서의 절대 기준.</strong> 값이 클수록 최근</td></tr><tr><td><code>RedoOperation</code></td><td>트랜잭션 재적용 동작</td><td>실제로 무엇을 했나 (위 오퍼레이션 표)</td></tr><tr><td><code>UndoOperation</code></td><td>되돌리기 동작</td><td>redo와 짝. <code>Noop</code>이면 되돌릴 필요 없는 동작</td></tr><tr><td><code>TransactionId</code> / <code>Transaction LSN</code></td><td>같은 트랜잭션 묶음</td><td><strong>한 사용자 동작을 묶는 키</strong></td></tr><tr><td><code>TargetVCN</code> / <code>TargetAttribute</code></td><td>대상 속성과 클러스터</td><td>어느 속성이 바뀌었나</td></tr><tr><td><code>MFT EntryNumber</code></td><td>대상 MFT 레코드</td><td><code>$J</code>·<code>$MFT</code>와의 조인 키</td></tr><tr><td>파서가 복원한 <code>FileName</code> / <code>FullPath</code></td><td>redo/undo의 <code>$FN</code> 이미지에서 추출</td><td><code>$MFT</code>를 함께 줬을 때만 경로가 채워진다</td></tr><tr><td>파서가 복원한 시각</td><td>redo/undo에 실린 <code>$SI</code>/<code>$FN</code> 이미지의 시각</td><td><strong>레코드 자체의 시각이 아니다.</strong> 원리상 <code>$SI</code>와 같은 신뢰도다</td></tr></tbody></table></div>
+<p>마지막 줄이 중요하다. <strong><code>$LogFile</code>에서 나온 시각은 그 안에 실린 속성 이미지의 시각이므로, timestomp된 파일이면 <code>$LogFile</code>의 시각도 조작된 값을 보여준다.</strong> 시각의 최종 심판은 <code>$J</code>의 <code>UpdateTimestamp</code>와 <code>Usn</code> 순서다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>여기서 얻은 것</th><th>다음에 열 것</th><th>확인할 것</th></tr></thead><tbody><tr><td><code>$J</code>에 rename → <code>$Recycle.Bin</code></td><td><code>$I</code> 파일 (<a href="./recycle-bin-i-r.html">FOR-0030</a>)</td><td>원래 전체 경로, 원본 크기, 삭제 시각</td></tr><tr><td>삭제 확정, 휴지통에 없음</td><td>원인 분기 (<a href="./deleted-file-not-in-recycle-bin.html">FOR-0032</a>)</td><td>Shift+Delete인가 도구인가</td></tr><tr><td><code>SequenceNumber</code> 불일치 (레코드 재사용)</td><td>카빙 (<code>photorec</code>, <code>foremost</code>) / <code>blkls</code> 비할당 영역</td><td>내용 회수</td></tr><tr><td><code>$LogFile</code>의 <code>UpdateResidentValue</code></td><td>그 redo 데이터의 hex</td><td><strong>작은 텍스트 파일 내용 원본</strong></td></tr><tr><td><code>$MFT</code>의 <code>InUse=False</code> + 데이터런 생존</td><td><code>icat</code>로 직접 추출</td><td>삭제 파일 내용 복구</td></tr><tr><td>저널 재생성 의심</td><td>Prefetch <code>FSUTIL.EXE-*.pf</code>, UserAssist (<a href="./userassist.html">FOR-0061</a>)</td><td>반포렌식 도구 실행 시각</td></tr><tr><td><code>$SI</code> vs <code>$J</code> 시각 불일치</td><td><code>$MFT</code>의 <code>$SI</code>/<code>$FN</code> 8개 시각 (<a href="./mft-basics.html">FOR-0021</a>)</td><td>timestomp 확정</td></tr><tr><td>이미지 전체를 열어야 할 때</td><td>Arsenal Image Mounter (<a href="./arsenal-image-mounter.html">FOR-0017</a>)</td><td>볼륨 마운트 후 원본 경로 확인</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>$LogFile</code>에 없는 것을 &quot;일어나지 않았다&quot;로 읽는 것</strong> → <code>$LogFile</code>은 순환 버퍼라 활동량이 많으면 몇십 분 만에 덮인다 → <code>$LogFile</code>에 남은 <strong>최소 <code>LSN</code>의 시각</strong>을 먼저 구해 보존 창을 확정한 뒤 판단한다.</li><li><strong><code>$J</code>와 <code>$LogFile</code>의 보존 기간을 같다고 가정하는 것</strong> → 두 로그의 불일치를 전부 반포렌식으로 오판한다 → 비대칭(<code>$J</code>가 훨씬 길다)을 전제로 방향을 본다. <strong><code>$J</code>에 없고 <code>$LogFile</code>에만 있는 경우</strong>만 이상 신호다.</li><li><strong><code>$LogFile</code>의 시각을 <code>$J</code>보다 신뢰하는 것</strong> → <code>$LogFile</code>의 시각은 redo/undo에 실린 <code>$SI</code> 이미지에서 나오므로 timestomp의 영향을 그대로 받는다 → 시각 판정은 <code>$J</code>의 <code>UpdateTimestamp</code>, 순서 판정은 <code>Usn</code>/<code>LSN</code>.</li><li><strong><code>EntryNumber</code>만으로 두 로그를 조인하는 것</strong> → 레코드는 재사용되고 그때마다 <code>SequenceNumber</code>가 증가한다 → <code>(EntryNumber, SequenceNumber)</code> 쌍으로 조인한다.</li><li><strong><code>DeleteIndexEntryAllocation</code>을 삭제로 단정하는 것</strong> → 이름 변경과 다른 폴더로의 이동에서도 부모 인덱스에서 이름이 제거된다 → <code>DeallocateFileRecordSegment</code>가 짝으로 있을 때만 삭제다.</li><li><strong><code>$J</code>가 없다는 이유로 저널이 꺼져 있었다고 결론 내는 것</strong> → 만료·삭제·비활성의 세 원인이 전혀 다른 결론으로 이어진다 → <code>$Extend\$UsnJrnl</code> 파일 자체의 존재 여부와 최소 <code>Usn</code> 값으로 먼저 가른다.</li><li><strong>볼륨을 쓰기 가능 상태로 마운트해 놓고 분석하는 것</strong> → 분석 행위 자체가 <code>$LogFile</code>을 회전시켜 증거를 덮는다 → 항상 읽기 전용 마운트 또는 이미지에서 직접 추출한다.</li><li><strong>한쪽 로그만 첨부된 문제에서 없는 쪽을 계속 찾는 것</strong> → 시간만 잃는다 → 첨부 목록으로 답변 가능 범위를 먼저 확정한다. <code>$MFT</code>만 있으면 &quot;무슨 일이 있었나&quot;는 답할 수 없다.</li><li><strong>시간대 혼동</strong> → 세 로그 모두 UTC 기준 FILETIME이고 파서 CSV도 UTC로 출력한다. NTFS Log Tracker처럼 로컬 시간대 변환 옵션이 있는 도구는 설정에 따라 화면 값이 달라진다 → 출력 시간대 설정을 먼저 확인하고, KST 답이 필요하면 +9시간.</li><li><strong>트랜잭션 경계를 무시하고 오퍼레이션을 개별 사건으로 세는 것</strong> → 파일 하나 삭제가 오퍼레이션 10건으로 부풀어 통계가 무너진다 → <code>TransactionId</code>로 묶어서 센다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 0) 세 artifact 를 같은 이미지에서, 같은 시점에 추출한다
+mmls image.dd
+icat -o 2048 image.dd 0 &gt; MFT
+icat -o 2048 image.dd 2 &gt; LogFile
+fls -o 2048 -r -p image.dd | grep -i &#39;UsnJrnl&#39;
+
+# 1) $MFT 파싱
+MFTECmd.exe -f MFT --csv out --csvf mft.csv
+
+# 2) $J 파싱 (경로 복원을 위해 -m 로 $MFT 함께)
+MFTECmd.exe -f J -m MFT --csv out --csvf usn.csv
+
+# 3) $LogFile 은 NTFS Log Tracker 에 $LogFile + $J + $MFT 를 함께 로드</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 4) 세 결과에서 같은 EntryNumber 를 훑는다
+$e = 204118
+Import-Csv out\usn.csv | Where-Object {$_.EntryNumber -eq $e} | Sort-Object {[uint64]$_.Usn} |
+  Format-Table Usn, UpdateTimestamp, UpdateReasons, FileName
+Import-Csv out\mft.csv | Where-Object {$_.EntryNumber -eq $e} |
+  Format-Table EntryNumber, SequenceNumber, InUse, FileName, ParentPath
+Import-Csv out\logfile.csv | Where-Object {$_.EntryNumber -eq $e} | Sort-Object LSN |
+  Format-Table LSN, RedoOperation, UndoOperation, FileName</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 5) 각 로그의 보존 창을 수치로 확정한다 — 이게 모든 &quot;없음&quot; 판정의 전제다
+Import-Csv out\usn.csv     | Sort-Object {[uint64]$_.Usn} | Select-Object -First 1 UpdateTimestamp
+Import-Csv out\usn.csv     | Sort-Object {[uint64]$_.Usn} | Select-Object -Last  1 UpdateTimestamp
+Import-Csv out\logfile.csv | Sort-Object {[uint64]$_.LSN} | Select-Object -First 1</code></pre></div>
+<p>보존 창을 먼저 표로 적어 두면 이후 모든 &quot;없음&quot;에 대해 즉시 답할 수 있다.</p>
+<div class="table-wrap"><table><thead><tr><th>로그</th><th>가장 오래된 기록</th><th>가장 최근 기록</th><th>이 창 밖의 사건</th></tr></thead><tbody><tr><td><code>$J</code></td><td>2026-04-01 22:14Z</td><td>2026-04-09 06:02Z</td><td>판단 불가</td></tr><tr><td><code>$LogFile</code></td><td>2026-04-09 03:51Z</td><td>2026-04-09 06:02Z</td><td>부재가 정상</td></tr></tbody></table></div>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;직원이 급여 파일을 삭제했다고 주장하는 사건입니다. 직원은 &#39;그런 파일은 없었다&#39;고
+ 반박합니다. 파일의 존재와 삭제를 증명하고, 내용을 복구할 수 있는지 판정하세요.&quot;
+첨부: $MFT, $LogFile, $J (같은 이미지에서 추출)
+
+1. 첫 시도 (실패):
+   $MFT 만 먼저 파싱했다.
+   MFTECmd.exe -f MFT --csv out --csvf mft.csv
+   Import-Csv out\mft.csv | Where-Object { $_.FileName -match &#39;payroll|급여&#39; }
+   -&gt; 0건.
+
+   여기서 &quot;MFT에 없으니 그런 파일은 없었다&quot;고 결론 낼 뻔했다.  &lt;-- 틀린 결론
+   왜 틀렸나: $MFT 는 &#39;지금 무엇이 있나&#39;만 답한다. 레코드가 재사용되면
+   삭제된 파일의 흔적은 통째로 사라진다. 부재는 증거가 아니다.
+
+2. 접근 변경 — $J 로 &#39;무슨 일이 있었나&#39;를 묻는다
+   MFTECmd.exe -f J -m MFT --csv out --csvf usn.csv
+   Import-Csv out\usn.csv | Where-Object { $_.FileName -match &#39;payroll&#39; } |
+     Sort-Object {[uint64]$_.Usn} |
+     Format-Table Usn, UpdateTimestamp, UpdateReasons, FileName, ParentPath, EntryNumber, SequenceNumber
+
+   Usn        UpdateTimestamp        UpdateReasons          FileName        ParentPath                EntryNumber  Seq
+   0x81a0400  2026-04-06 05:11:02Z   FileCreate             payroll.xlsx    .\Users\pshin\Documents   204118       7
+   0x81a0490  2026-04-06 05:11:02Z   FileCreate|DataExtend  payroll.xlsx    .\Users\pshin\Documents   204118       7
+   0x81a1c20  2026-04-06 05:13:44Z   DataExtend|Close       payroll.xlsx    .\Users\pshin\Documents   204118       7
+   0x8244c80  2026-04-08 23:47:15Z   FileDelete|Close       payroll.xlsx    .\Users\pshin\Documents   204118       7
+
+   존재(①②)와 삭제(③)가 나왔다. 휴지통으로의 rename 이 없으므로 완전삭제다.
+
+3. $LogFile 로 독립 확증 시도
+   NTFS Log Tracker 에 $LogFile + $J + $MFT 로드, EntryNumber = 204118 로 필터
+   -&gt; 0건.
+
+   두 번째 함정. 여기서 &quot;$LogFile 이 반박한다&quot;고 읽으면 또 틀린다.
+   $LogFile 의 최소 LSN 시각을 먼저 확인한다.
+   -&gt; $LogFile 의 가장 오래된 기록 = 2026-04-09 03:51Z
+      삭제 시각 04-08 23:47Z 는 그보다 4시간 앞이다.
+   =&gt; $LogFile 이 이미 순환 소진된 구간. 부재가 정상이다. 반박이 아니다.
+
+4. $MFT 재확인 — 왜 1단계에서 0건이었나
+   Import-Csv out\mft.csv | Where-Object { $_.EntryNumber -eq 204118 } |
+     Format-Table EntryNumber, SequenceNumber, InUse, FileName, ParentPath
+
+   EntryNumber  SequenceNumber  InUse  FileName        ParentPath
+   204118       9               True   Temp_a91f.tmp   .\Users\pshin\AppData\Local\Temp
+
+   $J 는 Seq 7, $MFT 는 Seq 9. 레코드가 두 번 재사용됐다.
+   -&gt; 1단계에서 0건이었던 이유가 설명된다. 삭제 후 다른 파일이 그 자리를 차지했다.
+
+5. 저널 조작 여부 확인 (직원 주장의 다른 가능성)
+   Import-Csv out\usn.csv | Sort-Object {[uint64]$_.Usn} | Select-Object -First 1
+   -&gt; 최소 Usn 시각 = 2026-04-01 22:14Z. 값도 0 부근이 아니다.
+   =&gt; 저널은 정상 회전 중이었고 재생성되지 않았다. 기록의 신뢰성에 문제 없다.
+
+6. 복구 판정
+   $MFT 레코드는 재사용됨 -&gt; MACB·데이터런 소실 -&gt; $MFT 기반 복구 불가.
+   남은 경로: 비할당 영역 카빙 (xlsx = ZIP 컨테이너, PK 시그니처 + [Content_Types].xml)
+   blkls -o 2048 image.dd &gt; unalloc.raw ; photorec unalloc.raw
+
+결론:
+  ① 존재:   $J Usn 0x81a0400, 2026-04-06 05:11:02Z 생성
+            (= 2026-04-06 14:11:02 KST), 경로 \Users\pshin\Documents\payroll.xlsx
+  ② 삭제:   $J Usn 0x8244c80, 2026-04-08 23:47:15Z 완전삭제(휴지통 미경유)
+            (= 2026-04-09 08:47:15 KST)
+  ③ $LogFile 부재는 보존 창(04-09 03:51Z 이후) 밖이므로 반증이 아니다
+  ④ $MFT SequenceNumber 7 -&gt; 9, 레코드 재사용으로 메타데이터 소실
+  =&gt; 존재와 삭제는 증명됨. 내용 복구는 카빙에 의존.</code></pre></div>
+<p>1단계와 3단계가 이 글의 핵심이다. <strong><code>$MFT</code>의 부재도 <code>$LogFile</code>의 부재도 그 자체로는 아무것도 증명하지 않는다.</strong> 각 로그의 보존 창을 수치로 먼저 확정한 것이 두 번의 오판을 막았다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li>세 파일(<code>$MFT</code>, <code>$LogFile</code>, <code>$J</code>)을 <strong>같은 이미지·같은 시점</strong>에서 뽑았는가 — 다른 시점이면 대조가 무의미하다</li><li>각 로그의 <strong>최소/최대 기록 시각</strong>을 표로 적었는가 — 모든 &quot;없음&quot; 판정의 전제다</li><li><code>$J</code> 파싱에 <code>-m $MFT</code>를 줬는가 — 안 주면 <code>ParentPath</code>가 비고 경로 대조를 못 한다</li><li>조인 키에 <code>SequenceNumber</code>를 포함했는가</li><li><code>$LogFile</code> 부재가 보존 창 밖인지 안인지 확인했는가 — 안이면 부분 추출/파서 오류를 의심해 재추출</li><li><code>$J</code>가 비었다면 만료·삭제·비활성 세 원인 중 어느 것인지 가렸는가</li><li>시각 불일치가 있으면 <code>Usn</code>/<code>LSN</code> 순서로 다시 세웠는가</li><li><code>$SI</code> 시각이 <code>$J</code>의 <code>FileCreate</code>보다 앞서지 않는가 (앞서면 timestomp)</li><li>작은 텍스트 파일이라면 <code>$LogFile</code>의 <code>UpdateResidentValue</code>에서 내용 자체를 찾아봤는가</li><li>여기까지 왔는데도 안 되면 → 카빙(<code>blkls</code> + <code>photorec</code>)과 <code>$Recycle.Bin</code> (<a href="./recycle-bin-i-r.html">FOR-0030</a>)으로 전환</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-013 — Microsoft Learn, Change Journals: <code>$UsnJrnl</code>의 순환/sparse 동작, <code>$Max</code>, 저널 생성·삭제와 저널 ID 개념</li><li>SRC-005 — Microsoft Learn, Master File Table: <code>$LogFile</code>이 MFT 레코드 2번이라는 점, 시스템 메타데이터 파일 배치, 레코드 재사용과 시퀀스 개념</li><li>SRC-032 — The Sleuth Kit 도구 문서: <code>mmls</code>/<code>fls</code>/<code>icat</code>/<code>blkls</code>로 이미지에서 시스템 파일을 레코드 번호로 직접 추출하는 방법</li><li><code>$LogFile</code>의 기본 크기, redo/undo 오퍼레이션 이름 표기, NTFS Log Tracker의 컬럼명·시간대 옵션은 볼륨 구성과 도구 버전에 따라 다르므로 실제 화면에서 확인할 것</li><li><code>$LogFile</code> 레코드 자체에 타임스탬프 필드가 없다는 점은 파서가 보여주는 시각의 출처(redo/undo에 실린 속성 이미지)를 반드시 확인해야 하는 근거다</li><li>walkthrough의 <code>Usn</code>·<code>LSN</code>·엔트리 번호·시각은 설명을 위한 예시 값이다</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./usnjrnl-basics.html">
+    <span class="rel-id">FOR-0027 · 디스크/NTFS</span>
+    $UsnJrnl($J)로 삭제·생성·이름변경 흔적 복원하기
+  </a>
+  <a class="related-item" href="./usn-reason-flags.html">
+    <span class="rel-id">FOR-0028 · 디스크/NTFS</span>
+    USN_REASON 플래그 조합으로 실제 행위 판정하기 (삭제·이동·복사·timestomp 구분)
+  </a>
+  <a class="related-item" href="./deleted-file-not-in-recycle-bin.html">
+    <span class="rel-id">FOR-0032 · 디스크/NTFS</span>
+    삭제된 파일이 휴지통에 없을 때: 원인 8가지와 확인 순서
+  </a>
+  <a class="related-item" href="./logfile-basics.html">
+    <span class="rel-id">FOR-0025 · 디스크/NTFS</span>
+    $LogFile 기본: NTFS 트랜잭션 로그의 RSTR/RCRD와 redo·undo
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./usn-reason-flags.html"><span class="rel-id">← FOR-0028</span>USN_REASON 플래그 조합으로 실제 행위 판정하기 (삭제·이동·복사·timestomp 구분)</a>
+<a class="related-item" href="./recycle-bin-i-r.html"><span class="rel-id">FOR-0030 →</span>$Recycle.Bin의 $I / $R 파일: 원래 경로·원본 크기·삭제 시각 복원</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-두-로그의-성질-차이를-먼저-고정한다">1단계 — 두 로그의 성질 차이를 먼저 고정한다</a></li>
+<li class="toc-l3"><a href="#2단계-logfile에서-실제로-읽는-오퍼레이션">2단계 — `$LogFile`에서 실제로 읽는 오퍼레이션</a></li>
+<li class="toc-l3"><a href="#3단계-불일치-패턴-판정표">3단계 — 불일치 패턴 판정표</a></li>
+<li class="toc-l3"><a href="#4단계-j가-비어-있을-때-세-원인을-가른다">4단계 — `$J`가 비어 있을 때 세 원인을 가른다</a></li>
+<li class="toc-l3"><a href="#5단계-mft까지-3자-대조로-결론-세우기">5단계 — `$MFT`까지 3자 대조로 결론 세우기</a></li>
+<li class="toc-l3"><a href="#6단계-시각이-어긋날-때-무엇을-믿나">6단계 — 시각이 어긋날 때 무엇을 믿나</a></li>
+<li class="toc-l3"><a href="#7단계-실전-판정-트리">7단계 — 실전 판정 트리</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 03:39 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

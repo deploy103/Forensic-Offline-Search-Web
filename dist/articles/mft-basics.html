@@ -72,11 +72,11 @@
 <ul><li><strong>resident</strong>: <code>$DATA</code>가 레코드 내부에 저장됨. 대략 700바이트 이하 파일. → <code>$MFT</code> 하나만 있어도 <strong>파일 내용을 복구할 수 있다</strong></li><li><strong>non-resident</strong>: <code>$DATA</code>가 클러스터 런(data run) 목록으로 저장됨. 내용 복구에는 볼륨 전체가 필요하다</li></ul>
 <p>작은 텍스트 파일에 flag가 들어 있는 문제는 <code>$MFT</code>만으로 풀린다.</p>
 <h2 id="빠른-명령">빠른 명령</h2>
-<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">REM Eric Zimmerman MFTECmd — 가장 빠르고 컬럼이 풍부하다
-MFTECmd.exe -f &quot;C:\case\$MFT&quot; --csv &quot;C:\case\out&quot; --csvf mft.csv
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># Eric Zimmerman MFTECmd — 가장 빠르고 컬럼이 풍부하다
+MFTECmd.exe -f &#39;C:\case\$MFT&#39; --csv &quot;C:\case\out&quot; --csvf mft.csv
 
-REM 특정 파일만 보기
-MFTECmd.exe -f &quot;C:\case\$MFT&quot; --csv &quot;C:\case\out&quot; --csvf mft.csv --de 12345</code></pre></div>
+# 특정 파일만 보기
+MFTECmd.exe -f &#39;C:\case\$MFT&#39; --csv &quot;C:\case\out&quot; --csvf mft.csv --de 12345</code></pre></div>
 <div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># analyzeMFT (Python)
 analyzeMFT.py -f &#39;$MFT&#39; -o mft.csv
 
@@ -142,19 +142,19 @@ awk -F, &#39;{print $NF}&#39; mft.csv | sort | uniq -c | sort -nr | head</code><
     <span class="rel-id">FOR-0061 · Registry</span>
     UserAssist로 사용자가 직접 실행한 프로그램 찾기
   </a>
-  <a class="related-item" href="./usnjrnl-basics.html">
-    <span class="rel-id">FOR-0027 · 디스크/NTFS</span>
-    $UsnJrnl($J)로 삭제·생성·이름변경 흔적 복원하기
+  <a class="related-item" href="./timestomp-detection.html">
+    <span class="rel-id">FOR-0038 · 디스크/NTFS</span>
+    Timestomp 탐지: $SI/$FN 불일치부터 나노초 0까지 7가지 지표
   </a>
-  <a class="related-item" href="./wireshark-30sec-triage.html">
-    <span class="rel-id">FOR-0146 · Network/PCAP</span>
-    Wireshark 30초 트리아지: pcap을 받고 처음 할 다섯 가지
+  <a class="related-item" href="./file-slack.html">
+    <span class="rel-id">FOR-0034 · 디스크/NTFS</span>
+    File Slack(RAM slack / drive slack) 계산과 추출
   </a>
   </div>
 </section>
       <div class="pager">
-<a class="related-item" href="./30sec-triage.html"><span class="rel-id">← FOR-0001</span>포렌식 문제 파일을 받았을 때 30초 트리아지</a>
-<a class="related-item" href="./usnjrnl-basics.html"><span class="rel-id">FOR-0027 →</span>$UsnJrnl($J)로 삭제·생성·이름변경 흔적 복원하기</a>
+<a class="related-item" href="./ntfs-structure.html"><span class="rel-id">← FOR-0020</span>NTFS 핵심 구조: 부트섹터 오프셋부터 속성·data run까지</a>
+<a class="related-item" href="./analyzemft-csv.html"><span class="rel-id">FOR-0022 →</span>analyzeMFT / MFTECmd CSV로 $MFT 필터링하기</a>
       </div>
     </article>
 <aside class="toc">
@@ -176,7 +176,7 @@ awk -F, &#39;{print $NF}&#39; mft.csv | sort | uniq -c | sort -nr | head</code><
   </div>
 </main>
 <footer class="site-footer">
-  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 02:32 KST
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 03:39 KST
 </footer>
 <script src="../assets/search-index.js"></script>
 <script src="../assets/search-core.js"></script>

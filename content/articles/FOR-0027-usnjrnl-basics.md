@@ -19,6 +19,7 @@ wireshark_filters: []
 tshark_fields: []
 log_fields: ["Usn", "UpdateTimestamp", "UpdateReasons", "FileName", "EntryNumber", "ParentEntryNumber", "SequenceNumber", "FileAttributes"]
 file_formats: ["ntfs"]
+primary_terms: ["$UsnJrnl", "UsnJrnl", "$J", "USN Journal", "change journal", "usn 저널"]
 keywords: ["UsnJrnl", "$J", "USN Journal", "USN_REASON", "FileDelete", "삭제 흔적", "이름 변경", "change journal", "파일 생성 기록"]
 aliases: ["usnjrnl", "usn 저널", "$J", "삭제 파일", "삭제 흔적 찾기", "파일 지운 기록", "이름 바꾼 기록", "change journal"]
 symptom_keywords: ["삭제된 파일 이름을 알고 싶다", "휴지통에 없다", "파일이 사라졌다", "이름을 바꿨는지", "언제 지웠는지", "MFT에 없는 파일", "$J 파일이 크다"]
@@ -72,7 +73,7 @@ CTF에서는 대개 `$J`(또는 `UsnJrnl_$J`) 파일 하나만 첨부된다.
 라이브 시스템에서 저널 상태만 빠르게 보려면:
 
 ```powershell
-REM 관리자 권한 필요
+# 관리자 권한 필요
 fsutil usn queryjournal C:
 ```
 
@@ -157,39 +158,39 @@ USN 저널 ID        : 0x01dc7f8e2a3b4c5d
 ## 빠른 명령
 
 ```powershell
-REM MFTECmd — $J 파싱 (가장 빠름)
-MFTECmd.exe -f "C:\case\$J" --csv "C:\case\out" --csvf usn.csv
+# MFTECmd — $J 파싱 (가장 빠름)
+MFTECmd.exe -f 'C:\case\$J' --csv "C:\case\out" --csvf usn.csv
 
-REM $MFT와 함께 주면 경로를 복원해 준다
-MFTECmd.exe -f "C:\case\$J" -m "C:\case\$MFT" --csv "C:\case\out" --csvf usn.csv
+# $MFT와 함께 주면 경로를 복원해 준다
+MFTECmd.exe -f 'C:\case\$J' -m 'C:\case\$MFT' --csv "C:\case\out" --csvf usn.csv
 ```
 
 `-m`으로 `$MFT`를 함께 넘기면 `ParentPath`가 채워진다. **경로가 필요하면 항상 함께 준다.**
 
 ```powershell
-REM 삭제된 항목만
+# 삭제된 항목만
 Import-Csv out\usn.csv |
   Where-Object { $_.UpdateReasons -match 'FileDelete' } |
   Select-Object UpdateTimestamp, FileName, ParentPath, EntryNumber |
   Sort-Object UpdateTimestamp
 
-REM 특정 확장자의 삭제
+# 특정 확장자의 삭제
 Import-Csv out\usn.csv |
   Where-Object { $_.UpdateReasons -match 'FileDelete' -and $_.FileName -match '\.(zip|7z|rar|xlsx|docx)$' }
 
-REM 이름 변경 짝 찾기
+# 이름 변경 짝 찾기
 Import-Csv out\usn.csv |
   Where-Object { $_.UpdateReasons -match 'Rename' } |
   Select-Object Usn, UpdateTimestamp, UpdateReasons, FileName, EntryNumber |
   Sort-Object Usn
 
-REM 특정 시간대의 모든 변경
+# 특정 시간대의 모든 변경
 Import-Csv out\usn.csv |
   Where-Object { $_.UpdateTimestamp -ge '2026-03-14 07:20:00' -and
                  $_.UpdateTimestamp -le '2026-03-14 07:30:00' } |
   Sort-Object Usn | Format-Table UpdateTimestamp, UpdateReasons, FileName
 
-REM timestomp 후보
+# timestomp 후보
 Import-Csv out\usn.csv |
   Where-Object { $_.UpdateReasons -match 'BasicInfoChange' -and
                  $_.UpdateReasons -notmatch 'Data|Create|Delete' }

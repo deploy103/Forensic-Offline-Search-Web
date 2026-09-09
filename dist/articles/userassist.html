@@ -67,7 +67,7 @@
 <h2 id="상세-절차">상세 절차</h2>
 <h3 id="1단계-hive-확보와-정리">1단계 — hive 확보와 정리</h3>
 <p><code>NTUSER.DAT</code>은 실행 중인 시스템에서 잠겨 있고, 트랜잭션 로그(<code>NTUSER.DAT.LOG1</code>, <code>.LOG2</code>)에 최신 변경이 남아 있을 수 있다.</p>
-<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">REM 트랜잭션 로그를 hive에 반영(replay) — 최신 값을 놓치지 않으려면 필수
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 트랜잭션 로그를 hive에 반영(replay) — 최신 값을 놓치지 않으려면 필수
 rla.exe -f &quot;C:\case\NTUSER.DAT&quot; --out &quot;C:\case\clean&quot;</code></pre></div>
 <p><code>rla</code>(Registry Log Aggregator)를 거치지 않으면 마지막 실행 기록이 누락되는 경우가 있다. 이미지에서 추출할 때 <code>NTUSER.DAT</code>, <code>NTUSER.DAT.LOG1</code>, <code>NTUSER.DAT.LOG2</code>를 <strong>같은 폴더에</strong> 함께 꺼낸다.</p>
 <h3 id="2단계-guid로-무엇이-실행됐는지-구분">2단계 — GUID로 무엇이 실행됐는지 구분</h3>
@@ -114,17 +114,17 @@ LastWrite Time 2026-03-14 07:41:22Z
 <ul><li><strong>UserAssist에 없다 = 실행되지 않았다, 는 아니다.</strong> UserAssist는 <strong>Explorer를 통한 실행만</strong> 기록한다. <code>cmd.exe</code>에서 타이핑해 실행한 프로그램, 스케줄러·서비스·스크립트가 띄운 프로세스는 <strong>남지 않는다.</strong> 이 경우 Prefetch/Amcache/4688로 가야 한다.</li><li><strong>명령행 인자가 없다.</strong> UserAssist는 경로만 기록한다. <code>powershell.exe -enc ...</code> 같은 인자는 4688이나 4104에서 찾아야 한다.</li><li><strong>Last Executed는 1개뿐이다.</strong> &quot;3번 실행했다&quot;는 것은 알지만 1·2번째 시각은 UserAssist에 없다. 전체 타임라인은 Prefetch(최근 8회)와 EVTX로 보완한다.</li><li><strong><code>NTUSER.DAT</code>은 사용자별이다.</strong> 사용자가 여러 명이면 각 프로필의 hive를 모두 봐야 한다. 어느 SID가 누구인지는 <code>SAM</code> 또는 <code>SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList</code>로 확인한다.</li><li><strong>ROT13은 암호가 아니다.</strong> 값이 이상해 보인다고 복호화 툴을 찾을 필요 없다. 툴이 자동으로 풀거나, 최악의 경우 손으로 13칸 돌리면 된다.</li><li><strong>트랜잭션 로그 미반영.</strong> <code>rla</code> 없이 hive만 파싱하면 가장 최근 실행이 빠질 수 있다. 문제의 답이 &quot;마지막 실행&quot;이면 치명적이다.</li><li><strong>시간대.</strong> FILETIME은 UTC다. RegRipper 출력의 <code>Z</code>가 그 뜻이다. KST 답을 요구하면 +9시간.</li></ul>
 <h2 id="교차검증">교차검증</h2>
 <p>같은 &quot;실행&quot; 사실을 최소 두 곳에서 확인한다.</p>
-<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">REM 1) UserAssist — 사용자가 직접 실행했는가 + 횟수
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) UserAssist — 사용자가 직접 실행했는가 + 횟수
 rip.exe -r NTUSER.DAT -p userassist | Select-String &#39;dump_tool&#39;
 
-REM 2) Prefetch — 실행 사실 + 최근 실행 시각 8개 + 로드한 파일
-REM (WinPrefetchView로 열거나 PECmd 사용)
+# 2) Prefetch — 실행 사실 + 최근 실행 시각 8개 + 로드한 파일
+# (WinPrefetchView로 열거나 PECmd 사용)
 PECmd.exe -f &quot;C:\case\Prefetch\DUMP_TOOL.EXE-1A2B3C4D.pf&quot;
 
-REM 3) Amcache — 파일 해시와 최초 등록
+# 3) Amcache — 파일 해시와 최초 등록
 rip.exe -r Amcache.hve -p amcache | Select-String &#39;dump_tool&#39;
 
-REM 4) $MFT — 파일이 언제 디스크에 생겼는가
+# 4) $MFT — 파일이 언제 디스크에 생겼는가
 Import-Csv mft.csv | Where-Object { $_.FileName -like &#39;*dump_tool*&#39; }</code></pre></div>
 <p>네 값이 모두 같은 시간대를 가리키면 결론이 단단해진다. UserAssist에만 있고 Prefetch에 없다면 Prefetch가 삭제됐거나(반포렌식) SSD에서 비활성된 환경이다.</p>
 <h2 id="mini-walkthrough">mini walkthrough</h2>
@@ -179,18 +179,18 @@ Import-Csv mft.csv | Where-Object { $_.FileName -like &#39;*dump_tool*&#39; }</c
     <span class="rel-id">FOR-0083 · Event Log</span>
     Event ID 4624 성공 로그온 분석: 누가 어디서 어떻게 들어왔나
   </a>
-  <a class="related-item" href="./usnjrnl-basics.html">
-    <span class="rel-id">FOR-0027 · 디스크/NTFS</span>
-    $UsnJrnl($J)로 삭제·생성·이름변경 흔적 복원하기
+  <a class="related-item" href="./registry-hive-map.html">
+    <span class="rel-id">FOR-0051 · Registry</span>
+    Registry hive 전체 지도: 루트키와 디스크상 파일 대응표
   </a>
-  <a class="related-item" href="./chrome-history.html">
-    <span class="rel-id">FOR-0191 · 브라우저/웹</span>
-    Chrome History DB 구조: urls / visits / downloads 읽기
+  <a class="related-item" href="./sam-user-accounts.html">
+    <span class="rel-id">FOR-0052 · Registry</span>
+    SAM hive로 로컬 사용자 계정·RID·마지막 로그온 분석
   </a>
   </div>
 </section>
       <div class="pager">
-<a class="related-item" href="./usnjrnl-basics.html"><span class="rel-id">← FOR-0027</span>$UsnJrnl($J)로 삭제·생성·이름변경 흔적 복원하기</a>
+<a class="related-item" href="./security-hive-overview.html"><span class="rel-id">← FOR-0056</span>SECURITY hive 개요: 감사 정책·도메인 SID·LSA Secrets</a>
 <a class="related-item" href="./event-4624-logon.html"><span class="rel-id">FOR-0083 →</span>Event ID 4624 성공 로그온 분석: 누가 어디서 어떻게 들어왔나</a>
       </div>
     </article>
@@ -219,7 +219,7 @@ Import-Csv mft.csv | Where-Object { $_.FileName -like &#39;*dump_tool*&#39; }</c
   </div>
 </main>
 <footer class="site-footer">
-  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 02:32 KST
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 03:39 KST
 </footer>
 <script src="../assets/search-index.js"></script>
 <script src="../assets/search-core.js"></script>

@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>$STANDARD_INFORMATION vs $FILE_NAME: 8개 타임스탬프로 timestomp 잡기 · FOR-0024 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%94%94%EC%8A%A4%ED%81%AC%2FNTFS">디스크/NTFS</a> / FOR-0024
+      </div>
+      <header class="article-head">
+        <h1>$STANDARD_INFORMATION vs $FILE_NAME: 8개 타임스탬프로 timestomp 잡기</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">디스크/NTFS</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>NTFS 파일은 $STANDARD_INFORMATION(0x10)과 $FILE_NAME(0x30)에 각각 4개씩 총 8개의 시각을 갖는다. 사용자 API로는 $SI만 바꿀 수 있고 $FN은 파일시스템이 rename 시점에만 쓰므로, 두 세트가 어긋나면 조작이다 — 특히 $SI 값이 $FN보다 과거라면 시간을 뒤로 돌린 흔적이다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>MFTECmd, analyzeMFT, Sleuth Kit, Timeline Explorer, PowerShell</td></tr>
+<tr><th>artifact</th><td><code>$STANDARD_INFORMATION</code> · <code>$FILE_NAME</code> · <code>0x10</code> · <code>0x30</code> · <code>timestomp</code> · <code>$INDEX_ROOT</code> · <code>$INDEX_ALLOCATION</code> · <code>INDX</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\$MFT</code></td></tr>
+<tr><th>regex</th><td><code>\.0000000$</code> · <code>\.000$</code></td></tr>
+<tr><th>로그 필드</th><td><code>Created0x10</code> · <code>Created0x30</code> · <code>LastModified0x10</code> · <code>LastModified0x30</code> · <code>LastRecordChange0x10</code> · <code>LastRecordChange0x30</code> · <code>LastAccess0x10</code> · <code>LastAccess0x30</code> · <code>SI&lt;FN</code> · <code>uSecZeros</code> · <code>STF FN Shift</code> · <code>uSec Zero</code></td></tr>
+<tr><th>파일 형식</th><td><code>ntfs</code></td></tr>
+<tr><th>검색 별칭</th><td>timestomp · 타임스탬프 조작 · 시간 조작 탐지 · si fn 비교 · 0x10 0x30 · si&lt;fn · 시간 위조 · 마이크로초 0</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>NTFS 파일은 <code>$STANDARD_INFORMATION</code>(0x10)과 <code>$FILE_NAME</code>(0x30)에 각각 4개씩 <strong>총 8개</strong>의 시각을 갖는다. 사용자 API로는 <code>$SI</code>만 바꿀 수 있고 <code>$FN</code>은 파일시스템이 rename 시점에만 쓰므로, <strong>두 세트가 어긋나면 조작이다</strong> — 특히 <code>$SI</code> 값이 <code>$FN</code>보다 <strong>과거</strong>라면 시간을 뒤로 돌린 흔적이다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;이 파일의 생성 시각이 2009년인데 진짜인가&quot;</li><li>&quot;사건 시각대에 만들어진 파일이 하나도 없다&quot;</li><li>&quot;타임스탬프가 조작됐는지 판정하라&quot;</li><li>&quot;악성 파일이 시스템 파일로 위장했다&quot;</li><li>&quot;어느 시각을 답으로 써야 하는가&quot;</li></ul>
+<p>MACB 각 글자의 의미와 행위별 변화 패턴은 <a href="./mft-macb.html">FOR-0023</a>에서 다룬다. 이 글은 <strong>같은 파일의 두 세트를 대조해 진짜 시각을 골라내는 절차</strong>다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li><code>Created0x10</code>이 Windows 설치 시각·시스템 파일 시각과 똑같다 → 위장 대상 시각을 복사한 것</li><li><code>Created0x10</code> ≠ <code>Created0x30</code> → <strong>생성 시각은 정상적으로 두 세트가 같아야 한다.</strong> 다르면 즉시 의심</li><li>서브초가 정확히 <code>.0000000</code> → 문자열로 지정한 시각을 API로 써 넣은 흔적</li><li><code>SI&lt;FN</code> 컬럼이 <code>True</code> (MFTECmd) 또는 <code>STF FN Shift</code>가 채워짐 (analyzeMFT <code>-a</code>)</li><li><code>LastRecordChange0x10</code>만 사건 시각대에 있고 나머지는 과거 → 조작 시점이 바로 그 <code>C</code> 값</li><li>사건 시각대의 파일이 안 보이는데 <code>$UsnJrnl</code>에는 <code>BasicInfoChange</code>가 있다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">MFTECmd.exe -f &#39;C:\case\$MFT&#39; --csv &quot;C:\case\out&quot; --csvf mft.csv</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 파서가 이미 계산해 준 두 플래그로 후보를 뽑는다
+Import-Csv C:\case\out\mft.csv |
+  Where-Object { $_.&#39;SI&lt;FN&#39; -eq &#39;True&#39; -or $_.uSecZeros -eq &#39;True&#39; } |
+  Select-Object EntryNumber, ParentPath, FileName,
+                Created0x10, Created0x30, LastModified0x10, LastModified0x30</code></pre></div>
+<p>플래그 컬럼이 없거나 비어 있으면 직접 비교한다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 생성 시각이 두 세트에서 다른 항목 = 가장 강한 단독 신호
+Import-Csv C:\case\out\mft.csv |
+  Where-Object { $_.Created0x30 -and $_.Created0x10 -ne $_.Created0x30 } |
+  Select-Object ParentPath, FileName, Created0x10, Created0x30</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-왜-두-세트가-존재하는가">1단계 — 왜 두 세트가 존재하는가</h3>
+<p><code>$FILE_NAME</code> 속성은 <strong>디렉터리 색인을 빠르게 만들기 위한 캐시</strong>다. 폴더 내용을 나열할 때 파일마다 <code>$SI</code>를 읽으러 가지 않고, 이름·크기·시각을 <code>$FN</code>에 복제해 둔다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">같은 파일에 대해 실제로는 세 벌의 시각이 존재한다
+
+1) $STANDARD_INFORMATION (0x10)  &lt;- 커널이 상시 갱신. 도구가 보는 &quot;그 파일의 시각&quot;
+2) $FILE_NAME            (0x30)  &lt;- rename/생성 시점에만 기록되는 스냅샷
+3) 부모 디렉터리의 색인 항목      &lt;- $INDEX_ROOT(0x90) / $INDEX_ALLOCATION(0xA0) 안의
+                                    $FILE_NAME 사본. 세 번째 복제본</code></pre></div>
+<p>3번은 <strong>삭제된 파일의 이름과 시각이 부모 폴더의 <code>INDX</code> 슬랙에 남는</strong> 경로이기도 하다. <code>$MFT</code> 레코드가 재사용된 뒤에도 여기서 나오는 경우가 있다.</p>
+<p>갱신 주체가 다르다는 점이 탐지의 근거다.</p>
+<div class="table-wrap"><table><thead><tr><th></th><th><code>$SI</code> (0x10)</th><th><code>$FN</code> (0x30)</th></tr></thead><tbody><tr><td>누가 쓰나</td><td>커널이 모든 변경마다</td><td>파일시스템이 <strong>생성·rename·이동 시에만</strong></td></tr><tr><td>사용자 API로 변경</td><td><strong>가능</strong> (<code>SetFileTime</code>)</td><td><strong>불가능</strong></td></tr><tr><td>도구가 표시하는 값</td><td>이것 (<code>dir</code>, 탐색기 속성)</td><td>표시되지 않음</td></tr><tr><td>조작 도구가 건드리는 곳</td><td>여기</td><td>대개 그대로 남는다</td></tr></tbody></table></div>
+<h3 id="2단계-8개-타임스탬프-대조표">2단계 — 8개 타임스탬프 대조표</h3>
+<p>두 속성 내부의 오프셋과, 파서 컬럼 대응이다.</p>
+<div class="table-wrap"><table><thead><tr><th>개념</th><th><code>$SI</code> 오프셋</th><th><code>$FN</code> 오프셋</th><th>MFTECmd (0x10)</th><th>MFTECmd (0x30)</th><th>analyzeMFT (0x10)</th></tr></thead><tbody><tr><td>B 생성</td><td><code>0x00</code></td><td><code>0x08</code></td><td><code>Created0x10</code></td><td><code>Created0x30</code></td><td><code>Std Info Creation date</code></td></tr><tr><td>M 수정</td><td><code>0x08</code></td><td><code>0x10</code></td><td><code>LastModified0x10</code></td><td><code>LastModified0x30</code></td><td><code>Std Info Modification date</code></td></tr><tr><td>C 엔트리 변경</td><td><code>0x10</code></td><td><code>0x18</code></td><td><code>LastRecordChange0x10</code></td><td><code>LastRecordChange0x30</code></td><td><code>Std Info Entry date</code></td></tr><tr><td>A 접근</td><td><code>0x18</code></td><td><code>0x20</code></td><td><code>LastAccess0x10</code></td><td><code>LastAccess0x30</code></td><td><code>Std Info Access date</code></td></tr></tbody></table></div>
+<p><code>$FN</code> 속성은 오프셋 <code>0x00</code>에 <strong>부모 디렉터리 참조(8바이트: 하위 6바이트 레코드 번호 + 상위 2바이트 시퀀스)</strong> 를 먼저 두기 때문에, 같은 네 시각이 <code>$SI</code>보다 8바이트씩 뒤에 온다.</p>
+<p>analyzeMFT는 <code>$FN</code> 쪽을 <code>FN Info Creation date</code> 처럼 <code>FN Info *</code>로 낸다.</p>
+<h3 id="3단계-왜-조작-도구는-si만-바꾸는가">3단계 — 왜 조작 도구는 <code>$SI</code>만 바꾸는가</h3>
+<p>Windows가 제공하는 시각 설정 API는 하나뿐이고, 인자가 셋이다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">SetFileTime(hFile, lpCreationTime, lpLastAccessTime, lpLastWriteTime)
+             -&gt; B                   -&gt; A               -&gt; M</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>API로 설정 가능한가</th></tr></thead><tbody><tr><td><code>$SI</code> B / A / M</td><td><strong>가능</strong></td></tr><tr><td><code>$SI</code> C (MFT entry changed)</td><td><strong>불가능.</strong> 메타데이터가 바뀌었으므로 커널이 &quot;지금&quot;으로 갱신한다</td></tr><tr><td><code>$FN</code> B / M / C / A</td><td><strong>불가능.</strong> 사용자 모드 API가 없다</td></tr></tbody></table></div>
+<p>결과적으로 API 기반 timestomp(MITRE ATT&amp;CK의 Timestomp 기법, PowerShell의 <code>(Get-Item x).CreationTime = ...</code> 포함)는 다음 흔적을 반드시 남긴다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1) $SI 의 B/M/A 는 조작값
+2) $SI 의 C 는 &quot;조작을 실행한 시각&quot;  &lt;- 진짜 시각이 여기 남는다
+3) $FN 의 4개는 원래 값 그대로       &lt;- 대조 대상
+4) $UsnJrnl 에 BasicInfoChange 레코드 &lt;- 조작 행위 자체의 기록</code></pre></div>
+<p><strong>단, <code>$FN</code>까지 바꾸는 도구도 존재한다.</strong> raw 디스크에 직접 쓰거나 커널 드라이버를 쓰는 방식이면 8개 전부를 맞출 수 있다. 그래서 <code>$SI</code> = <code>$FN</code>이 &quot;조작 없음&quot;의 증명은 아니다. 그때는 <code>$UsnJrnl</code>·<code>$LogFile</code>·<code>INDX</code> 슬랙의 세 번째 복제본으로 넘어간다.</p>
+<h3 id="4단계-판정-규칙">4단계 — 판정 규칙</h3>
+<p><code>$FN</code>은 rename 시점에 그 순간의 <code>$SI</code> 값으로 새로 기록된다. 따라서 <strong>정상 파일에서 <code>$FN</code>은 <code>$SI</code>와 같거나 과거</strong>다.</p>
+<div class="table-wrap"><table><thead><tr><th>비교</th><th>정상</th><th>이상 신호</th><th>강도</th></tr></thead><tbody><tr><td><code>Created0x10</code> vs <code>Created0x30</code></td><td><strong>같다</strong></td><td>다르다</td><td><strong>매우 강함</strong></td></tr><tr><td><code>Created0x10</code> &lt; <code>Created0x30</code></td><td>없음</td><td>생성 시각을 과거로 돌렸다</td><td><strong>매우 강함</strong></td></tr><tr><td><code>LastModified0x10</code> vs <code>0x30</code></td><td><code>0x10</code> ≥ <code>0x30</code></td><td><code>0x10</code> &lt; <code>0x30</code></td><td>강함</td></tr><tr><td><code>LastRecordChange0x10</code> vs <code>0x30</code></td><td><code>0x10</code> ≥ <code>0x30</code></td><td><code>0x10</code> &lt; <code>0x30</code></td><td>강함</td></tr><tr><td><code>LastAccess0x10</code> vs <code>0x30</code></td><td><code>0x10</code> ≥ <code>0x30</code></td><td><code>0x10</code> &lt; <code>0x30</code></td><td>중간 (갱신 비활성 영향)</td></tr><tr><td><code>$SI</code> C만 최근, B/M은 과거</td><td>rename·이동·권한변경</td><td>조작</td><td>중간 — 단독 판정 불가</td></tr><tr><td>서브초 <code>.0000000</code></td><td>아카이브·FAT 유래 가능</td><td>조작</td><td>중간</td></tr></tbody></table></div>
+<p><code>Created</code>가 두 세트에서 다르면 사실상 확정이다. 파일 생성 시 두 속성이 동시에 만들어지고, rename 시에도 <code>$FN</code>이 <code>$SI</code>의 값을 복사해 가므로 <strong>정상 경로로는 어긋날 수 없다.</strong></p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 규칙을 그대로 코드로 — 역전 항목만
+Import-Csv out\mft.csv |
+  Where-Object {
+    $_.Created0x30 -and $_.Created0x10 -and
+    ([datetime]$_.Created0x10) -lt ([datetime]$_.Created0x30)
+  } |
+  Select-Object EntryNumber, ParentPath, FileName,
+                Created0x10, Created0x30, LastRecordChange0x10 |
+  Sort-Object LastRecordChange0x10</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 네 쌍 전부를 점수화 — 어긋난 쌍의 개수를 센다
+Import-Csv out\mft.csv | ForEach-Object {
+  $r = $_
+  $score = 0
+  foreach ($p in @(
+      @(&#39;Created0x10&#39;,&#39;Created0x30&#39;),
+      @(&#39;LastModified0x10&#39;,&#39;LastModified0x30&#39;),
+      @(&#39;LastRecordChange0x10&#39;,&#39;LastRecordChange0x30&#39;),
+      @(&#39;LastAccess0x10&#39;,&#39;LastAccess0x30&#39;))) {
+    $si = $r.($p[0]); $fn = $r.($p[1])
+    if ($si -and $fn -and ([datetime]$si) -lt ([datetime]$fn)) { $score++ }
+  }
+  if ($score -gt 0) {
+    [pscustomobject]@{
+      Entry = $r.EntryNumber; Path = $r.ParentPath; Name = $r.FileName
+      Reversed = $score; SI_B = $r.Created0x10; FN_B = $r.Created0x30
+      SI_C = $r.LastRecordChange0x10
+    }
+  }
+} | Sort-Object Reversed -Descending | Format-Table -AutoSize</code></pre></div>
+<h3 id="5단계-서브초나노초-절삭-신호">5단계 — 서브초(나노초) 절삭 신호</h3>
+<p>FILETIME은 100나노초 단위다. 파일시스템이 실제로 찍는 값은 하위 자릿수가 사실상 무작위다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">정상적으로 생성된 파일
+  Created: 2026-03-14 07:20:08.7412955     &lt;- 7자리 서브초가 채워져 있다
+
+문자열로 지정한 시각을 API로 써 넣은 파일
+  Created: 2009-07-14 04:37:05.0000000     &lt;- 정확히 0</code></pre></div>
+<p>조작 도구는 대개 <code>&quot;2009-07-14 04:37:05&quot;</code> 같은 문자열을 파싱해 FILETIME으로 변환하므로 <strong>서브초가 정확히 0</strong>이 된다. MFTECmd는 이 조건을 <code>uSecZeros</code> 컬럼으로, analyzeMFT는 <code>-a</code> 옵션의 <code>uSec Zero</code> 컬럼으로 표시한다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 파서 플래그 없이 직접 판정
+Import-Csv out\mft.csv |
+  Where-Object {
+    $_.Created0x10 -and ([datetime]$_.Created0x10).Ticks % 10000000 -eq 0
+  } |
+  Select-Object ParentPath, FileName, Created0x10, LastModified0x10</code></pre></div>
+<p><strong>서브초 0은 단독 증거가 아니다.</strong> 다음 경우에 정상적으로 발생한다.</p>
+<div class="table-wrap"><table><thead><tr><th>정상적으로 서브초가 0이 되는 경우</th><th>이유</th></tr></thead><tbody><tr><td>ZIP에서 압축 해제된 파일의 <code>M</code></td><td>MS-DOS 시각은 2초 해상도, 서브초 없음</td></tr><tr><td>FAT/exFAT 매체에서 복사된 파일</td><td>FAT 시각 해상도가 낮다</td></tr><tr><td>일부 설치 프로그램이 배포한 파일</td><td>패키지에 저장된 시각을 복원</td></tr><tr><td>파서가 서브초를 표시하지 않는 경우</td><td>출력 형식 문제 — 데이터는 있다</td></tr></tbody></table></div>
+<p>그래서 실전 판정은 <strong>&quot;서브초 0&quot; + &quot;두 세트 불일치&quot;</strong> 를 함께 본다. 서브초가 안 보이면 파서의 시각 출력 형식 옵션을 확인해 <code>.fffffff</code>까지 나오게 한 뒤 다시 본다.</p>
+<h3 id="6단계-진짜-시각을-확정한다">6단계 — 진짜 시각을 확정한다</h3>
+<p>조작이 확인되면 답으로 쓸 시각을 골라야 한다. 신뢰도 순서다.</p>
+<div class="table-wrap"><table><thead><tr><th>순위</th><th>값</th><th>왜 신뢰하나</th></tr></thead><tbody><tr><td>1</td><td><code>$UsnJrnl</code>의 <code>FileCreate</code> 시각</td><td>별개 파일에 append-only로 기록됨</td></tr><tr><td>2</td><td><code>$LogFile</code>의 해당 트랜잭션 시각</td><td>트랜잭션 로그. 조작 대상이 아니다</td></tr><tr><td>3</td><td><code>$FN</code> (0x30)의 B</td><td>사용자 API로 못 바꾼다</td></tr><tr><td>4</td><td><code>$SI</code>의 C (<code>LastRecordChange0x10</code>)</td><td>조작을 실행한 시각 자체</td></tr><tr><td>5</td><td>부모 폴더 <code>INDX</code>의 <code>$FN</code> 사본</td><td>세 번째 복제본</td></tr><tr><td>6</td><td><code>$SI</code>의 B/M/A</td><td><strong>조작 대상. 마지막에 본다</strong></td></tr></tbody></table></div>
+<p>즉 timestomp 문제의 정답은 보통 <strong><code>Created0x30</code>(원래 생성 시각)</strong> 이거나 <strong><code>LastRecordChange0x10</code>(조작 시각)</strong> 이다. 문제 지문이 &quot;파일이 실제로 만들어진 시각&quot;을 물으면 전자, &quot;조작이 일어난 시각&quot;을 물으면 후자다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="table-wrap"><table><thead><tr><th>컬럼</th><th>의미</th><th>읽는 법</th></tr></thead><tbody><tr><td><code>SI&lt;FN</code></td><td><code>$SI</code> 시각 중 하나 이상이 <code>$FN</code>보다 과거</td><td><code>True</code> = <strong>1순위 후보</strong></td></tr><tr><td><code>uSecZeros</code></td><td>서브초가 0</td><td><code>True</code> = 2차 신호</td></tr><tr><td><code>Created0x10</code> / <code>Created0x30</code></td><td>생성 시각 두 벌</td><td><strong>다르면 사실상 확정</strong></td></tr><tr><td><code>LastModified0x10</code> / <code>0x30</code></td><td>수정 시각</td><td><code>0x10</code> &lt; <code>0x30</code>이면 이상</td></tr><tr><td><code>LastRecordChange0x10</code></td><td><code>$SI</code> 엔트리 변경</td><td>조작 시각이 남는 자리</td></tr><tr><td><code>LastRecordChange0x30</code></td><td><code>$FN</code> 엔트리 변경</td><td>마지막 rename 시각</td></tr><tr><td><code>LastAccess0x10</code> / <code>0x30</code></td><td>접근 시각</td><td>갱신 비활성 환경에서는 판정력이 약하다</td></tr><tr><td><code>Copied</code></td><td>생성 &gt; 수정 형태</td><td>조작이 아니라 복사일 수 있다</td></tr><tr><td><code>NameType</code></td><td><code>Win32</code> / <code>Dos</code> / <code>Win32&amp;Dos</code></td><td><code>Dos</code>만 있는 8.3 이름 항목은 별도 <code>$FN</code>이다</td></tr><tr><td><code>UpdateSequenceNumber</code></td><td><code>$SI</code>의 USN</td><td><code>$J</code>와 조인해 실제 행위 확인</td></tr><tr><td><code>STF FN Shift</code> (analyzeMFT)</td><td><code>$SI</code>/<code>$FN</code> 시각 어긋남</td><td><code>-a</code> 옵션 필요</td></tr><tr><td><code>uSec Zero</code> (analyzeMFT)</td><td>서브초 0</td><td><code>-a</code> 옵션 필요</td></tr></tbody></table></div>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>여기서 얻은 것</th><th>다음 목표</th><th>확인할 것</th></tr></thead><tbody><tr><td><code>SI&lt;FN = True</code></td><td><code>$UsnJrnl:$J</code> (<a href="./usnjrnl-basics.html">FOR-0027</a>)</td><td><code>BasicInfoChange</code> 레코드와 그 시각</td></tr><tr><td><code>LastRecordChange0x10</code> (조작 시각)</td><td><code>$LogFile</code> (<a href="./logfile-basics.html">FOR-0025</a>)</td><td>그 순간의 <code>$SI</code> 속성 갱신 트랜잭션</td></tr><tr><td><code>Created0x30</code> (원래 시각)</td><td><code>$J</code>의 <code>FileCreate</code></td><td>두 값이 일치하면 확정</td></tr><tr><td>조작 시각</td><td>EVTX <code>4688</code>, PowerShell <code>4104</code> (<a href="./event-4624-logon.html">FOR-0083</a>)</td><td>어떤 프로세스가 시각을 바꿨나</td></tr><tr><td>조작 대상 파일</td><td>Prefetch / Amcache / UserAssist (<a href="./userassist.html">FOR-0061</a>)</td><td>그 파일이 실행됐나</td></tr><tr><td>위장 대상 시각</td><td>같은 시각을 가진 정상 파일 목록</td><td>어느 시스템 파일을 베꼈나</td></tr><tr><td><code>EntryNumber</code></td><td><code>MFTECmd --de</code>, <code>istat</code></td><td>속성 원본에서 8개 값 직접 확인</td></tr><tr><td>부모 폴더</td><td>부모의 <code>$INDEX_ALLOCATION</code> (<code>INDX</code>)</td><td>세 번째 복제본의 시각</td></tr><tr><td><code>HasAds</code>, <code>ZoneIdContents</code></td><td>다운로드 출처 (<a href="./chrome-history.html">FOR-0191</a>)</td><td>조작 전 원본이 어디서 왔나</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>Created0x30</code>이 비어 있는 것을 &quot;값 없음&quot;으로 읽는 것.</strong> 파서가 <strong><code>0x10</code>과 동일할 때 <code>0x30</code> 컬럼을 비워 두는</strong> 출력 방식을 쓸 수 있다. 빈 값을 곧바로 이상으로 판정하면 오탐이 쏟아진다. 확실한 항목 하나를 <code>MFTECmd --de</code>나 <code>istat</code>으로 열어 파서의 출력 규칙을 먼저 확인한다.</li><li><strong><code>$SI</code> &gt; <code>$FN</code>을 조작으로 신고하는 것.</strong> <code>$FN</code>은 rename 시점에 멈춘 스냅샷이므로 파일을 그 후에 편집하면 <code>$SI</code>의 M/C가 자연히 더 최근이다. <strong>이상은 <code>$SI</code> &lt; <code>$FN</code> 방향이다.</strong> 단, <code>Created</code>만은 방향과 무관하게 불일치 자체가 신호다.</li><li><strong><code>uSecZeros</code>만으로 결론 내리는 것.</strong> ZIP 해제·FAT 매체 복사·일부 설치 파일에서 정상적으로 0이 된다. 반드시 두 세트 불일치와 함께 본다.</li><li><strong><code>$SI</code> = <code>$FN</code>이면 조작이 없다고 결론 내리는 것.</strong> raw 디스크에 직접 쓰는 도구는 8개를 모두 맞춘다. <code>$UsnJrnl</code>의 <code>BasicInfoChange</code>와 <code>$LogFile</code>을 봐야 한다.</li><li><strong>8.3 이름 항목을 중복 파일로 세는 것.</strong> 하나의 파일이 <code>Win32</code> 이름과 <code>Dos</code> 이름 두 개의 <code>$FN</code>을 가질 수 있고, 하드링크는 더 많다. <code>NameType</code>을 확인한다.</li><li><strong>rename을 조작으로 오판하는 것.</strong> 정상 rename도 <code>$FN</code>의 네 시각을 그 시점 값으로 갱신하고 <code>$SI</code>의 C를 올린다. <code>$J</code>의 <code>RenameOldName</code>/<code>RenameNewName</code> 짝이 있으면 정상 rename이다.</li><li><strong>문자열로 시각을 비교하는 것.</strong> <code>-lt</code>/<code>-gt</code>를 문자열에 쓰면 사전순 비교가 된다. ISO 형식이면 우연히 맞지만 파서가 <code>03/14/2026</code> 형식으로 내면 완전히 깨진다. <code>[datetime]</code> 캐스팅을 항상 한다.</li><li><strong>조작 시각을 파일의 생성 시각으로 답하는 것.</strong> <code>LastRecordChange0x10</code>은 &quot;조작한 시각&quot;이다. &quot;파일이 만들어진 시각&quot;을 물으면 <code>Created0x30</code> 또는 <code>$J</code>의 <code>FileCreate</code>가 답이다.</li><li><strong><code>LastAccess</code>의 불일치에 비중을 두는 것.</strong> last access 갱신이 꺼진 시스템에서는 이 쌍의 판정력이 거의 없다 (<a href="./mft-macb.html">FOR-0023</a>).</li><li><strong>위장 대상 시각을 확인하지 않는 것.</strong> 조작값이 <code>2009-07-14 04:37:05</code> 처럼 시스템 파일과 동일하면, 같은 시각을 가진 정상 파일 목록을 뽑아 &quot;베낀 대상&quot;을 특정할 수 있다. 이것이 조작의 추가 증거가 된다.</li><li><strong>디렉터리를 제외하지 않는 것.</strong> 폴더도 <code>$SI</code>/<code>$FN</code>을 갖고, 색인 변경으로 시각이 자주 움직여 오탐이 많다. 1차 스크리닝에서는 <code>IsDirectory=False</code>로 좁힌다.</li><li><strong>시간대를 섞는 것.</strong> 두 세트 모두 FILETIME(UTC)이다. 한쪽만 KST로 변환해 비교하면 9시간짜리 가짜 역전이 만들어진다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) 파서를 거치지 않고 속성 원본에서 8개 값 확인
+MFTECmd.exe -f &#39;C:\case\$MFT&#39; --de 210044
+
+# 2) 조작값과 같은 시각을 가진 정상 파일 = 위장 대상
+Import-Csv out\mft.csv |
+  Where-Object { $_.Created0x10 -eq &#39;2009-07-14 04:37:05&#39; } |
+  Select-Object -First 10 ParentPath, FileName
+
+# 3) $J 에서 조작 행위 자체를 확인
+Import-Csv out\usn.csv |
+  Where-Object { $_.EntryNumber -eq &#39;210044&#39; } |
+  Select-Object Usn, UpdateTimestamp, UpdateReasons, FileName | Sort-Object Usn</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 4) TSK istat — $STANDARD_INFORMATION 과 $FILE_NAME 을 속성별로 따로 출력한다
+istat -o 2048 image.dd 210044
+
+# 5) 부모 폴더의 INDX 에 남은 세 번째 복제본
+istat -o 2048 image.dd 9114</code></pre></div>
+<p><code>istat</code>은 <code>$STANDARD_INFORMATION</code>과 <code>$FILE_NAME</code> 시각을 <strong>별개 블록으로 보여준다.</strong> CSV 컬럼 해석이 의심스러울 때 최종 근거로 쓴다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;2026-03-14 07:00~08:00 사이에 침입이 있었습니다.
+ 공격자가 심어 둔 실행 파일을 찾고, 실제 생성 시각을 구하세요.
+ 첨부: $MFT, $J&quot;
+
+1. 파싱
+   MFTECmd.exe -f &quot;$MFT&quot; --csv out --csvf mft.csv
+   MFTECmd.exe -f &quot;$J&quot; -m &quot;$MFT&quot; --csv out --csvf usn.csv
+
+2. 첫 시도 (실패):
+   Import-Csv out\mft.csv |
+     Where-Object { $_.Extension -eq &#39;.exe&#39; -and
+                    ([datetime]$_.Created0x10) -ge [datetime]&#39;2026-03-14 07:00&#39; -and
+                    ([datetime]$_.Created0x10) -le [datetime]&#39;2026-03-14 08:00&#39; }
+
+   -&gt; 0건.
+
+   &quot;사건 시각대에 만들어진 실행 파일이 없다&quot; 고 결론 냈다. 오답이다.
+   Created0x10 은 조작 가능한 값이다. 조작된 파일은 이 필터에 걸리지 않는다.
+
+3. 접근 변경 — 조작 플래그로 다시 찾는다
+   Import-Csv out\mft.csv |
+     Where-Object { $_.&#39;SI&lt;FN&#39; -eq &#39;True&#39; -or $_.uSecZeros -eq &#39;True&#39; } |
+     Where-Object { $_.IsDirectory -eq &#39;False&#39; } |
+     Select-Object EntryNumber, ParentPath, FileName, Created0x10, Created0x30
+
+   EntryNumber ParentPath                       FileName      Created0x10           Created0x30
+   ----------- ----------                       --------      -----------           -----------
+   210044      .\Users\Public\Libraries         svchost.exe   2009-07-14 04:37:05   2026-03-14 07:20:08
+
+   Users\Public\Libraries 에 svchost.exe 가 있다. 정상 위치가 아니다.
+
+4. 8개 값 전개
+   MFTECmd.exe -f &quot;$MFT&quot; --de 210044
+
+   $STANDARD_INFORMATION (0x10)
+     Created            : 2009-07-14 04:37:05.0000000
+     Last Modified      : 2009-07-14 04:37:05.0000000
+     Last Record Change : 2026-03-14 07:20:11.4180233   &lt;-- 진짜 흔적
+     Last Access        : 2009-07-14 04:37:05.0000000
+
+   $FILE_NAME (0x30)
+     Created            : 2026-03-14 07:20:08.7412955   &lt;-- 원래 생성 시각
+     Last Modified      : 2026-03-14 07:20:08.7412955
+     Last Record Change : 2026-03-14 07:20:08.7412955
+     Last Access        : 2026-03-14 07:20:08.7412955
+
+   판정:
+     - Created 가 두 세트에서 다르다                -&gt; 조작 확정
+     - $SI Created(2009) &lt; $FN Created(2026)        -&gt; 시간을 뒤로 돌렸다
+     - $SI 의 B/M/A 서브초가 정확히 .0000000        -&gt; 문자열 지정 API 호출
+     - $SI C 만 2026-03-14 07:20:11 로 최근         -&gt; 조작을 실행한 시각
+     - $FN 4개가 모두 07:20:08.7412955 로 동일      -&gt; 생성 후 rename 없음
+
+5. 위장 대상 특정
+   Import-Csv out\mft.csv |
+     Where-Object { $_.Created0x10 -eq &#39;2009-07-14 04:37:05&#39; } |
+     Select-Object -First 5 ParentPath, FileName
+
+   .\Windows\System32    svchost.exe
+   .\Windows\System32    services.exe
+   ...
+   -&gt; Windows 설치 당시 시스템 파일의 시각을 그대로 베꼈다.
+
+6. $J 로 확증 (독립 artifact)
+   Import-Csv out\usn.csv | Where-Object { $_.EntryNumber -eq &#39;210044&#39; } |
+     Select-Object Usn, UpdateTimestamp, UpdateReasons, FileName | Sort-Object Usn
+
+   Usn        UpdateTimestamp        UpdateReasons              FileName
+   0x51a2100  2026-03-14 07:20:08Z   FileCreate                 svchost.exe
+   0x51a2240  2026-03-14 07:20:08Z   FileCreate|DataExtend      svchost.exe
+   0x51a2380  2026-03-14 07:20:09Z   DataExtend|Close           svchost.exe
+   0x51a2b40  2026-03-14 07:20:11Z   BasicInfoChange|Close      svchost.exe   &lt;-- timestomp
+
+   $FN Created(07:20:08.74) 와 $J FileCreate(07:20:08) 가 일치한다. 확정.
+   BasicInfoChange 시각(07:20:11) 이 $SI C 와 일치한다. 조작 시점도 확정.
+
+7. 답 정리 (KST 변환)
+   실제 생성 : 2026-03-14 07:20:08 UTC = 16:20:08 KST
+   조작 시각 : 2026-03-14 07:20:11 UTC = 16:20:11 KST
+   조작폭    : 약 16년 8개월 뒤로
+
+정답: .\Users\Public\Libraries\svchost.exe (EntryNumber 210044)
+      실제 생성 2026-03-14 16:20:08 KST
+      2009-07-14 04:37:05 으로 timestomp 됨 (조작 시각 16:20:11 KST)</code></pre></div>
+<p>2단계의 실패가 이 유형의 핵심이다. <strong><code>Created0x10</code>으로 시간 구간을 필터하면 조작된 파일은 구조적으로 걸리지 않는다.</strong> 3단계처럼 &quot;시각으로 찾기&quot;를 버리고 &quot;불일치로 찾기&quot;로 축을 바꾸는 것이 정답 경로였고, 6단계에서 <code>$J</code>라는 독립 artifact가 <code>$FN</code> 값을 뒷받침해 판정이 확정됐다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>Created0x10</code>과 <code>Created0x30</code>을 비교했는가 — 불일치 하나로 거의 끝난다</li><li>비교 방향을 맞췄는가 — 이상은 <code>$SI</code> &lt; <code>$FN</code>이다</li><li><code>0x30</code> 컬럼이 비어 있다면 파서의 출력 규칙을 확인했는가</li><li><code>[datetime]</code> 캐스팅 없이 문자열 비교를 하고 있지 않은가</li><li><code>uSecZeros</code>가 <code>True</code>인데 ZIP 해제·FAT 복사 가능성을 배제했는가</li><li><code>IsDirectory=False</code>로 좁혔는가</li><li>사건 시각대에 아무것도 안 나오면 → <strong>시각 필터를 버리고 불일치 필터로 전환</strong>한다</li><li><code>$SI</code> = <code>$FN</code>이라 조작이 없어 보이면 → <code>$J</code>의 <code>BasicInfoChange</code>, <code>$LogFile</code>, 부모 <code>INDX</code> 슬랙</li><li>조작 대상 시각과 같은 시각을 가진 정상 파일을 뽑아 위장 대상을 특정했는가</li><li>문제가 묻는 것이 &quot;실제 생성 시각&quot;인지 &quot;조작 시각&quot;인지 지문을 다시 읽었는가</li><li>두 세트를 같은 시간대(UTC)로 비교했는가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-005 — Microsoft Learn, Master File Table: <code>$STANDARD_INFORMATION</code>과 <code>$FILE_NAME</code>이 별개 속성으로 각각 타임스탬프 세트를 갖는 구조</li><li>SRC-014 — Microsoft Learn, File Times: FILETIME이 100나노초 단위라는 점(서브초 절삭 판정의 근거)과 UTC 기준</li><li>SRC-086 — MITRE ATT&amp;CK Enterprise: Timestomp(Indicator Removal) 기법이 파일 시각을 변경해 탐지를 회피한다는 기법 정의</li><li>MFTECmd의 <code>SI&lt;FN</code>·<code>uSecZeros</code> 컬럼명과 <code>0x30</code> 컬럼이 비었을 때의 의미, analyzeMFT의 <code>STF FN Shift</code>·<code>uSec Zero</code> 컬럼은 <strong>버전에 따라 다를 수 있으므로 실제 CSV 헤더와 <code>--de</code> 출력에서 확인할 것</strong></li><li><code>$FN</code> 시각이 rename 시점에 갱신된다는 동작은 Windows 버전·조작 도구에 따라 예외가 있을 수 있다. 판정은 <code>$UsnJrnl</code>/<code>$LogFile</code>과 교차검증할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./mft-basics.html">
+    <span class="rel-id">FOR-0021 · 디스크/NTFS</span>
+    $MFT 기본 구조와 포렌식 활용
+  </a>
+  <a class="related-item" href="./mft-macb.html">
+    <span class="rel-id">FOR-0023 · 디스크/NTFS</span>
+    MFT MACB 시간 해석: 복사·이동·다운로드·압축해제 구분법
+  </a>
+  <a class="related-item" href="./timestomp-detection.html">
+    <span class="rel-id">FOR-0038 · 디스크/NTFS</span>
+    Timestomp 탐지: $SI/$FN 불일치부터 나노초 0까지 7가지 지표
+  </a>
+  <a class="related-item" href="./analyzemft-csv.html">
+    <span class="rel-id">FOR-0022 · 디스크/NTFS</span>
+    analyzeMFT / MFTECmd CSV로 $MFT 필터링하기
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./mft-macb.html"><span class="rel-id">← FOR-0023</span>MFT MACB 시간 해석: 복사·이동·다운로드·압축해제 구분법</a>
+<a class="related-item" href="./logfile-basics.html"><span class="rel-id">FOR-0025 →</span>$LogFile 기본: NTFS 트랜잭션 로그의 RSTR/RCRD와 redo·undo</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-왜-두-세트가-존재하는가">1단계 — 왜 두 세트가 존재하는가</a></li>
+<li class="toc-l3"><a href="#2단계-8개-타임스탬프-대조표">2단계 — 8개 타임스탬프 대조표</a></li>
+<li class="toc-l3"><a href="#3단계-왜-조작-도구는-si만-바꾸는가">3단계 — 왜 조작 도구는 `$SI`만 바꾸는가</a></li>
+<li class="toc-l3"><a href="#4단계-판정-규칙">4단계 — 판정 규칙</a></li>
+<li class="toc-l3"><a href="#5단계-서브초나노초-절삭-신호">5단계 — 서브초(나노초) 절삭 신호</a></li>
+<li class="toc-l3"><a href="#6단계-진짜-시각을-확정한다">6단계 — 진짜 시각을 확정한다</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 03:39 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

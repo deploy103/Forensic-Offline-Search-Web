@@ -1,5 +1,5 @@
 {
-  "note": "출처 레지스트리. 글의 source_ids가 여기의 id를 가리킨다. url은 대회장에서 접속하기 위한 것이 아니라 사후 재검증용이다. tier 1=공식 벤더 문서, 2=도구 제작자 문서, 3=표준/RFC, 4=신뢰도 높은 포렌식 커뮤니티 문서.",
+  "note": "출처 레지스트리. 글의 source_ids 가 여기의 id 를 가리킨다. url 은 대회장에서 접속하기 위한 것이 아니라 사후 재검증용이다. tier 1=공식 벤더/프로젝트 문서, 2=도구 제작자 문서, 3=표준/RFC/명세, 4=신뢰도 높은 포렌식 커뮤니티 문서. 글을 쓰는 에이전트는 이 파일을 직접 수정하지 않고, 추가가 필요한 출처를 최종 보고에 적어 올린다.",
   "sources": [
     {
       "id": "SRC-001",
@@ -13,35 +13,35 @@
       "title": "Wireshark — Display Filter Reference",
       "url": "https://www.wireshark.org/docs/dfref/",
       "tier": 1,
-      "topics": ["wireshark", "display filter", "http", "dns", "tcp"]
+      "topics": ["wireshark", "display filter", "http", "dns", "tcp", "tls"]
     },
     {
       "id": "SRC-003",
       "title": "Wireshark User's Guide (Statistics, Follow Stream, Export Objects)",
       "url": "https://www.wireshark.org/docs/wsug_html_chunked/",
       "tier": 1,
-      "topics": ["wireshark", "protocol hierarchy", "conversations", "export objects"]
+      "topics": ["wireshark", "protocol hierarchy", "conversations", "export objects", "capture filter"]
     },
     {
       "id": "SRC-004",
       "title": "Eric Zimmerman — Command line / GUI tool documentation",
       "url": "https://ericzimmerman.github.io/",
       "tier": 2,
-      "topics": ["evtxecmd", "registryexplorer", "rbcmd", "appcompatcacheparser", "mftecmd"]
+      "topics": ["evtxecmd", "registryexplorer", "rbcmd", "appcompatcacheparser", "mftecmd", "pecmd", "lecmd", "jlecmd", "amcacheparser", "srumecmd", "rla", "timeline explorer"]
     },
     {
       "id": "SRC-005",
       "title": "Microsoft Learn — Master File Table (NTFS)",
       "url": "https://learn.microsoft.com/en-us/windows/win32/fileio/master-file-table",
       "tier": 1,
-      "topics": ["ntfs", "$mft", "mft record", "attribute"]
+      "topics": ["ntfs", "$mft", "mft record", "attribute", "resident"]
     },
     {
       "id": "SRC-006",
       "title": "Volatility 3 documentation",
       "url": "https://volatility3.readthedocs.io/",
       "tier": 2,
-      "topics": ["volatility", "pslist", "psscan", "windows.info", "memory"]
+      "topics": ["volatility", "pslist", "psscan", "pstree", "cmdline", "netscan", "malfind", "filescan", "dumpfiles", "windows.info", "memory"]
     },
     {
       "id": "SRC-007",
@@ -52,10 +52,10 @@
     },
     {
       "id": "SRC-008",
-      "title": "Chromium source — components/history/core/browser (History DB schema)",
+      "title": "Chromium source — components/history/core/browser (History DB schema, PageTransition)",
       "url": "https://source.chromium.org/chromium/chromium/src/+/main:components/history/core/browser/",
       "tier": 1,
-      "topics": ["chrome", "history", "urls", "visits", "webkit timestamp"]
+      "topics": ["chrome", "history", "urls", "visits", "downloads", "transition", "webkit timestamp"]
     },
     {
       "id": "SRC-009",
@@ -73,45 +73,703 @@
     },
     {
       "id": "SRC-011",
-      "title": "SQLite — File format / built-in date and time functions",
+      "title": "SQLite — Date And Time Functions / File Format",
       "url": "https://www.sqlite.org/lang_datefunc.html",
       "tier": 1,
-      "topics": ["sqlite", "timestamp", "datetime", "unixepoch"]
+      "topics": ["sqlite", "timestamp", "datetime", "unixepoch", "wal"]
     },
     {
       "id": "SRC-012",
-      "title": "IANA / RFC 791 — Internet Protocol (IPv4 addressing)",
+      "title": "RFC 791 — Internet Protocol (IPv4)",
       "url": "https://www.rfc-editor.org/rfc/rfc791",
       "tier": 3,
-      "topics": ["ipv4", "regex", "dotted quad"]
+      "topics": ["ipv4", "regex", "dotted quad", "fragmentation"]
     },
     {
       "id": "SRC-013",
-      "title": "Microsoft Learn — Change Journals ($UsnJrnl)",
+      "title": "Microsoft Learn — Change Journals ($UsnJrnl, USN_RECORD, USN_REASON_*)",
       "url": "https://learn.microsoft.com/en-us/windows/win32/fileio/change-journals",
       "tier": 1,
-      "topics": ["ntfs", "$usnjrnl", "usn reason", "deleted file"]
+      "topics": ["ntfs", "$usnjrnl", "usn reason", "deleted file", "$j"]
     },
     {
       "id": "SRC-014",
       "title": "Microsoft Learn — File Times (FILETIME, 100ns since 1601-01-01 UTC)",
       "url": "https://learn.microsoft.com/en-us/windows/win32/sysinfo/file-times",
       "tier": 1,
-      "topics": ["filetime", "timestamp", "timezone", "1601"]
+      "topics": ["filetime", "timestamp", "timezone", "1601", "11644473600"]
     },
     {
       "id": "SRC-015",
-      "title": "GNU grep manual / ripgrep user guide",
+      "title": "GNU grep manual",
       "url": "https://www.gnu.org/software/grep/manual/grep.html",
       "tier": 1,
-      "topics": ["grep", "ripgrep", "regex", "log analysis"]
+      "topics": ["grep", "regex", "ere", "pcre", "log analysis"]
     },
     {
       "id": "SRC-016",
       "title": "MITRE ATT&CK — T1059.001 PowerShell",
       "url": "https://attack.mitre.org/techniques/T1059/001/",
       "tier": 4,
-      "topics": ["powershell", "encodedcommand", "suspicious command"]
+      "topics": ["powershell", "encodedcommand", "suspicious command", "attack technique"]
+    },
+    {
+      "id": "SRC-017",
+      "title": "Microsoft Learn — Windows Registry hives and file locations",
+      "url": "https://learn.microsoft.com/en-us/windows/win32/sysinfo/registry-hives",
+      "tier": 1,
+      "topics": ["registry", "hive", "sam", "system", "software", "security", "ntuser.dat"]
+    },
+    {
+      "id": "SRC-018",
+      "title": "Microsoft Learn — Time Zone Information registry key / GetTimeZoneInformation",
+      "url": "https://learn.microsoft.com/en-us/windows/win32/api/timezoneapi/ns-timezoneapi-time_zone_information",
+      "tier": 1,
+      "topics": ["timezone", "system hive", "bias", "kst", "utc"]
+    },
+    {
+      "id": "SRC-019",
+      "title": "Microsoft Learn — Well-known SIDs",
+      "url": "https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/understand-security-identifiers",
+      "tier": 1,
+      "topics": ["sid", "sam", "user account", "s-1-5-21", "profilelist"]
+    },
+    {
+      "id": "SRC-020",
+      "title": "Microsoft Learn — Event 4625 (An account failed to log on)",
+      "url": "https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10-security-auditing/event-4625",
+      "tier": 1,
+      "topics": ["event log", "4625", "failed logon", "status code", "sub status"]
+    },
+    {
+      "id": "SRC-021",
+      "title": "Microsoft Learn — Event 4688 (A new process has been created)",
+      "url": "https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10-security-auditing/event-4688",
+      "tier": 1,
+      "topics": ["event log", "4688", "process creation", "command line", "parent process"]
+    },
+    {
+      "id": "SRC-022",
+      "title": "Microsoft Learn — Advanced security audit policy settings (전체 Event ID 목록)",
+      "url": "https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/advanced-security-audit-policy-settings",
+      "tier": 1,
+      "topics": ["event log", "audit policy", "4634", "4647", "4648", "4672", "4697", "1102", "4719"]
+    },
+    {
+      "id": "SRC-023",
+      "title": "Microsoft Learn — about_Logging_Windows / PowerShell script block logging (4103, 4104)",
+      "url": "https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_logging_windows",
+      "tier": 1,
+      "topics": ["powershell", "4104", "4103", "script block logging", "module logging", "transcription"]
+    },
+    {
+      "id": "SRC-024",
+      "title": "Microsoft Learn — Sysmon (Sysinternals) 이벤트 스키마",
+      "url": "https://learn.microsoft.com/en-us/sysinternals/downloads/sysmon",
+      "tier": 1,
+      "topics": ["sysmon", "event 1", "event 3", "event 11", "event 13", "process create", "network connect"]
+    },
+    {
+      "id": "SRC-025",
+      "title": "Microsoft Learn — Remote Desktop Services / Terminal Services 이벤트 로그",
+      "url": "https://learn.microsoft.com/en-us/troubleshoot/windows-server/remote/remote-desktop-services-events",
+      "tier": 1,
+      "topics": ["rdp", "terminalservices", "localsessionmanager", "remoteconnectionmanager", "1149", "21", "24", "25"]
+    },
+    {
+      "id": "SRC-026",
+      "title": "Libyal — libevtx / Windows Event Log (EVTX) 파일 포맷 문서",
+      "url": "https://github.com/libyal/libevtx/blob/main/documentation/Windows%20XML%20Event%20Log%20(EVTX).asciidoc",
+      "tier": 4,
+      "topics": ["evtx", "elffile", "chunk", "event record id", "file format"]
+    },
+    {
+      "id": "SRC-027",
+      "title": "Libyal — libregf / Windows NT Registry File (REGF) 포맷 문서",
+      "url": "https://github.com/libyal/libregf/blob/main/documentation/Windows%20NT%20Registry%20File%20(REGF)%20format.asciidoc",
+      "tier": 4,
+      "topics": ["regf", "registry", "hive", "nk", "vk", "lastwrite", "transaction log"]
+    },
+    {
+      "id": "SRC-028",
+      "title": "Libyal — libesedb / Extensible Storage Engine (ESE) Database File 포맷",
+      "url": "https://github.com/libyal/libesedb/blob/main/documentation/Extensible%20Storage%20Engine%20(ESE)%20Database%20File%20(EDB)%20format.asciidoc",
+      "tier": 4,
+      "topics": ["ese", "edb", "webcachev01.dat", "srudb.dat", "windows.edb"]
+    },
+    {
+      "id": "SRC-029",
+      "title": "Libyal — liblnk / Windows Shortcut File (LNK) 포맷 문서",
+      "url": "https://github.com/libyal/liblnk/blob/main/documentation/Windows%20Shortcut%20File%20(LNK)%20format.asciidoc",
+      "tier": 4,
+      "topics": ["lnk", "shortcut", "shell item", "jump list", "target path", "volume serial"]
+    },
+    {
+      "id": "SRC-030",
+      "title": "Libyal — libscca / Windows Prefetch File (SCCA) 포맷 문서",
+      "url": "https://github.com/libyal/libscca/blob/main/documentation/Windows%20Prefetch%20File%20(PF)%20format.asciidoc",
+      "tier": 4,
+      "topics": ["prefetch", "scca", "run count", "last run time", "volume", "loaded files"]
+    },
+    {
+      "id": "SRC-031",
+      "title": "Microsoft Learn — Application Compatibility / Shim infrastructure",
+      "url": "https://learn.microsoft.com/en-us/windows/win32/devnotes/application-compatibility-database",
+      "tier": 1,
+      "topics": ["shimcache", "appcompatcache", "amcache", "application compatibility"]
+    },
+    {
+      "id": "SRC-032",
+      "title": "The Sleuth Kit — Tool documentation (mmls, fls, icat, istat, fsstat, blkls)",
+      "url": "https://sleuthkit.org/sleuthkit/man/",
+      "tier": 2,
+      "topics": ["sleuth kit", "mmls", "fls", "icat", "istat", "fsstat", "offset", "carving"]
+    },
+    {
+      "id": "SRC-033",
+      "title": "Autopsy — User Documentation (Ingest Modules, Views, Results, Timeline)",
+      "url": "https://sleuthkit.org/autopsy/docs/user-docs/latest/",
+      "tier": 2,
+      "topics": ["autopsy", "ingest", "keyword search", "extension mismatch", "photorec carver", "timeline"]
+    },
+    {
+      "id": "SRC-034",
+      "title": "UEFI Specification — GPT (GUID Partition Table) 및 파티션 타입 GUID",
+      "url": "https://uefi.org/specifications",
+      "tier": 3,
+      "topics": ["gpt", "efi part", "protective mbr", "partition type guid", "lba"]
+    },
+    {
+      "id": "SRC-035",
+      "title": "foremost / scalpel 매뉴얼 (시그니처 기반 카빙)",
+      "url": "https://linux.die.net/man/1/foremost",
+      "tier": 2,
+      "topics": ["foremost", "scalpel", "carving", "signature", "unallocated"]
+    },
+    {
+      "id": "SRC-036",
+      "title": "TestDisk / PhotoRec 문서 (CGSecurity)",
+      "url": "https://www.cgsecurity.org/wiki/PhotoRec",
+      "tier": 2,
+      "topics": ["photorec", "testdisk", "partition recovery", "file recovery", "carving"]
+    },
+    {
+      "id": "SRC-037",
+      "title": "binwalk 문서",
+      "url": "https://github.com/ReFirmLabs/binwalk/wiki",
+      "tier": 2,
+      "topics": ["binwalk", "firmware", "signature scan", "entropy", "extract"]
+    },
+    {
+      "id": "SRC-038",
+      "title": "ExifTool 문서 (Phil Harvey)",
+      "url": "https://exiftool.org/",
+      "tier": 2,
+      "topics": ["exiftool", "exif", "metadata", "gps", "makernotes", "pdf metadata"]
+    },
+    {
+      "id": "SRC-039",
+      "title": "CIPA DC-008 / EXIF 규격 개요",
+      "url": "https://www.cipa.jp/e/std/std-sec.html",
+      "tier": 3,
+      "topics": ["exif", "datetimeoriginal", "gps", "orientation", "tiff tag"]
+    },
+    {
+      "id": "SRC-040",
+      "title": "PNG Specification (W3C) — chunk 구조와 CRC",
+      "url": "https://www.w3.org/TR/png/",
+      "tier": 3,
+      "topics": ["png", "chunk", "ihdr", "idat", "iend", "crc32", "bit depth", "alpha"]
+    },
+    {
+      "id": "SRC-041",
+      "title": "JPEG / JFIF 마커 구조 (ITU-T T.81)",
+      "url": "https://www.w3.org/Graphics/JPEG/itu-t81.pdf",
+      "tier": 3,
+      "topics": ["jpeg", "marker", "soi", "eoi", "app1", "exif segment"]
+    },
+    {
+      "id": "SRC-042",
+      "title": "ZIP File Format Specification (PKWARE APPNOTE)",
+      "url": "https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT",
+      "tier": 3,
+      "topics": ["zip", "central directory", "local file header", "eocd", "docx", "apk"]
+    },
+    {
+      "id": "SRC-043",
+      "title": "ECMA-376 / Office Open XML 패키지 구조",
+      "url": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "tier": 3,
+      "topics": ["docx", "xlsx", "pptx", "ooxml", "zip", "docprops", "core.xml"]
+    },
+    {
+      "id": "SRC-044",
+      "title": "PDF 32000-1 (ISO) / PDF 구조 개요",
+      "url": "https://www.iso.org/standard/51502.html",
+      "tier": 3,
+      "topics": ["pdf", "xref", "trailer", "object stream", "metadata", "embedded file"]
+    },
+    {
+      "id": "SRC-045",
+      "title": "steghide 문서",
+      "url": "https://steghide.sourceforge.net/documentation.php",
+      "tier": 2,
+      "topics": ["steghide", "stego", "jpeg", "wav", "passphrase", "embed", "extract"]
+    },
+    {
+      "id": "SRC-046",
+      "title": "zsteg (zsteg README)",
+      "url": "https://github.com/zed-0xff/zsteg",
+      "tier": 2,
+      "topics": ["zsteg", "lsb", "png", "bmp", "stego", "bit plane"]
+    },
+    {
+      "id": "SRC-047",
+      "title": "OpenStego 문서",
+      "url": "https://www.openstego.com/",
+      "tier": 2,
+      "topics": ["openstego", "lsb", "watermark", "stego", "png"]
+    },
+    {
+      "id": "SRC-048",
+      "title": "stegsnow (whitespace steganography)",
+      "url": "https://darkside.com.au/snow/",
+      "tier": 2,
+      "topics": ["stegsnow", "whitespace", "stego", "text"]
+    },
+    {
+      "id": "SRC-049",
+      "title": "Audacity Manual (Spectrogram, Effects, Track view)",
+      "url": "https://manual.audacityteam.org/",
+      "tier": 2,
+      "topics": ["audacity", "spectrogram", "waveform", "reverse", "speed", "channel split", "morse"]
+    },
+    {
+      "id": "SRC-050",
+      "title": "Android Developers — App data and files / Storage",
+      "url": "https://developer.android.com/training/data-storage",
+      "tier": 1,
+      "topics": ["android", "shared_prefs", "databases", "data/data", "app cache", "external storage"]
+    },
+    {
+      "id": "SRC-051",
+      "title": "Android Developers — SharedPreferences / logcat",
+      "url": "https://developer.android.com/reference/android/content/SharedPreferences",
+      "tier": 1,
+      "topics": ["android", "shared_prefs", "xml", "logcat", "adb"]
+    },
+    {
+      "id": "SRC-052",
+      "title": "Apple — About iOS backups / Manifest.db 구조 개요",
+      "url": "https://support.apple.com/en-us/108941",
+      "tier": 1,
+      "topics": ["ios", "backup", "manifest.db", "info.plist", "domain", "relativepath"]
+    },
+    {
+      "id": "SRC-053",
+      "title": "Apple Developer — Property List / plist 포맷",
+      "url": "https://developer.apple.com/documentation/corefoundation/cfpropertylist",
+      "tier": 1,
+      "topics": ["plist", "bplist", "binary plist", "nsdate", "cocoa timestamp"]
+    },
+    {
+      "id": "SRC-054",
+      "title": "jq Manual",
+      "url": "https://jqlang.github.io/jq/manual/",
+      "tier": 1,
+      "topics": ["jq", "json", "jsonl", "select", "log analysis"]
+    },
+    {
+      "id": "SRC-055",
+      "title": "ripgrep User Guide / GUIDE.md",
+      "url": "https://github.com/BurntSushi/ripgrep/blob/master/GUIDE.md",
+      "tier": 2,
+      "topics": ["ripgrep", "rg", "pcre2", "regex", "log analysis", "glob"]
+    },
+    {
+      "id": "SRC-056",
+      "title": "GNU Awk User's Guide / sed manual",
+      "url": "https://www.gnu.org/software/gawk/manual/gawk.html",
+      "tier": 1,
+      "topics": ["awk", "sed", "field", "fs", "ofs", "log analysis"]
+    },
+    {
+      "id": "SRC-057",
+      "title": "Python 문서 — re (정규 표현식) / csv / json",
+      "url": "https://docs.python.org/3/library/re.html",
+      "tier": 1,
+      "topics": ["python", "re", "findall", "finditer", "named group", "csv", "json"]
+    },
+    {
+      "id": "SRC-058",
+      "title": "Apache HTTP Server — Log Files (Combined/Common Log Format)",
+      "url": "https://httpd.apache.org/docs/current/logs.html",
+      "tier": 1,
+      "topics": ["apache", "access log", "error log", "combined log format", "timestamp"]
+    },
+    {
+      "id": "SRC-059",
+      "title": "nginx — ngx_http_log_module (log_format)",
+      "url": "https://nginx.org/en/docs/http/ngx_http_log_module.html",
+      "tier": 1,
+      "topics": ["nginx", "access log", "error log", "log_format", "x-forwarded-for"]
+    },
+    {
+      "id": "SRC-060",
+      "title": "RFC 5424 — The Syslog Protocol",
+      "url": "https://www.rfc-editor.org/rfc/rfc5424",
+      "tier": 3,
+      "topics": ["syslog", "facility", "severity", "priority", "auth.log", "journald"]
+    },
+    {
+      "id": "SRC-061",
+      "title": "systemd-journalctl man page",
+      "url": "https://www.freedesktop.org/software/systemd/man/journalctl.html",
+      "tier": 1,
+      "topics": ["journalctl", "journald", "systemd", "log analysis"]
+    },
+    {
+      "id": "SRC-062",
+      "title": "OpenSSH sshd man page (인증 로그 메시지)",
+      "url": "https://man.openbsd.org/sshd",
+      "tier": 1,
+      "topics": ["ssh", "sshd", "auth.log", "failed password", "accepted password", "invalid user"]
+    },
+    {
+      "id": "SRC-063",
+      "title": "Microsoft Learn — IIS 로그 파일 형식 (W3C Extended)",
+      "url": "https://learn.microsoft.com/en-us/iis/manage/provisioning-and-managing-iis/configure-logging-in-iis",
+      "tier": 1,
+      "topics": ["iis", "w3c extended log", "c-ip", "cs-uri-stem", "sc-status"]
+    },
+    {
+      "id": "SRC-064",
+      "title": "RFC 9110 — HTTP Semantics (메서드, 상태 코드, 헤더)",
+      "url": "https://www.rfc-editor.org/rfc/rfc9110",
+      "tier": 3,
+      "topics": ["http", "status code", "method", "header", "authorization", "content-type"]
+    },
+    {
+      "id": "SRC-065",
+      "title": "RFC 1035 — Domain Names: Implementation and Specification",
+      "url": "https://www.rfc-editor.org/rfc/rfc1035",
+      "tier": 3,
+      "topics": ["dns", "qtype", "label", "query", "response", "tunneling"]
+    },
+    {
+      "id": "SRC-066",
+      "title": "RFC 9293 — Transmission Control Protocol (TCP)",
+      "url": "https://www.rfc-editor.org/rfc/rfc9293",
+      "tier": 3,
+      "topics": ["tcp", "flags", "syn", "ack", "rst", "fin", "retransmission", "three-way handshake"]
+    },
+    {
+      "id": "SRC-067",
+      "title": "RFC 792 — Internet Control Message Protocol (ICMP)",
+      "url": "https://www.rfc-editor.org/rfc/rfc792",
+      "tier": 3,
+      "topics": ["icmp", "echo request", "echo reply", "type", "code", "payload", "tunneling"]
+    },
+    {
+      "id": "SRC-068",
+      "title": "RFC 826 — Address Resolution Protocol (ARP) / RFC 2131 DHCP",
+      "url": "https://www.rfc-editor.org/rfc/rfc826",
+      "tier": 3,
+      "topics": ["arp", "dhcp", "mac address", "spoofing", "gratuitous arp"]
+    },
+    {
+      "id": "SRC-069",
+      "title": "RFC 8446 — TLS 1.3 / RFC 6066 SNI",
+      "url": "https://www.rfc-editor.org/rfc/rfc8446",
+      "tier": 3,
+      "topics": ["tls", "sni", "client hello", "certificate", "handshake", "cipher suite"]
+    },
+    {
+      "id": "SRC-070",
+      "title": "RFC 959 — File Transfer Protocol (FTP) / RFC 5321 SMTP",
+      "url": "https://www.rfc-editor.org/rfc/rfc959",
+      "tier": 3,
+      "topics": ["ftp", "stor", "retr", "passive mode", "smtp", "mail from", "rcpt to"]
+    },
+    {
+      "id": "SRC-071",
+      "title": "RFC 5322 — Internet Message Format (메일 헤더) / RFC 2045 MIME",
+      "url": "https://www.rfc-editor.org/rfc/rfc5322",
+      "tier": 3,
+      "topics": ["imf", "eml", "mail header", "received", "mime", "base64", "multipart"]
+    },
+    {
+      "id": "SRC-072",
+      "title": "RFC 6455 — The WebSocket Protocol",
+      "url": "https://www.rfc-editor.org/rfc/rfc6455",
+      "tier": 3,
+      "topics": ["websocket", "upgrade", "frame", "masking", "opcode"]
+    },
+    {
+      "id": "SRC-073",
+      "title": "Microsoft — SMB2/SMB3 프로토콜 문서 (MS-SMB2)",
+      "url": "https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-smb2/",
+      "tier": 1,
+      "topics": ["smb", "smb2", "create", "tree connect", "file access", "share"]
+    },
+    {
+      "id": "SRC-074",
+      "title": "RFC 4648 — The Base16, Base32, and Base64 Data Encodings",
+      "url": "https://www.rfc-editor.org/rfc/rfc4648",
+      "tier": 3,
+      "topics": ["base64", "base32", "hex", "padding", "encoding", "regex"]
+    },
+    {
+      "id": "SRC-075",
+      "title": "RFC 3339 / ISO 8601 — Date and Time on the Internet",
+      "url": "https://www.rfc-editor.org/rfc/rfc3339",
+      "tier": 3,
+      "topics": ["iso 8601", "timestamp", "regex", "utc offset", "timezone"]
+    },
+    {
+      "id": "SRC-076",
+      "title": "RFC 5321 / 5322 및 이메일 주소 문법",
+      "url": "https://www.rfc-editor.org/rfc/rfc5321",
+      "tier": 3,
+      "topics": ["email", "regex", "local part", "domain", "smtp"]
+    },
+    {
+      "id": "SRC-077",
+      "title": "IEEE 802 / MAC 주소 표기 및 OUI",
+      "url": "https://standards.ieee.org/products-programs/regauth/",
+      "tier": 3,
+      "topics": ["mac address", "oui", "regex", "arp", "dhcp"]
+    },
+    {
+      "id": "SRC-078",
+      "title": "NIST FIPS 180-4 — Secure Hash Standard (SHA-1/256) / RFC 1321 MD5",
+      "url": "https://csrc.nist.gov/pubs/fips/180-4/upd1/final",
+      "tier": 3,
+      "topics": ["md5", "sha1", "sha256", "hash", "regex", "integrity"]
+    },
+    {
+      "id": "SRC-079",
+      "title": "Microsoft Learn — Naming Files, Paths, and Namespaces (Windows 경로 규칙)",
+      "url": "https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file",
+      "tier": 1,
+      "topics": ["windows path", "unc", "regex", "reserved name", "long path"]
+    },
+    {
+      "id": "SRC-080",
+      "title": "POSIX / Filesystem Hierarchy Standard (Linux 경로)",
+      "url": "https://refspecs.linuxfoundation.org/FHS_3.0/fhs/index.html",
+      "tier": 3,
+      "topics": ["linux path", "fhs", "regex", "/var/log", "/etc"]
+    },
+    {
+      "id": "SRC-081",
+      "title": "Microsoft Learn — Alternate Data Streams / File Streams",
+      "url": "https://learn.microsoft.com/en-us/windows/win32/fileio/file-streams",
+      "tier": 1,
+      "topics": ["ads", "alternate data stream", "zone.identifier", "$data", "ntfs"]
+    },
+    {
+      "id": "SRC-082",
+      "title": "Microsoft Learn — SRUM / Sysmain, Windows 사용 통계",
+      "url": "https://learn.microsoft.com/en-us/windows/win32/srumapi/srum-portal",
+      "tier": 1,
+      "topics": ["srum", "srudb.dat", "network usage", "application usage", "ese"]
+    },
+    {
+      "id": "SRC-083",
+      "title": "Microsoft Learn — Windows Search / Windows.edb",
+      "url": "https://learn.microsoft.com/en-us/windows/win32/search/-search-3x-wds-overview",
+      "tier": 1,
+      "topics": ["windows search", "windows.edb", "systemindex", "gather"]
+    },
+    {
+      "id": "SRC-084",
+      "title": "Microsoft Learn — BitLocker 및 볼륨 암호화 개요",
+      "url": "https://learn.microsoft.com/en-us/windows/security/operating-system-security/data-protection/bitlocker/",
+      "tier": 1,
+      "topics": ["bitlocker", "encryption", "recovery key", "manage-bde", "raw volume"]
+    },
+    {
+      "id": "SRC-085",
+      "title": "Mozilla — Places database (places.sqlite) 스키마",
+      "url": "https://firefox-source-docs.mozilla.org/toolkit/components/places/places/index.html",
+      "tier": 1,
+      "topics": ["firefox", "places.sqlite", "moz_places", "moz_historyvisits", "prtime"]
+    },
+    {
+      "id": "SRC-086",
+      "title": "MITRE ATT&CK — Enterprise Techniques (전체)",
+      "url": "https://attack.mitre.org/techniques/enterprise/",
+      "tier": 4,
+      "topics": ["attack", "persistence", "lateral movement", "exfiltration", "defense evasion", "timestomp"]
+    },
+    {
+      "id": "SRC-087",
+      "title": "YARA Documentation",
+      "url": "https://yara.readthedocs.io/",
+      "tier": 2,
+      "topics": ["yara", "rule", "string", "condition", "scan"]
+    },
+    {
+      "id": "SRC-088",
+      "title": "HxD 도움말 / 헥스 편집기 일반 사용",
+      "url": "https://mh-nexus.de/en/hxd/",
+      "tier": 2,
+      "topics": ["hxd", "hex editor", "offset", "search", "data inspector"]
+    },
+    {
+      "id": "SRC-089",
+      "title": "Wikipedia — List of file signatures (매직 바이트 대조표)",
+      "url": "https://en.wikipedia.org/wiki/List_of_file_signatures",
+      "tier": 4,
+      "topics": ["magic byte", "file signature", "header", "footer", "carving"]
+    },
+    {
+      "id": "SRC-090",
+      "title": "Digital Detective — DCode / 타임스탬프 형식 정리",
+      "url": "https://www.digital-detective.net/dcode/",
+      "tier": 2,
+      "topics": ["dcode", "timestamp", "filetime", "webkit", "unix", "dos date", "cocoa"]
+    },
+    {
+      "id": "SRC-091",
+      "title": "Microsoft Learn — Uninstall Registry Key (DisplayName, InstallDate, UninstallString)",
+      "url": "https://learn.microsoft.com/en-us/windows/win32/msi/uninstall-registry-key",
+      "tier": 1,
+      "topics": ["registry", "uninstall", "installed programs", "software hive", "displayname", "installdate"]
+    },
+    {
+      "id": "SRC-092",
+      "title": "Microsoft Learn — Registry Keys Affected by WOW64 / shared registry keys (WOW6432Node)",
+      "url": "https://learn.microsoft.com/en-us/windows/win32/winprog64/shared-registry-keys",
+      "tier": 1,
+      "topics": ["registry", "wow6432node", "wow64", "32bit", "64bit", "redirection"]
+    },
+    {
+      "id": "SRC-093",
+      "title": "Microsoft Learn — fsutil behavior (disablelastaccess 등 NTFS 동작 설정)",
+      "url": "https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/fsutil-behavior",
+      "tier": 1,
+      "topics": ["ntfs", "last access", "NtfsDisableLastAccessUpdate", "fsutil", "system hive"]
+    },
+    {
+      "id": "SRC-094",
+      "title": "Microsoft Learn — Windows registry information for advanced users (control sets, Select 키)",
+      "url": "https://learn.microsoft.com/en-us/troubleshoot/windows-client/performance/windows-registry-advanced-users",
+      "tier": 1,
+      "topics": ["registry", "controlset", "select", "current", "lastknowngood", "hive", "root key"]
+    },
+    {
+      "id": "SRC-095",
+      "title": "Microsoft — MS-SAMR (Security Account Manager Remote Protocol): USER_ACCOUNT / ACB 플래그",
+      "url": "https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-samr/",
+      "tier": 1,
+      "topics": ["sam", "acb flags", "user account control", "rid", "account", "password"]
+    },
+    {
+      "id": "SRC-096",
+      "title": "Microsoft — MS-LSAD (Local Security Authority Domain Policy): 감사 정책·도메인 정보",
+      "url": "https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-lsad/",
+      "tier": 1,
+      "topics": ["security hive", "lsa", "policy", "audit policy", "domain sid", "secrets"]
+    },
+    {
+      "id": "SRC-097",
+      "title": "Forensics Wiki — Windows Registry (SAM F/V 값 구조 등)",
+      "url": "https://forensicswiki.xyz/wiki/index.php?title=Windows_Registry",
+      "tier": 4,
+      "topics": ["registry", "sam", "f value", "v value", "nk", "vk", "hive structure"]
+    },
+    {
+      "id": "SRC-098",
+      "title": "Microsoft Learn — USB device registry entries (USBSTOR, DeviceClasses)",
+      "url": "https://learn.microsoft.com/en-us/windows-hardware/drivers/usbcon/",
+      "tier": 1,
+      "topics": ["usbstor", "usb", "registry", "device instance id", "serial number", "mounteddevices"]
+    },
+    {
+      "id": "SRC-099",
+      "title": "RegRipper 3.0 repository (플러그인 목록과 rip.exe 옵션)",
+      "url": "https://github.com/keydet89/RegRipper3.0",
+      "tier": 2,
+      "topics": ["regripper", "rip.exe", "plugin", "registry", "hive parsing"]
+    },
+    {
+      "id": "SRC-100",
+      "title": "Microsoft Learn — Known Folder GUIDs (KNOWNFOLDERID)",
+      "url": "https://learn.microsoft.com/en-us/windows/win32/shell/knownfolderid",
+      "tier": 1,
+      "topics": ["known folder", "guid", "userassist", "shellbags", "lnk", "folder id"]
+    },
+    {
+      "id": "SRC-101",
+      "title": "Microsoft Learn — SetFileTime function (어떤 타임스탬프가 API로 설정되는가)",
+      "url": "https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfiletime",
+      "tier": 1,
+      "topics": ["timestomp", "setfiletime", "$standard_information", "filetime", "api"]
+    },
+    {
+      "id": "SRC-102",
+      "title": "NTFS Log Tracker (blueangel's Forensic Note)",
+      "url": "https://sites.google.com/site/forensicnote/ntfs-log-tracker",
+      "tier": 2,
+      "topics": ["ntfs log tracker", "$logfile", "$usnjrnl", "sqlite output", "tool"]
+    },
+    {
+      "id": "SRC-103",
+      "title": "jschicht — LogFileParser / MFT2CSV ($LogFile 레코드 구조와 op 코드)",
+      "url": "https://github.com/jschicht/LogFileParser",
+      "tier": 2,
+      "topics": ["$logfile", "lfs", "redo", "undo", "opcode", "lsn", "mft2csv"]
+    },
+    {
+      "id": "SRC-104",
+      "title": "analyzeMFT (dkovar) README — CLI 옵션과 CSV 컬럼",
+      "url": "https://github.com/dkovar/analyzeMFT",
+      "tier": 2,
+      "topics": ["analyzemft", "$mft", "csv", "std info shift", "usec zero"]
+    },
+    {
+      "id": "SRC-105",
+      "title": "Linux-NTFS project — NTFS on-disk structure documentation",
+      "url": "https://flatcap.github.io/linux-ntfs/ntfs/",
+      "tier": 4,
+      "topics": ["ntfs", "boot sector", "attribute header", "data run", "update sequence array", "fixup"]
+    },
+    {
+      "id": "SRC-106",
+      "title": "EricZimmerman/RBCmd repository ($I 헤더 v1/v2 파싱 근거)",
+      "url": "https://github.com/EricZimmerman/RBCmd",
+      "tier": 2,
+      "topics": ["rbcmd", "$i", "$r", "recycle bin", "header version"]
+    },
+    {
+      "id": "SRC-107",
+      "title": "Forensics Wiki — Recycle Bin ($I/$R, INFO2)",
+      "url": "https://forensicswiki.xyz/wiki/index.php?title=Recycle_Bin",
+      "tier": 4,
+      "topics": ["recycle bin", "$i", "$r", "info2", "deleted file", "sid"]
+    },
+    {
+      "id": "SRC-108",
+      "title": "Libyal — libfsntfs / NTFS format documentation",
+      "url": "https://github.com/libyal/libfsntfs/blob/main/documentation/New%20Technology%20File%20System%20(NTFS).asciidoc",
+      "tier": 4,
+      "topics": ["ntfs", "$logfile", "lfs record", "$mft", "attribute", "index"]
+    },
+    {
+      "id": "SRC-109",
+      "title": "MITRE ATT&CK — T1070.004 File Deletion / T1070.006 Timestomp",
+      "url": "https://attack.mitre.org/techniques/T1070/",
+      "tier": 4,
+      "topics": ["anti-forensics", "file deletion", "timestomp", "indicator removal", "log clearing"]
+    },
+    {
+      "id": "SRC-110",
+      "title": "Chromium — components/download (다운로드 임시 이름 .crdownload 동작)",
+      "url": "https://source.chromium.org/chromium/chromium/src/+/main:components/download/",
+      "tier": 1,
+      "topics": ["chrome", "download", "crdownload", "rename", "target path"]
     }
   ]
 }

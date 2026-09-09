@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>$Recycle.Bin의 $I / $R 파일: 원래 경로·원본 크기·삭제 시각 복원 · FOR-0030 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%94%94%EC%8A%A4%ED%81%AC%2FNTFS">디스크/NTFS</a> / FOR-0030
+      </div>
+      <header class="article-head">
+        <h1>$Recycle.Bin의 $I / $R 파일: 원래 경로·원본 크기·삭제 시각 복원</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">디스크/NTFS</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>휴지통 삭제는 파일을 지우지 않고 $Recycle.Bin\&lt;SID&gt;\ 아래로 이름만 바꿔 옮긴다 — 같은 6문자를 공유하는 $I(메타데이터: 원래 전체 경로·원본 크기·삭제 시각)와 $R(내용 그대로) 한 쌍이 남으므로, $I를 읽고 $R을 복사해 이름만 되돌리면 복원이 끝난다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>RBCmd, FTK Imager, HxD, Autopsy, Timeline Explorer, DCode</td></tr>
+<tr><th>artifact</th><td><code>$Recycle.Bin</code> · <code>$I</code> · <code>$R</code> · <code>INFO2</code> · <code>RECYCLER</code> · <code>SID</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\$Recycle.Bin</code> · <code>C:\$Recycle.Bin\S-1-5-21-...-1001</code> · <code>C:\RECYCLER</code> · <code>C:\RECYCLER\INFO2</code> · <code>D:\$Recycle.Bin</code></td></tr>
+<tr><th>레지스트리</th><td><code>HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList</code></td></tr>
+<tr><th>regex</th><td><code>^\$I[A-Z0-9]{6}\.</code> · <code>^\$R[A-Z0-9]{6}\.</code> · <code>S-1-5-21-\d+-\d+-\d+-\d+</code></td></tr>
+<tr><th>로그 필드</th><td><code>SourceName</code> · <code>FileName</code> · <code>FileSize</code> · <code>DeletedOn</code> · <code>Version</code></td></tr>
+<tr><th>파일 형식</th><td><code>ntfs</code></td></tr>
+<tr><th>검색 별칭</th><td>휴지통 분석 · $I $R · recycle bin 포렌식 · 휴지통에서 복원 · 지운 파일 원래 경로 · 삭제 시각 구하기 · sid 사용자 찾기</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>휴지통 삭제는 파일을 지우지 않고 <strong><code>$Recycle.Bin\&lt;SID&gt;\</code> 아래로 이름만 바꿔 옮긴다</strong> — 같은 6문자를 공유하는 <code>$I</code>(메타데이터: 원래 전체 경로·원본 크기·삭제 시각)와 <code>$R</code>(내용 그대로) 한 쌍이 남으므로, <code>$I</code>를 읽고 <code>$R</code>을 복사해 이름만 되돌리면 복원이 끝난다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;삭제된 파일의 <strong>원래 전체 경로</strong>를 구하시오&quot;</li><li>&quot;그 파일을 <strong>언제</strong> 삭제했는가&quot;</li><li>&quot;<strong>누가</strong> 삭제했는가&quot; (SID로 사용자 특정)</li><li>&quot;삭제된 파일의 내용을 복원하시오&quot;</li><li>&quot;<code>$RQK41Z.pdf</code>라는 파일이 있는데 이게 뭡니까&quot;</li><li>휴지통을 거쳤는지 완전삭제였는지 판정 (<a href="./usn-reason-flags.html">FOR-0028</a>의 플래그 판정과 짝을 이룬다)</li></ul>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>파일 목록에 <code>$I</code>/<code>$R</code>로 시작하는 이름이 보인다 → 휴지통 경유 삭제 확정</li><li>첨부에 <code>$Recycle.Bin</code> 폴더가 통째로 있다 → RBCmd 한 번으로 대부분 끝난다</li><li>폴더 이름이 <code>S-1-5-21-...-1001</code> 형태다 → 그 숫자가 사용자를 특정한다</li><li><code>$R</code> 파일만 있고 <code>$I</code>가 없다 → 메타데이터가 지워졌다. 내용은 살아 있다</li><li><code>$I</code> 파일만 있고 <code>$R</code>이 없다 → 휴지통을 비웠거나 복원됐다. 경로·크기·시각만 답할 수 있다</li><li><code>RECYCLER</code>(<code>$Recycle.Bin</code>이 아니라) → Windows XP 이미지다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">RBCmd.exe -d &#39;C:\case\$Recycle.Bin&#39; --csv &#39;C:\case\out&#39;</code></pre></div>
+<p><code>-d</code>는 디렉터리를 재귀 탐색하므로 모든 SID 폴더의 <code>$I</code>를 한 번에 파싱한다. 사용법 상세는 <a href="./rbcmd.html">FOR-0031</a>.</p>
+<p>폴더 목록만 먼저 눈으로 보려면(휴지통 항목은 숨김 + 시스템 속성이라 <code>-Force</code>가 없으면 안 보인다):</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Get-ChildItem -Force -Recurse &#39;C:\case\$Recycle.Bin&#39; | Select-Object FullName, Length</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">FullName                                                            Length
+C:\case\$Recycle.Bin\S-1-5-21-1004336348-1177238915-682003330-1001
+C:\case\$Recycle.Bin\S-1-5-21-1004336348-1177238915-682003330-1001\$IQK41Z.pdf     114
+C:\case\$Recycle.Bin\S-1-5-21-1004336348-1177238915-682003330-1001\$RQK41Z.pdf  268435
+C:\case\$Recycle.Bin\S-1-5-21-1004336348-1177238915-682003330-1002\$I8M2P0A.xlsx   102
+C:\case\$Recycle.Bin\S-1-5-21-1004336348-1177238915-682003330-1002\$R8M2P0A.xlsx 1204736</code></pre></div>
+<p><code>$I</code>가 수백 바이트, <code>$R</code>이 원본 크기라는 대비가 바로 보인다.</p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-경로-구조를-읽는다">1단계 — 경로 구조를 읽는다</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">C:\$Recycle.Bin\&lt;SID&gt;\$I&lt;6문자&gt;.&lt;원래확장자&gt;     ← 메타데이터
+C:\$Recycle.Bin\&lt;SID&gt;\$R&lt;6문자&gt;.&lt;원래확장자&gt;     ← 실제 내용
+                        ^^^^^^^ 두 파일이 같은 6문자를 공유한다</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>구성 요소</th><th>의미</th><th>포렌식 활용</th></tr></thead><tbody><tr><td><code>$Recycle.Bin</code></td><td>볼륨 루트마다 하나. 숨김+시스템 속성</td><td><code>D:\$Recycle.Bin</code>도 별도로 확인한다</td></tr><tr><td><code>&lt;SID&gt;</code></td><td><strong>삭제를 수행한 사용자의 SID</strong></td><td>사용자 특정의 유일한 근거</td></tr><tr><td><code>$I</code> / <code>$R</code></td><td>메타데이터 / 내용</td><td><code>$I</code> 없이 <code>$R</code>만으로는 원래 이름을 알 수 없다</td></tr><tr><td>6문자</td><td>무작위 식별자 (영숫자)</td><td><code>$I</code>와 <code>$R</code>을 <strong>짝짓는 키</strong></td></tr><tr><td><code>.&lt;원래확장자&gt;</code></td><td><strong>원본 확장자가 그대로 보존된다</strong></td><td>확장자만으로 문서/이미지/실행파일 분류 가능</td></tr></tbody></table></div>
+<p>원본 파일 <strong>이름</strong>은 파일명에 남지 않는다. 이름은 <code>$I</code> 내부의 전체 경로 문자열에서만 나온다.</p>
+<p>디렉터리를 삭제한 경우 <code>$R&lt;6문자&gt;</code>가 <strong>폴더</strong>이며 그 아래에 원래 트리가 그대로 들어 있다. 이때 <code>$I</code> 하나가 폴더 전체를 가리킨다.</p>
+<h3 id="2단계-sid로-사용자를-특정한다">2단계 — SID로 사용자를 특정한다</h3>
+<p><code>S-1-5-21-1004336348-1177238915-682003330-1001</code>의 구조:</p>
+<div class="table-wrap"><table><thead><tr><th>부분</th><th>값</th><th>의미</th></tr></thead><tbody><tr><td><code>S-1-5-21-</code></td><td>고정</td><td>로컬/도메인 사용자 계정 도메인 식별자</td></tr><tr><td><code>1004336348-1177238915-682003330</code></td><td>가변</td><td><strong>머신(또는 도메인) 고유 식별자.</strong> 같은 값 = 같은 컴퓨터</td></tr><tr><td><code>-1001</code></td><td>RID</td><td><strong>계정 식별자</strong></td></tr></tbody></table></div>
+<p>자주 나오는 RID와 well-known SID:</p>
+<div class="table-wrap"><table><thead><tr><th>SID / RID</th><th>계정</th></tr></thead><tbody><tr><td><code>S-1-5-18</code></td><td>LocalSystem (SYSTEM)</td></tr><tr><td><code>S-1-5-19</code></td><td>LocalService</td></tr><tr><td><code>S-1-5-20</code></td><td>NetworkService</td></tr><tr><td><code>...-500</code></td><td>내장 Administrator</td></tr><tr><td><code>...-501</code></td><td>내장 Guest</td></tr><tr><td><code>...-503</code></td><td>DefaultAccount</td></tr><tr><td><code>...-1000</code> 이상</td><td><strong>일반적으로 생성 순서대로 부여되는 사용자 계정</strong></td></tr></tbody></table></div>
+<p>SID → 사용자 이름 매핑은 SOFTWARE 하이브에서 확정한다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\&lt;SID&gt;
+  └ ProfileImagePath = C:\Users\pshin</code></pre></div>
+<p>RegistryExplorer로 SOFTWARE 하이브를 열어 <code>ProfileList</code> 하위의 SID 키를 찾고 <code>ProfileImagePath</code> 값을 읽는다. 하이브가 없으면 <code>C:\Users\</code> 폴더 목록과 SID의 RID 순서로 추정하되, <strong>추정임을 명시한다.</strong></p>
+<p><strong>여러 SID 폴더가 있으면 각각이 다른 사용자의 삭제 행위다.</strong> 문제에서 &quot;누가&quot;를 물으면 이 폴더 이름이 답의 근거다.</p>
+<h3 id="3단계-i-파일-구조">3단계 — <code>$I</code> 파일 구조</h3>
+<p><code>$I</code>는 작은 고정 형식 바이너리다. 버전이 두 가지 있다.</p>
+<div class="table-wrap"><table><thead><tr><th>버전 값 (선두 8바이트)</th><th>대상 OS</th><th>파일 크기</th><th>경로 저장 방식</th></tr></thead><tbody><tr><td><code>1</code></td><td>Windows Vista ~ 8.1</td><td><strong>544바이트 고정</strong></td><td>UTF-16LE, <strong>260문자(520바이트) 고정 영역</strong>, 남는 공간은 널 패딩</td></tr><tr><td><code>2</code></td><td>Windows 10 이후</td><td><strong>가변</strong></td><td>4바이트 경로 길이(문자 수, 종료 널 포함) + 그 길이만큼의 UTF-16LE</td></tr></tbody></table></div>
+<p>공통 필드 배치:</p>
+<div class="table-wrap"><table><thead><tr><th>오프셋</th><th>크기</th><th>필드</th><th>읽는 법</th></tr></thead><tbody><tr><td><code>0x00</code></td><td>8바이트</td><td>헤더 버전</td><td>리틀엔디언. <code>1</code> 또는 <code>2</code></td></tr><tr><td><code>0x08</code></td><td>8바이트</td><td><strong>원본 파일 크기 (바이트)</strong></td><td>리틀엔디언 정수. <code>$R</code> 파일 크기와 일치해야 한다</td></tr><tr><td><code>0x10</code></td><td>8바이트</td><td><strong>삭제 시각 (FILETIME, UTC)</strong></td><td>1601-01-01 UTC 기준 100ns 단위</td></tr><tr><td><code>0x18</code></td><td>—</td><td>버전 1: 원래 전체 경로 (520바이트 고정) / 버전 2: 4바이트 경로 길이 이후 경로</td><td>UTF-16LE</td></tr></tbody></table></div>
+<p>버전 1의 총 크기 계산: <code>0x18</code>(24바이트 헤더) + 520바이트 경로 = <strong>544바이트</strong>. 파일 크기가 정확히 544라면 버전 1이라고 바로 알 수 있다.</p>
+<p>버전 2 <code>$I</code> 파일의 실제 덤프 예시:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">00000000  02 00 00 00 00 00 00 00  93 18 04 00 00 00 00 00
+00000010  80 c3 02 07 b2 c7 dc 01  2b 00 00 00 43 00 3a 00
+00000020  5c 00 55 00 73 00 65 00  72 00 73 00 5c 00 70 00
+00000030  73 00 68 00 69 00 6e 00  5c 00 44 00 6f 00 63 00
+00000040  75 00 6d 00 65 00 6e 00  74 00 73 00 5c 00 63 00
+00000050  6f 00 6e 00 74 00 72 00  61 00 63 00 74 00 5f 00
+00000060  32 00 30 00 32 00 36 00  2e 00 70 00 64 00 66 00
+00000070  00 00</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>읽은 값</th><th>해석</th></tr></thead><tbody><tr><td><code>0x00</code>: <code>02 00 00 00 00 00 00 00</code></td><td>버전 2 → Windows 10 계열</td></tr><tr><td><code>0x08</code>: <code>93 18 04 00 ...</code></td><td><code>0x00041893</code> = <strong>268,435 바이트</strong></td></tr><tr><td><code>0x10</code>: <code>80 c3 02 07 b2 c7 dc 01</code></td><td>FILETIME <code>0x01DCC7B20702C380</code> = <strong>2026-04-08 23:47:15 UTC</strong></td></tr><tr><td><code>0x18</code>: <code>2b 00 00 00</code></td><td>경로 길이 <code>0x2B</code> = <strong>43문자</strong> (경로 42문자 + 종료 널)</td></tr><tr><td><code>0x1C</code>~<code>0x71</code></td><td><code>C:\Users\pshin\Documents\contract_2026.pdf</code> (42문자 × 2바이트 = 84바이트)</td></tr></tbody></table></div>
+<p>파일 총 크기는 <code>0x1C</code>(28) + 84 + 2(종료 널) = <strong>114바이트</strong>다. 버전 2는 경로 길이에 따라 파일 크기가 달라진다.</p>
+<p>HxD에서 확인할 때는 Data Inspector를 <code>Int64</code>(리틀엔디언)로 두고 <code>0x08</code>과 <code>0x10</code>을 각각 클릭하면 값이 바로 읽힌다. FILETIME은 DCode에 넣거나 다음으로 환산한다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># FILETIME hex -&gt; UTC / KST
+$ft = 0x01DCC7B20702C380
+[datetime]::FromFileTimeUtc($ft)                      # UTC
+[datetime]::FromFileTimeUtc($ft).AddHours(9)          # KST</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">2026년 4월 8일 오후 11:47:15      (UTC)
+2026년 4월 9일 오전 8:47:15       (KST)</code></pre></div>
+<p>Unix epoch로 환산하려면 <code>(FILETIME / 10000000) - 11644473600</code>.</p>
+<p><strong>세부 오프셋을 손으로 읽는 것은 확인용이다. 실무 순서는 RBCmd로 먼저 파싱하고, 값이 의심스러울 때만 HxD로 원본을 확인하는 것이다.</strong></p>
+<h3 id="4단계-r로-내용을-복원한다">4단계 — <code>$R</code>로 내용을 복원한다</h3>
+<p><code>$R</code> 파일은 <strong>원본 바이트 그대로</strong>다. 변환·압축·암호화가 없다. 복원은 복사 후 이름 변경으로 끝난다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># $I 에서 읽은 원래 이름으로 되돌린다
+Copy-Item &#39;C:\case\$Recycle.Bin\S-1-5-21-...-1001\$RQK41Z.pdf&#39; &#39;C:\case\restored\contract_2026.pdf&#39;</code></pre></div>
+<p>확인 절차 두 가지.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) 크기 일치 — $I 의 원본 크기와 $R 의 실제 크기가 같아야 한다
+(Get-Item &#39;C:\case\restored\contract_2026.pdf&#39;).Length     # 268435
+
+# 2) 매직 바이트 — 확장자와 실제 형식이 맞는가
+Format-Hex -Path &#39;C:\case\restored\contract_2026.pdf&#39; -Count 16</code></pre></div>
+<p>크기가 다르면 <code>$R</code>이 잘렸거나 다른 <code>$I</code>와 잘못 짝지은 것이다. <strong>6문자가 정확히 같은 짝인지 다시 확인한다.</strong></p>
+<p><code>$R</code>이 폴더인 경우:</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Copy-Item -Recurse &#39;C:\case\$Recycle.Bin\S-1-5-21-...-1001\$R8M2P0A&#39; &#39;C:\case\restored\ProjectX&#39;</code></pre></div>
+<h3 id="5단계-windows-xp의-info2와의-차이-간단히">5단계 — Windows XP의 <code>INFO2</code>와의 차이 (간단히)</h3>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>XP 이전</th><th>Vista 이후</th></tr></thead><tbody><tr><td>폴더</td><td><code>C:\RECYCLER\&lt;SID&gt;\</code></td><td><code>C:\$Recycle.Bin\&lt;SID&gt;\</code></td></tr><tr><td>메타데이터</td><td><strong><code>INFO2</code> 파일 하나에 모든 항목의 레코드가 누적</strong></td><td><strong>항목마다 <code>$I</code> 파일 하나</strong></td></tr><tr><td>삭제된 파일 이름</td><td><code>D&lt;드라이브문자&gt;&lt;인덱스&gt;.&lt;원래확장자&gt;</code> (예: <code>Dc1.doc</code>)</td><td><code>$R&lt;6문자&gt;.&lt;원래확장자&gt;</code></td></tr><tr><td>인덱스</td><td><code>INFO2</code> 레코드에 순번이 있어 삭제 순서가 남는다</td><td><code>$I</code>에는 순번이 없다. 순서는 시각으로 판단</td></tr><tr><td>휴지통 비우기 후</td><td><code>INFO2</code> 레코드가 남아 <strong>이미 사라진 파일 목록</strong>을 볼 수 있는 경우가 있다</td><td><code>$I</code>도 함께 삭제된다</td></tr></tbody></table></div>
+<p>실전 요점은 두 가지다. <strong>XP 이미지에서는 <code>$Recycle.Bin</code>을 찾지 말고 <code>RECYCLER</code>를 찾는다.</strong> 그리고 RBCmd는 <code>INFO2</code>도 파싱하므로 도구를 바꿀 필요는 없다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p>RBCmd CSV의 컬럼이 곧 답변 항목이다.</p>
+<div class="table-wrap"><table><thead><tr><th>컬럼</th><th>원본 필드</th><th>답변에 쓰는 방식</th></tr></thead><tbody><tr><td><code>SourceName</code></td><td>파싱한 <code>$I</code> 파일의 경로</td><td><code>$R</code> 짝을 찾는 키. 여기서 SID도 읽는다</td></tr><tr><td><code>FileName</code></td><td><code>$I</code> 내부의 <strong>원래 전체 경로</strong></td><td>&quot;원래 경로&quot; 문항의 정답</td></tr><tr><td><code>FileSize</code></td><td><code>$I</code>의 원본 크기</td><td><code>$R</code> 실제 크기와 대조해 무결성 확인</td></tr><tr><td><code>DeletedOn</code></td><td><code>$I</code>의 FILETIME</td><td><strong>UTC로 출력된다.</strong> KST 답이면 +9시간</td></tr><tr><td>버전</td><td><code>$I</code> 선두 8바이트</td><td>1 = Vista~8.1, 2 = Win10+. OS 추정 근거</td></tr></tbody></table></div>
+<p><code>FileName</code>이 전체 경로라는 점이 중요하다. 파일 이름만이 아니라 <code>C:\Users\pshin\Documents\payroll.xlsx</code>처럼 드라이브 문자부터 들어 있으므로 <strong>삭제 당시 그 파일이 어느 폴더에 있었는지</strong>가 그대로 답이 된다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>여기서 얻은 것</th><th>다음에 열 것</th><th>확인할 것</th></tr></thead><tbody><tr><td>SID</td><td>SOFTWARE 하이브 <code>ProfileList</code></td><td>사용자 이름 (<code>ProfileImagePath</code>)</td></tr><tr><td>SID</td><td>SAM 하이브</td><td>계정 생성 시각, 마지막 로그온</td></tr><tr><td>삭제 시각</td><td><code>$UsnJrnl:$J</code> (<a href="./usnjrnl-basics.html">FOR-0027</a>)</td><td>같은 시각의 rename 짝, 전후 파일 활동</td></tr><tr><td>삭제 시각</td><td>EVTX 4624 (<a href="./event-4624-logon.html">FOR-0083</a>)</td><td>그 시각에 로그온한 사용자가 SID와 일치하는가</td></tr><tr><td>원래 경로</td><td><code>$MFT</code> (<a href="./mft-basics.html">FOR-0021</a>)</td><td>그 폴더의 다른 파일, 삭제 전 MACB</td></tr><tr><td><code>$R</code> 파일 내용</td><td>파일 형식별 분석 (exiftool, ZIP 구조 등)</td><td>내부 메타데이터, 작성자</td></tr><tr><td><code>$I</code>만 있고 <code>$R</code> 없음</td><td><code>$J</code>의 <code>FileDelete</code>, 카빙</td><td>휴지통 비우기 시각, 내용 회수</td></tr><tr><td><code>$R</code>만 있고 <code>$I</code> 없음</td><td><code>$J</code>의 <code>RenameNewName</code></td><td><code>$R</code> 6문자로 검색해 원래 이름 복원</td></tr><tr><td>여러 항목 일괄 처리</td><td>RBCmd (<a href="./rbcmd.html">FOR-0031</a>)</td><td>CSV 타임라인화</td></tr><tr><td>휴지통에 아무것도 없음</td><td>원인 분기 (<a href="./deleted-file-not-in-recycle-bin.html">FOR-0032</a>)</td><td>Shift+Delete·이동식 매체·도구 삭제</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>$Recycle.Bin</code>이 안 보인다고 없다고 판단하는 것</strong> → 숨김+시스템 속성이라 기본 탐색기와 <code>Get-ChildItem</code>에 나오지 않는다 → <code>Get-ChildItem -Force</code>, FTK Imager, Autopsy처럼 속성을 무시하는 도구로 본다.</li><li><strong><code>C:</code> 볼륨만 보는 것</strong> → 휴지통은 <strong>볼륨마다</strong> 루트에 따로 생긴다 → <code>D:\$Recycle.Bin</code>, 다른 파티션까지 전부 확인한다.</li><li><strong><code>$R</code> 파일을 그대로 열어보고 &quot;깨졌다&quot;고 판단하는 것</strong> → 파일 자체는 온전하고 이름과 확장자만 <code>$R</code> 형식이다 → <code>$I</code>에서 읽은 원래 이름으로 복사한 뒤 연다.</li><li><strong><code>$I</code>와 <code>$R</code>을 이름 순서로 짝짓는 것</strong> → 6문자가 무작위이므로 정렬 순서는 짝과 무관하다 → <strong>6문자 문자열이 정확히 일치하는 것</strong>끼리만 짝짓는다. 확장자도 같아야 한다.</li><li><strong><code>FileSize</code>를 <code>$R</code>의 디스크 점유량과 비교하는 것</strong> → 클러스터 단위 반올림 때문에 값이 다르다 → 논리 크기(바이트)끼리 비교한다.</li><li><strong>삭제 시각을 로컬 시간으로 착각하는 것</strong> → <code>$I</code>의 값은 FILETIME(1601-01-01 UTC 기준 100ns)이고 RBCmd CSV도 UTC로 출력한다 → KST 답이 필요하면 +9시간. Unix 환산은 <code>-11644473600</code>초.</li><li><strong><code>$I</code>의 삭제 시각을 &quot;파일을 마지막으로 만진 시각&quot;으로 읽는 것</strong> → 이 값은 <strong>휴지통으로 보낸 순간</strong>이다. 수정 시각과 무관하다 → 수정 시각은 복원한 <code>$R</code>의 내부 메타데이터나 <code>$MFT</code>에서 얻는다.</li><li><strong><code>$I</code> 부재를 &quot;휴지통 삭제가 아니었다&quot;로 읽는 것</strong> → 휴지통을 비우면 <code>$I</code>가 먼저 사라지고 <code>$R</code>이 카빙 가능한 상태로 남는 경우가 있다 → <code>$R</code> 형식 이름이 하나라도 있으면 휴지통 경유가 있었던 것이다.</li><li><strong>SID를 사용자 이름 없이 그대로 답하는 것</strong> → 채점 기준이 사용자 이름인 경우가 많다 → <code>ProfileList</code>로 매핑하거나, 매핑 불가면 &quot;SID ...-1001 (프로필 미확인)&quot;처럼 근거를 밝힌다.</li><li><strong>버전 1의 경로 영역을 문자열 끝까지 읽는 것</strong> → 520바이트 고정 영역이라 뒤에 이전 데이터의 잔여물이 남아 있을 수 있다 → 첫 널 종료 지점까지만 경로로 취급한다. 다만 그 뒤의 잔여 바이트 자체가 <strong>이전 항목의 경로 조각</strong>일 수 있어 별도 단서가 된다.</li><li><strong>네트워크 드라이브·USB에서 휴지통을 찾는 것</strong> → 이동식 매체와 네트워크 드라이브는 기본적으로 휴지통을 쓰지 않고 즉시 삭제된다 → <a href="./deleted-file-not-in-recycle-bin.html">FOR-0032</a>로 간다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 1) RBCmd 로 $I 전부 파싱
+RBCmd.exe -d &#39;C:\case\$Recycle.Bin&#39; --csv &#39;C:\case\out&#39; --csvf rb.csv
+
+# 2) $I 의 원본 크기와 $R 의 실제 크기 대조
+Import-Csv &#39;C:\case\out\rb.csv&#39; | ForEach-Object {
+  # $I 파일 경로에서 파일명 앞 2문자만 $R 로 바꾼다
+  $r = Join-Path (Split-Path $_.SourceName -Parent) (&#39;$R&#39; + (Split-Path $_.SourceName -Leaf).Substring(2))
+  [pscustomobject]@{
+    OriginalPath = $_.FileName
+    DeletedOn    = $_.DeletedOn
+    SizeInI      = $_.FileSize
+    SizeOfR      = (Get-Item -LiteralPath $r -ErrorAction SilentlyContinue).Length
+  }
+} | Format-Table -AutoSize</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">OriginalPath                                DeletedOn             SizeInI  SizeOfR
+C:\Users\pshin\Documents\contract_2026.pdf  2026-04-08 23:47:15Z   268435   268435
+C:\Users\pshin\Desktop\ProjectX             2026-04-08 23:52:03Z        0   (폴더)
+C:\Users\pshin\Downloads\installer.exe      2026-04-07 11:02:44Z  9822712   (없음)</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>관측</th><th>해석</th></tr></thead><tbody><tr><td>크기 일치</td><td>정상. <code>$R</code> 복원 가능</td></tr><tr><td><code>SizeInI</code> = 0, <code>$R</code>이 폴더</td><td>디렉터리 삭제. <code>$R</code> 폴더를 재귀 복사</td></tr><tr><td><code>$R</code> 없음</td><td><strong>휴지통이 비워졌거나 복원됐다.</strong> <code>$I</code>만 남아 경로·시각만 답 가능</td></tr></tbody></table></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 3) $J 로 독립 확증 — 같은 6문자가 rename 대상으로 나타나는가
+Import-Csv usn.csv | Where-Object { $_.FileName -match &#39;QK41Z&#39; } |
+  Sort-Object {[uint64]$_.Usn} | Format-Table Usn, UpdateTimestamp, UpdateReasons, FileName, ParentPath</code></pre></div>
+<p><code>$J</code>에 <code>RenameNewName</code>으로 <code>$RQK41Z.pdf</code>가, <code>FileCreate</code>로 <code>$IQK41Z.pdf</code>가 같은 시각에 나오면 <code>$I</code>의 삭제 시각이 독립적으로 확증된다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;직원 PC 이미지입니다. 삭제된 계약서 파일의 원래 전체 경로, 삭제한 사용자,
+ 삭제 시각(KST)을 구하고 파일을 복원하세요.&quot;
+첨부: disk.E01
+
+1. FTK Imager 로 E01 열고 볼륨 루트 확인
+   -&gt; $Recycle.Bin 폴더 존재. Export 로 폴더 전체 추출.
+
+2. 첫 시도 (실패):
+   추출한 폴더에서 $R 파일을 바로 열어봤다.
+   $RQK41Z.pdf 를 PDF 뷰어로 열기 -&gt; &quot;파일 형식을 인식할 수 없습니다&quot;
+   Format-Hex -Count 8 &#39;$RQK41Z.pdf&#39; -&gt; 25 50 44 46 2d 31 2e 37   (%PDF-1.7)
+
+   매직 바이트는 정상 PDF였다. 즉 파일이 깨진 게 아니라
+   뷰어가 &#39;$&#39; 로 시작하는 이름/확장자 연결을 거부한 것이었다.  &lt;-- 진단 오류
+
+   그리고 더 큰 문제: $R 만 봐서는 원래 경로도 삭제 시각도 알 수 없다.
+   문제가 요구한 세 값 중 어느 것도 $R 에는 없다.
+
+3. 접근 변경 — $I 를 먼저 읽는다
+   RBCmd.exe -d &#39;C:\case\$Recycle.Bin&#39; --csv &#39;C:\case\out&#39; --csvf rb.csv
+
+   SourceName                                        FileName                                    FileSize  DeletedOn
+   ...\S-1-5-21-...-682003330-1001\$IQK41Z.pdf       C:\Users\pshin\Documents\contract_2026.pdf    268435   2026-04-08 23:47:15
+   ...\S-1-5-21-...-682003330-1002\$I8M2P0A.xlsx     C:\Users\hjlee\Desktop\budget.xlsx           1204736   2026-04-05 02:11:09
+
+   원래 전체 경로와 삭제 시각이 나왔다.
+
+4. $I 원본으로 값 재확인 (RBCmd 결과를 믿기 전에 한 번)
+   HxD 로 $IQK41Z.pdf 열기 (114바이트)
+   0x00: 02 00 00 00 00 00 00 00   -&gt; 버전 2 (Windows 10 계열)
+   0x08: 93 18 04 00 00 00 00 00   -&gt; 0x41893 = 268,435 바이트  (RBCmd 와 일치)
+   0x10: 80 c3 02 07 b2 c7 dc 01   -&gt; FILETIME 0x01DCC7B20702C380
+   0x18: 2b 00 00 00               -&gt; 경로 43문자 (42문자 + 종료 널)
+   0x1C: C:\Users\pshin\Documents\contract_2026.pdf  (42문자, CSV 와 일치)
+
+   세 값(크기 / 시각 / 경로)이 모두 RBCmd 출력과 일치. 파싱 신뢰 확보.
+   경로 문자 수와 길이 필드가 어긋나면 다른 $I 를 열었거나 짝을 잘못 본 것이므로
+   SourceName 을 다시 대조한다.
+
+5. 시각 변환
+   [datetime]::FromFileTimeUtc(0x01DCC7B20702C380)
+   -&gt; 2026-04-08 23:47:15 UTC
+   [datetime]::FromFileTimeUtc(0x01DCC7B20702C380).AddHours(9)
+   -&gt; 2026-04-09 08:47:15 KST      &lt;- 문제가 KST를 요구했다
+
+6. SID -&gt; 사용자
+   RegistryExplorer 로 SOFTWARE 하이브 열기
+   HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\S-1-5-21-...-1001
+     ProfileImagePath = C:\Users\pshin
+   -&gt; 삭제한 사용자 = pshin
+      (-1002 는 hjlee. 다른 파일을 삭제한 별개 사용자다)
+
+7. 복원
+   Copy-Item &#39;...\$RQK41Z.pdf&#39; &#39;C:\case\restored\contract_2026.pdf&#39;
+   (Get-Item &#39;C:\case\restored\contract_2026.pdf&#39;).Length  -&gt; 268435  (일치)
+   -&gt; 정상 오픈
+
+8. 교차검증 — $J
+   Import-Csv usn.csv | Where-Object { $_.FileName -match &#39;QK41Z&#39; }
+   -&gt; 2026-04-08 23:47:15Z  RenameNewName|Close   $RQK41Z.pdf   .\$Recycle.Bin\S-1-5-21-...-1001
+      2026-04-08 23:47:15Z  FileCreate|Close      $IQK41Z.pdf   .\$Recycle.Bin\S-1-5-21-...-1001
+   -&gt; 삭제 시각이 독립적으로 확증됨. 이후 FileDelete 없음 = 휴지통 미비움.
+
+정답:
+  원래 경로  C:\Users\pshin\Documents\contract_2026.pdf
+  사용자     pshin (S-1-5-21-...-682003330-1001)
+  삭제 시각  2026-04-09 08:47:15 KST (2026-04-08 23:47:15 UTC)
+  복원       $RQK41Z.pdf 를 복사해 원래 이름으로 변경</code></pre></div>
+<p>2단계가 이 글의 핵심이다. <strong><code>$R</code>에는 원래 경로도 삭제 시각도 없다.</strong> <code>$R</code>만 붙잡고 있으면 문제의 세 문항 중 하나도 답할 수 없고, <code>$I</code>로 먼저 가는 것이 순서다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>Get-ChildItem -Force</code>로 봤는가 — 숨김+시스템 속성 때문에 안 보이는 경우가 대부분이다</li><li><code>C:</code> 외의 볼륨 루트도 확인했는가</li><li><code>$I</code>와 <code>$R</code>의 <strong>6문자와 확장자가 모두</strong> 일치하는 짝인가</li><li><code>$I</code> 파일 크기가 544바이트인가 — 그러면 버전 1(Vista~8.1)이다</li><li><code>FileSize</code>와 <code>$R</code> 실제 크기가 같은가 — 다르면 짝 오류 또는 절단</li><li>SID를 <code>ProfileList</code>로 사용자 이름까지 매핑했는가</li><li>시각을 UTC로 답해야 하는지 KST로 답해야 하는지 지문을 다시 읽었는가</li><li><code>$R</code>이 없다면 → 휴지통 비우기 시점을 <code>$J</code>의 <code>FileDelete</code>로 찾고, 내용은 카빙으로</li><li><code>$I</code>가 없다면 → <code>$R</code>의 6문자로 <code>$J</code>를 검색해 <code>RenameNewName</code> 짝에서 원래 이름을 복원</li><li><code>$Recycle.Bin</code>이 아예 비어 있다면 → <a href="./deleted-file-not-in-recycle-bin.html">FOR-0032</a>의 원인 분기로 이동</li><li>XP 이미지라면 → <code>C:\RECYCLER\&lt;SID&gt;\INFO2</code>를 찾는다</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-004 — Eric Zimmerman 문서: RBCmd의 <code>$I</code>/<code>INFO2</code> 파싱과 CSV 출력 컬럼(<code>SourceName</code>, <code>FileName</code>, <code>FileSize</code>, <code>DeletedOn</code>)</li><li>SRC-014 — Microsoft Learn, File Times: <code>$I</code>의 삭제 시각이 FILETIME(1601-01-01 UTC 기준 100ns)이라는 근거와 Unix epoch 차이 <code>11644473600</code>초</li><li>SRC-019 — Microsoft Learn, Well-known SIDs / Security Identifiers: <code>S-1-5-21-</code> 구조, RID <code>500</code>/<code>501</code>/<code>1000</code> 이상의 의미, <code>S-1-5-18</code>~<code>S-1-5-20</code></li><li><code>$I</code> 버전 1의 544바이트 고정 크기와 버전 2의 경로 길이 필드는 실제 <code>$I</code> 파일을 HxD로 열어 파일 크기와 선두 8바이트로 먼저 확인할 것. 판정이 걸린 값은 RBCmd 출력과 원본 hex를 반드시 대조한다</li><li>RBCmd의 컬럼명과 시간대 출력은 도구 버전에 따라 다를 수 있으므로 실제 CSV에서 확인할 것</li><li>walkthrough의 SID·6문자 식별자·파일 이름은 설명을 위한 예시 값이다</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./rbcmd.html">
+    <span class="rel-id">FOR-0031 · 디스크/NTFS</span>
+    RBCmd로 $Recycle.Bin 일괄 파싱: -f / -d / --csv 와 $R 복원
+  </a>
+  <a class="related-item" href="./deleted-file-not-in-recycle-bin.html">
+    <span class="rel-id">FOR-0032 · 디스크/NTFS</span>
+    삭제된 파일이 휴지통에 없을 때: 원인 8가지와 확인 순서
+  </a>
+  <a class="related-item" href="./usnjrnl-basics.html">
+    <span class="rel-id">FOR-0027 · 디스크/NTFS</span>
+    $UsnJrnl($J)로 삭제·생성·이름변경 흔적 복원하기
+  </a>
+  <a class="related-item" href="./deleted-file-recovery-walkthrough.html">
+    <span class="rel-id">FOR-0049 · 디스크/NTFS</span>
+    삭제 파일 복구 실전: 휴지통 → $UsnJrnl → $MFT → 카빙 판정 트리
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./logfile-usnjrnl-crosscheck.html"><span class="rel-id">← FOR-0029</span>$LogFile과 $UsnJrnl 교차검증: 한쪽에만 기록이 있을 때 무엇을 믿나</a>
+<a class="related-item" href="./rbcmd.html"><span class="rel-id">FOR-0031 →</span>RBCmd로 $Recycle.Bin 일괄 파싱: -f / -d / --csv 와 $R 복원</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-경로-구조를-읽는다">1단계 — 경로 구조를 읽는다</a></li>
+<li class="toc-l3"><a href="#2단계-sid로-사용자를-특정한다">2단계 — SID로 사용자를 특정한다</a></li>
+<li class="toc-l3"><a href="#3단계-i-파일-구조">3단계 — `$I` 파일 구조</a></li>
+<li class="toc-l3"><a href="#4단계-r로-내용을-복원한다">4단계 — `$R`로 내용을 복원한다</a></li>
+<li class="toc-l3"><a href="#5단계-windows-xp의-info2와의-차이-간단히">5단계 — Windows XP의 `INFO2`와의 차이 (간단히)</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 03:39 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

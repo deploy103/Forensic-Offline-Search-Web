@@ -68,7 +68,7 @@
 <div class="table-wrap"><table><thead><tr><th>상황</th><th>추출 방법</th></tr></thead><tbody><tr><td>디스크 이미지 (E01/RAW)</td><td>FTK Imager → 볼륨 → <code>[root]</code> → <code>$Extend</code> → <code>$UsnJrnl</code> 선택 → <code>Export Files</code>. <code>$J</code> 스트림이 별도 항목으로 보인다</td></tr><tr><td>이미지 마운트</td><td>Arsenal Image Mounter로 마운트 후 FTK Imager</td></tr><tr><td>라이브 시스템</td><td>KAPE (<code>!SANS_Triage</code> 타깃에 포함), 또는 관리자 권한 <code>fsutil</code></td></tr><tr><td>Sleuth Kit</td><td><code>fls -o &lt;offset&gt; image.dd</code>로 <code>$Extend</code> 레코드 번호 확인 후 <code>icat -o &lt;offset&gt; image.dd &lt;num&gt;-128-&lt;id&gt;</code></td></tr></tbody></table></div>
 <p>CTF에서는 대개 <code>$J</code>(또는 <code>UsnJrnl_$J</code>) 파일 하나만 첨부된다.</p>
 <p>라이브 시스템에서 저널 상태만 빠르게 보려면:</p>
-<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">REM 관리자 권한 필요
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 관리자 권한 필요
 fsutil usn queryjournal C:</code></pre></div>
 <div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">USN 저널 ID        : 0x01dc7f8e2a3b4c5d
 첫 USN             : 0x0000000012340000
@@ -86,38 +86,38 @@ fsutil usn queryjournal C:</code></pre></div>
 <div class="table-wrap"><table><thead><tr><th>값</th><th>이름</th><th>의미</th></tr></thead><tbody><tr><td><code>0x00000001</code></td><td><code>DATA_OVERWRITE</code></td><td>기존 데이터 덮어쓰기</td></tr><tr><td><code>0x00000002</code></td><td><code>DATA_EXTEND</code></td><td>데이터 추가 (파일 커짐)</td></tr><tr><td><code>0x00000004</code></td><td><code>DATA_TRUNCATION</code></td><td>데이터 잘림</td></tr><tr><td><code>0x00000010</code></td><td><code>NAMED_DATA_OVERWRITE</code></td><td><strong>ADS</strong> 데이터 덮어쓰기</td></tr><tr><td><code>0x00000020</code></td><td><code>NAMED_DATA_EXTEND</code></td><td>ADS 데이터 추가</td></tr><tr><td><code>0x00000040</code></td><td><code>NAMED_DATA_TRUNCATION</code></td><td>ADS 데이터 잘림</td></tr><tr><td><code>0x00000100</code></td><td><strong><code>FILE_CREATE</code></strong></td><td><strong>파일/디렉터리 생성</strong></td></tr><tr><td><code>0x00000200</code></td><td><strong><code>FILE_DELETE</code></strong></td><td><strong>파일/디렉터리 삭제</strong></td></tr><tr><td><code>0x00000400</code></td><td><code>EA_CHANGE</code></td><td>확장 속성 변경</td></tr><tr><td><code>0x00000800</code></td><td><code>SECURITY_CHANGE</code></td><td>권한/소유자 변경</td></tr><tr><td><code>0x00001000</code></td><td><strong><code>RENAME_OLD_NAME</code></strong></td><td><strong>이름 변경 — 변경 전 이름</strong></td></tr><tr><td><code>0x00002000</code></td><td><strong><code>RENAME_NEW_NAME</code></strong></td><td><strong>이름 변경 — 변경 후 이름</strong></td></tr><tr><td><code>0x00004000</code></td><td><code>INDEXABLE_CHANGE</code></td><td>색인 대상 여부 변경</td></tr><tr><td><code>0x00008000</code></td><td><code>BASIC_INFO_CHANGE</code></td><td><strong>타임스탬프/속성 변경 (timestomp 신호)</strong></td></tr><tr><td><code>0x00010000</code></td><td><code>HARD_LINK_CHANGE</code></td><td>하드링크 변경</td></tr><tr><td><code>0x00020000</code></td><td><code>COMPRESSION_CHANGE</code></td><td>압축 속성 변경</td></tr><tr><td><code>0x00040000</code></td><td><code>ENCRYPTION_CHANGE</code></td><td>암호화 속성 변경</td></tr><tr><td><code>0x00080000</code></td><td><code>OBJECT_ID_CHANGE</code></td><td>오브젝트 ID 변경</td></tr><tr><td><code>0x00100000</code></td><td><code>REPARSE_POINT_CHANGE</code></td><td>재분석 지점 변경 (심볼릭 링크 등)</td></tr><tr><td><code>0x00200000</code></td><td><code>STREAM_CHANGE</code></td><td>ADS 추가/삭제</td></tr><tr><td><code>0x00400000</code></td><td><code>TRANSACTED_CHANGE</code></td><td>TxF 트랜잭션 변경</td></tr><tr><td><code>0x80000000</code></td><td><code>CLOSE</code></td><td><strong>핸들 닫힘 — 그 변경 묶음의 종료 표시</strong></td></tr></tbody></table></div>
 <p>플래그는 <strong>OR로 합쳐진다.</strong> 파서는 보통 <code>FileCreate|Close</code> 처럼 문자열로 풀어 준다.</p>
 <h3 id="사건-유형별-시그니처">사건 유형별 시그니처</h3>
-<div class="table-wrap"><table><thead><tr><th>실제로 일어난 일</th><th><code>$J</code>에 남는 패턴</th></tr></thead><tbody><tr><td>파일 새로 만들고 씀</td><td><code>FileCreate</code> → <code>DataExtend</code> → `DataExtend\</td><td>Close`</td></tr><tr><td>파일 삭제</td><td>`FileDelete\</td><td>Close<code> (직전에 </code>DataTruncation` 등이 붙을 수 있음)</td></tr><tr><td>이름 변경</td><td><code>RenameOldName</code> → `RenameNewName\</td><td>Close` (<strong>두 레코드가 짝</strong>)</td></tr><tr><td>휴지통으로 이동</td><td><code>RenameOldName</code>/<code>RenameNewName</code> + <code>$Recycle.Bin</code> 하위의 <code>$I</code>/<code>$R</code> 생성</td></tr><tr><td>덮어쓰기(안티포렌식)</td><td><code>DataOverwrite</code> 반복 → <code>FileDelete</code></td></tr><tr><td>파일 복사</td><td>원본 없음, 대상에 <code>FileCreate</code> + <code>DataExtend</code></td></tr><tr><td>파일 이동(같은 볼륨)</td><td><code>RenameOldName</code>/<code>RenameNewName</code> (<code>ParentEntryNumber</code>가 바뀐다)</td></tr><tr><td>파일 이동(다른 볼륨)</td><td>원본 볼륨 <code>FileDelete</code> + 대상 볼륨 <code>FileCreate</code></td></tr><tr><td>timestomp</td><td><code>BasicInfoChange</code> 단독</td></tr><tr><td>ADS로 숨김</td><td><code>StreamChange</code>, <code>NamedDataExtend</code></td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>실제로 일어난 일</th><th><code>$J</code>에 남는 패턴</th></tr></thead><tbody><tr><td>파일 새로 만들고 씀</td><td><code>FileCreate</code> → <code>DataExtend</code> → <code>DataExtend|Close</code></td></tr><tr><td>파일 삭제</td><td><code>FileDelete|Close</code> (직전에 <code>DataTruncation</code> 등이 붙을 수 있음)</td></tr><tr><td>이름 변경</td><td><code>RenameOldName</code> → <code>RenameNewName|Close</code> (<strong>두 레코드가 짝</strong>)</td></tr><tr><td>휴지통으로 이동</td><td><code>RenameOldName</code>/<code>RenameNewName</code> + <code>$Recycle.Bin</code> 하위의 <code>$I</code>/<code>$R</code> 생성</td></tr><tr><td>덮어쓰기(안티포렌식)</td><td><code>DataOverwrite</code> 반복 → <code>FileDelete</code></td></tr><tr><td>파일 복사</td><td>원본 없음, 대상에 <code>FileCreate</code> + <code>DataExtend</code></td></tr><tr><td>파일 이동(같은 볼륨)</td><td><code>RenameOldName</code>/<code>RenameNewName</code> (<code>ParentEntryNumber</code>가 바뀐다)</td></tr><tr><td>파일 이동(다른 볼륨)</td><td>원본 볼륨 <code>FileDelete</code> + 대상 볼륨 <code>FileCreate</code></td></tr><tr><td>timestomp</td><td><code>BasicInfoChange</code> 단독</td></tr><tr><td>ADS로 숨김</td><td><code>StreamChange</code>, <code>NamedDataExtend</code></td></tr></tbody></table></div>
 <p><strong>이름 변경은 <code>RenameOldName</code>과 <code>RenameNewName</code>이 같은 <code>EntryNumber</code>로 연속해 나타난다.</strong> 변경 전 이름을 찾을 때 이 짝을 본다.</p>
 <h2 id="빠른-명령">빠른 명령</h2>
-<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">REM MFTECmd — $J 파싱 (가장 빠름)
-MFTECmd.exe -f &quot;C:\case\$J&quot; --csv &quot;C:\case\out&quot; --csvf usn.csv
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># MFTECmd — $J 파싱 (가장 빠름)
+MFTECmd.exe -f &#39;C:\case\$J&#39; --csv &quot;C:\case\out&quot; --csvf usn.csv
 
-REM $MFT와 함께 주면 경로를 복원해 준다
-MFTECmd.exe -f &quot;C:\case\$J&quot; -m &quot;C:\case\$MFT&quot; --csv &quot;C:\case\out&quot; --csvf usn.csv</code></pre></div>
+# $MFT와 함께 주면 경로를 복원해 준다
+MFTECmd.exe -f &#39;C:\case\$J&#39; -m &#39;C:\case\$MFT&#39; --csv &quot;C:\case\out&quot; --csvf usn.csv</code></pre></div>
 <p><code>-m</code>으로 <code>$MFT</code>를 함께 넘기면 <code>ParentPath</code>가 채워진다. <strong>경로가 필요하면 항상 함께 준다.</strong></p>
-<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">REM 삭제된 항목만
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 삭제된 항목만
 Import-Csv out\usn.csv |
   Where-Object { $_.UpdateReasons -match &#39;FileDelete&#39; } |
   Select-Object UpdateTimestamp, FileName, ParentPath, EntryNumber |
   Sort-Object UpdateTimestamp
 
-REM 특정 확장자의 삭제
+# 특정 확장자의 삭제
 Import-Csv out\usn.csv |
   Where-Object { $_.UpdateReasons -match &#39;FileDelete&#39; -and $_.FileName -match &#39;\.(zip|7z|rar|xlsx|docx)$&#39; }
 
-REM 이름 변경 짝 찾기
+# 이름 변경 짝 찾기
 Import-Csv out\usn.csv |
   Where-Object { $_.UpdateReasons -match &#39;Rename&#39; } |
   Select-Object Usn, UpdateTimestamp, UpdateReasons, FileName, EntryNumber |
   Sort-Object Usn
 
-REM 특정 시간대의 모든 변경
+# 특정 시간대의 모든 변경
 Import-Csv out\usn.csv |
   Where-Object { $_.UpdateTimestamp -ge &#39;2026-03-14 07:20:00&#39; -and
                  $_.UpdateTimestamp -le &#39;2026-03-14 07:30:00&#39; } |
   Sort-Object Usn | Format-Table UpdateTimestamp, UpdateReasons, FileName
 
-REM timestomp 후보
+# timestomp 후보
 Import-Csv out\usn.csv |
   Where-Object { $_.UpdateReasons -match &#39;BasicInfoChange&#39; -and
                  $_.UpdateReasons -notmatch &#39;Data|Create|Delete&#39; }</code></pre></div>
@@ -223,19 +223,19 @@ rg -i &#39;secret&#39; usn.csv</code></pre></div>
     <span class="rel-id">FOR-0001 · 트리아지</span>
     포렌식 문제 파일을 받았을 때 30초 트리아지
   </a>
-  <a class="related-item" href="./userassist.html">
-    <span class="rel-id">FOR-0061 · Registry</span>
-    UserAssist로 사용자가 직접 실행한 프로그램 찾기
+  <a class="related-item" href="./logfile-usnjrnl-crosscheck.html">
+    <span class="rel-id">FOR-0029 · 디스크/NTFS</span>
+    $LogFile과 $UsnJrnl 교차검증: 한쪽에만 기록이 있을 때 무엇을 믿나
   </a>
-  <a class="related-item" href="./event-4624-logon.html">
-    <span class="rel-id">FOR-0083 · Event Log</span>
-    Event ID 4624 성공 로그온 분석: 누가 어디서 어떻게 들어왔나
+  <a class="related-item" href="./ntfs-log-tracker.html">
+    <span class="rel-id">FOR-0026 · 디스크/NTFS</span>
+    NTFS Log Tracker로 $LogFile·$UsnJrnl·$MFT 한 번에 묶어 보기
   </a>
   </div>
 </section>
       <div class="pager">
-<a class="related-item" href="./mft-basics.html"><span class="rel-id">← FOR-0021</span>$MFT 기본 구조와 포렌식 활용</a>
-<a class="related-item" href="./userassist.html"><span class="rel-id">FOR-0061 →</span>UserAssist로 사용자가 직접 실행한 프로그램 찾기</a>
+<a class="related-item" href="./ntfs-log-tracker.html"><span class="rel-id">← FOR-0026</span>NTFS Log Tracker로 $LogFile·$UsnJrnl·$MFT 한 번에 묶어 보기</a>
+<a class="related-item" href="./usn-reason-flags.html"><span class="rel-id">FOR-0028 →</span>USN_REASON 플래그 조합으로 실제 행위 판정하기 (삭제·이동·복사·timestomp 구분)</a>
       </div>
     </article>
 <aside class="toc">
@@ -257,7 +257,7 @@ rg -i &#39;secret&#39; usn.csv</code></pre></div>
   </div>
 </main>
 <footer class="site-footer">
-  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 02:32 KST
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 03:39 KST
 </footer>
 <script src="../assets/search-index.js"></script>
 <script src="../assets/search-core.js"></script>

@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>$LogFile 기본: NTFS 트랜잭션 로그의 RSTR/RCRD와 redo·undo · FOR-0025 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%94%94%EC%8A%A4%ED%81%AC%2FNTFS">디스크/NTFS</a> / FOR-0025
+      </div>
+      <header class="article-head">
+        <h1>$LogFile 기본: NTFS 트랜잭션 로그의 RSTR/RCRD와 redo·undo</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">디스크/NTFS</span>
+      <span class="badge badge-type">레퍼런스</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>$LogFile(MFT 레코드 2번)은 NTFS가 메타데이터 변경을 커밋하기 전에 남기는 트랜잭션 로그이며, $UsnJrnl보다 보존 기간이 훨씬 짧은 대신 훨씬 상세하다 — undo 데이터에 &quot;변경 직전의 값&quot;이 그대로 들어 있어 예전 파일 이름, 예전 타임스탬프, 삭제된 색인 항목까지 복원된다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>NTFS Log Tracker, FTK Imager, Sleuth Kit, Arsenal Image Mounter, HxD, Timeline Explorer, chkdsk</td></tr>
+<tr><th>artifact</th><td><code>$LogFile</code> · <code>RSTR</code> · <code>RCRD</code> · <code>LSN</code> · <code>redo</code> · <code>undo</code> · <code>restart area</code> · <code>log record</code> · <code>transaction</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\$LogFile</code> · <code>$LogFile</code></td></tr>
+<tr><th>로그 필드</th><td><code>LSN</code> · <code>Previous LSN</code> · <code>Undo LSN</code> · <code>Transaction ID</code> · <code>Redo Operation</code> · <code>Undo Operation</code> · <code>Target Attribute</code> · <code>Target VCN</code> · <code>Target LCN</code> · <code>MFT Entry</code></td></tr>
+<tr><th>파일 형식</th><td><code>ntfs</code></td></tr>
+<tr><th>검색 별칭</th><td>logfile · $logfile · ntfs 로그 · 트랜잭션 로그 · rcrd · rstr · lsn · ntfs 저널 로그</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>$LogFile</code>(MFT 레코드 2번)은 NTFS가 메타데이터 변경을 커밋하기 전에 남기는 트랜잭션 로그이며, <strong><code>$UsnJrnl</code>보다 보존 기간이 훨씬 짧은 대신 훨씬 상세하다</strong> — undo 데이터에 &quot;변경 직전의 값&quot;이 그대로 들어 있어 예전 파일 이름, 예전 타임스탬프, 삭제된 색인 항목까지 복원된다.</p>
+<h2 id="개념">개념</h2>
+<p>NTFS는 저널링 파일시스템이다. 파일 하나를 만들 때도 MFT 레코드 할당, 비트맵 갱신, 부모 디렉터리 색인 추가가 <strong>하나의 트랜잭션</strong>으로 묶여야 하고, 중간에 전원이 끊기면 되돌릴 수 있어야 한다. 그 목적으로 변경 <strong>직전</strong>에 로그를 먼저 쓴다(write-ahead logging).</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">$LogFile 구조
+
+[ restart area ]   RSTR 페이지. 복구 시작점, 마지막 체크포인트 정보
+[ log record area ] RCRD 페이지가 순환(wrap)하며 채워진다
+                    각 페이지 안에 여러 개의 log record</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>값</th></tr></thead><tbody><tr><td>MFT 레코드 번호</td><td><strong>2</strong></td></tr><tr><td>파일 이름</td><td><code>$LogFile</code> (볼륨 루트)</td></tr><tr><td>페이지 시그니처</td><td><code>RSTR</code> = <code>52 53 54 52</code>, <code>RCRD</code> = <code>52 43 52 44</code></td></tr><tr><td>페이지 크기</td><td>보통 4096바이트</td></tr><tr><td>기록 방식</td><td>원형 버퍼. 끝에 도달하면 앞을 덮어쓴다</td></tr><tr><td>순서 키</td><td><strong>LSN</strong> (Log Sequence Number). 단조 증가</td></tr><tr><td>resident 여부</td><td>항상 non-resident</td></tr></tbody></table></div>
+<p><code>RCRD</code>/<code>RSTR</code> 페이지도 MFT 레코드와 동일한 <strong>Update Sequence Array(fixup)</strong> 를 쓴다. 512바이트 경계의 마지막 2바이트가 USN으로 덮여 있으므로 raw hex를 그대로 파싱하면 안 된다 (<a href="./ntfs-structure.html">FOR-0020</a>).</p>
+<h3 id="redo와-undo">redo와 undo</h3>
+<p>각 log record는 같은 변경에 대해 두 벌의 데이터를 갖는다.</p>
+<div class="table-wrap"><table><thead><tr><th></th><th>내용</th><th>포렌식 가치</th></tr></thead><tbody><tr><td><strong>redo</strong></td><td>변경 <strong>후</strong> 값. 복구 시 다시 적용해 트랜잭션을 완료시킨다</td><td>&quot;무엇으로 바뀌었나&quot;</td></tr><tr><td><strong>undo</strong></td><td>변경 <strong>전</strong> 값. 복구 시 되돌려 트랜잭션을 취소한다</td><td><strong>&quot;무엇이었나&quot; — 이쪽이 더 귀하다</strong></td></tr></tbody></table></div>
+<p><code>undo</code>가 이 artifact의 존재 이유다. 파일 이름을 <code>a.7z</code> → <code>b.7z</code>로 바꾸면 색인 항목 삭제 로그의 undo에 <code>a.7z</code>의 <code>$FILE_NAME</code> 전체(이름 + 4개 타임스탬프 + 크기)가 그대로 들어간다. <code>$MFT</code>에는 최종 상태만 남는데, <code>$LogFile</code>에는 <strong>중간 상태들이 남는다.</strong></p>
+<h3 id="usnjrnl과의-트레이드오프"><code>$UsnJrnl</code>과의 트레이드오프</h3>
+<div class="table-wrap"><table><thead><tr><th></th><th><code>$LogFile</code></th><th><code>$UsnJrnl:$J</code></th></tr></thead><tbody><tr><td>목적</td><td>파일시스템 무결성 복구</td><td>애플리케이션용 변경 통지</td></tr><tr><td>기록 단위</td><td><strong>속성·색인 단위의 저수준 연산</strong></td><td>파일 단위의 사건 요약</td></tr><tr><td>상세도</td><td><strong>매우 높음</strong> (변경 전 값 포함)</td><td>낮음 (플래그 + 이름)</td></tr><tr><td>크기</td><td>기본 수십 MB 수준으로 <strong>고정 상한</strong></td><td>볼륨에 따라 수십~수백 MB</td></tr><tr><td>쓰기량</td><td>파일 1개 생성에 로그 레코드 수십 개</td><td>파일 1개 생성에 레코드 2~3개</td></tr><tr><td><strong>보존 기간</strong></td><td><strong>짧다.</strong> 바쁜 시스템에서 수십 분~수 시간</td><td>길다. 수일~수 주</td></tr><tr><td>경로 정보</td><td>부모 레코드 번호 (조인 필요)</td><td>부모 레코드 번호 (조인 필요)</td></tr><tr><td>파서 난이도</td><td>높다 (전용 도구 필요)</td><td>낮다 (MFTECmd로 충분)</td></tr></tbody></table></div>
+<p><strong>실전 순서</strong>: 사건이 오래됐으면 <code>$UsnJrnl</code>부터 (<a href="./usnjrnl-basics.html">FOR-0027</a>), <code>$UsnJrnl</code>에서 이미 잘려 나갔거나 더 상세한 근거가 필요하면 <code>$LogFile</code>. 사건이 이미지 획득 직전이면 <code>$LogFile</code>이 가장 풍부하다.</p>
+<h2 id="파일-경로">파일 / 경로</h2>
+<div class="table-wrap"><table><thead><tr><th>상황</th><th>추출 방법</th></tr></thead><tbody><tr><td>디스크 이미지 (E01/RAW)</td><td>FTK Imager로 열고 볼륨 <code>[root]</code> → <code>$LogFile</code> 선택 → Export Files (<a href="./ftk-imager-open-image.html">FOR-0016</a>)</td></tr><tr><td>이미지 마운트</td><td>Arsenal Image Mounter로 읽기 전용 마운트 후 FTK Imager (<a href="./arsenal-image-mounter.html">FOR-0017</a>)</td></tr><tr><td>Sleuth Kit</td><td><code>icat -o &lt;섹터오프셋&gt; image.dd 2 &gt; &#39;$LogFile&#39;</code> (레코드 번호 2)</td></tr><tr><td>라이브 시스템</td><td>KAPE의 트리아지 타깃에 포함된다. 일반 복사는 불가</td></tr><tr><td>Autopsy</td><td>파일 트리에서 볼륨 루트의 <code>$LogFile</code>을 Extract (<a href="./autopsy-ingest.html">FOR-0018</a>)</td></tr></tbody></table></div>
+<p>로그 크기는 라이브 시스템에서 확인할 수 있다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">chkdsk /L</code></pre></div>
+<p>크기 상한이 곧 보존 기간이다. 볼륨 크기에 따라 자동 결정되며 큰 볼륨에서 대략 64MB 수준이지만, <strong>정확한 값은 <code>chkdsk /L</code> 출력으로 확인한다.</strong> 이 값이 작으면 몇 분치 기록만 남는다.</p>
+<h2 id="주요-필드">주요 필드</h2>
+<h3 id="log-record의-핵심-필드">log record의 핵심 필드</h3>
+<p>파서가 행 단위로 풀어 주는 값들이다.</p>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>의미</th><th>실전 활용</th></tr></thead><tbody><tr><td><code>LSN</code></td><td>이 레코드의 순번</td><td><strong>정확한 순서.</strong> 같은 초에 몰린 사건의 전후 판정</td></tr><tr><td><code>Previous LSN</code></td><td>같은 클라이언트의 직전 레코드</td><td>로그 체인 추적</td></tr><tr><td><code>Undo LSN</code></td><td>되돌릴 대상 레코드</td><td>트랜잭션 복구 경로</td></tr><tr><td><code>Transaction ID</code></td><td>트랜잭션 식별자</td><td><strong>같은 ID를 묶으면 하나의 사용자 행위</strong>가 된다</td></tr><tr><td><code>Redo Operation</code></td><td>변경 후 연산</td><td>무슨 일을 했나 (아래 표)</td></tr><tr><td><code>Undo Operation</code></td><td>되돌리기 연산</td><td>짝을 이룬다</td></tr><tr><td><code>Target Attribute</code></td><td>대상 속성 (열린 속성 테이블 인덱스)</td><td><code>$DATA</code>인가 <code>$INDEX_ALLOCATION</code>인가</td></tr><tr><td><code>MFT Entry</code> / <code>Target VCN</code> / <code>Target LCN</code></td><td>대상 레코드·클러스터</td><td><code>$MFT</code>와 조인하는 키</td></tr><tr><td>redo/undo 데이터</td><td>변경 후/전 원본 바이트</td><td><strong>여기서 파일 이름·타임스탬프가 나온다</strong></td></tr></tbody></table></div>
+<p><code>Transaction ID</code>로 묶는 것이 핵심 기술이다. 파일 하나를 지우면 레코드 해제·색인 항목 삭제·비트맵 해제가 <strong>같은 트랜잭션 ID</strong>로 여러 행에 흩어져 나온다.</p>
+<h3 id="어떤-연산이-남는가">어떤 연산이 남는가</h3>
+<p>연산 이름은 파서 출력에 문자열로 나타난다. 실전에서 판정에 쓰는 것만 정리한다.</p>
+<div class="table-wrap"><table><thead><tr><th>연산 이름</th><th>무슨 일</th></tr></thead><tbody><tr><td><code>InitializeFileRecordSegment</code></td><td><strong>MFT 레코드 초기화 = 파일/폴더 생성</strong></td></tr><tr><td><code>DeallocateFileRecordSegment</code></td><td><strong>MFT 레코드 해제 = 파일/폴더 삭제</strong></td></tr><tr><td><code>CreateAttribute</code> / <code>DeleteAttribute</code></td><td>속성 추가/제거 (ADS 생성·제거 포함)</td></tr><tr><td><code>UpdateResidentValue</code></td><td>resident 속성 값 변경 (<strong><code>$SI</code> 타임스탬프 변경이 여기 온다</strong>)</td></tr><tr><td><code>UpdateNonresidentValue</code></td><td>non-resident 데이터 변경</td></tr><tr><td><code>UpdateMappingPairs</code></td><td>data run 목록 변경 (파일 크기 증감)</td></tr><tr><td><code>SetNewAttributeSizes</code></td><td>속성 크기 갱신</td></tr><tr><td><code>AddIndexEntryRoot</code> / <code>AddIndexEntryAllocation</code></td><td><strong>부모 폴더 색인에 항목 추가 = 이름이 그 폴더에 등장</strong></td></tr><tr><td><code>DeleteIndexEntryRoot</code> / <code>DeleteIndexEntryAllocation</code></td><td><strong>부모 폴더 색인에서 항목 제거 = 이름이 사라짐</strong></td></tr><tr><td><code>UpdateFileNameRoot</code> / <code>UpdateFileNameAllocation</code></td><td>색인 안의 <code>$FILE_NAME</code> 갱신</td></tr><tr><td><code>WriteEndOfIndexBuffer</code></td><td>색인 버퍼 정리</td></tr><tr><td><code>SetBitsInNonresidentBitMap</code></td><td><code>$Bitmap</code> 비트 설정 = <strong>클러스터 할당</strong></td></tr><tr><td><code>ClearBitsInNonresidentBitMap</code></td><td><code>$Bitmap</code> 비트 해제 = <strong>클러스터 해제</strong></td></tr><tr><td><code>OpenNonresidentAttribute</code></td><td>속성 열기. 열린 속성 테이블에 등록</td></tr><tr><td><code>CommitTransaction</code> / <code>ForgetTransaction</code></td><td>트랜잭션 확정 / 폐기</td></tr><tr><td><code>CompensationLogRecord</code></td><td>undo가 실제로 수행됨 (롤백 발생)</td></tr><tr><td><code>Noop</code></td><td>채움용. 무시한다</td></tr></tbody></table></div>
+<p>연산에는 숫자 코드도 있지만 <strong>버전·파서마다 표기가 다르므로 이름 문자열로 판단한다.</strong></p>
+<h3 id="사건-유형별-연산-조합">사건 유형별 연산 조합</h3>
+<div class="table-wrap"><table><thead><tr><th>실제로 일어난 일</th><th><code>$LogFile</code>에 남는 조합</th></tr></thead><tbody><tr><td>파일 생성</td><td><code>InitializeFileRecordSegment</code> + <code>AddIndexEntry*</code> + <code>SetBitsInNonresidentBitMap</code></td></tr><tr><td>파일 쓰기(크기 증가)</td><td><code>UpdateMappingPairs</code> + <code>SetNewAttributeSizes</code> + <code>SetBitsInNonresidentBitMap</code></td></tr><tr><td>파일 삭제</td><td><code>DeallocateFileRecordSegment</code> + <code>DeleteIndexEntry*</code> + <code>ClearBitsInNonresidentBitMap</code></td></tr><tr><td>이름 변경</td><td>같은 부모에서 <code>DeleteIndexEntry*</code>(옛 이름) + <code>AddIndexEntry*</code>(새 이름)</td></tr><tr><td>같은 볼륨 내 이동</td><td><strong>부모 A</strong>에서 <code>DeleteIndexEntry*</code> + <strong>부모 B</strong>에서 <code>AddIndexEntry*</code></td></tr><tr><td>폴더 생성</td><td><code>InitializeFileRecordSegment</code> + <code>$INDEX_ROOT</code> 관련 <code>CreateAttribute</code></td></tr><tr><td>ADS 생성</td><td>이름 있는 <code>$DATA</code>에 대한 <code>CreateAttribute</code></td></tr><tr><td><code>$SI</code> 타임스탬프 변경 (timestomp)</td><td><code>UpdateResidentValue</code> (대상 속성이 <code>$STANDARD_INFORMATION</code>)</td></tr><tr><td>권한 변경</td><td><code>$SECURITY_DESCRIPTOR</code>/<code>$Secure</code> 관련 <code>UpdateResidentValue</code></td></tr></tbody></table></div>
+<p>이름 변경과 이동을 구분하는 지점은 <strong><code>DeleteIndexEntry</code>와 <code>AddIndexEntry</code>의 부모 레코드 번호가 같은가</strong>다. 같으면 rename, 다르면 move다.</p>
+<h2 id="빠른-명령">빠른 명령</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">icat -o 2048 image.dd 2 &gt; &#39;$LogFile&#39;</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 추출 확인 — 첫 페이지가 RSTR 인지 본다
+xxd -l 16 &#39;$LogFile&#39;
+# 00000000: 5253 5452 2800 0900 0000 0000 0000 0000  RSTR(...........
+
+# 로그 레코드 페이지 개수 대략 세기
+rg -c --text &#39;RCRD&#39; &#39;$LogFile&#39;
+
+# 파일 이름은 UTF-16LE 다. 기본 strings 로는 안 나온다
+strings -e l &#39;$LogFile&#39; | rg -i &#39;secret&#39;
+
+# 확장자로 훑기
+strings -e l &#39;$LogFile&#39; | rg -i &#39;\.(zip|7z|rar|exe|ps1|docx)$&#39; | sort -u | head -40</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">REM 라이브 시스템에서 로그 크기(=보존 기간 상한) 확인
+chkdsk /L</code></pre></div>
+<p>정식 분석은 전용 파서로 한다.</p>
+<div class="table-wrap"><table><thead><tr><th>파서</th><th>특징</th><th>출력</th></tr></thead><tbody><tr><td><strong>NTFS Log Tracker</strong></td><td><code>$LogFile</code> + <code>$UsnJrnl</code> + <code>$MFT</code>를 함께 입력해 사건 단위로 묶어 준다</td><td>SQLite DB, CSV (<a href="./ntfs-log-tracker.html">FOR-0026</a>)</td></tr><tr><td><strong>LogFileParser</strong></td><td><code>$LogFile</code> 전용. 연산·트랜잭션 단위의 저수준 출력</td><td>CSV</td></tr><tr><td>MFTECmd</td><td><strong><code>$LogFile</code>은 지원하지 않는다.</strong> <code>$MFT</code>/<code>$J</code>/<code>$Boot</code>/<code>$SDS</code> 전용</td><td>CSV/JSON</td></tr><tr><td><code>strings -e l</code></td><td>파서가 없을 때의 최후 수단. 이름 조각만 얻는다</td><td>텍스트</td></tr></tbody></table></div>
+<p>MFTECmd로 <code>$LogFile</code>을 열려는 시도가 흔한 실수다. 지원 대상이 아니다.</p>
+<h2 id="함께-보는-artifact">함께 보는 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th><code>$LogFile</code>에서 얻은 것</th><th>함께 볼 것</th><th>확인할 것</th></tr></thead><tbody><tr><td>삭제 트랜잭션 시각</td><td><code>$UsnJrnl:$J</code> (<a href="./usnjrnl-basics.html">FOR-0027</a>)</td><td>같은 삭제가 <code>FileDelete</code>로 남았는가</td></tr><tr><td>undo의 옛 파일 이름</td><td><code>$MFT</code> (<a href="./mft-basics.html">FOR-0021</a>)</td><td>레코드가 남아 있는가, 최종 이름은 무엇인가</td></tr><tr><td><code>MFT Entry</code> 번호</td><td><code>MFTECmd --de &lt;n&gt;</code>, <code>istat</code></td><td>속성 원본 확인</td></tr><tr><td>undo의 옛 타임스탬프</td><td><code>$SI</code> vs <code>$FN</code> (<a href="./si-vs-fn-timestamps.html">FOR-0024</a>)</td><td>timestomp 전 값 복원</td></tr><tr><td><code>UpdateResidentValue</code> on <code>$SI</code></td><td><code>$J</code>의 <code>BasicInfoChange</code></td><td>시각 조작 확정</td></tr><tr><td>부모 레코드 번호 두 개</td><td>이동 경로</td><td>어디서 어디로 옮겼나</td></tr><tr><td>클러스터 해제 시각</td><td>미할당 영역 카빙</td><td>그 클러스터에 아직 내용이 남았나</td></tr><tr><td>트랜잭션 시각</td><td>EVTX <code>4688</code> (<a href="./event-4624-logon.html">FOR-0083</a>)</td><td>어느 프로세스가 유발했나</td></tr><tr><td>파일 이름</td><td>Prefetch / UserAssist (<a href="./userassist.html">FOR-0061</a>)</td><td>실행·열람 여부</td></tr></tbody></table></div>
+<h2 id="흔한-실수">흔한 실수</h2>
+<ul><li><strong>기본 <code>strings</code>로 파일 이름을 찾는 것.</strong> NTFS 파일 이름은 <strong>UTF-16LE</strong>다. ASCII 모드 <code>strings</code>는 <code>s.e.c.r.e.t</code> 형태를 문자열로 인식하지 못해 놓친다. <code>strings -e l</code>(little-endian 16bit)을 쓴다.</li><li><strong>MFTECmd에 <code>$LogFile</code>을 넣는 것.</strong> 지원 대상이 아니다. NTFS Log Tracker 또는 LogFileParser를 쓴다.</li><li><strong><code>$UsnJrnl</code> 대신 <code>$LogFile</code>부터 여는 것.</strong> 보존 기간이 훨씬 짧다. 며칠 전 사건이면 <code>$LogFile</code>에 아무것도 없을 가능성이 높다. <code>$J</code>를 먼저 보고, 부족하면 <code>$LogFile</code>로 내려온다.</li><li><strong><code>$LogFile</code>이 원형 버퍼임을 잊는 것.</strong> 오래된 페이지는 새 로그로 덮인다. &quot;기록이 없다&quot;는 &quot;그 일이 없었다&quot;가 아니라 <strong>&quot;이미 덮였다&quot;</strong> 일 수 있다. <code>chkdsk /L</code>의 크기와 볼륨 활동량으로 보존 범위를 추정한다.</li><li><strong>raw hex를 fixup 없이 파싱하는 것.</strong> <code>RCRD</code>/<code>RSTR</code> 페이지도 512바이트 경계마다 마지막 2바이트가 USN으로 덮여 있다. 수동 파싱에서 오프셋이 밀리는 원인 1위다.</li><li><strong>연산 하나를 사용자 행위 하나로 세는 것.</strong> 파일 한 개 생성에도 레코드가 수십 개 나온다. <strong><code>Transaction ID</code>로 묶어야</strong> 사용자 행위 단위가 된다.</li><li><strong>rename과 move를 구분하지 않는 것.</strong> 둘 다 <code>DeleteIndexEntry</code> + <code>AddIndexEntry</code> 조합이다. <strong>부모 레코드 번호가 같으면 rename, 다르면 move</strong>다.</li><li><strong>redo만 읽는 것.</strong> 옛 이름·옛 타임스탬프는 <strong>undo</strong> 쪽에 있다. <code>$LogFile</code>을 보는 이유의 절반이 undo다.</li><li><strong>LSN 대신 시각으로 정렬하는 것.</strong> 같은 초에 수십 개 레코드가 몰린다. 순서는 <strong>LSN</strong>이 정한다.</li><li><strong>시각의 시간대를 확인하지 않는 것.</strong> 로그에 실린 타임스탬프는 FILETIME(UTC 기준 100ns, 1601-01-01 epoch, Unix와 11644473600초 차이)이다. 파서 출력이 UTC인지 로컬인지 확인하고, KST 답이 필요하면 +9시간 한다.</li><li><strong><code>$LogFile</code>만으로 경로를 답하는 것.</strong> 로그에는 부모 <strong>레코드 번호</strong>만 있다. 경로 문자열은 <code>$MFT</code>와 조인해야 나온다.</li><li><strong><code>Noop</code>·<code>CompensationLogRecord</code>를 사건으로 세는 것.</strong> 전자는 채움, 후자는 롤백 수행 기록이다.</li></ul>
+<h2 id="mini-example">mini example</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;사용자가 이미지 획득 30분 전에 파일 이름을 바꿔 위장했습니다.
+ 원래 이름을 구하세요.
+ 첨부: image.dd (파티션 오프셋 2048)&quot;
+
+1. $J 부터 시도 (정석 순서)
+   fls -o 2048 image.dd | rg -i &#39;Extend&#39;
+   -&gt; d/d 11-144-4:  $Extend
+   fls -o 2048 image.dd 11
+   -&gt; r/r 27-128-3:  $UsnJrnl:$J      &lt;- 이 &quot;레코드-타입-ID&quot; 를 그대로 icat 에 준다
+   icat -o 2048 image.dd 27-128-3 &gt; &#39;$J&#39;
+   MFTECmd.exe -f &#39;$J&#39; -m &#39;$MFT&#39; --csv out --csvf usn.csv
+
+   rg -i &#39;Rename&#39; out\usn.csv | wc -l
+   -&gt; 0
+
+   $J 가 이 볼륨에서 비활성이었다. 이름 변경 기록이 없다.
+   -&gt; $LogFile 로 내려간다.
+
+2. 추출
+   icat -o 2048 image.dd 2 &gt; &#39;$LogFile&#39;
+   xxd -l 16 &#39;$LogFile&#39;
+   -&gt; 00000000: 5253 5452 2800 0900 ...   &quot;RSTR&quot; 확인 (정상 추출)
+
+   ls -l &#39;$LogFile&#39;
+   -&gt; 67,108,864 (64MB)
+
+3. 첫 시도 (실패):
+   strings &#39;$LogFile&#39; | rg -i &#39;\.7z&#39;
+   -&gt; 아무것도 안 나온다.
+
+   왜 틀렸나: NTFS 파일 이름은 UTF-16LE 로 저장된다.
+   ASCII 모드 strings 는 &#39;r\0e\0p\0o\0r\0t\0&#39; 를 문자열로 보지 않는다.
+
+4. 정정 — 16bit little-endian 모드
+   strings -e l &#39;$LogFile&#39; | rg -i &#39;\.7z&#39; | sort -u
+
+   customer_db_2026.7z
+   report_final.7z
+
+   이름 두 개가 나왔다. 하지만 어느 쪽이 옛 이름인지, 같은 파일인지
+   strings 로는 알 수 없다. 순서와 대상 레코드가 필요하다.
+
+5. 파서로 정식 분석 — NTFS Log Tracker 에 $LogFile 과 $MFT 를 함께 입력
+   ($MFT 를 함께 줘야 부모 레코드 번호가 경로로 풀린다)
+
+   결과에서 두 이름이 등장하는 구간을 LSN 순으로 정렬하면:
+
+   LSN         Redo Operation              Undo Operation              MFT Entry  이름
+   ----------- --------------------------- --------------------------- ---------  ----
+   0x1a4b2c10  DeleteIndexEntryAllocation  AddIndexEntryAllocation     9114       customer_db_2026.7z
+   0x1a4b2c88  AddIndexEntryAllocation     DeleteIndexEntryAllocation  9114       report_final.7z
+   0x1a4b2d00  UpdateFileNameAllocation    UpdateFileNameAllocation    128441     report_final.7z
+
+   판정:
+     - 대상 부모 레코드가 둘 다 9114 (같은 폴더) -&gt; 이동이 아니라 rename
+     - DeleteIndexEntry 가 먼저, AddIndexEntry 가 나중 -&gt; 옛 이름은 삭제된 쪽
+     - 옛 이름 = customer_db_2026.7z
+     - 새 이름 = report_final.7z
+
+6. undo 데이터에서 옛 $FILE_NAME 전체 복원
+   DeleteIndexEntryAllocation 의 undo 에는 지워진 색인 항목,
+   즉 옛 $FILE_NAME 속성 전체가 들어 있다.
+   -&gt; 이름 + 4개 타임스탬프 + 크기가 함께 나온다
+
+   Created(FN) : 2026-03-14 07:31:04
+   FileSize    : 284,113,920
+
+7. 경로 확인 — $MFT 와 조인
+   icat -o 2048 image.dd 0 &gt; &#39;$MFT&#39;
+   MFTECmd.exe -f &#39;$MFT&#39; --csv out --csvf mft.csv
+   Import-Csv out\mft.csv | Where-Object { $_.EntryNumber -eq &#39;9114&#39; } |
+     Select-Object FileName, ParentPath
+   -&gt; Documents, .\Users\jhkim
+
+   전체 경로: \Users\jhkim\Documents\customer_db_2026.7z
+
+8. 시간대
+   07:31:04 UTC = 16:31:04 KST
+
+정답: 원래 이름 customer_db_2026.7z
+      (\Users\jhkim\Documents, 생성 2026-03-14 16:31:04 KST)</code></pre></div>
+<p>3단계가 이 유형의 대표적 실패다. <strong><code>strings</code>를 ASCII 모드로 돌려 &quot;아무것도 없다&quot;고 결론 내리면 거기서 문제가 끝난다.</strong> <code>-e l</code> 하나가 분기점이었고, 5단계에서 부모 레코드 번호가 같다는 점(9114)이 &quot;이동이 아니라 rename&quot;을 확정했다.</p>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-005 — Microsoft Learn, Master File Table: <code>$LogFile</code>이 MFT 레코드 2번의 예약 메타파일이라는 점과 레코드/속성 구조</li><li>SRC-013 — Microsoft Learn, Change Journals: <code>$UsnJrnl</code>의 목적과 기록 단위 — <code>$LogFile</code>과의 역할·보존 기간 차이를 대조하는 근거</li><li>SRC-032 — The Sleuth Kit 도구 문서: <code>icat</code>/<code>fls</code>로 메타파일을 레코드 번호로 추출하는 방법</li><li><strong>연산 이름의 정확한 표기와 숫자 코드는 파서·NTFS 버전에 따라 다르다.</strong> 표의 이름 문자열을 실제 파서 출력과 대조해 확인할 것</li><li><code>$LogFile</code>의 기본 크기와 페이지 크기는 볼륨·Windows 버전에 따라 다르다. <code>chkdsk /L</code>로 실제 값을 확인할 것</li><li><code>$LogFile</code> 내부 레코드 구조는 Microsoft가 공식 명세로 공개하지 않았다. 필드 해석은 파서 출력을 기준으로 하고, 오프셋 단위의 수동 파싱 결과는 반드시 <code>$MFT</code>/<code>$UsnJrnl</code>과 교차검증할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./mft-basics.html">
+    <span class="rel-id">FOR-0021 · 디스크/NTFS</span>
+    $MFT 기본 구조와 포렌식 활용
+  </a>
+  <a class="related-item" href="./ntfs-log-tracker.html">
+    <span class="rel-id">FOR-0026 · 디스크/NTFS</span>
+    NTFS Log Tracker로 $LogFile·$UsnJrnl·$MFT 한 번에 묶어 보기
+  </a>
+  <a class="related-item" href="./logfile-usnjrnl-crosscheck.html">
+    <span class="rel-id">FOR-0029 · 디스크/NTFS</span>
+    $LogFile과 $UsnJrnl 교차검증: 한쪽에만 기록이 있을 때 무엇을 믿나
+  </a>
+  <a class="related-item" href="./ftk-imager-open-image.html">
+    <span class="rel-id">FOR-0016 · 디스크/NTFS</span>
+    FTK Imager로 디스크 이미지 열고 필요한 artifact만 꺼내기
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./si-vs-fn-timestamps.html"><span class="rel-id">← FOR-0024</span>$STANDARD_INFORMATION vs $FILE_NAME: 8개 타임스탬프로 timestomp 잡기</a>
+<a class="related-item" href="./ntfs-log-tracker.html"><span class="rel-id">FOR-0026 →</span>NTFS Log Tracker로 $LogFile·$UsnJrnl·$MFT 한 번에 묶어 보기</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#개념">개념</a></li>
+<li class="toc-l3"><a href="#redo와-undo">redo와 undo</a></li>
+<li class="toc-l3"><a href="#usnjrnl과의-트레이드오프">`$UsnJrnl`과의 트레이드오프</a></li>
+<li class="toc-l2"><a href="#파일-경로">파일 / 경로</a></li>
+<li class="toc-l2"><a href="#주요-필드">주요 필드</a></li>
+<li class="toc-l3"><a href="#log-record의-핵심-필드">log record의 핵심 필드</a></li>
+<li class="toc-l3"><a href="#어떤-연산이-남는가">어떤 연산이 남는가</a></li>
+<li class="toc-l3"><a href="#사건-유형별-연산-조합">사건 유형별 연산 조합</a></li>
+<li class="toc-l2"><a href="#빠른-명령">빠른 명령</a></li>
+<li class="toc-l2"><a href="#함께-보는-artifact">함께 보는 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-실수">흔한 실수</a></li>
+<li class="toc-l2"><a href="#mini-example">mini example</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 03:39 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

@@ -19,6 +19,7 @@ wireshark_filters: []
 tshark_fields: []
 log_fields: ["EntryNumber", "SequenceNumber", "ParentEntryNumber", "FileName", "InUse", "IsDirectory", "FileSize"]
 file_formats: ["ntfs"]
+primary_terms: ["$MFT", "MFT", "Master File Table", "마스터 파일 테이블", "MFT 레코드"]
 keywords: ["MFT", "$MFT", "Master File Table", "NTFS", "파일 목록", "MFT 레코드", "resident", "non-resident", "MACB"]
 aliases: ["mft", "엠에프티", "마스터 파일 테이블", "NTFS 파일 목록", "파일 전체 목록 뽑기", "master file table"]
 symptom_keywords: ["파일이 언제 만들어졌는지", "전체 파일 목록이 필요하다", "삭제된 파일 이름을 알고 싶다", "파일 크기가 이상하다", "디스크에 뭐가 있었는지"]
@@ -108,11 +109,11 @@ CTF에서는 대개 `$MFT` 파일 하나만 따로 첨부된다. 이때 파일 �
 ## 빠른 명령
 
 ```powershell
-REM Eric Zimmerman MFTECmd — 가장 빠르고 컬럼이 풍부하다
-MFTECmd.exe -f "C:\case\$MFT" --csv "C:\case\out" --csvf mft.csv
+# Eric Zimmerman MFTECmd — 가장 빠르고 컬럼이 풍부하다
+MFTECmd.exe -f 'C:\case\$MFT' --csv "C:\case\out" --csvf mft.csv
 
-REM 특정 파일만 보기
-MFTECmd.exe -f "C:\case\$MFT" --csv "C:\case\out" --csvf mft.csv --de 12345
+# 특정 파일만 보기
+MFTECmd.exe -f 'C:\case\$MFT' --csv "C:\case\out" --csvf mft.csv --de 12345
 ```
 
 ```bash

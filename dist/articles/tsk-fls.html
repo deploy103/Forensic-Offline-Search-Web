@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>fls로 파일 목록·삭제 항목·bodyfile 뽑기 · FOR-0041 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%94%94%EC%8A%A4%ED%81%AC%2FNTFS">디스크/NTFS</a> / FOR-0041
+      </div>
+      <header class="article-head">
+        <h1>fls로 파일 목록·삭제 항목·bodyfile 뽑기</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">디스크/NTFS</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">linux</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>fls -o &lt;오프셋&gt; -r -p image.dd는 이미지 전체의 파일 목록을 삭제 항목까지 포함해 한 번에 쏟아내며, 각 줄의 r/r 9134-128-1: 부분이 다음 명령(icat, istat)에 그대로 넣는 메타주소다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Sleuth Kit, fls, mactime, icat, istat, mmls, grep, awk, Timeline Explorer</td></tr>
+<tr><th>artifact</th><td><code>directory entry</code> · <code>metadata address</code> · <code>deleted file</code> · <code>bodyfile</code> · <code>$OrphanFiles</code> · <code>MACB</code></td></tr>
+<tr><th>regex</th><td><code>[0-9]+-[0-9]+-[0-9]+</code></td></tr>
+<tr><th>로그 필드</th><td><code>file_type</code> · <code>inode</code> · <code>file_name</code> · <code>mod_time</code> · <code>acc_time</code> · <code>chg_time</code> · <code>cre_time</code> · <code>size</code> · <code>uid</code> · <code>gid</code></td></tr>
+<tr><th>파일 형식</th><td><code>ntfs</code> · <code>fat</code> · <code>exfat</code> · <code>ext4</code> · <code>raw</code> · <code>dd</code> · <code>e01</code></td></tr>
+<tr><th>검색 별칭</th><td>fls · fls 사용법 · 삭제 파일 목록 뽑기 · bodyfile 만들기 · mactime 타임라인 · fls 출력 읽기 · fls -m · 이미지 파일 목록</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>fls -o &lt;오프셋&gt; -r -p image.dd</code>는 이미지 전체의 파일 목록을 삭제 항목까지 포함해 한 번에 쏟아내며, 각 줄의 <code>r/r 9134-128-1:</code> 부분이 <strong>다음 명령(<code>icat</code>, <code>istat</code>)에 그대로 넣는 메타주소</strong>다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>이미지에 무슨 파일이 있었는지 전체 목록이 필요한 경우</li><li><strong>삭제된 파일의 이름·경로</strong>를 찾아야 하는 경우 (<code>-d</code>)</li><li>추출할 파일의 메타주소를 알아내야 하는 경우 → <code>icat</code>로 이어진다 (<a href="./tsk-icat.html">FOR-0042</a>)</li><li><code>$MFT</code> 파서를 못 쓰는 환경(리눅스만 있음)에서 파일시스템 타임라인을 만들어야 하는 경우 (<code>-m</code> → <code>mactime</code>)</li><li>Autopsy의 파일 개수·삭제 파일 개수를 CLI로 교차검증하는 경우</li></ul>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li><code>mmls</code>로 오프셋이 확정되었다 → 바로 <code>fls</code>로 넘어간다 (<a href="./tsk-mmls.html">FOR-0040</a>)</li><li>지문이 &quot;삭제된 ~ 파일&quot;을 언급 → <code>-d</code></li><li>지문이 &quot;언제 무슨 일이 있었나&quot;를 요구 → <code>-m</code>으로 bodyfile → <code>mactime</code></li><li>출력의 이름 앞에 <code>*</code>가 있다 → <strong>삭제된 항목</strong></li><li>출력 줄 끝에 <code>(realloc)</code> → 메타데이터가 다른 파일에 재할당되었다. 이름은 남았지만 내용은 신뢰할 수 없다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">fls -o 2048 -r -p image.dd</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">fls -o 2048 -r -p -d image.dd        # 삭제 항목만
+fls -o 2048 -r -p -u image.dd        # 살아 있는 항목만
+fls -o 2048 -l image.dd              # 루트 디렉터리 상세(시각 포함)
+fls -o 2048 -r -m / image.dd &gt; body.txt   # bodyfile
+mactime -b body.txt -d -z UTC &gt; timeline.csv</code></pre></div>
+<p>목록이 크면 파일로 받고 <code>grep</code>으로 좁힌다. <strong>화면에 흘려보내지 않는다.</strong></p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">fls -o 2048 -r -p image.dd &gt; files.txt
+grep -iE &#39;\.(docx|xlsx|pdf|zip|txt)$&#39; files.txt</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-옵션-전체">1단계 — 옵션 전체</h3>
+<div class="table-wrap"><table><thead><tr><th>옵션</th><th>의미</th><th>실전 용도</th></tr></thead><tbody><tr><td><code>-o offset</code></td><td>파일시스템이 시작하는 <strong>섹터</strong> 오프셋</td><td><code>mmls</code>의 <code>Start</code> 값</td></tr><tr><td><code>-r</code></td><td>디렉터리로 <strong>재귀</strong></td><td>없으면 지정 디렉터리 한 단계만 나온다</td></tr><tr><td><code>-p</code></td><td><strong>전체 경로</strong> 출력</td><td>없으면 재귀 깊이를 <code>+</code> 기호로만 표시해 경로를 알 수 없다</td></tr><tr><td><code>-d</code></td><td><strong>삭제된 항목만</strong></td><td>삭제 파일 사냥의 기본</td></tr><tr><td><code>-u</code></td><td>삭제되지 않은 항목만</td><td>정상 파일 목록만 필요할 때</td></tr><tr><td><code>-l</code></td><td><strong>상세(long) 형식</strong> — 시각·크기·UID/GID 포함</td><td>시각을 눈으로 확인할 때</td></tr><tr><td><code>-m mnt</code></td><td><strong>bodyfile(mactime 입력) 형식</strong>으로 출력, <code>mnt</code>를 경로 앞에 붙인다</td><td>타임라인 생성</td></tr><tr><td><code>-F</code></td><td>디렉터리가 아닌 항목(파일)만</td><td>목록 정리</td></tr><tr><td><code>-D</code></td><td>디렉터리만</td><td>구조 파악</td></tr><tr><td><code>-a</code></td><td><code>.</code> 과 <code>..</code> 항목도 표시 (기본은 숨김)</td><td>디렉터리 색인 이상 확인</td></tr><tr><td><code>-z zone</code></td><td>원본 시스템의 시간대 문자열</td><td><code>-l</code> / <code>-m</code> 출력에만 영향</td></tr><tr><td><code>-s seconds</code></td><td>원본 시스템의 시간 스큐(초)</td><td><code>-l</code> / <code>-m</code>이 주어진 경우에만 적용</td></tr><tr><td><code>-f fstype</code></td><td>파일시스템 타입 강제. <code>-f list</code>로 목록</td><td>자동탐지 실패 시</td></tr><tr><td><code>-i imgtype</code></td><td>이미지 형식 강제. <code>-i list</code>로 목록</td><td>E01/split</td></tr><tr><td><code>-b size</code></td><td>하부 장치 섹터 크기</td><td>4Kn = <code>4096</code></td></tr><tr><td><code>-v</code> / <code>-V</code></td><td>디버그 출력 / 버전</td><td>진단</td></tr></tbody></table></div>
+<p>마지막 인자로 <strong>inode(메타주소)를 주면 그 디렉터리만</strong> 나열한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">fls -o 2048 image.dd 5        # NTFS 루트 (레코드 5)
+fls -o 2048 image.dd 2        # ext 계열 루트 (inode 2)
+fls -o 2048 -r -p image.dd 9134   # 특정 디렉터리 이하만 재귀</code></pre></div>
+<p><strong>목표 디렉터리를 알면 전체 재귀보다 이 방법이 몇 배 빠르다.</strong></p>
+<h3 id="2단계-기본-출력-형식-읽기">2단계 — 기본 출력 형식 읽기</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">$ fls -o 2048 -r -p image.dd
+d/d 9101-144-5:  Users
+d/d 9110-144-5:  Users/kim
+r/r 9134-128-1:  Users/kim/Documents/report.docx
+r/r 9134-128-5:  Users/kim/Documents/report.docx:hidden
+-/r * 9188-128-1: Users/kim/Documents/passwords.txt
+r/- * 9201-128-1: Users/kim/Desktop/tmp.bin (realloc)
+d/d 11-144-5:    $OrphanFiles</code></pre></div>
+<p>한 줄의 구조는 이렇다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">r/r  *  9134-128-1:  &lt;탭&gt;  Users/kim/Documents/report.docx
+ |   |   |   |  |
+ |   |   |   |  +--- 속성 ID
+ |   |   |   +------ 속성 타입 (128 = 0x80 = $DATA, 144 = 0x90 = $INDEX_ROOT)
+ |   |   +---------- 메타주소 (NTFS 라면 MFT 엔트리 번호)
+ |   +-------------- &#39;*&#39; 가 있으면 삭제됨
+ +------------------ 파일 타입: 디렉터리 엔트리 / 메타데이터</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>의미</th></tr></thead><tbody><tr><td>앞 문자(<code>r/</code>)</td><td><strong>디렉터리 엔트리</strong>가 주장하는 타입</td></tr><tr><td>뒤 문자(<code>/r</code>)</td><td><strong>메타데이터(MFT 레코드/inode)</strong> 가 주장하는 타입</td></tr><tr><td><code>*</code></td><td>삭제된 항목</td></tr><tr><td><code>9134</code></td><td>메타주소. <code>icat</code>/<code>istat</code>에 넣는 값</td></tr><tr><td><code>-128-1</code></td><td>속성 타입-ID. 같은 파일의 여러 스트림을 구분한다</td></tr><tr><td><code>(realloc)</code></td><td>그 메타데이터가 이미 다른 파일에 재할당되었다</td></tr></tbody></table></div>
+<p>파일 타입 문자:</p>
+<div class="table-wrap"><table><thead><tr><th>문자</th><th>의미</th></tr></thead><tbody><tr><td><code>r</code></td><td>일반 파일</td></tr><tr><td><code>d</code></td><td>디렉터리</td></tr><tr><td><code>l</code></td><td>심볼릭 링크</td></tr><tr><td><code>c</code> / <code>b</code></td><td>문자 / 블록 장치</td></tr><tr><td><code>p</code></td><td>이름 있는 파이프(FIFO)</td></tr><tr><td><code>s</code></td><td>소켓</td></tr><tr><td><code>v</code></td><td>TSK 가상 파일 (<code>$OrphanFiles</code> 등)</td></tr><tr><td><code>-</code></td><td>알 수 없음 / 메타데이터가 비어 있음</td></tr></tbody></table></div>
+<p><strong>앞뒤 문자가 다르면(<code>-/r</code>, <code>r/-</code>, <code>d/r</code>) 그 자체가 신호다.</strong></p>
+<div class="table-wrap"><table><thead><tr><th>형태</th><th>해석</th></tr></thead><tbody><tr><td><code>r/r</code></td><td>정상</td></tr><tr><td><code>-/r</code></td><td>디렉터리 엔트리는 지워졌고 메타데이터만 남았다 → 삭제 파일</td></tr><tr><td><code>r/-</code></td><td>이름은 남았고 메타데이터가 비었거나 재할당되었다 → 내용 복구 기대치 낮음</td></tr><tr><td><code>d/r</code></td><td>엔트리는 디렉터리라 하는데 레코드는 파일 → <strong>레코드가 재사용되었다</strong></td></tr></tbody></table></div>
+<p><code>9134-128-1</code>과 <code>9134-128-5</code>처럼 <strong>메타주소가 같고 속성 ID만 다른 두 줄</strong>은 같은 파일의 다른 데이터 스트림이다. 이름에 <code>:hidden</code>이 붙은 쪽이 ADS다 (<a href="./tsk-icat.html">FOR-0042</a>).</p>
+<h3 id="3단계--l-상세-형식">3단계 — <code>-l</code> 상세 형식</h3>
+<p><code>-l</code>을 주면 컬럼이 다음 순서로 나온다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">file_type  inode  file_name  mod_time  acc_time  chg_time  cre_time  size  uid  gid</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">$ fls -o 2048 -l -z Asia/Seoul image.dd 9110
+r/r 9134-128-1: report.docx  2026-03-14 16:22:41 (KST) 2026-03-14 16:22:41 (KST) 2026-03-14 16:22:41 (KST) 2026-03-11 09:03:12 (KST) 24680  0  0</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>컬럼</th><th>NTFS에서의 의미</th></tr></thead><tbody><tr><td><code>mod_time</code></td><td>내용 수정 (M)</td></tr><tr><td><code>acc_time</code></td><td>접근 (A) — Win7+ 기본 갱신 비활성이 많다</td></tr><tr><td><code>chg_time</code></td><td><strong>MFT 엔트리 변경 (C)</strong> — 조작하기 가장 어려운 값</td></tr><tr><td><code>cre_time</code></td><td>생성 (B)</td></tr><tr><td><code>size</code></td><td>논리 크기</td></tr><tr><td><code>uid</code> / <code>gid</code></td><td>NTFS에서는 대개 0</td></tr></tbody></table></div>
+<p><strong><code>fls</code>가 보여주는 NTFS 시각은 TSK 메타데이터 시각($STANDARD_INFORMATION 계열)이다.</strong> <code>$FILE_NAME</code> 세트와의 비교(timestomp 탐지)는 <code>$MFT</code>를 꺼내 전용 파서로 봐야 한다 (<a href="./mft-basics.html">FOR-0021</a>).</p>
+<h3 id="4단계--z-시간대와--s-스큐">4단계 — <code>-z</code> 시간대와 <code>-s</code> 스큐</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">fls -o 2048 -l -z UTC image.dd 9110          # UTC 로 표시 (기본 판단 기준)
+fls -o 2048 -l -z Asia/Seoul image.dd 9110   # KST 로 표시
+fls -o 2048 -l -s -300 image.dd 9110         # 원본 시계가 300초 느렸다면 -300</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>주의</th><th>내용</th></tr></thead><tbody><tr><td><code>-z</code> 값의 문법</td><td>시스템(OS) 의존이다. <code>-z</code> 없이 돌려 기본값을 확인하고, 필요하면 <code>TZ</code> 환경변수로도 검증한다</td></tr><tr><td>POSIX TZ 부호</td><td><code>GMT+9</code> 형태는 POSIX 문법에서 <strong>UTC-9</strong>를 뜻한다. KST는 <code>Asia/Seoul</code>을 쓴다</td></tr><tr><td><code>-s</code> 적용 조건</td><td><code>-l</code> 또는 <code>-m</code>이 있을 때만 반영된다</td></tr><tr><td>최종 답</td><td>UTC로 뽑아 두고 필요할 때 <code>+9시간</code> 해서 KST로 바꾸는 편이 안전하다</td></tr></tbody></table></div>
+<p>NTFS 타임스탬프의 원본은 FILETIME(1601-01-01 UTC 기준 100ns)이고 Unix 시각과의 차이는 <code>11644473600</code>초다. bodyfile은 <strong>Unix 초</strong>로 저장된다.</p>
+<h3 id="5단계-bodyfile과-mactime-타임라인">5단계 — bodyfile과 mactime 타임라인</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) bodyfile 생성 — 마운트 지점 문자열을 경로 앞에 붙인다
+fls -o 2048 -r -m /C: image.dd &gt; body.txt
+
+# 2) 시간순 타임라인
+mactime -b body.txt -d -z UTC &gt; timeline.csv
+
+# 3) 기간을 좁힌다
+mactime -b body.txt -d -z UTC 2026-03-14 &gt; d0314.csv
+mactime -b body.txt -d -z UTC 2026-03-01..2026-03-31 &gt; mar.csv
+mactime -b body.txt -d -z UTC 2026-03-14T09:00:00..2026-03-14T18:00:00 &gt; win.csv</code></pre></div>
+<p>bodyfile(TSK 3.x 이후) 컬럼 순서:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">MD5|name|inode|mode_as_string|UID|GID|size|atime|mtime|ctime|crtime</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">0|/C:/Users/kim/Documents/passwords.txt|9188-128-1|r/rrwxrwxrwx|0|0|318|1773471761|1773471761|1773471761|1773212592</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>비고</th></tr></thead><tbody><tr><td><code>MD5</code></td><td><code>fls</code>는 해시를 계산하지 않으므로 <code>0</code> 또는 0 32개다</td></tr><tr><td><code>name</code></td><td><code>-m</code>에 준 마운트 문자열 + 전체 경로. NTFS에서는 <code>($FILE_NAME)</code> 접미가 붙은 줄이 별도로 나오는 구현이 있다 — 실제 출력에서 확인할 것</td></tr><tr><td><code>inode</code></td><td><code>9188-128-1</code> 형태의 TSK 메타주소가 그대로 들어간다 → <strong><code>icat</code>에 복붙할 수 있다</strong></td></tr><tr><td><code>atime</code>~<code>crtime</code></td><td><strong>Unix 초.</strong> 0이면 해당 시각이 없다는 뜻</td></tr></tbody></table></div>
+<p><code>mactime</code> 주요 옵션:</p>
+<div class="table-wrap"><table><thead><tr><th>옵션</th><th>의미</th></tr></thead><tbody><tr><td><code>-b body</code></td><td>입력 bodyfile. 생략하면 표준입력</td></tr><tr><td><code>-d</code></td><td><strong>쉼표 구분(CSV) 출력</strong> — 스프레드시트/Timeline Explorer 로 넘길 때</td></tr><tr><td><code>-z TIME_ZONE</code></td><td>수집 시스템의 시간대. <code>-z list</code>로 사용 가능한 값 확인</td></tr><tr><td><code>-y</code></td><td>날짜를 ISO 8601 형식으로</td></tr><tr><td><code>-m</code></td><td>월을 이름 대신 숫자로 (<strong>매뉴얼에 <code>-y</code>와 함께 쓸 수 없다고 명시</strong>)</td></tr><tr><td><code>-i day|hour &lt;파일&gt;</code></td><td>일별/시간별 활동 요약 색인 파일 생성</td></tr><tr><td><code>-h</code></td><td>시간 범위·입력 소스 등 세션 헤더 출력</td></tr><tr><td><code>-p</code> / <code>-g</code></td><td>passwd / group 파일을 주면 UID/GID 대신 이름 출력</td></tr></tbody></table></div>
+<p><code>DATE_RANGE</code>는 <code>yyyy-mm-dd</code>, <code>yyyy-mm-dd..yyyy-mm-dd</code>, <code>yyyy-mm-ddThh:mm:ss</code> 형태를 받는다. <strong>날짜를 안 주면 전 기간이 나오므로 CTF에서는 반드시 좁힌다.</strong></p>
+<p><code>-i</code>로 만든 요약은 &quot;언제 활동이 몰렸는가&quot;를 한눈에 보여 준다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">mactime -b body.txt -d -z UTC -i day day_index.csv &gt; timeline.csv
+sort -t, -k2 -nr day_index.csv | head      # 활동이 가장 많은 날</code></pre></div>
+<h3 id="6단계-삭제-항목만-뽑아-icat으로-넘기기">6단계 — 삭제 항목만 뽑아 icat으로 넘기기</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 삭제 항목만
+fls -o 2048 -r -p -d image.dd &gt; del.txt
+wc -l del.txt
+
+# 확장자로 좁힌다
+grep -iE &#39;\.(txt|docx|jpg|zip)$&#39; del.txt
+
+# 메타주소만 뽑는다 (NTFS: 세 토막 주소)
+grep -oE &#39;[0-9]+-[0-9]+-[0-9]+&#39; del.txt | sort -u &gt; addrs.txt
+
+# 하나 추출
+icat -o 2048 image.dd 9188 &gt; passwords.txt</code></pre></div>
+<p><strong><code>awk &#39;{print $2}&#39;</code>로 주소를 뽑으면 삭제 항목에서 틀린다.</strong> <code>*</code> 때문에 컬럼이 한 칸 밀린다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">r/r 9134-128-1:  path        -&gt; $1=r/r  $2=9134-128-1:  $3=path
+-/r * 9188-128-1: path       -&gt; $1=-/r  $2=*  $3=9188-128-1:  $4=path</code></pre></div>
+<p>그래서 위치 기반 대신 <strong>패턴 기반</strong>으로 뽑는다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># NTFS (세 토막 주소)
+grep -oE &#39;[0-9]+-[0-9]+-[0-9]+&#39; del.txt
+
+# ext / FAT (주소가 숫자 하나인 경우까지 포함)
+sed -n &#39;s/^.*[[:space:]]\([0-9][0-9-]*\):[[:space:]].*$/\1/p&#39; del.txt</code></pre></div>
+<p>이름과 주소를 함께 유지하려면 주소·이름 구분자(탭)를 이용한다. 구현에 따라 공백일 수 있으니 <code>cat -A</code>로 한 번 확인한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">fls -o 2048 -r -p -d image.dd | head -3 | cat -A | head -3</code></pre></div>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="table-wrap"><table><thead><tr><th>보이는 것</th><th>판단</th></tr></thead><tbody><tr><td><code>r/r 9134-128-1:</code></td><td>정상 파일. 주소 <code>9134</code>로 <code>icat</code> 가능</td></tr><tr><td><code>-/r * 9188-128-1:</code></td><td>삭제 파일. 레코드는 살아 있어 이름·시각·크기 신뢰 가능</td></tr><tr><td><code>r/- * 9201-128-1: ... (realloc)</code></td><td>레코드가 재할당됨. <strong>내용 복구는 카빙으로</strong> (<a href="./carving-strategy.html">FOR-0045</a>)</td></tr><tr><td><code>9134-128-1</code> 과 <code>9134-128-5</code></td><td>같은 파일의 두 데이터 스트림(ADS)</td></tr><tr><td>이름에 <code>:</code> 포함</td><td>ADS. <code>파일명:스트림명</code></td></tr><tr><td><code>$OrphanFiles</code> 하위 항목</td><td>부모 디렉터리를 잃은 파일. 삭제 흔적의 보물창고</td></tr><tr><td>크기가 0인데 이름이 있다</td><td>resident 이거나 파서가 <code>$DATA</code>를 못 읽었다. <code>istat</code>으로 확인</td></tr><tr><td><code>d/d 11-144-5</code></td><td>디렉터리. 속성 타입 <code>144</code>(0x90)는 <code>$INDEX_ROOT</code></td></tr></tbody></table></div>
+<p><code>-r</code>은 <strong>삭제된 디렉터리 안으로는 들어가지 못한다</strong>(매뉴얼 명시). 그 안에 있던 파일들은 TSK가 <code>$OrphanFiles</code> 가상 디렉터리에 모아 주므로, 삭제 파일을 찾을 때 <code>$OrphanFiles</code>를 반드시 확인한다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>fls에서 얻은 것</th><th>다음 목표</th></tr></thead><tbody><tr><td>메타주소</td><td><code>icat -o N image.dd &lt;주소&gt;</code>로 내용 추출 (<a href="./tsk-icat.html">FOR-0042</a>)</td></tr><tr><td>메타주소</td><td><code>istat -o N image.dd &lt;주소&gt;</code>로 속성·data run·전체 시각</td></tr><tr><td>삭제 파일 목록</td><td><code>$UsnJrnl</code>로 <strong>삭제 시각과 원래 이름</strong> (<a href="./usnjrnl-basics.html">FOR-0027</a>)</td></tr><tr><td>파일 크기가 작은 삭제 텍스트</td><td><code>$MFT</code> resident 데이터로 내용 복구 (<a href="./mft-basics.html">FOR-0021</a>)</td></tr><tr><td>bodyfile</td><td><code>mactime</code> → Timeline Explorer / 스프레드시트</td></tr><tr><td>활동이 몰린 시각</td><td>EVTX 로그온 이벤트와 대조 (<a href="./event-4624-logon.html">FOR-0083</a>)</td></tr><tr><td><code>(realloc)</code> 항목</td><td>카빙으로 전환 (<a href="./carving-strategy.html">FOR-0045</a>)</td></tr><tr><td>오프셋이 의심된다</td><td><code>fsstat</code>으로 재확인 (<a href="./tsk-fsstat.html">FOR-0043</a>)</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>-r</code> 없이 돌려 &quot;파일이 없다&quot;고 결론 내는 것.</strong> <code>fls</code>는 기본적으로 루트 한 단계만 나열한다. → 전체 목록은 항상 <code>-r -p</code>.</li><li><strong><code>-p</code> 없이 <code>-r</code>만 쓰는 것.</strong> 경로 없이 깊이를 <code>+</code>로만 표시해 어느 디렉터리인지 알 수 없다. → <code>-r</code>과 <code>-p</code>는 항상 붙여 쓴다.</li><li><strong><code>awk &#39;{print $2}&#39;</code>로 메타주소를 뽑는 것.</strong> 삭제 항목의 <code>*</code> 때문에 컬럼이 밀려 <code>*</code>가 출력된다. → <code>grep -oE &#39;[0-9]+-[0-9]+-[0-9]+&#39;</code> 같은 패턴 추출을 쓴다.</li><li><strong><code>*</code>가 붙은 항목을 &quot;복구 가능&quot;으로 단정하는 것.</strong> 레코드가 남은 것과 데이터 클러스터가 남은 것은 다른 문제다. <code>(realloc)</code>이면 내용은 이미 덮였을 가능성이 높다.</li><li><strong>같은 메타주소의 두 줄을 중복으로 보고 하나를 버리는 것.</strong> 속성 ID가 다르면 <strong>다른 스트림</strong>이다. ADS를 놓치는 대표적 경로다.</li><li><strong><code>$OrphanFiles</code>를 무시하는 것.</strong> 삭제된 디렉터리의 자식들이 여기에 모인다. 삭제 파일 문제의 정답이 자주 여기 있다.</li><li><strong><code>-z</code>에 <code>GMT+9</code>를 넣는 것.</strong> POSIX TZ 문법에서는 부호가 반대로 해석된다. KST는 <code>Asia/Seoul</code>을 쓰고, 확신이 없으면 UTC로 뽑아 손으로 +9한다.</li><li><strong><code>-s</code> 스큐를 주고 <code>-l</code>/<code>-m</code>을 빼는 것.</strong> 스큐는 <code>-l</code> 또는 <code>-m</code>이 있을 때만 반영된다(매뉴얼 명시). 기본 출력에는 영향이 없다.</li><li><strong>bodyfile을 <code>mactime</code> 없이 시간순으로 보려 하는 것.</strong> bodyfile은 파일 순서이고 시간순 정렬은 <code>mactime</code>이 한다.</li><li><strong><code>mactime</code>에 날짜 범위를 주지 않는 것.</strong> 전 기간이 나와 수십만 줄이 된다. → <code>yyyy-mm-dd..yyyy-mm-dd</code>로 좁힌다.</li><li><strong><code>-b</code>(섹터 크기)를 <code>mmls</code>에만 주고 <code>fls</code>에 안 주는 것.</strong> 4Kn 이미지에서 같은 <code>-o</code> 값이 다른 위치를 가리킨다 (<a href="./tsk-mmls.html">FOR-0040</a>).</li><li><strong><code>fls</code>의 NTFS 시각으로 timestomp를 판정하는 것.</strong> <code>$SI</code>/<code>$FN</code> 두 세트 비교가 필요하며 그것은 <code>$MFT</code> 파서의 일이다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) 전체 항목 수 vs Autopsy 의 파일 수
+fls -o 2048 -r -p image.dd | wc -l
+
+# 2) 삭제 항목 수
+fls -o 2048 -r -p -d image.dd | wc -l
+
+# 3) 특정 파일의 상세를 istat 으로 재확인 (크기·속성·data run)
+istat -o 2048 image.dd 9188
+
+# 4) 시각을 두 시간대로 각각 뽑아 대조
+fls -o 2048 -l -z UTC        image.dd 9110
+fls -o 2048 -l -z Asia/Seoul image.dd 9110
+
+# 5) bodyfile 기준 타임라인 vs $MFT 파서 CSV
+fls -o 2048 -r -m /C: image.dd &gt; body.txt
+mactime -b body.txt -d -z UTC 2026-03-14 | head
+
+# 6) 이름이 같은데 주소가 다른 항목이 있는지 (레코드 재사용 흔적)
+fls -o 2048 -r -p image.dd | awk -F&#39;\t&#39; &#39;{print $2}&#39; | sort | uniq -d</code></pre></div>
+<p><code>fls</code>의 삭제 항목 수와 <code>$MFT</code> 파서의 <code>InUse=False</code> 개수는 보통 일치하지 않는다. <code>fls</code>는 <strong>디렉터리 엔트리 기준</strong>이고 <code>$MFT</code> 파서는 <strong>레코드 기준</strong>이기 때문이다. 차이가 크면 <code>$OrphanFiles</code>와 재할당 항목을 확인한다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;이미지에서 삭제된 자격증명 파일의 내용과 삭제 시각을 찾으세요.&quot;
+첨부: host.dd (20 GB)
+
+1. 오프셋 확정
+   $ mmls -a host.dd
+   002:  000:000   0000002048   0000206847   0000204800   NTFS / exFAT (0x07)
+   003:  000:001   0000206848   0041940991   0041734144   NTFS / exFAT (0x07)
+   -&gt; 큰 쪽(206848)이 시스템 볼륨이다.
+
+2. 첫 시도 (실패):
+   $ fls -o 206848 host.dd | grep -i pass
+   (출력 없음)
+
+   &quot;삭제된 파일이 없다&quot;고 판단하고 카빙으로 넘어가려 했다.
+   -&gt; 틀렸다. -r 을 주지 않아 루트 디렉터리만 봤을 뿐이다.
+
+3. 접근 변경 — 재귀 + 전체 경로 + 삭제만
+   $ fls -o 206848 -r -p -d host.dd &gt; del.txt
+   $ wc -l del.txt
+   1842 del.txt
+   $ grep -iE &#39;pass|cred|secret&#39; del.txt
+   -/r * 9188-128-1:  Users/kim/Documents/passwords.txt
+   r/- * 9201-128-1:  Users/kim/Desktop/tmp.bin (realloc)
+
+   -&gt; 목표 확정. 9188 은 -/r 이므로 레코드가 살아 있다.
+
+4. 두 번째 실패 — 주소 추출
+   $ grep -i passwords del.txt | awk &#39;{print $2}&#39;
+   *
+   -&gt; &#39;*&#39; 가 컬럼을 밀었다. 위치 기반 추출이 틀린 것이다.
+
+   $ grep -i passwords del.txt | grep -oE &#39;[0-9]+-[0-9]+-[0-9]+&#39;
+   9188-128-1
+   -&gt; 패턴 기반으로 교체하니 정상.
+
+5. 상세 확인 후 추출
+   $ istat -o 206848 host.dd 9188 | head -20
+   MFT Entry Header Values:
+   Entry: 9188        Sequence: 3
+   $FILE_NAME Attribute Values:
+   Name: passwords.txt
+   ...
+   Size: 318
+   Attributes:
+   Type: $DATA (128-1)   Resident   size: 318
+
+   318바이트 = resident. 내용이 레코드 안에 있으므로 추출 성공 확률이 높다.
+
+   $ icat -o 206848 host.dd 9188 &gt; pw.txt
+   $ file pw.txt
+   pw.txt: ASCII text
+   $ cat pw.txt
+   ...
+   flag{fls_r3curs3_0r_m1ss_1t}
+
+6. 삭제 시각 — 타임라인으로 확정
+   $ fls -o 206848 -r -m /C: host.dd &gt; body.txt
+   $ mactime -b body.txt -d -z UTC 2026-03-14 | grep -i passwords
+   2026-03-14 07:22:41,318,m...,r/rrwxrwxrwx,0,0,9188-128-1,/C:/Users/kim/Documents/passwords.txt
+
+   UTC 07:22:41 -&gt; KST 16:22:41 (+9시간)
+
+7. 교차검증 — $UsnJrnl 로 삭제 사유 확인
+   -&gt; FILE_DELETE 레코드의 시각이 위와 일치 (FOR-0027)
+
+정답: flag{fls_r3curs3_0r_m1ss_1t}
+      삭제 시각 2026-03-14 16:22:41 (KST)</code></pre></div>
+<p>실패가 두 번 있었고 원인이 서로 달랐다. <strong>2단계는 <code>-r</code> 누락(도구 사용법), 4단계는 <code>*</code>로 인한 컬럼 밀림(출력 파싱).</strong> 둘 다 &quot;출력이 비었다&quot;로 보이지만 대응은 완전히 다르다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>-r</code>과 <code>-p</code>를 함께 주었는가</li><li><code>-o</code> 값이 <code>fsstat</code>으로 검증된 값인가 (<a href="./tsk-fsstat.html">FOR-0043</a>)</li><li>4Kn 이미지라면 <code>-b 4096</code>을 주었는가</li><li>삭제 항목만 보려면 <code>-d</code>, 정상만 보려면 <code>-u</code>를 썼는가</li><li><code>$OrphanFiles</code> 하위를 확인했는가</li><li>같은 메타주소에 속성 ID가 다른 줄(ADS)이 있는지 확인했는가</li><li>이름에 <code>:</code>가 포함된 항목이 있는가 → ADS</li><li><code>(realloc)</code> 항목인가 → 내용은 카빙으로 (<a href="./carving-strategy.html">FOR-0045</a>)</li><li>주소를 <code>awk</code> 위치 기반으로 뽑고 있지 않은가</li><li>목표 디렉터리를 안다면 마지막 인자로 그 inode만 주어 범위를 줄였는가</li><li>시각이 필요하면 <code>-l</code> 또는 <code>-m</code>을 주었는가 (<code>-s</code>는 이 둘이 있을 때만 적용)</li><li><code>mactime</code>에 날짜 범위를 주었는가</li><li>시간대를 UTC로 고정해 두고 최종 답만 KST로 변환했는가</li><li>파일시스템 자동탐지가 실패했다면 <code>-f list</code>로 타입을 강제했는가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-032 — The Sleuth Kit 도구 문서(fls / mactime man page): 옵션 정의, <code>-l</code> 출력 컬럼 순서(<code>file_type inode file_name mod_time acc_time chg_time cre_time size uid gid</code>), <code>-r</code>이 삭제된 디렉터리를 따라가지 못한다는 명시, <code>-s</code>가 <code>-l</code>/<code>-m</code>에서만 적용된다는 명시, <code>mactime</code>의 <code>DATE_RANGE</code> 문법과 <code>-m</code>이 <code>-y</code>와 함께 동작하지 않는다는 명시</li><li>SRC-005 — Microsoft Learn, Master File Table: NTFS 메타주소가 MFT 엔트리 번호라는 점, 속성 타입 <code>0x80</code>($DATA) / <code>0x90</code>($INDEX_ROOT)의 의미</li><li>bodyfile 컬럼 순서(<code>MD5|name|inode|mode_as_string|UID|GID|size|atime|mtime|ctime|crtime</code>)는 TSK 3.x 형식이다. NTFS의 <code>inode</code>/<code>mode_as_string</code> 표기와 <code>($FILE_NAME)</code> 접미 여부는 구현·버전에 따라 다르므로 실제 출력에서 확인할 것</li><li><code>-z</code>에 넣을 수 있는 시간대 문자열은 OS 의존이다. <code>mactime -z list</code>로 현장에서 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./tsk-mmls.html">
+    <span class="rel-id">FOR-0040 · 디스크/NTFS</span>
+    Sleuth Kit mmls 옵션과 오프셋 파이프라인
+  </a>
+  <a class="related-item" href="./tsk-icat.html">
+    <span class="rel-id">FOR-0042 · 디스크/NTFS</span>
+    icat으로 파일 내용·ADS·삭제 파일 추출
+  </a>
+  <a class="related-item" href="./mft-basics.html">
+    <span class="rel-id">FOR-0021 · 디스크/NTFS</span>
+    $MFT 기본 구조와 포렌식 활용
+  </a>
+  <a class="related-item" href="./mft-macb.html">
+    <span class="rel-id">FOR-0023 · 디스크/NTFS</span>
+    MFT MACB 시간 해석: 복사·이동·다운로드·압축해제 구분법
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./tsk-mmls.html"><span class="rel-id">← FOR-0040</span>Sleuth Kit mmls 옵션과 오프셋 파이프라인</a>
+<a class="related-item" href="./tsk-icat.html"><span class="rel-id">FOR-0042 →</span>icat으로 파일 내용·ADS·삭제 파일 추출</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-옵션-전체">1단계 — 옵션 전체</a></li>
+<li class="toc-l3"><a href="#2단계-기본-출력-형식-읽기">2단계 — 기본 출력 형식 읽기</a></li>
+<li class="toc-l3"><a href="#3단계--l-상세-형식">3단계 — `-l` 상세 형식</a></li>
+<li class="toc-l3"><a href="#4단계--z-시간대와--s-스큐">4단계 — `-z` 시간대와 `-s` 스큐</a></li>
+<li class="toc-l3"><a href="#5단계-bodyfile과-mactime-타임라인">5단계 — bodyfile과 mactime 타임라인</a></li>
+<li class="toc-l3"><a href="#6단계-삭제-항목만-뽑아-icat으로-넘기기">6단계 — 삭제 항목만 뽑아 icat으로 넘기기</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 03:39 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

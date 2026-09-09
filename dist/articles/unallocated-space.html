@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>비할당 영역(Unallocated Space) 추출과 카빙 · FOR-0033 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%94%94%EC%8A%A4%ED%81%AC%2FNTFS">디스크/NTFS</a> / FOR-0033
+      </div>
+      <header class="article-head">
+        <h1>비할당 영역(Unallocated Space) 추출과 카빙</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">디스크/NTFS</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>비할당 영역은 &quot;파일시스템이 지금 아무 파일에도 배정하지 않은 클러스터&quot;의 집합이며, 이미지 전체를 카빙하지 말고 blkls -o &lt;오프셋&gt; image.dd &gt; unalloc.dd로 비할당 클러스터만 뽑아 그 파일에만 카빙·strings를 돌리면 대상 크기와 오탐이 함께 줄어든다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Sleuth Kit, FTK Imager, Autopsy, foremost, scalpel, photorec, bulk_extractor, strings, binwalk</td></tr>
+<tr><th>artifact</th><td><code>unallocated space</code> · <code>$Bitmap</code> · <code>$Unalloc</code> · <code>cluster</code> · <code>deleted file</code></td></tr>
+<tr><th>파일 경로</th><td><code>C:\$Bitmap</code> · <code>$Bitmap</code> · <code>$MFT</code></td></tr>
+<tr><th>로그 필드</th><td><code>Sector Size</code> · <code>Cluster Size</code> · <code>Total Cluster Range</code> · <code>Allocation Status</code></td></tr>
+<tr><th>파일 형식</th><td><code>ntfs</code> · <code>dd</code> · <code>raw</code> · <code>e01</code></td></tr>
+<tr><th>검색 별칭</th><td>비할당 영역 · 언얼로케이티드 · 빈 공간 추출 · blkls · 삭제된 데이터 어디 · free space 카빙 · unallocated 뽑기</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>비할당 영역은 &quot;파일시스템이 지금 아무 파일에도 배정하지 않은 클러스터&quot;의 집합이며, 이미지 전체를 카빙하지 말고 <code>blkls -o &lt;오프셋&gt; image.dd &gt; unalloc.dd</code>로 비할당 클러스터만 뽑아 그 파일에만 카빙·<code>strings</code>를 돌리면 대상 크기와 오탐이 함께 줄어든다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li><code>$MFT</code>에 삭제 파일의 <strong>이름은 남았는데 내용이 필요한</strong> 경우 (<a href="./mft-basics.html">FOR-0021</a>)</li><li>지문이 &quot;삭제된 사진/문서를 복구하라&quot;라고 요구하는 경우</li><li>파일시스템 트리에는 없는 문자열(flag, URL, 계정)을 이미지 어딘가에서 찾아야 하는 경우</li><li>이미지가 수십 GB라 전체 카빙이 시간 안에 끝나지 않는 경우</li><li>포맷 후 재설치된 볼륨에서 이전 사용 흔적을 찾아야 하는 경우</li></ul>
+<p>핵심은 <strong>대상 축소</strong>다. 100 GB 이미지에서 비할당이 12 GB면 카빙 시간이 8분의 1이 되고, 살아 있는 파일이 중복 검출되는 오탐도 사라진다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li><code>fsstat</code> 출력의 <code>Cluster Size</code> — 이후 모든 오프셋 계산의 단위다</li><li><code>$MFT</code>에서 <code>InUse=False</code>인 항목의 <code>FileSize</code> — 0이 아니면 클러스터에 내용이 있었다</li><li><code>$Bitmap</code>의 0 비트 비율 — 비할당이 전체의 몇 %인지가 카빙 소요 시간을 결정한다</li><li>매체 종류 — <strong>SSD면 TRIM 때문에 이 절차가 무력할 수 있다</strong> (아래 참고)</li><li>지문에 나온 파일 형식 — 카버의 <code>-t</code> 목록을 그것만으로 좁힌다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">blkls -o 2048 image.dd &gt; unalloc.dd</code></pre></div>
+<p>이어서 세 줄로 1차 회수를 끝낸다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">fsstat -o 2048 image.dd | head -30                 # 클러스터 크기 확인
+strings -t d -n 8 unalloc.dd | grep -Ei &#39;flag|http|@|C:\\\\Users&#39; | head -40
+foremost -t jpg,png,pdf,zip,doc -i unalloc.dd -o carved</code></pre></div>
+<p><code>-o 2048</code>은 <code>mmls image.dd</code>로 얻은 파티션 시작 섹터다 (<a href="./mbr-gpt.html">FOR-0019</a>). 이 값을 틀리면 <code>blkls</code>가 파일시스템을 인식하지 못하거나 엉뚱한 블록을 뽑는다.</p>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-클러스터-할당-해제가-실제로-하는-일">1단계 — 클러스터 할당 해제가 실제로 하는 일</h3>
+<p>파일을 삭제할 때 NTFS가 하는 일은 세 가지뿐이다.</p>
+<div class="table-wrap"><table><thead><tr><th>대상</th><th>삭제 시 변화</th><th>데이터는?</th></tr></thead><tbody><tr><td>MFT 레코드 헤더</td><td><code>in use</code> 플래그 하강</td><td>레코드 내용(이름·시각·데이터런)은 <strong>그대로 남는다</strong></td></tr><tr><td><code>$Bitmap</code></td><td>해당 클러스터 비트 1 → 0</td><td>클러스터 내용은 <strong>그대로 남는다</strong></td></tr><tr><td>부모 디렉터리 인덱스</td><td>엔트리 제거</td><td>—</td></tr></tbody></table></div>
+<p>즉 <strong>파일 내용은 지워지지 않는다.</strong> 지워지는 것은 &quot;여기에 데이터가 있다&quot;는 표시뿐이다. 그래서 삭제 직후의 비할당 영역은 삭제된 파일의 바이트를 그대로 담고 있다.</p>
+<h3 id="2단계-bitmap이-비할당의-정의다">2단계 — <code>$Bitmap</code>이 비할당의 정의다</h3>
+<p><code>$Bitmap</code>은 MFT 6번 레코드에 있는 메타파일이고, <strong>클러스터 1개당 1비트</strong>를 쓴다.</p>
+<div class="table-wrap"><table><thead><tr><th>비트 값</th><th>의미</th></tr></thead><tbody><tr><td>1</td><td>할당됨 (어떤 파일의 <code>$DATA</code>가 점유)</td></tr><tr><td>0</td><td>비할당</td></tr></tbody></table></div>
+<p><code>blkls</code>가 &quot;비할당 블록&quot;을 판정하는 근거가 바로 이 비트맵이다. 개별 블록의 상태는 <code>blkstat</code>으로 직접 확인한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">blkstat -o 2048 image.dd 1234</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Cluster: 1234
+Not Allocated</code></pre></div>
+<p><code>Not Allocated</code>인데 그 자리에 JPEG 헤더가 보이면 <strong>삭제된 파일의 잔존 데이터</strong>다.</p>
+<h3 id="3단계-데이터가-사라지는-조건">3단계 — 데이터가 사라지는 조건</h3>
+<p>비할당에 남아 있을 것이라는 가정이 깨지는 경우를 먼저 알아야 헛수고를 피한다.</p>
+<div class="table-wrap"><table><thead><tr><th>조건</th><th>결과</th><th>판별 방법</th></tr></thead><tbody><tr><td><strong>재할당</strong> — 다른 파일이 그 클러스터를 다시 씀</td><td>부분/전체 덮어써짐. 카빙 결과가 중간부터 깨진다</td><td>카빙된 파일이 앞부분만 정상</td></tr><tr><td><strong>SSD + TRIM</strong></td><td>OS가 삭제를 컨트롤러에 통보하고, 컨트롤러가 해당 블록을 0(또는 쓰레기)으로 반환</td><td>비할당이 <strong>거의 전부 0x00</strong></td></tr><tr><td><strong>wiping (sdelete, cipher /w, DBAN)</strong></td><td>0x00 또는 난수로 덮어씀</td><td>비할당 엔트로피가 0에 가깝거나 0.99에 가깝다</td></tr><tr><td><strong>볼륨 축소/조각모음</strong></td><td>데이터가 이동하며 원래 자리가 덮어써짐</td><td>카빙 결과가 조각남</td></tr><tr><td><strong>암호화 볼륨</strong></td><td>복호화 전에는 전부 난수처럼 보인다</td><td>엔트로피 0.99, 매직 바이트 0건</td></tr></tbody></table></div>
+<p>TRIM은 특히 중요하다. <strong>TRIM이 활성인 SSD에서는 삭제 직후 몇 초 안에 비할당 영역이 0으로 채워지므로, 이 글의 카빙 절차 자체가 성립하지 않는다.</strong> 이때는 방향을 바꿔서 메타데이터 계열(<code>$MFT</code>, <code>$UsnJrnl</code>, <code>$LogFile</code>, Prefetch, 레지스트리)에서 &quot;무엇이 있었는가&quot;를 재구성한다 (<a href="./usnjrnl-basics.html">FOR-0027</a>). CTF 문제 이미지는 대개 가상디스크이므로 TRIM이 적용되지 않지만, 비할당이 전부 0으로 나오면 이 가능성을 먼저 떠올린다.</p>
+<p>빠른 판정:</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 비할당이 전부 0인지 30초 확인
+xxd unalloc.dd | head -5
+tr -d &#39;\0&#39; &lt; unalloc.dd | wc -c     # 0 이 아닌 바이트 수. 매우 작으면 wipe/TRIM</code></pre></div>
+<h3 id="4단계-추출-방법-세-가지">4단계 — 추출 방법 세 가지</h3>
+<div class="table-wrap"><table><thead><tr><th>도구</th><th>방법</th><th>특징</th></tr></thead><tbody><tr><td><strong>Sleuth Kit</strong></td><td><code>blkls -o 2048 image.dd &gt; unalloc.dd</code></td><td>가장 빠르고 정확. 기본 동작이 &quot;비할당 블록만 출력&quot;</td></tr><tr><td><strong>FTK Imager</strong></td><td>볼륨 트리에서 <code>[unallocated space]</code> 노드 선택 → Export</td><td>GUI. 여러 조각으로 나뉘어 표시된다 (<a href="./ftk-imager-open-image.html">FOR-0016</a>)</td></tr><tr><td><strong>Autopsy</strong></td><td><code>Data Sources &gt; vol &gt; $Unalloc</code> 노드</td><td>ingest 결과 트리에 이미 준비되어 있다 (<a href="./autopsy-ingest.html">FOR-0018</a>)</td></tr></tbody></table></div>
+<p><code>blkls</code>의 주요 옵션:</p>
+<div class="table-wrap"><table><thead><tr><th>옵션</th><th>동작</th></tr></thead><tbody><tr><td>(없음)</td><td><strong>비할당 블록만</strong> 출력 (기본값)</td></tr><tr><td><code>-e</code></td><td>모든 블록 출력 (할당 + 비할당)</td></tr><tr><td><code>-a</code></td><td>할당된 블록만</td></tr><tr><td><code>-s</code></td><td><strong>slack 공간만</strong> (<a href="./file-slack.html">FOR-0034</a>)</td></tr><tr><td><code>-o &lt;섹터&gt;</code></td><td>파티션 시작 섹터 오프셋</td></tr><tr><td><code>-l</code></td><td>블록별 상태를 목록으로</td></tr></tbody></table></div>
+<p>FTK Imager의 <code>[unallocated space]</code>는 하나의 큰 파일이 아니라 연속 구간별로 쪼개진 여러 항목으로 보인다. 조각 이름과 개수는 버전마다 다르므로 <strong>전부 선택해서 한 폴더로 Export</strong>한 뒤 이어 붙이거나 각각 카빙한다.</p>
+<h3 id="5단계-추출-후-무엇을-돌리나">5단계 — 추출 후 무엇을 돌리나</h3>
+<p>세 갈래를 순서대로 돌린다. 앞의 것이 더 싸고 빠르다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># (1) 문자열 — 가장 싸다. 오프셋을 함께 받는 것이 핵심
+strings -t d -n 8 unalloc.dd &gt; unalloc_str.txt
+grep -Ein &#39;flag\{|password|BEGIN .*PRIVATE KEY|https?://&#39; unalloc_str.txt | head
+strings -t d -el -n 8 unalloc.dd | grep -i flag        # UTF-16LE (한글/Windows 문자열)
+
+# (2) 시그니처 카빙 — 형식을 좁힐 수 있으면 좁힌다
+foremost -t jpg,png,pdf,zip,docx -i unalloc.dd -o carved
+photorec unalloc.dd                                    # 대화형, 복원율이 높다
+scalpel -c scalpel.conf -o carved_s unalloc.dd
+
+# (3) 특징값 일괄 추출 — 이메일/URL/전화/카드번호를 한 번에
+bulk_extractor -o be_out unalloc.dd</code></pre></div>
+<p><code>foremost</code> 결과 폴더에는 형식별 하위 디렉터리와 <code>audit.txt</code>가 생긴다. <code>audit.txt</code>에는 <strong>각 복원 파일이 <code>unalloc.dd</code> 안 몇 번째 바이트에서 시작했는지</strong>가 적히므로 반드시 보관한다. 6단계에서 이 값이 필요하다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">$ head -12 carved/audit.txt
+Foremost version 1.5.7 by Jesse Kornblum, Kris Kendall, and Nick Mikus
+Audit File
+
+Foremost started at Fri Sep 10 11:02:31 2026
+Invocation: foremost -t jpg,png,pdf -i unalloc.dd -o carved
+Output directory: /case/carved
+Configuration file: /etc/foremost.conf
+
+File: unalloc.dd
+Start: Fri Sep 10 11:02:31 2026
+Length: 12 GB (12884901888 bytes)
+
+Num      Name (bs=512)         Size      File Offset     Comment
+0:      00000112.jpg          148 KB           57344
+1:      00004096.png          2 MB           2097152</code></pre></div>
+<p><code>bulk_extractor</code>는 <code>email.txt</code>, <code>url.txt</code>, <code>domain.txt</code>, <code>telephone.txt</code>, <code>ccn.txt</code> 등을 오프셋과 함께 남긴다. &quot;유출된 이메일 주소를 찾아라&quot; 유형은 이 한 방으로 끝나는 경우가 많다.</p>
+<h3 id="6단계-오프셋을-원본-이미지-좌표로-되돌리기">6단계 — 오프셋을 원본 이미지 좌표로 되돌리기</h3>
+<p><strong>이 단계가 이 글에서 가장 자주 틀리는 부분이다.</strong> <code>unalloc.dd</code>는 비할당 클러스터만 골라 이어 붙인 파일이므로, 그 안의 오프셋은 <strong>원본 이미지의 오프셋이 아니다.</strong> &quot;flag가 오프셋 0x4A2C000에 있었다&quot;라고 답하면 틀린다.</p>
+<p>변환은 <code>blkcalc</code>가 한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># unalloc.dd 안의 바이트 오프셋 -&gt; 블록 번호
+#   블록 번호 = 바이트 오프셋 / 클러스터 크기
+#   예: 오프셋 57344, 클러스터 4096  -&gt;  57344 / 4096 = 14
+
+# blkls 이미지의 14번 블록이 원본 이미지의 몇 번 블록인가
+blkcalc -o 2048 -u 14 image.dd</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1892</code></pre></div>
+<p>이제 원본 좌표로 되돌린다.</p>
+<div class="table-wrap"><table><thead><tr><th>값</th><th>계산</th></tr></thead><tbody><tr><td>원본 파일시스템 블록 번호</td><td><code>blkcalc -u</code> 결과 (예: 1892)</td></tr><tr><td>파일시스템 시작 바이트</td><td>파티션 시작 섹터 × 섹터 크기 = 2048 × 512 = 1048576</td></tr><tr><td>블록의 바이트 오프셋</td><td>1892 × 4096 = 7749632</td></tr><tr><td><strong>원본 이미지 절대 오프셋</strong></td><td>1048576 + 7749632 = <strong>8798208</strong></td></tr></tbody></table></div>
+<p><code>blkcalc</code>의 방향 옵션:</p>
+<div class="table-wrap"><table><thead><tr><th>옵션</th><th>입력</th><th>출력</th></tr></thead><tbody><tr><td><code>-u &lt;addr&gt;</code></td><td><code>blkls</code> 출력(비할당 이미지)의 블록 번호</td><td>원본 이미지의 블록 번호</td></tr><tr><td><code>-d &lt;addr&gt;</code></td><td>원본 이미지의 블록 번호</td><td><code>blkls</code> 출력의 블록 번호</td></tr><tr><td><code>-s &lt;addr&gt;</code></td><td>slack 이미지(<code>blkls -s</code>)의 블록 번호</td><td>원본 이미지의 블록 번호</td></tr></tbody></table></div>
+<p>검산은 <code>blkcat</code>으로 한다. 같은 내용이 나오면 매핑이 맞다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">blkcat -o 2048 image.dd 1892 | xxd | head -2</code></pre></div>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p><code>fsstat</code>에서 이 절차에 필요한 값만 읽는다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">$ fsstat -o 2048 image.dd
+FILE SYSTEM INFORMATION
+--------------------------------------------
+File System Type: NTFS
+Volume Serial Number: 1A2B3C4D5E6F7A8B
+...
+CONTENT INFORMATION
+--------------------------------------------
+Sector Size: 512
+Cluster Size: 4096
+Total Cluster Range: 0 - 5242879</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>의미</th><th>이 글에서의 용도</th></tr></thead><tbody><tr><td><code>Sector Size</code></td><td>섹터 크기 (보통 512, 4Kn 디스크는 4096)</td><td><code>-o</code> 오프셋 → 바이트 변환</td></tr><tr><td><code>Cluster Size</code></td><td>클러스터 크기 (NTFS 기본 4096)</td><td><strong>블록 번호 ↔ 바이트 변환의 단위</strong></td></tr><tr><td><code>Total Cluster Range</code></td><td>전체 클러스터 번호 범위</td><td><code>blkcalc</code> 결과가 이 범위 안인지 검산</td></tr><tr><td><code>MFT Entry Size</code></td><td>MFT 레코드 크기 (보통 1024)</td><td><code>$MFT</code> 오프셋 계산</td></tr><tr><td><code>blkstat</code> 의 <code>Allocated</code>/<code>Not Allocated</code></td><td>개별 블록 할당 상태</td><td>삭제 데이터 여부 판정</td></tr></tbody></table></div>
+<p>카빙 결과 파일에서 확인할 것:</p>
+<div class="table-wrap"><table><thead><tr><th>관찰</th><th>의미</th></tr></thead><tbody><tr><td>파일 크기가 카버 기본 상한과 정확히 같다</td><td>푸터를 못 찾아 잘린 것. 실제 크기가 아니다</td></tr><tr><td>앞부분만 정상 표시되고 뒤가 깨진다</td><td>중간 클러스터가 <strong>재할당되어 덮어써졌다</strong></td></tr><tr><td>파일이 열리지만 내용이 다른 파일과 섞였다</td><td>조각화(fragmentation). 시그니처 카빙의 구조적 한계</td></tr><tr><td>전부 0 바이트</td><td>TRIM 또는 wiping</td></tr></tbody></table></div>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>여기서 얻은 것</th><th>다음 목표</th></tr></thead><tbody><tr><td>카빙된 파일 (이름 없음)</td><td><code>$MFT</code>의 <code>InUse=False</code> 항목과 크기·타임스탬프 대조로 원래 이름 추정 (<a href="./mft-basics.html">FOR-0021</a>)</td></tr><tr><td>삭제 시각이 필요하다</td><td><code>$UsnJrnl</code>의 <code>FILE_DELETE</code> 레코드 (<a href="./usnjrnl-basics.html">FOR-0027</a>)</td></tr><tr><td>파일이 있었던 원래 경로</td><td><code>$Recycle.Bin</code>의 <code>$I</code> 파일, <code>$UsnJrnl</code>의 <code>ParentFileReferenceNumber</code></td></tr><tr><td><code>blkcalc</code>로 얻은 원본 오프셋</td><td>HxD로 그 오프셋 점프해 구조 직접 확인 (<a href="./hxd-header-check.html">FOR-0037</a>)</td></tr><tr><td>비할당에서 나온 URL</td><td>브라우저 History와 대조 (<a href="./chrome-history.html">FOR-0191</a>)</td></tr><tr><td>비할당이 전부 0</td><td>메타데이터 계열로 전환 (<code>$MFT</code> / <code>$J</code> / Prefetch / 레지스트리)</td></tr><tr><td>카빙 파일 확장자가 내용과 안 맞는다</td><td>시그니처 대조 (<a href="./signature-extension-mismatch.html">FOR-0036</a>)</td></tr><tr><td>slack에도 잔존이 있는지</td><td><code>blkls -s</code> (<a href="./file-slack.html">FOR-0034</a>)</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>이미지 전체를 카빙하는 것.</strong> 살아 있는 파일이 전부 다시 검출되어 결과가 수만 건이 된다. 왜 틀리는가: 카버는 할당 여부를 모른다. 어떻게: <code>blkls</code>로 비할당만 뽑아 그 파일에 카빙한다.</li><li><strong><code>-o</code> 오프셋을 빼먹는 것.</strong> <code>blkls image.dd</code>는 이미지 선두를 파일시스템으로 해석하려 해서 실패하거나 엉뚱한 결과를 낸다. <code>mmls</code>로 파티션 시작 섹터를 먼저 확인한다.</li><li><strong><code>unalloc.dd</code> 안의 오프셋을 그대로 답으로 쓰는 것.</strong> 좌표계가 다르다. <code>blkcalc -u</code>로 원본 블록 번호로 되돌리고, 파티션 시작 바이트를 더한다.</li><li><strong>비할당이 0으로 가득한데 카버를 계속 돌리는 것.</strong> TRIM/wiping이면 결과가 나올 수 없다. <code>xxd | head</code>와 <code>tr -d &#39;\0&#39; | wc -c</code>로 5초 안에 판정한 뒤 메타데이터 라인으로 전환한다.</li><li><strong>카빙된 파일의 타임스탬프를 증거로 쓰는 것.</strong> 비할당에는 메타데이터가 없다. 카빙 결과의 파일 시각은 <strong>카빙을 실행한 시각</strong>이다. 시각이 필요하면 <code>$MFT</code>/<code>$UsnJrnl</code>에서 가져온다.</li><li><strong><code>-t</code> 없이 모든 형식을 카빙하는 것.</strong> 텍스트·<code>htm</code>·<code>dll</code> 같은 형식이 수만 건 오탐을 만든다. 지문이 요구하는 형식만 지정한다.</li><li><strong>조각화된 파일을 시그니처 카빙으로 복구하려는 것.</strong> 시그니처 카빙은 &quot;헤더에서 푸터까지 연속&quot;을 가정한다. 조각난 파일은 <code>$MFT</code>의 데이터런을 읽어 <code>icat</code>으로 복구하는 편이 맞다.</li><li><strong>비할당 = 삭제 파일이라고 단정하는 것.</strong> 한 번도 쓰이지 않은 공간, 포맷 전 이전 볼륨의 잔재, 이전 OS의 페이지파일 조각도 전부 비할당이다. 출처를 단정하려면 <code>$MFT</code>/<code>$UsnJrnl</code>과 묶어야 한다.</li><li><strong><code>blkls -e</code>를 기본값으로 착각하는 것.</strong> <code>-e</code>는 할당 블록까지 전부 포함하므로 결과가 이미지 크기와 비슷해진다. 옵션 없이 실행한 것이 비할당만이다.</li><li><strong>E01을 먼저 RAW로 변환하려고 시간을 쓰는 것.</strong> Sleuth Kit은 libewf가 있으면 <code>blkls -i ewf</code> 또는 자동 인식으로 E01을 직접 읽는다. 변환은 디스크 용량만 두 배로 먹는다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<p>같은 결론을 서로 다른 도구로 두 번 확인한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) 비할당 크기가 상식적인가
+ls -l image.dd unalloc.dd
+fsstat -o 2048 image.dd | grep -i cluster
+
+# 2) 특정 블록이 정말 비할당인가
+blkstat -o 2048 image.dd 1892
+
+# 3) blkcalc 매핑이 맞는가 — 두 좌표의 내용이 같아야 한다
+blkcat -o 2048 image.dd 1892 | md5sum
+dd if=unalloc.dd bs=4096 skip=14 count=1 2&gt;/dev/null | md5sum
+
+# 4) 카버 두 개의 결과 수 비교 (구조적 오탐/누락 확인)
+foremost -t jpg -i unalloc.dd -o f_out  &amp;&amp; ls f_out/jpg | wc -l
+photorec /log /d p_out unalloc.dd       &amp;&amp; ls p_out | wc -l
+
+# 5) 카빙된 파일이 진짜 그 형식인가
+file carved/jpg/*.jpg | sort | uniq -c</code></pre></div>
+<p>Autopsy의 <code>$Unalloc</code> 노드 크기와 <code>blkls</code> 출력 크기가 다르면 <strong>대상 볼륨이 다른 것</strong>이다. Autopsy가 인식한 볼륨과 <code>mmls</code> 출력을 대조한다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;직원이 자료를 삭제한 뒤 반납한 노트북 이미지입니다.
+ 삭제된 문서에 적힌 계좌번호를 찾으세요.&quot;
+첨부: laptop.E01 (60 GB, NTFS 단일 볼륨)
+
+1. mmls laptop.E01
+   -&gt; 002: 000002048  0125829119  0125827072  NTFS / exFAT (0x07)
+
+2. 첫 시도 (실패한 접근):
+   photorec 을 laptop.E01 전체에 걸었다.
+   -&gt; 22분 뒤 진행률 18%, 복원 파일 47,000건.
+      살아 있는 Windows 설치 파일까지 전부 복원되어 목록이 무의미했다.
+   -&gt; 중단.
+
+   무엇이 틀렸나: 카버는 클러스터의 할당 여부를 모른다.
+   대상이 60 GB 전체가 되어 시간과 오탐이 동시에 폭발했다.
+
+3. 접근 변경 — 비할당만 분리
+   fsstat -o 2048 laptop.E01 | grep -i &quot;cluster size&quot;
+   -&gt; Cluster Size: 4096
+
+   blkls -o 2048 laptop.E01 &gt; unalloc.dd
+   ls -l unalloc.dd
+   -&gt; 9.1 GB   (60 GB -&gt; 9.1 GB, 대상 1/6.6)
+
+4. 비할당이 살아 있는지 먼저 확인 (TRIM/wipe 배제)
+   xxd unalloc.dd | head -3
+   -&gt; 00000000: 2d2d 2d2d 2d20 4245 ...   (0 이 아니다. 잔존 데이터 있음)
+
+5. 가장 싼 것부터 — 문자열
+   strings -t d -n 6 unalloc.dd | grep -E &#39;[0-9]{3}-[0-9]{2,3}-[0-9]{6}&#39; | head
+   -&gt; 4102340928  110-234-567890
+
+   strings -t d -el -n 6 unalloc.dd | grep -E &#39;[0-9]{3}-[0-9]{2,3}-[0-9]{6}&#39; | head
+   -&gt; (UTF-16LE 에서도 같은 값 1건)
+
+6. 문맥 확보 — 이 값이 어떤 파일에 있었나
+   4102340928 / 4096 = 1001548  (unalloc.dd 안 블록 번호)
+   blkcalc -o 2048 -u 1001548 laptop.E01
+   -&gt; 4517392                      (원본 파일시스템 블록 번호)
+
+   blkstat -o 2048 laptop.E01 4517392
+   -&gt; Not Allocated                (삭제 데이터 확인)
+
+7. 그 구간을 형식 카빙으로 되살린다
+   foremost -t doc,docx,pdf,xls -i unalloc.dd -o carved
+   grep -n 4102 carved/audit.txt
+   -&gt; 12:  00001001536.doc   38 KB   4102324224
+
+   strings carved/doc/00001001536.doc | grep -A3 -B3 110-234
+   -&gt; 계좌: 110-234-567890  예금주: ...
+
+8. 원래 파일 이름 확인 ($MFT 대조)
+   MFTECmd 로 뽑은 CSV 에서 InUse=False, 크기 38KB 근처, 확장자 .doc
+   -&gt; 정산자료_2026Q1.doc  (삭제 시각 2026-03-14 07:22:41 UTC = 16:22:41 KST)
+
+정답: 110-234-567890 (출처: 삭제된 정산자료_2026Q1.doc)</code></pre></div>
+<p>2→3단계가 이 글의 요지다. <strong>60 GB 전체 카빙 22분에 답이 안 나왔고, 비할당 9.1 GB만 분리한 뒤 <code>strings</code> 한 줄로 40초에 나왔다.</strong> 그리고 6단계의 <code>blkcalc</code> 없이는 &quot;이 값이 삭제 데이터에서 나왔다&quot;를 증명할 수 없었다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>mmls</code>로 얻은 <code>-o</code> 값이 정확한가 — <code>fsstat -o N</code>이 NTFS를 인식하는지로 검증</li><li><code>unalloc.dd</code>가 전부 0인가 — TRIM/wiping이면 즉시 메타데이터 라인으로 전환</li><li><code>strings -el</code>(UTF-16LE)을 돌렸는가 — 한글 문서 내용은 ASCII <code>strings</code>에 안 걸린다</li><li>카버 <code>-t</code> 목록에 지문의 형식이 들어 있는가</li><li><code>foremost</code>가 실패하면 <code>photorec</code>을 시도했는가 — 내부 형식 지식이 더 많아 복원율이 높다</li><li>slack 영역도 봤는가 — <code>blkls -s image.dd &gt; slack.dd</code> (<a href="./file-slack.html">FOR-0034</a>)</li><li><code>$MFT</code>의 데이터런으로 <code>icat</code> 직접 복구를 시도했는가 — 조각난 파일은 이쪽이 정답이다</li><li>페이지파일/최대절전 파일은 별도로 추출했는가 (<code>pagefile.sys</code>, <code>hiberfil.sys</code>는 <strong>할당된 파일</strong>이라 비할당에 없다)</li><li><code>$LogFile</code>/<code>$UsnJrnl</code>을 봤는가 — 내용은 없어도 이름과 시각은 남는다</li><li>볼륨 섀도 복사본(VSS)이 있는가 — 삭제 전 상태가 그대로 남아 있을 수 있다</li><li>카빙 결과가 앞부분만 정상인가 → 재할당된 것. <code>$MFT</code> 데이터런으로 원래 클러스터를 확인한다</li><li>이미지가 암호화 볼륨인가 — 엔트로피가 0.99 부근이고 매직 바이트가 0건이면 BitLocker 등을 먼저 해제한다</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-032 — The Sleuth Kit 도구 문서: <code>blkls</code>(기본값이 비할당 블록 출력, <code>-e</code>/<code>-a</code>/<code>-s</code> 옵션), <code>blkcalc</code>(비할당 이미지 ↔ 원본 이미지 블록 주소 변환), <code>blkstat</code>, <code>blkcat</code>, <code>fsstat</code>의 동작과 옵션</li><li>SRC-005 — Microsoft Learn, Master File Table: NTFS가 클러스터 할당을 <code>$Bitmap</code>으로 관리하고 삭제 시 MFT 레코드와 데이터가 즉시 소거되지 않는다는 근거</li><li>SRC-035 — foremost/scalpel 매뉴얼: 시그니처 기반 카빙의 <code>-t</code> 형식 지정, <code>audit.txt</code>의 File Offset 컬럼, 헤더/푸터 기반 복원의 한계</li><li>FTK Imager의 <code>[unallocated space]</code> 표시 방식과 조각 이름, Autopsy의 <code>$Unalloc</code> 노드 명칭은 도구 버전에 따라 다를 수 있으므로 실제 화면에서 확인할 것</li><li><code>blkcalc</code>의 옵션 방향(<code>-u</code>/<code>-d</code>/<code>-s</code>)은 버전에 따라 표기가 다를 수 있으므로 <code>blkcalc -h</code>로 확인할 것</li><li>카빙 결과의 절대 오프셋은 반드시 <code>blkcat</code>으로 원본 이미지에서 재확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./file-slack.html">
+    <span class="rel-id">FOR-0034 · 디스크/NTFS</span>
+    File Slack(RAM slack / drive slack) 계산과 추출
+  </a>
+  <a class="related-item" href="./mft-basics.html">
+    <span class="rel-id">FOR-0021 · 디스크/NTFS</span>
+    $MFT 기본 구조와 포렌식 활용
+  </a>
+  <a class="related-item" href="./usnjrnl-basics.html">
+    <span class="rel-id">FOR-0027 · 디스크/NTFS</span>
+    $UsnJrnl($J)로 삭제·생성·이름변경 흔적 복원하기
+  </a>
+  <a class="related-item" href="./carving-strategy.html">
+    <span class="rel-id">FOR-0045 · 디스크/NTFS</span>
+    파일 카빙 전략: 언제 카빙하고 언제 하지 않는가
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./deleted-file-not-in-recycle-bin.html"><span class="rel-id">← FOR-0032</span>삭제된 파일이 휴지통에 없을 때: 원인 8가지와 확인 순서</a>
+<a class="related-item" href="./file-slack.html"><span class="rel-id">FOR-0034 →</span>File Slack(RAM slack / drive slack) 계산과 추출</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-클러스터-할당-해제가-실제로-하는-일">1단계 — 클러스터 할당 해제가 실제로 하는 일</a></li>
+<li class="toc-l3"><a href="#2단계-bitmap이-비할당의-정의다">2단계 — `$Bitmap`이 비할당의 정의다</a></li>
+<li class="toc-l3"><a href="#3단계-데이터가-사라지는-조건">3단계 — 데이터가 사라지는 조건</a></li>
+<li class="toc-l3"><a href="#4단계-추출-방법-세-가지">4단계 — 추출 방법 세 가지</a></li>
+<li class="toc-l3"><a href="#5단계-추출-후-무엇을-돌리나">5단계 — 추출 후 무엇을 돌리나</a></li>
+<li class="toc-l3"><a href="#6단계-오프셋을-원본-이미지-좌표로-되돌리기">6단계 — 오프셋을 원본 이미지 좌표로 되돌리기</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 03:39 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

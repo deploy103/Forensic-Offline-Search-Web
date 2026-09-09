@@ -14,6 +14,9 @@
     "test:search": "node scripts/search-test.mjs",
     "test:search:verbose": "node scripts/search-test.mjs --verbose",
     "test:offline": "node scripts/smoke-offline.mjs",
+    "slugs": "node scripts/slugs.mjs",
+    "slugs:links": "node scripts/slugs.mjs --links",
+    "slugs:plan": "node scripts/slugs.mjs --plan",
     "check": "npm run build && npm run validate && npm run test:search && npm run test:offline"
   },
   "dependencies": {},

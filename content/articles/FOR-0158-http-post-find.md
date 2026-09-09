@@ -19,6 +19,7 @@ wireshark_filters: ["http.request.method == \"POST\"", "urlencoded-form", "http.
 tshark_fields: ["http.request.method", "http.request.uri", "http.host", "http.file_data", "urlencoded-form.key", "urlencoded-form.value", "http.content_length", "http.content_type", "http.authorization"]
 log_fields: []
 file_formats: ["pcap", "pcapng"]
+primary_terms: ["HTTP POST", "urlencoded-form", "http.file_data", "http post 찾기"]
 keywords: ["HTTP POST", "POST 찾기", "urlencoded-form", "http.file_data", "업로드", "자격증명", "credential", "로그인 패킷", "multipart", "form data"]
 aliases: ["http post 찾기", "post 요청 찾기", "패킷에서 비밀번호", "로그인 정보 찾기", "업로드 파일 찾기", "post 본문 보기", "폼 데이터"]
 symptom_keywords: ["POST 본문이 안 보인다", "비밀번호를 찾아야 한다", "업로드한 파일을 찾고 싶다", "로그인 흔적", "form 데이터가 필요하다", "http.file_data가 비어있다", "Export Objects에 없다"]
