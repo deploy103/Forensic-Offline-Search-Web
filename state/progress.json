@@ -9,8 +9,8 @@
   ],
   "last_completed_id": "FOR-0231",
   "current_phase": "wave3-in-progress",
-  "last_commit": "5430aad",
-  "last_updated_kst": "2026-09-14 10:38 KST",
+  "last_commit": "6f9adef",
+  "last_updated_kst": "2026-09-14 10:43 KST",
   "blockers": [],
   "next_actions": [
     "Wave 3 착수: Network/PCAP 잔여 28개(FOR-0150~0155, 0162~0165, 0169~0174, 0177~0183, 0186~0190) + 로그/Regex 잔여 16개(FOR-0116~0119, 0125~0127, 0133~0136, 0141~0145). 이 둘을 먼저 쓰면 broken link 에러 대부분이 해소된다.",
