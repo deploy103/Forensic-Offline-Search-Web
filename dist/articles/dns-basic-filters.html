@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>DNS 트래픽 기본 필터 모음 · FOR-0152 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Network%2FPCAP">Network/PCAP</a> / FOR-0152
+      </div>
+      <header class="article-head">
+        <h1>DNS 트래픽 기본 필터 모음</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Network/PCAP</span>
+      <span class="badge badge-type">레퍼런스</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>DNS 필터는 세 층으로 정리한다. 존재 판정(dns) → 질의/응답 구분(dns.flags.response) → 이름·타입·결과 확인(dns.qry.name, dns.qry.type, dns.a, dns.flags.rcode). 이 순서만 지키면 DNS 트래픽에서 필요한 값은 대부분 한두 줄 필터로 뽑힌다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Wireshark, tshark</td></tr>
+<tr><th>artifact</th><td><code>pcap</code> · <code>pcapng</code> · <code>DNS query</code> · <code>DNS response</code></td></tr>
+<tr><th>프로토콜</th><td>DNS, UDP, TCP</td></tr>
+<tr><th>Wireshark 필터</th><td><code>dns</code> · <code>dns.flags.response == 0</code> · <code>dns.flags.response == 1</code> · <code>dns.qry.name</code> · <code>dns.qry.name contains &quot;flag&quot;</code> · <code>dns.qry.type == 1</code> · <code>dns.qry.type == 28</code> · <code>dns.qry.type == 16</code> · <code>dns.qry.type == 5</code> · <code>dns.flags.rcode == 3</code> · <code>dns.flags.rcode != 0</code> · <code>dns.a</code> · <code>dns.aaaa</code> · <code>dns.cname</code> · <code>dns.txt</code> · <code>dns.count.answers &gt; 0</code> · <code>udp.port == 53</code> · <code>tcp.port == 53</code></td></tr>
+<tr><th>tshark field</th><td><code>dns.qry.name</code> · <code>dns.qry.type</code> · <code>dns.flags.response</code> · <code>dns.flags.rcode</code> · <code>dns.a</code> · <code>dns.aaaa</code> · <code>dns.cname</code> · <code>dns.txt</code> · <code>dns.count.answers</code> · <code>dns.id</code></td></tr>
+<tr><th>파일 형식</th><td><code>pcap</code> · <code>pcapng</code></td></tr>
+<tr><th>검색 별칭</th><td>dns 필터 정리 · 와이어샤크 dns 필터 · dns 질의 응답 필터 · dns 필터 모음 · dns rcode · dns 레코드 타입 필터</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>DNS 필터는 세 층으로 정리한다. <strong>존재 판정(<code>dns</code>) → 질의/응답 구분(<code>dns.flags.response</code>) → 이름·타입·결과 확인(<code>dns.qry.name</code>, <code>dns.qry.type</code>, <code>dns.a</code>, <code>dns.flags.rcode</code>)</strong>. 이 순서만 지키면 DNS 트래픽에서 필요한 값은 대부분 한두 줄 필터로 뽑힌다.</p>
+<h2 id="개념">개념</h2>
+<p>DNS는 UDP 53(대용량 응답이나 Zone Transfer는 TCP 53)으로 오가는 요청-응답 프로토콜이다. 한 트랜잭션은 <strong>질의(Query, <code>dns.flags.response == 0</code>) 패킷 하나와 응답(Response, <code>dns.flags.response == 1</code>) 패킷 하나</strong>로 구성되며, 같은 <code>dns.id</code>(트랜잭션 ID)로 짝지어진다.</p>
+<p>Wireshark의 DNS 필드는 질의 패킷과 응답 패킷 모두에서 <code>dns.qry.name</code>(질의한 이름)을 공유하지만, <strong>답을 담은 필드(<code>dns.a</code>, <code>dns.cname</code> 등)는 응답 패킷에만 존재한다.</strong> 이 차이가 필터 설계를 지배한다 — &quot;누가 무엇을 물었나&quot;는 질의에서, &quot;결과가 무엇인가&quot;는 응답에서 봐야 한다.</p>
+<p>CTF에서 DNS가 등장하는 대표 시나리오.</p>
+<div class="table-wrap"><table><thead><tr><th>시나리오</th><th>확인할 필터</th></tr></thead><tbody><tr><td>어떤 도메인에 접속했는지</td><td><code>dns.qry.name</code></td></tr><tr><td>그 도메인이 실제로 가리킨 IP</td><td><code>dns.a</code> (응답에서)</td></tr><tr><td>이상하게 많은 질의(터널링 의심)</td><td><code>dns.flags.response == 0</code>으로 개수 집계</td></tr><tr><td>존재하지 않는 도메인 조회</td><td><code>dns.flags.rcode == 3</code> (NXDOMAIN)</td></tr><tr><td>특정 레코드 타입만</td><td><code>dns.qry.type</code></td></tr><tr><td>Zone Transfer 시도</td><td><code>dns.qry.type == 252</code> 또는 <code>tcp.port == 53</code></td></tr></tbody></table></div>
+<h2 id="파일-경로">파일 / 경로</h2>
+<p>DNS는 별도 저장 파일이 없고 pcap/pcapng 캡처 안의 패킷으로만 존재한다. 연관된 다른 위치는 다음과 같다.</p>
+<div class="table-wrap"><table><thead><tr><th>대상</th><th>위치</th><th>관련성</th></tr></thead><tbody><tr><td>pcap/pcapng</td><td>캡처 파일 자체</td><td>DNS 패킷의 유일한 출처</td></tr><tr><td>Windows DNS 클라이언트 캐시</td><td><code>ipconfig /displaydns</code> (라이브 시스템)</td><td>캡처가 없을 때 과거 조회 이력</td></tr><tr><td>브라우저 History</td><td>Chrome/Firefox 프로필 (<code>History</code>, <code>places.sqlite</code>)</td><td>DNS 조회 시점과 브라우저 방문 시점 대조</td></tr><tr><td><code>hosts</code> 파일</td><td><code>C:\Windows\System32\drivers\etc\hosts</code></td><td>DNS를 우회한 강제 매핑 여부 확인</td></tr></tbody></table></div>
+<h2 id="주요-필드">주요 필드</h2>
+<h3 id="존재방향-판정">존재/방향 판정</h3>
+<div class="table-wrap"><table><thead><tr><th>필터</th><th>의미</th></tr></thead><tbody><tr><td><code>dns</code></td><td>DNS 패킷 전체(UDP/TCP 53 무관, 실제 DNS로 해석된 것만)</td></tr><tr><td><code>udp.port == 53</code></td><td>포트 기준. 비표준 파싱이라 DNS로 안 잡힌 패킷까지 포함</td></tr><tr><td><code>tcp.port == 53</code></td><td>TCP DNS(대용량 응답, Zone Transfer)</td></tr><tr><td><code>dns.flags.response == 0</code></td><td>질의(클라이언트 → 서버)</td></tr><tr><td><code>dns.flags.response == 1</code></td><td>응답(서버 → 클라이언트)</td></tr><tr><td><code>dns.flags.recdesired == 1</code></td><td>재귀 질의 요청</td></tr></tbody></table></div>
+<h3 id="이름과-타입">이름과 타입</h3>
+<div class="table-wrap"><table><thead><tr><th>필터</th><th>의미</th></tr></thead><tbody><tr><td><code>dns.qry.name</code></td><td>질의한 이름이 존재하는 모든 패킷 (질의+응답)</td></tr><tr><td><code>dns.qry.name == &quot;example.com&quot;</code></td><td>정확히 일치</td></tr><tr><td><code>dns.qry.name contains &quot;flag&quot;</code></td><td>부분 문자열 포함 (대소문자 구분)</td></tr><tr><td><code>dns.qry.name matches &quot;(?i)flag&quot;</code></td><td>대소문자 무시 정규식</td></tr><tr><td><code>dns.qry.type == 1</code></td><td>A 레코드 (IPv4 주소) 질의</td></tr><tr><td><code>dns.qry.type == 28</code></td><td>AAAA 레코드 (IPv6 주소) 질의</td></tr><tr><td><code>dns.qry.type == 5</code></td><td>CNAME 질의</td></tr><tr><td><code>dns.qry.type == 15</code></td><td>MX 질의</td></tr><tr><td><code>dns.qry.type == 16</code></td><td>TXT 질의</td></tr><tr><td><code>dns.qry.type == 2</code></td><td>NS 질의</td></tr><tr><td><code>dns.qry.type == 12</code></td><td>PTR 질의 (역방향 조회)</td></tr><tr><td><code>dns.qry.type == 252</code></td><td>AXFR (전체 Zone Transfer 요청)</td></tr></tbody></table></div>
+<h3 id="응답-값과-결과-코드">응답 값과 결과 코드</h3>
+<div class="table-wrap"><table><thead><tr><th>필터</th><th>의미</th></tr></thead><tbody><tr><td><code>dns.a</code></td><td>응답에 포함된 A 레코드 IPv4 주소</td></tr><tr><td><code>dns.aaaa</code></td><td>응답에 포함된 AAAA 레코드 IPv6 주소</td></tr><tr><td><code>dns.cname</code></td><td>응답에 포함된 CNAME 별칭</td></tr><tr><td><code>dns.txt</code></td><td>응답에 포함된 TXT 레코드 텍스트</td></tr><tr><td><code>dns.count.answers &gt; 0</code></td><td>응답에 Answer 레코드가 1개 이상</td></tr><tr><td><code>dns.count.answers == 0 &amp;&amp; dns.flags.response == 1</code></td><td>응답은 왔지만 답이 없음 (NXDOMAIN 등)</td></tr><tr><td><code>dns.flags.rcode == 0</code></td><td>정상(NOERROR)</td></tr><tr><td><code>dns.flags.rcode == 1</code></td><td>형식 오류(FORMERR)</td></tr><tr><td><code>dns.flags.rcode == 2</code></td><td>서버 오류(SERVFAIL)</td></tr><tr><td><code>dns.flags.rcode == 3</code></td><td>존재하지 않는 도메인(NXDOMAIN)</td></tr><tr><td><code>dns.flags.rcode != 0</code></td><td>실패한 응답 전체</td></tr></tbody></table></div>
+<h3 id="트랜잭션-짝짓기">트랜잭션 짝짓기</h3>
+<div class="table-wrap"><table><thead><tr><th>필터</th><th>의미</th></tr></thead><tbody><tr><td><code>dns.id == 0x1a2b</code></td><td>특정 트랜잭션 ID의 질의/응답 쌍</td></tr><tr><td><code>dns.time</code></td><td>질의부터 응답까지 걸린 시간(응답 패킷에만 존재)</td></tr><tr><td><code>dns.time &gt; 1</code></td><td>응답이 1초 이상 걸린 느린 DNS (터널링/부하 의심)</td></tr></tbody></table></div>
+<h2 id="빠른-명령">빠른 명령</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) 질의-응답 한 줄 표로 정리 (가장 많이 쓴다)
+tshark -r capture.pcapng -Y dns -T fields -e frame.time -e ip.src -e dns.qry.name -e dns.a
+
+# 2) 고유 질의 이름 빈도 (터널링/이상 탐지 기본기)
+tshark -r capture.pcapng -Y &#39;dns.flags.response == 0&#39; -T fields -e dns.qry.name |
+  sort | uniq -c | sort -nr | head -20
+
+# 3) 실패한 응답만 (NXDOMAIN 등)
+tshark -r capture.pcapng -Y &#39;dns.flags.rcode != 0&#39; \
+  -T fields -e dns.qry.name -e dns.flags.rcode
+
+# 4) TXT 레코드만 (은닉 채널 후보)
+tshark -r capture.pcapng -Y &#39;dns.txt&#39; -T fields -e dns.qry.name -e dns.txt
+
+# 5) 응답 지연 상위 (부하/터널링 의심)
+tshark -r capture.pcapng -Y &#39;dns.time &gt; 0.5&#39; \
+  -T fields -e dns.qry.name -e dns.time | sort -k2 -nr | head
+
+# 6) TCP DNS (Zone Transfer 등 비정상 대용량)
+tshark -r capture.pcapng -Y &#39;tcp.port == 53&#39;</code></pre></div>
+<p>GUI에서는 <code>dns</code> 필터를 건 뒤 <code>Statistics &gt; DNS</code>(있으면) 또는 컬럼에 <code>dns.qry.name</code>, <code>dns.a</code>를 추가해 나란히 본다.</p>
+<h2 id="함께-보는-artifact">함께 보는 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>DNS에서 얻은 것</th><th>다음 목표</th></tr></thead><tbody><tr><td>조회한 도메인 이름</td><td><a href="./dns-qry-name-filter.html">FOR-0153</a>으로 그 이름만 필터</td></tr><tr><td>응답 IP</td><td><a href="./dns-response-ip-tracking.html">FOR-0154</a>로 그 IP와의 실제 통신 세션 추적</td></tr><tr><td>질의 개수가 비정상적으로 많음</td><td><a href="./dns-tunneling.html">FOR-0155</a>로 터널링 여부 판정</td></tr><tr><td>특정 IP의 전체 프로토콜 구성 확인</td><td><a href="./protocol-hierarchy.html">FOR-0148</a></td></tr><tr><td>세션/바이트 총량</td><td><a href="./endpoints.html">FOR-0150</a> UDP 탭</td></tr><tr><td>브라우저 방문 시각과 대조</td><td>Chrome History (<a href="./chrome-history.html">FOR-0191</a>)</td></tr></tbody></table></div>
+<h2 id="흔한-실수">흔한 실수</h2>
+<ul><li><strong><code>dns.qry.name</code>만 걸고 IP를 찾으려는 것.</strong> <code>dns.qry.name</code>은 질의/응답 양쪽에 다 있지만 IP(<code>dns.a</code>)는 <strong>응답 패킷에만</strong> 있다. 질의 패킷을 눌러서는 IP가 안 보인다.</li><li><strong><code>udp.port == 53</code>와 <code>dns</code>를 같은 것으로 쓰는 것.</strong> <code>udp.port == 53</code>은 파서가 DNS로 인식하지 못한 비표준 트래픽(다른 프로토콜이 53번 포트를 도용한 경우)까지 잡는다. 정상 DNS만 원하면 <code>dns</code>를 쓴다.</li><li><strong><code>dns.a</code>가 없다고 응답이 없다고 판단하는 것.</strong> CNAME 체인만 있고 최종 A 레코드가 다른 응답 패킷에 나뉘어 있거나, AAAA만 응답한 경우 <code>dns.a</code>는 비어 있다. <code>dns.count.answers</code>와 <code>dns.aaaa</code>도 함께 확인한다.</li><li><strong>TCP DNS를 놓치는 것.</strong> 기본 필터 <code>dns</code>는 TCP 53도 포함하지만, 캡처 시 TCP 스트림 재조립이 안 된 상태면 개별 세그먼트로 쪼개져 안 보일 수 있다. <code>tcp.port == 53</code>으로 존재 여부를 먼저 확인한다.</li><li><strong><code>rcode</code>값을 숫자로 외워 헷갈리는 것.</strong> <code>dns.flags.rcode == 3</code>이 NXDOMAIN이라는 것을 매번 표로 확인하지 않으려면 <code>dns.flags.rcode != 0</code>으로 &quot;실패 전체&quot;부터 걸고 개별 코드는 나중에 좁힌다.</li><li><strong>대소문자를 구분하는 <code>contains</code>로 못 찾는 것.</strong> 도메인은 대소문자를 섞어 보낼 수 있다. 정확히 안 걸리면 <code>matches &quot;(?i)...&quot;</code>로 바꾼다.</li><li><strong>질의만 세고 응답을 안 보는 것.</strong> 질의 개수와 실제로 성공한 응답(<code>dns.flags.rcode == 0 &amp;&amp; dns.count.answers &gt; 0</code>) 개수가 다르면 그 차이 자체가 단서(서버 다운, 캐시 미스, 터널링 서버의 선택적 응답)다.</li></ul>
+<h2 id="mini-example">mini example</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;이 캡처에서 접속한 외부 도메인과 그 도메인이 가리킨 IP를 구하세요.&quot;
+첨부: browse.pcapng (2,204 packets)
+
+1. 존재 확인
+   필터: dns
+   -&gt; 88개 패킷. 질의 44 / 응답 44로 짝이 맞는다.
+
+2. 질의만 추출해 빈도 확인
+   $ tshark -r browse.pcapng -Y &#39;dns.flags.response == 0&#39; \
+       -T fields -e dns.qry.name | sort | uniq -c | sort -nr
+      12 example-shop.com
+       8 cdn.example-shop.com
+       6 fonts.googleapis.com
+       ...
+       1 c2-relay.duckdns.org        &lt;- 낯선 이름
+
+3. 낯선 도메인만 좁혀서 응답 확인
+   $ tshark -r browse.pcapng -Y &#39;dns.qry.name == &quot;c2-relay.duckdns.org&quot;&#39; \
+       -T fields -e dns.flags.response -e dns.a
+      0
+      1   198.51.100.230
+
+4. 그 IP와의 실제 통신이 있었는지 확인
+   필터: ip.addr == 198.51.100.230
+   -&gt; TCP 4444 포트로 세션 존재. 정상 CDN/폰트 도메인과는 확실히 다른 패턴.
+
+정답: 도메인 c2-relay.duckdns.org / IP 198.51.100.230</code></pre></div>
+<p>3~4단계처럼 &quot;빈도가 낮고 이름이 낯선 것&quot;을 먼저 걸러낸 뒤 그 도메인의 응답 IP로 pivot하는 흐름이 DNS 필터의 기본 사용법이다.</p>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-002 — Wireshark Display Filter Reference: <code>dns.*</code> 필드 전체 목록(<code>dns.qry.name</code>, <code>dns.qry.type</code>, <code>dns.flags.response</code>, <code>dns.flags.rcode</code>, <code>dns.a</code>, <code>dns.aaaa</code>, <code>dns.cname</code>, <code>dns.txt</code>, <code>dns.count.answers</code>, <code>dns.id</code>, <code>dns.time</code>)</li><li>SRC-065 — RFC 1035: DNS 메시지 구조, QTYPE 코드값(A=1, NS=2, CNAME=5, MX=15, TXT=16, AAAA는 RFC 3596에서 28), RCODE 정의(NOERROR=0, FORMERR=1, SERVFAIL=2, NXDOMAIN=3)</li><li>SRC-010 — tshark man page: <code>-Y</code>, <code>-T fields</code>, <code>-e</code> 필드 추출 문법</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./dns-qry-name-filter.html">
+    <span class="rel-id">FOR-0153 · Network/PCAP</span>
+    dns.qry.name 필터로 특정 도메인 질의 찾기
+  </a>
+  <a class="related-item" href="./dns-response-ip-tracking.html">
+    <span class="rel-id">FOR-0154 · Network/PCAP</span>
+    DNS 응답에서 실제 접속 IP 추적하기
+  </a>
+  <a class="related-item" href="./dns-tunneling.html">
+    <span class="rel-id">FOR-0155 · Network/PCAP</span>
+    DNS tunneling 의심 패턴 판별하기
+  </a>
+  <a class="related-item" href="./protocol-hierarchy.html">
+    <span class="rel-id">FOR-0148 · Network/PCAP</span>
+    Protocol Hierarchy: 프로토콜 비중과 End Packets 읽는 법
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./expert-information.html"><span class="rel-id">← FOR-0151</span>Wireshark Expert Information으로 이상 패킷 빠르게 찾기</a>
+<a class="related-item" href="./dns-qry-name-filter.html"><span class="rel-id">FOR-0153 →</span>dns.qry.name 필터로 특정 도메인 질의 찾기</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#개념">개념</a></li>
+<li class="toc-l2"><a href="#파일-경로">파일 / 경로</a></li>
+<li class="toc-l2"><a href="#주요-필드">주요 필드</a></li>
+<li class="toc-l3"><a href="#존재방향-판정">존재/방향 판정</a></li>
+<li class="toc-l3"><a href="#이름과-타입">이름과 타입</a></li>
+<li class="toc-l3"><a href="#응답-값과-결과-코드">응답 값과 결과 코드</a></li>
+<li class="toc-l3"><a href="#트랜잭션-짝짓기">트랜잭션 짝짓기</a></li>
+<li class="toc-l2"><a href="#빠른-명령">빠른 명령</a></li>
+<li class="toc-l2"><a href="#함께-보는-artifact">함께 보는 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-실수">흔한 실수</a></li>
+<li class="toc-l2"><a href="#mini-example">mini example</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-14 10:37 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

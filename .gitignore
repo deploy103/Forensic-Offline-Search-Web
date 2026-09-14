@@ -6,6 +6,25 @@ node_modules/
 __pycache__/
 *.pyc
 
+# 루트의 요구사항/프롬프트/개발 문서는 로컬 전용이다.
+# 실제 사전 원문인 content/articles/*.md 는 계속 추적한다.
+/*.md
+
+# 자격증명·키와 원본 포렌식 증거는 저장소 밖에 둔다.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+*.pcap
+*.pcapng
+*.cap
+*.evtx
+
 # 큰 바이너리는 Git history 에 넣지 않는다 (STORAGE_BUDGET.md).
 # 증거물 샘플·툴 설치본·디스크/메모리 이미지는 repo 밖 별도 폴더에 둔다.
 *.E01

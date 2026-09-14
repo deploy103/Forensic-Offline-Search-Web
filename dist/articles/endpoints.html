@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Endpoints: IP·포트별 트래픽 총량으로 용의선상 좁히기 · FOR-0150 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Network%2FPCAP">Network/PCAP</a> / FOR-0150
+      </div>
+      <header class="article-head">
+        <h1>Endpoints: IP·포트별 트래픽 총량으로 용의선상 좁히기</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Network/PCAP</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>Statistics &gt; Endpoints 는 개별 호스트(IP/MAC/포트) 하나가 주고받은 트래픽 총량을 보여준다. Conversations가 &quot;누구와 누가&quot; 를 묻는다면 Endpoints는 &quot;누가 가장 많이&quot; 를 묻는다. Bytes 내림차순으로 정렬하면 그 캡처의 핵심 플레이어가 상위 몇 줄에 다 모인다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Wireshark, tshark</td></tr>
+<tr><th>artifact</th><td><code>pcap</code> · <code>pcapng</code></td></tr>
+<tr><th>프로토콜</th><td>Ethernet, IPv4, IPv6, TCP, UDP</td></tr>
+<tr><th>Wireshark 필터</th><td><code>ip.addr == 203.0.113.77</code> · <code>!(ip.addr == 10.0.0.0/8)</code> · <code>eth.addr == aa:bb:cc:dd:ee:ff</code></td></tr>
+<tr><th>tshark field</th><td><code>ip.addr</code> · <code>tcp.port</code> · <code>udp.port</code> · <code>eth.addr</code></td></tr>
+<tr><th>로그 필드</th><td><code>Address</code> · <code>Packets</code> · <code>Bytes</code> · <code>Tx Packets</code> · <code>Tx Bytes</code> · <code>Rx Packets</code> · <code>Rx Bytes</code></td></tr>
+<tr><th>파일 형식</th><td><code>pcap</code> · <code>pcapng</code></td></tr>
+<tr><th>검색 별칭</th><td>엔드포인트 통계 · ip별 트래픽 보기 · 누가 제일 많이 보냈나 · endpoints 창 · 와이어샤크 endpoints · ip 목록 뽑기 · 외부 ip 찾기</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>Statistics &gt; Endpoints</code> 는 <strong>개별 호스트(IP/MAC/포트) 하나가 주고받은 트래픽 총량</strong>을 보여준다. <code>Conversations</code>가 &quot;누구와 누가&quot; 를 묻는다면 <code>Endpoints</code>는 &quot;누가 가장 많이&quot; 를 묻는다. <code>Bytes</code> 내림차순으로 정렬하면 그 캡처의 핵심 플레이어가 상위 몇 줄에 다 모인다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>&quot;이 캡처에 등장하는 외부 IP를 모두 나열하세요&quot; 류의 지문</li><li>어떤 호스트가 여러 세션(TCP 여러 개, UDP 포함)에 걸쳐 총 얼마나 통신했는지 합산이 필요할 때</li><li><a href="./conversations.html">FOR-0149</a>에서 세션 단위로 봤는데 특정 호스트가 여러 상대와 나눈 세션이 흩어져 있어 합산 값이 필요할 때</li><li>캡처에 존재하는 MAC 주소로 물리적 장비 수를 세야 할 때</li><li>사설 대역을 걷어내고 외부와 통신한 IP만 추려야 할 때</li></ul>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li><strong>행 개수</strong> — IPv4 탭에 IP가 3개뿐이면 캡처가 이미 좁혀진 상태다. 수백 개면 스캔이거나 정상 브라우징의 CDN/광고 트래픽이다.</li><li><strong><code>Bytes</code> 1위와 나머지의 격차</strong> — 1위가 압도적이면 그 IP가 핵심이다.</li><li><strong><code>Packets</code>는 많은데 <code>Bytes</code>는 작은 행</strong> — 비콘, DNS, keep-alive 후보.</li><li><strong>탭 종류</strong> — 문제가 &quot;IP&quot; 를 묻는지 &quot;MAC&quot; 을 묻는지에 따라 IPv4 탭과 Ethernet 탭 중 고른다.</li><li><strong>컬럼에 보이는 IP 대역</strong> — 10.x/172.16-31.x/192.168.x가 아닌 것이 외부 IP다.</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -q -z endpoints,ip</code></pre></div>
+<p>GUI는 다섯 클릭이다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1. Statistics &gt; Endpoints
+2. IPv4 탭 선택
+3. Bytes 컬럼 헤더 클릭 (내림차순)
+4. 상위 행이 이 캡처의 핵심 호스트
+5. 행 우클릭 &gt; Apply as Filter &gt; Selected &gt; A</code></pre></div>
+<p>사설 대역을 빼고 외부만 보고 싶으면 필터를 먼저 걸고 <code>Limit to display filter</code>를 켠다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">!(ip.addr == 10.0.0.0/8 || ip.addr == 172.16.0.0/12 || ip.addr == 192.168.0.0/16)</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-탭-선택과-conversations와의-차이">1단계 — 탭 선택과 Conversations와의 차이</h3>
+<p><code>Statistics &gt; Endpoints</code>를 열면 하단(또는 우측)에 프로토콜별 탭이 있다.</p>
+<div class="table-wrap"><table><thead><tr><th>탭</th><th>&quot;엔드포인트&quot;의 정의</th><th>언제 쓰나</th></tr></thead><tbody><tr><td><code>Ethernet</code></td><td>MAC 주소 1개</td><td>세그먼트 내 장비 수, ARP 스푸핑 시 중복 MAC 확인</td></tr><tr><td><code>IPv4</code> / <code>IPv6</code></td><td>IP 주소 1개</td><td><strong>가장 많이 쓴다.</strong> 호스트별 총 트래픽</td></tr><tr><td><code>TCP</code></td><td>IP:포트 조합 1개</td><td>어떤 포트로 얼마나 받았는지 (서버 측 관점)</td></tr><tr><td><code>UDP</code></td><td>IP:포트 조합 1개</td><td>DNS 서버, UDP 서비스 식별</td></tr></tbody></table></div>
+<p><code>Endpoints</code>와 <code>Conversations</code>(<a href="./conversations.html">FOR-0149</a>)는 자주 헷갈린다.</p>
+<div class="table-wrap"><table><thead><tr><th></th><th>Endpoints</th><th>Conversations</th></tr></thead><tbody><tr><td>단위</td><td>호스트 하나</td><td>호스트 쌍(세션)</td></tr><tr><td>&quot;10.0.0.15가 총 몇 바이트 보냈나&quot;</td><td>한 줄로 바로 나온다</td><td>상대별로 쪼개져 있어 직접 합산해야 한다</td></tr><tr><td>&quot;이 세션이 언제 시작했나&quot;</td><td>없음</td><td><code>Rel Start</code>/<code>Duration</code> 있음</td></tr><tr><td>&quot;이 호스트가 상대한 대상 목록&quot;</td><td>없음</td><td>있음</td></tr></tbody></table></div>
+<p>10.0.0.15가 서버 3곳과 통신했다면, Conversations에는 3개 행으로 나뉘지만 Endpoints의 IPv4 탭에는 10.0.0.15 한 줄에 세 세션의 합계가 그대로 나온다. <strong>&quot;이 IP가 총 얼마나 썼는가&quot;를 물으면 Endpoints, &quot;누구와 얼마나&quot;를 물으면 Conversations다.</strong></p>
+<h3 id="2단계-컬럼-의미">2단계 — 컬럼 의미</h3>
+<div class="table-wrap"><table><thead><tr><th>컬럼</th><th>의미</th><th>판정에 쓰는 방법</th></tr></thead><tbody><tr><td><code>Address</code></td><td>IP/MAC/포트 조합</td><td>정렬·필터 대상</td></tr><tr><td><code>Packets</code></td><td>이 엔드포인트가 관여한 총 패킷(양방향)</td><td>비콘 탐지</td></tr><tr><td><code>Bytes</code></td><td>총 바이트(양방향)</td><td><strong>핵심 플레이어 판정 1순위</strong></td></tr><tr><td><code>Tx Packets</code></td><td>이 엔드포인트가 <strong>보낸</strong> 패킷 수</td><td>발신 활동량</td></tr><tr><td><code>Tx Bytes</code></td><td>이 엔드포인트가 <strong>보낸</strong> 바이트</td><td><strong>업로드/유출 판정</strong></td></tr><tr><td><code>Rx Packets</code></td><td>이 엔드포인트가 <strong>받은</strong> 패킷 수</td><td>수신 활동량</td></tr><tr><td><code>Rx Bytes</code></td><td>이 엔드포인트가 <strong>받은</strong> 바이트</td><td><strong>다운로드 판정</strong></td></tr><tr><td><code>Latitude</code>/<code>Longitude</code></td><td>GeoIP 데이터베이스가 설정된 경우만</td><td>오프라인 환경에서는 대개 비어 있다</td></tr></tbody></table></div>
+<p><code>Tx</code>/<code>Rx</code>는 <strong>그 행의 주체 기준</strong>이다. Conversations의 <code>A → B</code>처럼 상대를 명시하지 않아도 되므로 &quot;이 IP가 보낸 바이트&quot;를 바로 읽을 수 있다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">10.0.0.15    Packets 1621   Bytes 8104332   Tx Packets 1309   Tx Bytes 8084218   Rx Packets 312   Rx Bytes 20114</code></pre></div>
+<p>Tx가 Rx보다 압도적으로 크면 이 호스트는 데이터를 <strong>내보내는</strong> 쪽이다.</p>
+<h3 id="3단계-geoipmap-기능은-오프라인에서-기대하지-않는다">3단계 — GeoIP/Map 기능은 오프라인에서 기대하지 않는다</h3>
+<p>Endpoints 창에는 <code>Map</code> 버튼과 국가/좌표 컬럼이 있으나, 이는 로컬에 GeoIP 데이터베이스(MaxMind 등)를 미리 설치해 둔 경우에만 채워진다. <strong>완전 오프라인 대회 환경에서는 이 데이터베이스가 없을 가능성이 높고, 지도 표시는 온라인 타일 서버가 필요하므로 동작하지 않는다.</strong> 국가 판정이 필요하면 IP 대역을 손으로 대조하거나 사전에 받아 둔 오프라인 GeoIP DB가 있는지 확인한다.</p>
+<h3 id="4단계-정렬-두-번-규칙">4단계 — 정렬 두 번 규칙</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">(1) Bytes 내림차순      -&gt; 데이터를 가장 많이 주고받은 호스트
+(2) Packets 내림차순    -&gt; 빈도가 이상한 호스트 (비콘, 스캔 대상)</code></pre></div>
+<p><code>Bytes</code>로는 안 잡히는 것이 있다. C2 비콘은 <code>Packets</code>은 많고 <code>Bytes</code>는 작다. 두 정렬을 항상 함께 확인한다.</p>
+<h3 id="5단계-limit-to-display-filter로-외부-ip만-추리기">5단계 — Limit to display filter로 외부 IP만 추리기</h3>
+<p><code>Conversations</code>와 동일하게 하단에 <code>Limit to display filter</code> 체크박스가 있다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">(1) 메인 필터창: !(ip.addr == 10.0.0.0/8 || ip.addr == 172.16.0.0/12 || ip.addr == 192.168.0.0/16)
+(2) Statistics &gt; Endpoints, IPv4 탭
+(3) Limit to display filter 체크
+    -&gt; 외부 IP만 나열된다</code></pre></div>
+<p>캡처 시작 전에 이미 필터를 걸어 두었다면 이 체크박스가 자동으로 켜진 채로 열린다. <code>Total Packets</code>/<code>Percent Filtered</code> 컬럼이 추가로 보이면 필터가 걸린 상태라는 신호다.</p>
+<h3 id="6단계-resolve-name-옵션">6단계 — Resolve name 옵션</h3>
+<p><code>Name resolution</code> 체크박스를 켜면 IP 대신 호스트명이 보이려 시도한다. 단, DNS 역질의를 인터넷으로 보내려 하므로 <strong>오프라인 환경에서는 응답이 오지 않아 그대로 IP로 남거나 지연만 발생한다.</strong> 오프라인에서는 끈 채로 두고, 도메인이 필요하면 <a href="./dns-qry-name-filter.html">dns.qry.name 필터</a>로 같은 캡처 안의 DNS 트래픽에서 직접 찾는다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p><code>tshark -q -z endpoints,ip</code>의 출력.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">================================================================================
+IPv4 Endpoints
+Filter:&lt;No Filter&gt;
+                             |       Total        |     Tx      |      Rx      |
+                             | Frames    Bytes     | Frames Bytes | Frames Bytes |
+10.0.0.15                        2044   8135650        1683   8112544        361    23106
+203.0.113.77                     1621   8104332         312     20114       1309   8084218
+93.184.216.34                     631   1892044         402   1801322        229    90722
+10.0.0.2                            88     12004          44      5880         44     6124
+================================================================================</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>출력 항목</th><th>GUI 대응</th><th>비고</th></tr></thead><tbody><tr><td><code>Total Frames/Bytes</code></td><td><code>Packets</code> / <code>Bytes</code></td><td>양방향 합계</td></tr><tr><td><code>Tx Frames/Bytes</code></td><td><code>Tx Packets</code> / <code>Tx Bytes</code></td><td>이 IP가 보낸 양</td></tr><tr><td><code>Rx Frames/Bytes</code></td><td><code>Rx Packets</code> / <code>Rx Bytes</code></td><td>이 IP가 받은 양</td></tr></tbody></table></div>
+<p>CLI 출력에는 GeoIP 컬럼이 없다. 국가 판정이 필요 없는 CTF 환경에서는 오히려 CLI가 더 깔끔하다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>Endpoints에서 얻은 것</th><th>다음에 할 일</th></tr></thead><tbody><tr><td><code>Bytes</code> 1위 IP</td><td><code>ip.addr == &lt;IP&gt;</code>로 필터 → <a href="./conversations.html">FOR-0149</a>로 세션 단위 확인</td></tr><tr><td><code>Tx Bytes</code>가 큰 내부 IP</td><td>유출 시나리오. 해당 IP의 세션에서 Follow Stream</td></tr><tr><td>외부 IP 전체 목록</td><td><a href="./dns-response-ip-tracking.html">FOR-0154</a>로 그 IP가 어느 도메인의 응답이었는지 역추적</td></tr><tr><td>특이한 포트를 쓴 TCP 엔드포인트</td><td><a href="./protocol-hierarchy.html">FOR-0148</a>로 그 포트의 프로토콜 구성 재확인</td></tr><tr><td>MAC 주소 목록</td><td>ARP 테이블·DHCP 로그와 대조해 물리 장비 특정</td></tr><tr><td>DNS 서버로 보이는 UDP:53 엔드포인트</td><td><a href="./dns-basic-filters.html">FOR-0152</a>의 필터로 질의/응답 상세 확인</td></tr><tr><td>사설 IP만 남았는데 외부 유출이 의심됨</td><td>NAT/프록시를 의심하고 프록시 로그·방화벽 로그로 pivot</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>Endpoints와 Conversations를 같은 것으로 착각하는 것.</strong> Endpoints는 호스트 하나의 합계, Conversations는 호스트 쌍의 값이다. &quot;총 얼마나&quot;를 물으면 Endpoints, &quot;누구와&quot;를 물으면 Conversations다.</li><li><strong><code>Limit to display filter</code>가 켜진 줄 모르고 &quot;IP가 몇 개 없다&quot;고 판단하는 것.</strong> 창을 열기 전 필터가 있었으면 자동으로 켜진다. <code>Total Packets</code>/<code>Percent Filtered</code> 컬럼이 그 신호다.</li><li><strong>오프라인 환경에서 <code>Map</code> 버튼이나 국가 컬럼이 채워지길 기대하는 것.</strong> GeoIP DB와 지도 타일 모두 인터넷/사전 설치가 필요하다. 대회장에서는 대개 비어 있다.</li><li><strong><code>Name resolution</code>을 켜고 응답을 기다리는 것.</strong> 오프라인에서는 DNS 역질의가 실패하거나 지연만 생긴다. 도메인은 DNS 트래픽에서 직접 찾는다.</li><li><strong><code>Bytes</code>만 보고 비콘을 놓치는 것.</strong> 주기적으로 소량씩 보내는 C2는 <code>Bytes</code>로는 하위권이다. <code>Packets</code>로 한 번 더 정렬한다.</li><li><strong><code>Tx</code>/<code>Rx</code>를 Conversations의 <code>A→B</code>/<code>B→A</code>와 같은 방향으로 착각하는 것.</strong> Endpoints의 Tx/Rx는 그 행 주체 기준이라 상대가 누구인지는 알려주지 않는다. 상대까지 필요하면 Conversations로 넘어간다.</li><li><strong>Ethernet 탭을 건너뛰는 것.</strong> IP가 여러 개라도 MAC이 하나면 물리 장비는 한 대다. IP 스푸핑이나 DHCP 재할당 판별에 MAC이 필요하다.</li><li><strong>UDP 탭을 무시하는 것.</strong> DNS 서버, NTP, 터널링에 쓰인 UDP 엔드포인트는 TCP 탭에 나타나지 않는다.</li><li><strong>사설 대역 제외 필터의 대역을 하나 빠뜨리는 것.</strong> <code>169.254.0.0/16</code>(링크 로컬)을 빼먹으면 DHCP 실패 흔적이 &quot;외부 IP&quot;로 잘못 집계된다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) GUI Endpoints IPv4 탭과 같은 표
+tshark -r capture.pcapng -q -z endpoints,ip
+
+# 2) TCP 포트 단위 엔드포인트
+tshark -r capture.pcapng -q -z endpoints,tcp
+
+# 3) 특정 호스트만 낀 엔드포인트 (Limit to display filter 상당물)
+tshark -r capture.pcapng -q -z endpoints,ip,ip.addr==10.0.0.15
+
+# 4) Endpoints 값을 Conversations로 재검산 (합산이 맞는지 확인)
+tshark -r capture.pcapng -Y &#39;ip.addr==203.0.113.77&#39; -T fields -e ip.src -e frame.len |
+  awk &#39;{s[$1]+=$2} END {for (k in s) print k, s[k]}&#39;
+
+# 5) 사설 대역 제외 후 외부 IP만
+tshark -r capture.pcapng -q -z &#39;endpoints,ip,!(ip.addr==10.0.0.0/8||ip.addr==172.16.0.0/12||ip.addr==192.168.0.0/16)&#39;</code></pre></div>
+<p><code>(4)</code>의 합이 GUI/CLI <code>Total Bytes</code>와 다르면 필터 조건이나 프레임 길이 계산 기준(헤더 포함 여부)이 다른 것이다. <code>frame.len</code>은 프레임 전체 길이이므로 Endpoints의 <code>Bytes</code>와 같은 기준이다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;이 캡처에서 외부와 통신한 IP를 모두 나열하고, 그중 가장 많은
+ 데이터를 내보낸(Tx) IP를 구하세요.&quot;
+첨부: office2.pcapng (9,442 packets)
+
+1. 첫 시도 (실패)
+   Statistics &gt; Conversations, IPv4 탭에서 Bytes 내림차순 정렬 후
+   상위 5개 행의 Address A/B를 손으로 모아 &quot;외부 IP 목록&quot;이라 적었다.
+   -&gt; 문제가 요구하는 &quot;IP별 총 트래픽&quot;과 맞지 않았다.
+   원인: 같은 외부 IP가 여러 세션(포트가 다른 TCP, 그리고 DNS UDP)에
+        걸쳐 등장해 Conversations에서는 값이 여러 행으로 쪼개져 있었다.
+        합산 없이 상위 몇 개만 본 것이 오답의 원인이었다.
+
+2. 접근 변경 — Statistics &gt; Endpoints, IPv4 탭
+   먼저 필터 없이 전체를 본다.
+
+   Address          Packets  Bytes     Tx Packets  Tx Bytes  Rx Packets  Rx Bytes
+   10.0.0.31        7912     9021004   3102        612004    4810        8409000
+   198.51.100.44    6204     8712004   264         43892     5940        8668112
+   93.184.216.34    631      1892044   229         90722     402        1801322
+   10.0.0.2         88       12004     44          6124      44          5880
+
+3. 사설 대역 제외
+   필터: !(ip.addr == 10.0.0.0/8)
+   Limit to display filter 체크
+   -&gt; 198.51.100.44, 93.184.216.34 두 개만 남는다. 이것이 외부 IP 목록.
+
+4. Tx Bytes 비교
+   198.51.100.44: Tx Bytes 43,892 (적게 보냄, 많이 받음 8,668,112)
+   93.184.216.34: Tx Bytes 90,722
+
+   -&gt; 둘 다 &quot;많이 내보낸&quot; 쪽이 아니다. 10.0.0.31(내부)이 Tx Bytes 612,004로
+      가장 많이 보냈지만 이것은 외부가 아니라 내부 호스트다.
+
+5. 두 번째 시도 (실패)
+   &quot;외부 IP 중 Tx Bytes 최대&quot; 를 93.184.216.34로 답했다. 오답.
+   원인: 문제의 &quot;내보낸&quot;은 **내부에서 외부로 나간 방향**을 뜻했는데,
+        Endpoints의 Tx는 그 IP 자신이 보낸 절대량이라
+        93.184.216.34의 Tx 90,722는 &quot;서버가 클라이언트에 보낸 응답&quot;이었다.
+        방향의 주체를 착각했다.
+
+6. 수정 — Conversations로 방향을 재확인
+   Statistics &gt; Conversations, TCP 탭, 93.184.216.34가 낀 행:
+     10.0.0.31:52120 &lt;-&gt; 93.184.216.34:80
+     Bytes A→B(내부→외부) 90,722   Bytes B→A(외부→내부) 1,801,322
+   -&gt; 실제로는 내부가 90,722바이트만 보내고 외부에서 1.8MB를 받은 것.
+      &quot;내보낸&quot; 이 아니라 &quot;받은&quot; 상황이었다.
+
+   198.51.100.44가 낀 행:
+     10.0.0.31:51442 &lt;-&gt; 198.51.100.44:443
+     Bytes A→B(내부→외부) 8,668,112   Bytes B→A(외부→내부) 43,892
+   -&gt; 내부에서 외부로 8.6MB. 이것이 진짜 &quot;내보낸&quot; 트래픽이다.
+
+정답: 외부 IP = 198.51.100.44, 93.184.216.34 / 가장 많이 내보낸 IP(내부→외부 방향) = 198.51.100.44 (8,668,112 bytes)</code></pre></div>
+<p>두 번의 실패가 이 글의 핵심이다. Endpoints의 <code>Tx</code>/<code>Rx</code>는 <strong>그 IP 자신 기준</strong>일 뿐, &quot;누구를 향해&quot;는 알려주지 않는다. 방향이 문제의 핵심이면 Endpoints로 후보를 추리고 Conversations로 방향을 확정하는 두 단계를 반드시 거친다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>Statistics &gt; Endpoints</code>의 IPv4 탭을 열었는가, TCP/UDP 탭이 필요한 문제는 아닌가</li><li><code>Limit to display filter</code>가 의도치 않게 켜져 있지 않은가</li><li><code>Bytes</code>와 <code>Packets</code> 두 기준으로 각각 정렬해 봤는가</li><li>사설 대역(10/8, 172.16/12, 192.168/16, 169.254/16, 127/8) 제외 필터를 정확히 걸었는가</li><li><code>Tx</code>/<code>Rx</code>가 &quot;그 IP 자신 기준&quot;임을 헷갈리지 않았는가 — 방향이 중요하면 Conversations로</li><li><code>Name resolution</code>을 켰다가 오프라인이라 멈춘 것은 아닌가</li><li><code>Map</code>/GeoIP 컬럼이 비어 있는 것을 오류로 오해하지 않았는가</li><li>Ethernet 탭에서 MAC 개수를 확인했는가</li><li>UDP 탭에서 DNS 서버·터널링 후보를 확인했는가</li><li>CLI <code>-z endpoints,ip</code>와 GUI 값이 일치하는가</li><li>값이 안 맞으면 <a href="./conversations.html">FOR-0149</a>로 세션 단위로 내려가 재확인했는가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-003 — Wireshark User&#39;s Guide, &quot;The Endpoints Window&quot;: 탭 구성(Ethernet/IPv4/IPv6/TCP/UDP 등), <code>Packets</code>/<code>Bytes</code>/<code>Tx Packets</code>/<code>Tx Bytes</code>/<code>Rx Packets</code>/<code>Rx Bytes</code> 컬럼 정의, <code>Limit to display filter</code> 체크박스, <code>Name resolution</code> 체크박스, GeoIP 데이터베이스가 설정되어야 지도/좌표 컬럼이 채워진다는 점</li><li>SRC-010 — tshark man page: <code>-z endpoints,type[,filter]</code>의 문법과 출력 구성(Total/Tx/Rx Frames·Bytes)</li><li>SRC-002 — Wireshark Display Filter Reference: <code>ip.addr</code>, <code>eth.addr</code> 필드</li><li>메뉴 경로, 컬럼 구성, GeoIP 관련 버튼(<code>Map</code>)의 동작은 도구 버전과 로컬 데이터베이스 설치 여부에 따라 다르므로 실제 화면에서 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./protocol-hierarchy.html">
+    <span class="rel-id">FOR-0148 · Network/PCAP</span>
+    Protocol Hierarchy: 프로토콜 비중과 End Packets 읽는 법
+  </a>
+  <a class="related-item" href="./conversations.html">
+    <span class="rel-id">FOR-0149 · Network/PCAP</span>
+    Conversations: 가장 큰 대화를 찾아 tcp.stream으로 직행하기
+  </a>
+  <a class="related-item" href="./wireshark-30sec-triage.html">
+    <span class="rel-id">FOR-0146 · Network/PCAP</span>
+    Wireshark 30초 트리아지: pcap을 받고 처음 할 다섯 가지
+  </a>
+  <a class="related-item" href="./ip-addr-filter.html">
+    <span class="rel-id">FOR-0182 · Network/PCAP</span>
+    ip.addr 필터로 특정 IP 트래픽만 골라내기
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./conversations.html"><span class="rel-id">← FOR-0149</span>Conversations: 가장 큰 대화를 찾아 tcp.stream으로 직행하기</a>
+<a class="related-item" href="./expert-information.html"><span class="rel-id">FOR-0151 →</span>Wireshark Expert Information으로 이상 패킷 빠르게 찾기</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-탭-선택과-conversations와의-차이">1단계 — 탭 선택과 Conversations와의 차이</a></li>
+<li class="toc-l3"><a href="#2단계-컬럼-의미">2단계 — 컬럼 의미</a></li>
+<li class="toc-l3"><a href="#3단계-geoipmap-기능은-오프라인에서-기대하지-않는다">3단계 — GeoIP/Map 기능은 오프라인에서 기대하지 않는다</a></li>
+<li class="toc-l3"><a href="#4단계-정렬-두-번-규칙">4단계 — 정렬 두 번 규칙</a></li>
+<li class="toc-l3"><a href="#5단계-limit-to-display-filter로-외부-ip만-추리기">5단계 — Limit to display filter로 외부 IP만 추리기</a></li>
+<li class="toc-l3"><a href="#6단계-resolve-name-옵션">6단계 — Resolve name 옵션</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-14 10:37 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

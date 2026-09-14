@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>head/tail/less로 큰 로그 파일 빠르게 훑기: -n -f +G 페이징 · FOR-0118 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%A1%9C%EA%B7%B8%2FRegex">로그/Regex</a> / FOR-0118
+      </div>
+      <header class="article-head">
+        <h1>head/tail/less로 큰 로그 파일 빠르게 훑기: -n -f +G 페이징</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">로그/Regex</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">linux</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>수백 MB~수 GB짜리 로그는 절대 cat이나 메모장으로 통째로 열지 않는다. head -n으로 형식을 확인하고, tail -n/tail -f로 최근·실시간 부분만 보고, less +G로 끝에서부터 검색하며 훑는 것이 대용량 로그를 여는 첫 순서다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>head, tail, less, more, wc, split, Get-Content</td></tr>
+<tr><th>artifact</th><td><code>access.log</code> · <code>auth.log</code> · <code>syslog</code> · <code>text log</code> · <code>IIS log</code></td></tr>
+<tr><th>파일 경로</th><td><code>/var/log/auth.log</code> · <code>/var/log/syslog</code> · <code>C:\inetpub\logs\LogFiles</code></td></tr>
+<tr><th>파일 형식</th><td><code>log</code> · <code>txt</code> · <code>csv</code></td></tr>
+<tr><th>검색 별칭</th><td>큰 로그 파일 열기 · 로그 실시간 보기 · 파일 끝만 보기 · 로그 페이징 · less 검색 · tail 실시간 감시</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>수백 MB~수 GB짜리 로그는 절대 <code>cat</code>이나 메모장으로 통째로 열지 않는다. <code>head -n</code>으로 형식을 확인하고, <code>tail -n</code>/<code>tail -f</code>로 최근·실시간 부분만 보고, <code>less +G</code>로 끝에서부터 검색하며 훑는 것이 대용량 로그를 여는 첫 순서다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>로그 파일이 수백 MB 이상이라 텍스트 에디터가 멈추거나 아예 안 열리는 상황</li><li>파일 형식을 아직 모를 때 &quot;처음/마지막 몇 줄&quot;만 빠르게 확인해야 하는 상황</li><li>공격이 재현되고 있는 실시간 로그를 지켜봐야 하는 상황(honeypot, 재현 스크립트)</li><li><code>grep -n</code>으로 찾은 줄 번호 주변 맥락만 봐야 하는 상황</li><li>정규식을 아직 못 세운 초반 단계에서 눈으로 스크롤하며 패턴을 찾아야 하는 상황</li></ul>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>파일 크기가 수십~수백 MB 이상이다 → <code>cat</code>/메모장 금지, <code>head</code>/<code>tail</code>/<code>less</code>부터</li><li>지문에 &quot;실시간&quot;·&quot;모니터링&quot;·&quot;지금 공격 중&quot; → <code>tail -f</code></li><li><code>grep</code>으로 줄 번호를 이미 찾았다 → 그 줄 주변만 <code>less</code> 또는 <code>sed -n</code>으로</li><li>로그 형식을 모른다 → <code>head -n 5</code>로 먼저 육안 확인</li><li>파일이 로테이션되는 서비스 로그다(<code>app.log</code>, <code>app.log.1</code>) → <code>tail -F</code>(대문자)가 필요</li></ol>
+<p>먼저 크기와 줄 수부터 잰다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">ls -lh access.log
+wc -l access.log</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">-rw-r--r-- 1 user user 1.2G Mar 14 08:00 access.log
+4128421 access.log</code></pre></div>
+<p>1.2GB, 412만 줄이라는 사실을 확인하고 나면 &quot;절대 전체를 화면에 뿌리지 않는다&quot;는 원칙이 선다.</p>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tail -n 100 access.log</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">head -n 5 access.log          # 형식 확인
+tail -n 100 access.log        # 최근 상황
+wc -l access.log              # 총 줄 수
+less +G access.log            # 끝에서부터 위로 스크롤하며 검색</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-headtail-기본-옵션">1단계 — head/tail 기본 옵션</h3>
+<div class="table-wrap"><table><thead><tr><th>옵션</th><th>의미</th><th>예</th></tr></thead><tbody><tr><td><code>-n N</code></td><td>앞/뒤 N줄</td><td><code>head -n 20 f</code>, <code>tail -n 20 f</code></td></tr><tr><td><code>-n +N</code></td><td>N번째 줄부터 <strong>끝까지</strong> (<code>tail</code> 전용 관용구)</td><td><code>tail -n +1000 f</code></td></tr><tr><td><code>-n -N</code></td><td>마지막 N줄을 <strong>제외한</strong> 전부 (GNU <code>head</code> 확장)</td><td><code>head -n -10 f</code></td></tr><tr><td><code>-c N</code></td><td>앞/뒤 N <strong>바이트</strong></td><td><code>tail -c 500 f</code></td></tr><tr><td><code>-q</code></td><td>여러 파일을 헤더 없이 이어서</td><td><code>head -q -n5 a.log b.log</code></td></tr><tr><td><code>-v</code></td><td>파일마다 <code>==&gt; 이름 &lt;==</code> 헤더 강제 표시</td><td><code>tail -v -n5 a.log</code></td></tr></tbody></table></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">$ head -n 3 access.log
+203.0.113.77 - - [14/Mar/2026:07:11:02 +0900] &quot;GET /admin/ HTTP/1.1&quot; 403 199
+192.168.10.24 - - [14/Mar/2026:07:11:09 +0900] &quot;POST /upload.php HTTP/1.1&quot; 200 87
+198.51.100.5 - - [14/Mar/2026:07:11:11 +0900] &quot;GET /favicon.ico HTTP/1.1&quot; 404 209
+
+$ tail -n +4128400 access.log | head -n 3
+4128400: ...</code></pre></div>
+<p><code>tail -n +N</code>으로 &quot;N줄부터 끝까지&quot;를 뽑아 <code>head</code>와 조합하면 임의의 구간을 잘라낼 수 있다. <code>grep -n</code>으로 찾은 줄 번호 주변을 통째로 볼 때 쓴다.</p>
+<h3 id="2단계-tail--f--f-실시간-감시">2단계 — tail -f / -F: 실시간 감시</h3>
+<div class="table-wrap"><table><thead><tr><th>옵션</th><th>동작</th><th>언제</th></tr></thead><tbody><tr><td><code>-f</code></td><td>파일 끝을 계속 읽는다. <strong>파일 디스크립터(inode)를 따라간다</strong></td><td>로테이션 없는 단순 append 로그</td></tr><tr><td><code>-F</code></td><td><code>-f</code>와 같지만 파일이 삭제·재생성(로테이션)되면 <strong>이름으로 다시 연다</strong></td><td>logrotate로 갈아치우는 서비스 로그</td></tr><tr><td><code>--pid=PID</code></td><td>PID가 죽으면 <code>tail</code>도 종료</td><td>재현 스크립트와 함께 실행할 때</td></tr><tr><td><code>--retry</code></td><td>파일이 아직 없어도 기다렸다 열림</td><td>서비스가 아직 로그를 안 만들었을 때</td></tr></tbody></table></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tail -f app.log</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">203.0.113.77 - - [14/Mar/2026:08:02:11 +0900] &quot;GET /admin/ HTTP/1.1&quot; 403 199
+203.0.113.77 - - [14/Mar/2026:08:02:12 +0900] &quot;GET /admin/backup/ HTTP/1.1&quot; 404 210
+^C</code></pre></div>
+<p><code>Ctrl+C</code>로 종료한다. 이걸 모르면 셸이 멈춘 것으로 착각한다.</p>
+<p>로테이션이 걸린 서비스는 <code>-f</code> 대신 반드시 <code>-F</code>를 쓴다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tail -F /var/log/nginx/access.log</code></pre></div>
+<p>여러 파일을 동시에 감시하면 파일이 바뀔 때마다 헤더로 구분된다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">$ tail -f auth.log app.log
+==&gt; auth.log &lt;==
+Mar 14 08:02:20 web01 sshd[3010]: Failed password for root from 203.0.113.77
+==&gt; app.log &lt;==
+203.0.113.77 - - [14/Mar/2026:08:02:21 +0900] &quot;GET /admin/ HTTP/1.1&quot; 403 199</code></pre></div>
+<h3 id="3단계-less-페이저의-핵심-조작">3단계 — less: 페이저의 핵심 조작</h3>
+<p><code>less</code>는 파일 전체를 메모리에 올리지 않고 필요한 부분만 읽으므로 수 GB 파일도 즉시 연다.</p>
+<div class="table-wrap"><table><thead><tr><th>키</th><th>동작</th></tr></thead><tbody><tr><td><code>G</code></td><td>파일 끝으로</td></tr><tr><td><code>g</code></td><td>파일 처음으로</td></tr><tr><td><code>/패턴</code></td><td>아래 방향 검색</td></tr><tr><td><code>?패턴</code></td><td>위 방향 검색</td></tr><tr><td><code>n</code> / <code>N</code></td><td>다음 / 이전 매칭</td></tr><tr><td><code>&amp;패턴</code></td><td>매칭되는 줄만 <strong>필터링해서 표시</strong> (grep처럼)</td></tr><tr><td><code>v</code></td><td><code>$EDITOR</code>로 현재 위치를 열어 편집</td></tr><tr><td><code>F</code></td><td><code>tail -f</code>처럼 실시간 추적 시작</td></tr><tr><td><code>Ctrl+C</code></td><td><code>F</code> 모드 중단(포워드 모드 유지, <code>less</code>는 안 꺼짐)</td></tr><tr><td><code>q</code></td><td>종료</td></tr><tr><td><code>=</code></td><td>현재 줄 번호·파일 크기 정보</td></tr></tbody></table></div>
+<p>실행 옵션이다.</p>
+<div class="table-wrap"><table><thead><tr><th>옵션</th><th>의미</th></tr></thead><tbody><tr><td><code>+G</code></td><td>열자마자 끝으로 이동</td></tr><tr><td><code>+F</code></td><td>열자마자 추적 모드(사실상 <code>tail -f</code> 대체)</td></tr><tr><td><code>+/패턴</code></td><td>열자마자 그 패턴을 검색</td></tr><tr><td><code>-N</code></td><td>줄 번호 표시</td></tr><tr><td><code>-S</code></td><td>긴 줄 줄바꿈하지 않고 자름(좌우 화살표로 스크롤)</td></tr><tr><td><code>-I</code></td><td>검색을 대소문자 무시로</td></tr><tr><td><code>-M</code></td><td>상태줄에 퍼센트·줄 번호 표시</td></tr></tbody></table></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">less -N +G access.log</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">4128419 203.0.113.77 - - [14/Mar/2026:07:59:58 +0900] &quot;GET /admin/ HTTP/1.1&quot; 403 199
+4128420 203.0.113.77 - - [14/Mar/2026:07:59:59 +0900] &quot;POST /upload.php HTTP/1.1&quot; 200 87
+4128421 203.0.113.77 - - [14/Mar/2026:08:00:00 +0900] &quot;GET /u/av4tar.php?cmd=id HTTP/1.1&quot; 200 42
+access.log lines 4128401-4128421/4128421 (END)</code></pre></div>
+<p><code>less</code>의 검색은 기본 정규식을 지원한다. <code>/av4tar\.php</code>처럼 이스케이프한 패턴을 그대로 쓸 수 있다. 검색 안에서 필터만 보고 싶으면 <code>&amp;</code>를 쓴다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">&amp;av4tar\.php</code></pre></div>
+<p>이 줄만 걸러 보여준다. 필터를 해제하려면 <code>&amp;</code>만 입력하고 Enter.</p>
+<p>압축된 로테이션 로그는 <code>zless</code>(<code>less</code>의 gzip 버전)로 그대로 넘긴다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">zless access.log.2.gz</code></pre></div>
+<h3 id="4단계-wc-split-크기-파악과-분할">4단계 — wc / split: 크기 파악과 분할</h3>
+<div class="table-wrap"><table><thead><tr><th>명령</th><th>출력</th></tr></thead><tbody><tr><td><code>wc -l file</code></td><td>줄 수</td></tr><tr><td><code>wc -c file</code></td><td>바이트 수</td></tr><tr><td><code>wc -L file</code></td><td>가장 긴 줄의 길이(글자 수)</td></tr><tr><td><code>wc -l &lt; file</code></td><td>파일명 없이 숫자만(스크립트에서 유용)</td></tr></tbody></table></div>
+<p>일부 도구가 초대형 파일에서 느리거나 메모리를 다 쓰면 줄 단위로 쪼갠다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 10만 줄씩 분할 (part_aa, part_ab, ...)
+split -l 100000 huge.log part_
+
+# 패턴이 나올 때마다 분할 (예: 날짜가 바뀌는 지점)
+csplit huge.log &#39;/^Mar 15/&#39; &#39;{*}&#39;</code></pre></div>
+<h3 id="5단계-windowspowershell-대응">5단계 — Windows/PowerShell 대응</h3>
+<div class="table-wrap"><table><thead><tr><th>목적</th><th>Linux</th><th>PowerShell</th></tr></thead><tbody><tr><td>앞 N줄</td><td><code>head -n 20 f</code></td><td><code>Get-Content f -Head 20</code></td></tr><tr><td>뒤 N줄</td><td><code>tail -n 20 f</code></td><td><code>Get-Content f -Tail 20</code></td></tr><tr><td>실시간 추적</td><td><code>tail -f f</code></td><td><code>Get-Content f -Tail 20 -Wait</code></td></tr><tr><td>줄 수</td><td><code>wc -l f</code></td><td>`(Get-Content f</td><td>Measure-Object -Line).Lines`</td></tr><tr><td>페이저</td><td><code>less f</code></td><td><code>more f</code> (기능이 훨씬 적다)</td></tr></tbody></table></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Get-Content &#39;C:\case\app.log&#39; -Tail 50 -Wait</code></pre></div>
+<p><code>Get-Content</code>는 <strong>줄 단위로 전체를 파이프라인에 태우는</strong> 방식이라 수백 MB 파일에서 <code>head</code>/<code>tail</code>보다 눈에 띄게 느리다. <code>-Tail</code>/<code>-Head</code>는 내부적으로 필요한 부분만 읽도록 최적화되어 있지만, <code>Get-Content f | Select-Object -First 20</code>처럼 파일 전체를 읽은 뒤 앞부분만 자르는 형태는 피한다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 느림 - 파일 전체를 다 읽는다
+Get-Content .\huge.log | Select-Object -First 20
+
+# 빠름 - Head 옵션이 내부에서 앞부분만 읽는다
+Get-Content .\huge.log -Head 20</code></pre></div>
+<p>인코딩도 확인한다. 한국어 Windows 애플리케이션 로그가 UTF-16LE나 CP949로 저장된 경우 <code>-Encoding</code>을 명시하지 않으면 글자가 깨진다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">Get-Content .\app.log -Tail 20 -Encoding utf8</code></pre></div>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="table-wrap"><table><thead><tr><th>위치</th><th>의미</th></tr></thead><tbody><tr><td><code>tail -f</code>의 <code>==&gt; 파일명 &lt;==</code></td><td>여러 파일을 동시에 볼 때 방금 출력이 어느 파일인지</td></tr><tr><td><code>less</code> 하단 상태줄 <code>lines 4128401-4128421/4128421 (END)</code></td><td>현재 보이는 줄 범위 / 전체 줄 수, <code>END</code>는 파일 끝</td></tr><tr><td><code>less -M</code> 상태줄의 퍼센트</td><td>파일에서 현재 위치의 대략적 진행률</td></tr><tr><td><code>wc -l</code> 출력의 숫자</td><td>개행 문자(<code>\n</code>) 개수 — 마지막 줄에 개행이 없으면 실제 줄 수보다 1 작게 나온다</td></tr><tr><td><code>head -q</code> 결과에 파일명 헤더가 없음</td><td><code>-q</code>가 강제로 헤더를 없앤 것. 여러 파일을 이어붙여 파이프에 넘길 때 씀</td></tr></tbody></table></div>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>head/tail/less로 확인한 것</th><th>다음 목표</th></tr></thead><tbody><tr><td>로그 형식(필드 배치)</td><td><code>awk -F</code>로 필드 번호 확정 (<a href="./awk-fields.html">FOR-0115</a>)</td></tr><tr><td>관심 줄 번호</td><td><code>sed -n &#39;N,Mp&#39;</code>로 구간 치환/추출 (<a href="./sed-substitute.html">FOR-0119</a>)</td></tr><tr><td>최근/최종 이벤트 시각</td><td>다른 로그를 같은 시간대로 잘라 상관 분석</td></tr><tr><td>파일이 너무 커서 <code>grep</code>도 느리다</td><td><code>split</code>으로 쪼갠 뒤 병렬로 <code>grep</code></td></tr><tr><td>형식을 모르겠다</td><td>로그 형식 판별 절차 (<a href="./log-triage.html">FOR-0111</a>)</td></tr><tr><td>빈도 집계가 필요</td><td><code>sort | uniq -c</code> (<a href="./sort-uniq.html">FOR-0117</a>)</td></tr><tr><td>실시간 로그의 특정 문자열만</td><td><code>tail -f | grep --line-buffered &#39;PATTERN&#39;</code></td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>큰 파일을 <code>cat</code>으로 바로 여는 것.</strong> 터미널 스크롤백이 넘치고 화면이 멈춘 것처럼 보인다. 항상 <code>head</code>/<code>tail</code>/<code>less</code>부터 시작한다.</li><li><strong><code>tail -f</code>를 켠 채로 다음 명령을 못 치는 것.</strong> <code>Ctrl+C</code>로 종료해야 셸이 돌아온다. 멈췄다고 창을 강제로 닫지 않는다.</li><li><strong>로테이션되는 로그에 <code>-f</code>를 쓰는 것.</strong> logrotate가 파일을 교체하면 <code>-f</code>는 옛 inode를 계속 읽어 새 로그를 놓친다. 서비스 로그는 <code>-F</code>가 기본이어야 한다.</li><li><strong><code>head -n -N</code>을 아무 <code>head</code>에서나 되는 문법으로 아는 것.</strong> 마지막 N줄을 제외하는 음수 문법은 GNU 확장이다. macOS 기본 <code>head</code>(BSD)에는 없다.</li><li><strong><code>less</code> 종료 방법을 몰라 창을 닫는 것.</strong> <code>q</code>로 나온다. <code>Ctrl+C</code>는 <code>less</code> 자체를 끄지 않고 <code>F</code>(follow) 모드만 중단시킨다.</li><li><strong><code>less</code> 검색이 기본으로 대소문자를 구분한다는 것을 잊는 것.</strong> <code>FLAG{</code>와 <code>flag{</code>가 섞인 로그에서 <code>/flag</code> 검색은 절반을 놓친다. <code>-I</code> 옵션이나 검색 중 <code>-I</code> 토글을 쓴다.</li><li><strong><code>wc -l</code> 결과를 그대로 &quot;이벤트 개수&quot;로 믿는 것.</strong> 여러 줄에 걸친 레코드(스택 트레이스, JSON pretty-print)가 있으면 줄 수와 이벤트 수가 다르다.</li><li><strong>PowerShell <code>Get-Content</code>로 전체를 읽은 뒤 <code>Select-Object -First</code>로 자르는 것.</strong> 파일 전체를 메모리에 올린 뒤 자르므로 대용량에서 느리다. <code>-Head</code>/<code>-Tail</code> 파라미터를 직접 쓴다.</li><li><strong>인코딩을 확인하지 않고 <code>less</code>/<code>Get-Content</code>로 보는 것.</strong> UTF-16LE 로그는 <code>less</code>에서 각 글자 사이에 <code>^@</code>가 끼어 보인다. <code>file -i</code>로 먼저 인코딩을 확인한다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<p><code>head</code>/<code>tail</code>로 잘라낸 범위가 맞는지 <code>wc</code>와 <code>grep</code>으로 재확인한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 방법 1: wc -l 로 총 줄 수
+wc -l access.log
+
+# 방법 2: 마지막 줄 번호를 grep -c &#39;^&#39; 로 재확인 (개행 유무와 무관하게 안전)
+grep -c &#39;^&#39; access.log</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">4128421 access.log
+4128421</code></pre></div>
+<p>두 값이 다르면 마지막 줄에 개행이 없는 것이다. <code>tail -n +N</code>으로 잘라낸 구간의 줄 수도 검산한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tail -n +4128400 access.log | wc -l    # 22 (4128421 - 4128400 + 1)</code></pre></div>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;서버가 다운되기 직전 5GB짜리 app.log 에서 마지막 공격 요청의 시각과
+ 명령어를 구하세요. 로그는 logrotate 로 매시간 로테이션된다.&quot;
+첨부: app.log (5.1GB, 진행 중에도 계속 append)
+
+1. 첫 시도 (실패):
+   $ cat app.log | tail -100
+   -&gt; cat 이 5GB 전체를 파이프에 흘려보내려다 몇 초간 응답이 없다.
+      &quot;멈췄다&quot;고 착각해 Ctrl+C 로 끊고 파일이 손상된 줄 알았다.
+      cat 은 여기서 불필요한 중간 단계였다.
+
+2. 접근 변경 — tail 만으로 직접
+   $ tail -n 100 app.log
+   -&gt; 즉시 응답. cat 을 거칠 필요가 없었다.
+
+3. 실시간 감시 시도 (두 번째 실패):
+   $ tail -f app.log
+   -&gt; 새 줄이 전혀 안 뜬다. 그런데 서버는 여전히 요청을 받고 있다는
+      대시보드가 있었다. logrotate 가 이미 파일을 새 inode 로 교체한 뒤였다.
+      -f 는 옛 파일을 계속 붙들고 있었다.
+
+4. 대문자 F 로 전환
+   $ tail -F app.log
+   203.0.113.77 - - [14/Mar/2026:08:59:58 +0900] &quot;GET /admin/ HTTP/1.1&quot; 403 199
+   203.0.113.77 - - [14/Mar/2026:08:59:59 +0900] &quot;GET /u/av4tar.php?cmd=id HTTP/1.1&quot; 200 42
+   -&gt; 파일 교체를 감지해 새 파일을 다시 열었다. 이제 실시간으로 잡힌다.
+
+5. 서버가 다운된 시점 확인 - less 로 끝에서부터
+   $ less -N +G app.log
+   5123841 203.0.113.77 - - [14/Mar/2026:09:14:02 +0900] &quot;GET /u/av4tar.php?cmd=cat+/etc/shadow HTTP/1.1&quot; 200 1204
+   5123842 203.0.113.77 - - [14/Mar/2026:09:14:03 +0900] &quot;GET /u/av4tar.php?cmd=rm+-rf+/var/log HTTP/1.1&quot; 500 0
+   app.log lines 5123822-5123842/5123842 (END)
+   -&gt; 마지막 줄이 500 에러. rm -rf 로 로그 자체를 지우려던 시도가
+      서버 크래시 직전 마지막 요청이었다.
+
+6. 교차검증 - 줄 수와 grep -c &#39;^&#39; 비교
+   $ wc -l app.log        # 5123842
+   $ grep -c &#39;^&#39; app.log  # 5123842
+   일치. 마지막 줄에 개행이 있었다는 뜻이다.
+
+정답: 09:14:03 KST(+0900), cmd=rm+-rf+/var/log (로그 삭제 시도 직후 서버 다운)</code></pre></div>
+<p>1단계와 3단계가 이 글의 핵심이다. <strong>불필요한 <code>cat</code>을 거치지 않는다. 로테이션되는 로그에는 <code>-f</code>가 아니라 <code>-F</code>를 쓴다.</strong></p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>ls -lh</code>로 파일 크기를 먼저 확인했는가 — 큰 파일에 <code>cat</code>을 쓰지 않았는가</li><li><code>head -n 5</code>로 형식을 확인했는가</li><li>로그가 로테이션되는 서비스라면 <code>tail -F</code>(대문자)를 썼는가</li><li><code>less</code>를 종료할 때 <code>q</code>를 쓰는 것을 아는가(<code>Ctrl+C</code>는 follow만 중단)</li><li><code>less</code> 검색에서 대소문자를 놓치지 않았는가(<code>-I</code>)</li><li><code>wc -l</code>과 <code>grep -c &#39;^&#39;</code>을 비교해 마지막 줄 개행 여부를 확인했는가</li><li>인코딩이 UTF-16LE/CP949인지 <code>file -i</code>로 확인했는가</li><li>PowerShell에서 <code>-Head</code>/<code>-Tail</code>을 직접 썼는가(<code>Select-Object -First</code>로 전체를 읽지 않았는가)</li><li>압축된 로테이션 로그(<code>.gz</code>)라면 <code>zless</code>로 넘어갔는가</li><li>여전히 느리면 <code>split</code>으로 쪼개서 처리할 시점인가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>본문의 <code>head</code>/<code>tail</code>/<code>less</code>/<code>wc</code>/<code>split</code> 옵션 동작은 GNU Coreutils와 GNU less의 일반적으로 알려진 표준 동작이나, <code>research/sources.json</code>에 해당 매뉴얼이 아직 등록되지 않아 <code>source_ids</code>를 비워 두고 <code>status: draft</code>로 표시했다</li><li>GNU 확장(<code>head -n -N</code>, <code>-F</code>의 로테이션 재오픈 동작)은 배포판·버전에 따라 다를 수 있으므로 실제 환경에서 <code>--version</code>으로 구현을 확인할 것</li><li>PowerShell <code>Get-Content -Head/-Tail/-Wait</code>의 성능 특성은 실제 환경에서 파일 크기별로 재확인할 것</li><li>오케스트레이터에게: GNU Coreutils Manual(<code>head</code>, <code>tail</code>, <code>wc</code>, <code>split</code>)과 GNU less 매뉴얼을 <code>research/sources.json</code>에 추가할 것을 요청한다</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./grep-basics.html">
+    <span class="rel-id">FOR-0112 · 로그/Regex</span>
+    grep 기본 옵션 레퍼런스: -i -v -c -o -w -E -P -r 와 종료 코드
+  </a>
+  <a class="related-item" href="./sed-substitute.html">
+    <span class="rel-id">FOR-0119 · 로그/Regex</span>
+    sed로 로그 치환/정리하기: s/// -n -i -E 와 백레퍼런스
+  </a>
+  <a class="related-item" href="./log-triage.html">
+    <span class="rel-id">FOR-0111 · 로그/Regex</span>
+    로그 파일 30초 트리아지: 형식·줄수·시간범위부터 확인한다
+  </a>
+  <a class="related-item" href="./grep-e-regex.html">
+    <span class="rel-id">FOR-0113 · 로그/Regex</span>
+    grep -E 확장 정규표현식(ERE) 실전: BRE와의 차이와 lookaround 대안
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./cut-fields.html"><span class="rel-id">← FOR-0116</span>cut으로 로그에서 원하는 필드(컬럼)만 잘라내기</a>
+<a class="related-item" href="./sed-substitute.html"><span class="rel-id">FOR-0119 →</span>sed로 로그 치환/정리하기: s/// -n -i -E 와 백레퍼런스</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-headtail-기본-옵션">1단계 — head/tail 기본 옵션</a></li>
+<li class="toc-l3"><a href="#2단계-tail--f--f-실시간-감시">2단계 — tail -f / -F: 실시간 감시</a></li>
+<li class="toc-l3"><a href="#3단계-less-페이저의-핵심-조작">3단계 — less: 페이저의 핵심 조작</a></li>
+<li class="toc-l3"><a href="#4단계-wc-split-크기-파악과-분할">4단계 — wc / split: 크기 파악과 분할</a></li>
+<li class="toc-l3"><a href="#5단계-windowspowershell-대응">5단계 — Windows/PowerShell 대응</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-14 10:37 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

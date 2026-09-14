@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Follow UDP Stream 사용법 · FOR-0163 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Network%2FPCAP">Network/PCAP</a> / FOR-0163
+      </div>
+      <header class="article-head">
+        <h1>Follow UDP Stream 사용법</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Network/PCAP</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>Follow &gt; UDP Stream 은 같은 (출발지 IP·포트, 목적지 IP·포트) 조합의 데이터그램을 캡처에 도착한 순서 그대로 이어 붙여 보여준다. TCP 와 달리 시퀀스 번호로 재정렬하지 않으므로, 평문 프로토콜(TFTP, syslog, SNMP)의 내용을 빠르게 읽을 때는 유용하지만 바이트 순서가 절대적으로 정확해야 하는 파일 복원에는 Hex Dump 로 데이터그램 경계를 직접 확인한 뒤 신뢰한다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Wireshark, tshark</td></tr>
+<tr><th>artifact</th><td><code>pcap</code> · <code>pcapng</code> · <code>UDP conversation</code></td></tr>
+<tr><th>프로토콜</th><td>UDP, TFTP, syslog, SNMP</td></tr>
+<tr><th>Wireshark 필터</th><td><code>udp.stream eq 0</code> · <code>udp.stream eq 0 &amp;&amp; data.len &gt; 0</code></td></tr>
+<tr><th>tshark field</th><td><code>udp.stream</code> · <code>udp.length</code> · <code>frame.time_relative</code> · <code>data.len</code></td></tr>
+<tr><th>파일 형식</th><td><code>pcap</code> · <code>pcapng</code></td></tr>
+<tr><th>검색 별칭</th><td>udp follow stream · udp 스트림 내용 보기 · udp 대화 내용 확인 · udp 통째로 보기 · udp 텍스트로 복원</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>Follow &gt; UDP Stream</code> 은 같은 (출발지 IP·포트, 목적지 IP·포트) 조합의 데이터그램을 <strong>캡처에 도착한 순서 그대로</strong> 이어 붙여 보여준다. TCP 와 달리 시퀀스 번호로 재정렬하지 않으므로, 평문 프로토콜(TFTP, syslog, SNMP)의 내용을 빠르게 읽을 때는 유용하지만 <strong>바이트 순서가 절대적으로 정확해야 하는 파일 복원에는 Hex Dump 로 데이터그램 경계를 직접 확인한 뒤 신뢰한다.</strong></p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>TFTP·syslog·SNMP·커스텀 UDP 프로토콜처럼 평문 데이터가 여러 데이터그램에 걸쳐 있을 때</li><li><code>udp.stream</code> 하나를 지정해 그 대화의 전체 내용을 한 화면에서 읽어야 할 때</li><li>Protocol Hierarchy 에서 UDP 트래픽에 사람이 읽을 수 있는 문자열이 섞여 있는 것을 확인했을 때</li><li>UDP 로 전송된 명령/응답 시퀀스를 순서대로 훑어야 할 때</li></ul>
+<p>UDP 관련 통계·필터 전반(<code>udp.stream</code> 필터링, Conversations, 포트 분류)은 <a href="./udp-flow-analysis.html">FOR-0176</a> 을 먼저 본다. 이 글은 <strong>Follow 기능 자체</strong>의 사용법과 한계에 집중한다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li><strong>UDP 패킷 우클릭 메뉴에 <code>Follow &gt; UDP Stream</code> 항목이 존재</strong> — TCP 전용 기능이 아니다</li><li><strong>Info 컬럼에 평문 명령/응답</strong> (<code>RRQ</code>, <code>WRQ</code>, syslog 메시지, SNMP OID) — Follow 로 한 번에 읽을 가치가 있다는 신호</li><li><strong>같은 4-tuple 로 여러 패킷이 짧은 시간 내 반복</strong> — 하나의 논리적 전송이 여러 데이터그램으로 쪼개져 있다</li><li><strong>Protocol Hierarchy 의 UDP 하위 <code>Data</code></strong> — 파서가 못 읽은 페이로드. Follow 로 열어 사람이 읽을 수 있는 부분이 있는지 먼저 확인한다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -q -z follow,udp,ascii,0</code></pre></div>
+<p>GUI 3단계:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1. 대상 UDP 패킷 하나 우클릭
+2. Follow &gt; UDP Stream 클릭
+3. Show data as 를 ASCII / Hex Dump 로 전환하며 내용 확인</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-메뉴-위치와-필터-자동-생성">1단계 — 메뉴 위치와 필터 자동 생성</h3>
+<p>UDP 패킷 우클릭 → <code>Follow &gt; UDP Stream</code>. 클릭하면 메인 창 필터에 <code>udp.stream eq N</code> 이 자동으로 걸리고, 새 창에 그 스트림의 데이터그램들이 도착 순서대로 표시된다.</p>
+<p>TCP 의 Follow 와 마찬가지로 색상은 방향만 구분한다(빨강/파랑). 창 상단 드롭다운으로 <code>Entire conversation</code> 또는 한쪽 방향만 선택할 수 있는 것도 동일하다.</p>
+<h3 id="2단계-udp-는-이어붙이기이지-재조립이-아니다">2단계 — UDP 는 &quot;이어붙이기&quot;이지 &quot;재조립&quot;이 아니다</h3>
+<p>TCP Follow 는 시퀀스 번호로 순서를 <strong>보장</strong>해 재조립한다. UDP 에는 그런 번호가 없으므로 Wireshark 는 <strong>그 스트림에 속한 데이터그램을 프레임 번호(캡처 도착 순서) 그대로 이어 붙일 뿐</strong>이다.</p>
+<div class="table-wrap"><table><thead><tr><th></th><th>TCP Follow</th><th>UDP Follow</th></tr></thead><tbody><tr><td>순서 기준</td><td><code>tcp.seq</code> (재정렬 가능)</td><td>프레임 도착 순서 (재정렬 없음)</td></tr><tr><td>네트워크가 순서를 바꿔 배달했을 때</td><td>원래 순서로 복원됨</td><td><strong>뒤바뀐 순서 그대로 보임</strong></td></tr><tr><td>손실된 데이터그램</td><td>손실 여부를 <code>tcp.analysis.lost_segment</code> 로 알 수 있음</td><td>UDP 에는 이런 판정 필드가 없다. 애플리케이션 계층 번호(TFTP block 번호 등)로 직접 확인해야 한다</td></tr></tbody></table></div>
+<p>그래서 순서에 민감한 바이너리를 복원할 때는, Follow 창만 믿지 말고 <strong>애플리케이션 프로토콜 자체에 내장된 순번</strong>(TFTP 의 block 번호, 커스텀 프로토콜의 시퀀스 필드)을 별도로 확인한다.</p>
+<h3 id="3단계-show-data-as-옵션은-tcp-와-동일하다">3단계 — Show data as 옵션은 TCP 와 동일하다</h3>
+<div class="table-wrap"><table><thead><tr><th>옵션</th><th>용도</th></tr></thead><tbody><tr><td>ASCII</td><td>syslog 원문, TFTP 옵션 협상, SNMP community string 읽기</td></tr><tr><td>Hex Dump</td><td>데이터그램 경계와 헤더 바이트를 눈으로 구분</td></tr><tr><td>Raw</td><td>바이너리 파일 복원 시 저장용</td></tr><tr><td>UTF-8</td><td>멀티바이트 문자가 깨질 때</td></tr></tbody></table></div>
+<p><strong>Hex Dump 로 전환하면 각 데이터그램이 시작하는 지점을 눈으로 짐작할 수 있다.</strong> ASCII 뷰만으로는 데이터그램 경계가 보이지 않아, 두 데이터그램이 이어진 지점에서 헤더 바이트가 텍스트 중간에 섞여 들어간 것을 놓치기 쉽다.</p>
+<h3 id="4단계-대표-평문-udp-프로토콜에서-바로-쓰는-법">4단계 — 대표 평문 UDP 프로토콜에서 바로 쓰는 법</h3>
+<div class="table-wrap"><table><thead><tr><th>프로토콜</th><th>포트</th><th>Follow 로 보이는 것</th></tr></thead><tbody><tr><td>TFTP</td><td>69</td><td><code>RRQ</code>/<code>WRQ</code> 파일명, <code>DATA</code>/<code>ACK</code> 블록 번호, 전송된 바이트</td></tr><tr><td>syslog</td><td>514</td><td>로그 메시지 원문 (PRI, 타임스탬프, 호스트, 메시지)</td></tr><tr><td>SNMP</td><td>161/162</td><td>community string 평문, OID, 값 (SNMPv1/v2c 한정)</td></tr><tr><td>커스텀 프로토콜</td><td>임의</td><td>파서가 없어 <code>Data</code> 로만 보이지만 Follow 의 ASCII/Hex 뷰에서 내용은 그대로 확인 가능</td></tr></tbody></table></div>
+<p>TFTP 는 파일 하나가 여러 <code>DATA</code> 데이터그램(기본 블록 크기 512바이트)으로 나뉜다. Follow 창에서 이어 붙여 보이는 내용이 파일 전체가 맞는지는, 마지막 데이터그램이 512바이트 미만인지(TFTP 종료 조건)로 확인한다.</p>
+<h3 id="5단계-신뢰할-수-없는-상황을-먼저-판별한다">5단계 — 신뢰할 수 없는 상황을 먼저 판별한다</h3>
+<p>Follow 결과를 그대로 파일로 저장하기 전에 다음을 확인한다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1. udp.stream eq N 필터로 이 스트림의 패킷 수를 센다
+2. frame.time_relative 를 컬럼으로 올려 시간 간격이 균일한지 본다
+   -&gt; 간격이 들쭉날쭉하거나 순서가 이상하면 재정렬 없이 이어붙인 결과를 의심한다
+3. 짧은 시간(수 ms) 안에 같은 내용으로 보이는 데이터그램이 중복되는지 확인한다
+   -&gt; UDP 에는 재전송 개념이 없으므로, 중복은 애플리케이션이 응답을 못 받아
+      스스로 재전송한 것이다. Follow 결과에 같은 내용이 두 번 나타난다</code></pre></div>
+<h3 id="6단계-파일-복원-방향을-분리하고-raw-로-저장">6단계 — 파일 복원: 방향을 분리하고 Raw 로 저장</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1. 드롭다운에서 파일이 실려 있는 방향 하나만 선택
+2. Show data as = Raw
+3. Save as... 로 저장
+4. file / strings 로 확인</code></pre></div>
+<p>큰 스트림은 GUI 표시가 잘릴 수 있으므로 tshark 로 대체한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -q -z follow,udp,hex,0</code></pre></div>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p>Follow 창 자체에는 필드가 없지만, 판정에 쓰는 패킷 목록 필드는 다음과 같다.</p>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>의미</th><th>실전 용도</th></tr></thead><tbody><tr><td><code>udp.stream</code></td><td>Wireshark 가 부여한 대화 번호</td><td>Follow 창과 필터를 연결하는 키</td></tr><tr><td><code>udp.length</code></td><td>UDP 헤더 8바이트를 포함한 길이</td><td>페이로드 크기 = <code>udp.length - 8</code></td></tr><tr><td><code>data.len</code></td><td>파서가 못 읽은 페이로드 바이트 수</td><td>커스텀 프로토콜 데이터그램 크기 판정</td></tr><tr><td><code>frame.time_relative</code></td><td>캡처 시작 기준 상대 시각</td><td>데이터그램 간 간격으로 비콘/재전송 여부 판정</td></tr></tbody></table></div>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>Follow UDP Stream 에서 얻은 것</th><th>다음에 볼 것</th></tr></thead><tbody><tr><td>TFTP 로 전송된 파일</td><td><code>file</code>/<code>strings</code> 로 종류 확인 (<a href="./30sec-triage.html">FOR-0001</a>)</td></tr><tr><td>syslog 원문의 호스트명/IP</td><td>그 호스트의 EVTX/auth.log 대조</td></tr><tr><td>SNMP community string</td><td>자격증명 후보로 다른 로그온 시도와 대조</td></tr><tr><td>반복되는 짧은 데이터그램(비콘 의심)</td><td>전체 UDP 흐름 통계로 확장 (<a href="./udp-flow-analysis.html">FOR-0176</a>)</td></tr><tr><td>Base32/64 처럼 보이는 페이로드</td><td>DNS 가 아닌 UDP 채널의 터널링 여부 확인 (<a href="./dns-tunneling.html">FOR-0155</a>)</td></tr><tr><td>같은 스트림에서 확인한 커스텀 헤더 구조</td><td>ICMP 등 다른 프로토콜에도 같은 패턴이 있는지 확인 (<a href="./icmp-payload.html">FOR-0169</a>)</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>UDP Follow 결과가 TCP 처럼 순서를 보장한다고 믿는 것.</strong> 시퀀스 번호가 없으므로 캡처 도착 순서일 뿐이다. 네트워크 경로에서 순서가 바뀌었다면 Follow 결과도 뒤섞인다.</li><li><strong>클라이언트가 매 요청마다 포트를 바꾸는 프로토콜(DNS 등)에 Follow UDP Stream 을 걸어 &quot;전체&quot;라고 믿는 것.</strong> 그 포트 조합의 왕복 하나만 보인다. 여러 스트림을 따로 열어야 한다.</li><li><strong><code>Entire conversation</code> 상태로 바이너리를 Raw 저장하는 것.</strong> 양방향이 섞여 파일이 깨진다. 방향을 하나만 선택한다.</li><li><strong>큰 스트림에서 GUI 표시가 잘렸는데 전체라고 판단하는 것.</strong> <code>tshark -z follow,udp,...</code> 로 전체를 뽑아 길이를 비교한다.</li><li><strong>애플리케이션 계층 재전송(중복 데이터그램)을 놓치는 것.</strong> UDP 에는 <code>tcp.analysis.retransmission</code> 같은 판정이 없다. 같은 내용이 반복되면 수동으로 프레임 번호와 시간 간격을 비교해 중복을 골라낸다.</li><li><strong>ASCII 뷰만 보고 데이터그램 경계를 무시하는 것.</strong> 헤더 바이트가 텍스트 중간에 섞여 들어가도 ASCII 로는 깨진 문자 몇 개로만 보인다. Hex Dump 로 각 데이터그램의 시작을 확인한다.</li><li><strong><code>Follow &gt; UDP Stream</code> 메뉴가 안 보이면 캡처에 문제가 있다고 판단하는 것.</strong> UDP 계층이 있는 패킷이면 항상 메뉴가 뜬다. 안 보이면 해당 패킷이 UDP 가 아니라 다른 프로토콜(ICMP 등)일 가능성을 먼저 확인한다.</li><li><strong>한글/멀티바이트 로그가 깨진 채로 포기하는 것.</strong> <code>Show data as = UTF-8</code> 또는 <code>Hex Dump</code> 로 바이트를 직접 확인해 인코딩을 판단한다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) GUI Follow UDP Stream 과 동일한 텍스트
+tshark -r capture.pcapng -q -z follow,udp,ascii,0
+
+# 2) hex 로 데이터그램 경계 확인
+tshark -r capture.pcapng -q -z follow,udp,hex,0
+
+# 3) 이 스트림의 패킷별 크기/시간 — 중복·간격 확인
+tshark -r capture.pcapng -Y &quot;udp.stream==0&quot; -T fields \
+  -e frame.number -e frame.time_relative -e udp.length
+
+# 4) 양방향 데이터그램 개수 — 한쪽이 0이면 응답 없는 전송(단방향)
+tshark -r capture.pcapng -Y &quot;udp.stream==0&quot; -T fields -e ip.src | sort | uniq -c</code></pre></div>
+<p>GUI 창의 바이트 수와 <code>-z follow,udp,ascii,N</code> 출력 길이가 다르면 GUI 가 잘렸을 가능성이 높다. tshark 결과를 정답으로 쓴다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;TFTP로 전송된 설정 파일 안의 관리자 비밀번호를 찾으세요.&quot;
+첨부: tftp_case.pcapng (612 packets)
+
+1. Statistics &gt; Protocol Hierarchy
+   UDP 96%  TFTP 71% (Data)  -&gt; TFTP 전송이 대부분
+
+2. 필터: tftp
+   RRQ config.bin 요청 확인, 이어서 DATA 블록들이 이어진다.
+
+3. 첫 시도 (실패) — DATA 패킷 하나에 Follow UDP Stream 사용
+   특정 DATA 패킷(블록 15번) 우클릭 &gt; Follow &gt; UDP Stream
+   -&gt; 데이터 채널의 포트가 전송 시작 시 매번 새로 협상되므로,
+      이 스트림에는 RRQ 요청(69번 포트)이 빠져 있고 오직 데이터 채널만 보였다.
+      파일 시작 부분이 없어 헤더가 깨진 것처럼 보였다.
+   원인: TFTP 는 제어(69번 포트)와 데이터(임의 포트)가 서로 다른
+        udp.stream 으로 분리된다.
+
+4. 접근 변경 — 데이터 채널의 첫 DATA 패킷(블록 1)에서 다시 연다
+   필터: tftp.opcode == 3 &amp;&amp; tftp.block == 1
+   해당 패킷 우클릭 &gt; Follow &gt; UDP Stream
+   Show data as = Hex Dump
+
+     0000  00 03 00 01 23 4d 5a 90 00 03 00 00 00 04 00 00
+     0010  00 ff ff 00 00 b8 00 00 00 00 00 00 40 00 00 00
+     ...
+   -&gt; 앞 4바이트(00 03 00 01)는 TFTP DATA 헤더(opcode + block 번호).
+      그 다음부터 실제 파일 바이트(MZ 헤더!)가 시작된다.
+
+5. Raw 로 저장 후 헤더 4바이트씩 제거
+   Show data as = Raw, 방향은 서버-&gt;클라이언트만 선택, Save as raw_stream.bin
+
+   $ python3 -c &quot;
+   data = open(&#39;raw_stream.bin&#39;,&#39;rb&#39;).read()
+   # 블록마다 4바이트 TFTP 헤더가 섞여 있어 512+4 단위로 헤더를 제거
+   out = b&#39;&#39;
+   for i in range(0, len(data), 516):
+       out += data[i+4:i+516]
+   open(&#39;config.bin&#39;,&#39;wb&#39;).write(out)
+   &quot;
+   $ file config.bin
+   config.bin: PE32 executable
+
+   $ strings config.bin | grep -i admin
+   admin_password=Str0ngP@ss2026
+
+정답: Str0ngP@ss2026</code></pre></div>
+<p>3단계의 실패가 핵심이다. <strong>TFTP 는 제어 채널과 데이터 채널이 서로 다른 <code>udp.stream</code> 이므로, 임의의 DATA 패킷에서 연 Follow 창에는 처음 몇 바이트가 빠질 수 있다는 것을 항상 의심해야 한다.</strong> block 번호가 1인 첫 데이터그램에서 다시 열어야 파일 시작 부분을 놓치지 않는다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>Follow &gt; UDP Stream</code> 메뉴가 보이는가 — UDP 패킷이 맞는지 확인</li><li>이 스트림이 정말 전체 전송을 담고 있는가 — TFTP 처럼 제어/데이터 채널이 분리되는 프로토콜인지 확인</li><li><code>frame.time_relative</code> 간격이 고르지 않은가 — 순서 뒤바뀜 의심</li><li>같은 내용이 반복되는가 — 애플리케이션 레벨 재전송 의심</li><li><code>Show data as</code> 를 Hex Dump 로 바꿔 데이터그램 경계를 확인했는가</li><li>바이너리 복원 시 방향을 하나만 선택했는가</li><li>GUI 표시가 잘렸는가 — tshark <code>follow,udp,hex</code> 로 전체 길이 비교</li><li>여러 <code>udp.stream</code> 중 맞는 것을 골랐는가 (<a href="./udp-flow-analysis.html">FOR-0176</a>)</li><li>페이로드가 Base32/64 처럼 보이는가 — 터널링 라인으로 전환 (<a href="./dns-tunneling.html">FOR-0155</a>)</li><li>프로토콜 전용 헤더(블록 번호, 시퀀스 필드)를 고려해 페이로드를 잘라냈는가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-002 — Wireshark Display Filter Reference: <code>udp.stream</code>, <code>udp.length</code>, <code>data.len</code>, <code>frame.time_relative</code> 필드명 확인</li><li>SRC-003 — Wireshark User&#39;s Guide: <code>Follow &gt; UDP Stream</code>, Show and save data as 옵션, 방향 선택 드롭다운</li><li>SRC-010 — tshark man page: <code>-z follow,udp,ascii,&lt;stream&gt;</code>, <code>-z follow,udp,hex,&lt;stream&gt;</code></li><li>TFTP 의 DATA 패킷 헤더 구조(2바이트 opcode + 2바이트 block 번호)와 블록 크기(기본 512바이트)는 일반적인 TFTP 구현 관례이며, 실제 옵션 협상(blksize 등)에 따라 달라질 수 있으므로 캡처에서 <code>tftp.blksize</code> 옵션을 직접 확인할 것</li><li>Follow Stream 창의 정확한 배색과 드롭다운 문구는 Wireshark 버전에 따라 다를 수 있으므로 실제 화면에서 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./udp-flow-analysis.html">
+    <span class="rel-id">FOR-0176 · Network/PCAP</span>
+    UDP 흐름 분석: udp.stream 과 포트로 연결 없는 대화를 세는 방법
+  </a>
+  <a class="related-item" href="./follow-tcp-stream.html">
+    <span class="rel-id">FOR-0162 · Network/PCAP</span>
+    Follow TCP Stream으로 세션 전체 대화 복원하기
+  </a>
+  <a class="related-item" href="./dns-tunneling.html">
+    <span class="rel-id">FOR-0155 · Network/PCAP</span>
+    DNS tunneling 의심 패턴 판별하기
+  </a>
+  <a class="related-item" href="./icmp-payload.html">
+    <span class="rel-id">FOR-0169 · Network/PCAP</span>
+    ICMP payload에 숨겨진 데이터 확인하기
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./follow-tcp-stream.html"><span class="rel-id">← FOR-0162</span>Follow TCP Stream으로 세션 전체 대화 복원하기</a>
+<a class="related-item" href="./ftp-commands.html"><span class="rel-id">FOR-0166 →</span>FTP 명령과 파일 전송 추적: ftp.request.command로 STOR/RETR 잡기</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-메뉴-위치와-필터-자동-생성">1단계 — 메뉴 위치와 필터 자동 생성</a></li>
+<li class="toc-l3"><a href="#2단계-udp-는-이어붙이기이지-재조립이-아니다">2단계 — UDP 는 &quot;이어붙이기&quot;이지 &quot;재조립&quot;이 아니다</a></li>
+<li class="toc-l3"><a href="#3단계-show-data-as-옵션은-tcp-와-동일하다">3단계 — Show data as 옵션은 TCP 와 동일하다</a></li>
+<li class="toc-l3"><a href="#4단계-대표-평문-udp-프로토콜에서-바로-쓰는-법">4단계 — 대표 평문 UDP 프로토콜에서 바로 쓰는 법</a></li>
+<li class="toc-l3"><a href="#5단계-신뢰할-수-없는-상황을-먼저-판별한다">5단계 — 신뢰할 수 없는 상황을 먼저 판별한다</a></li>
+<li class="toc-l3"><a href="#6단계-파일-복원-방향을-분리하고-raw-로-저장">6단계 — 파일 복원: 방향을 분리하고 Raw 로 저장</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-14 10:37 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

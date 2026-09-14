@@ -1,38 +1,43 @@
 {
   "target": 300,
-  "completed": 143,
-  "verified": 143,
-  "in_progress": [],
-  "last_completed_id": "FOR-0231",
-  "current_phase": "wave2-in-progress",
-  "last_commit": "09296c4",
-  "last_updated_kst": "2026-09-10 09:10 KST",
-  "blockers": [
-    "gh CLI 미설치 — private GitHub repo 생성/push 불가. git init/commit 은 로컬에서 진행 중."
+  "completed": 172,
+  "verified": 169,
+  "in_progress": [
+    "FOR-0056",
+    "FOR-0118",
+    "FOR-0178"
   ],
+  "last_completed_id": "FOR-0231",
+  "current_phase": "wave3-in-progress",
+  "last_commit": "5430aad",
+  "last_updated_kst": "2026-09-14 10:38 KST",
+  "blockers": [],
   "next_actions": [
-    "Wave 2 커밋 필요 (93개 신규: Registry FOR-0057~0080, Event Log FOR-0081~0110, 로그/Regex FOR-0111~0140, Network/PCAP FOR-0147~0185, 브라우저/SQLite/메모리 FOR-0192/0193/0201/0202/0221/0231, 초반 누락분 FOR-0002/0009/0010)",
-    "57건 broken local link 에러는 전부 아직 안 쓴 글(cut-fields, sort-uniq, head-tail-less, sed-substitute, export-objects-http, tcp-stream-filter, expert-information, dns-tunneling, endpoints, tshark-extract-fields, pcap-credentials, pcap-file-extraction, chrome-login-data, webkit-timestamp, sqlite-basics, process-dump, tls-sni, ip-addr-filter, port-filters, tcp-contains, dns-qry-name-filter, browser-history-vs-pcap) 참조 → 해당 글 작성 시 자동 해소",
-    "search-test 6건 실패(FOR-0295/0217/0214 등 미작성 대상 기대값)도 해당 글 작성 후 해소",
+    "Wave 3 착수: Network/PCAP 잔여 28개(FOR-0150~0155, 0162~0165, 0169~0174, 0177~0183, 0186~0190) + 로그/Regex 잔여 16개(FOR-0116~0119, 0125~0127, 0133~0136, 0141~0145). 이 둘을 먼저 쓰면 broken link 에러 대부분이 해소된다.",
+    "Wave 4: 메모리 18개(FOR-0211~0213, 0215~0220, 0222~0230) + 브라우저 15개(FOR-0194~0200, 0203~0210)",
+    "Wave 5: 파일/카빙 24개(FOR-0232~0255) + 트리아지 잔여 11개(FOR-0003~0008, 0011~0015)",
+    "Wave 6: 스테가노 20개(FOR-0256~0275) + 모바일 10개(FOR-0276~0285) + 종합 15개(FOR-0286~0300)",
+    "40건 broken local link 에러는 전부 아직 안 쓴 글 참조 → 해당 글 작성 시 자동 해소",
+    "search-test 5건 실패는 미작성 글 또는 검색 메타데이터 보강 후 해소",
     "id sequence gap 경고(FOR-0003 자리에 FOR-0009) 는 Phase 3 순서대로 채우면 해소",
     "다음 이어서 쓸 라인: 남은 Network/PCAP 후반부, 브라우저/SQLite/메모리 나머지, Volatility 라인(FOR-0214 주변)"
   ],
   "phase_notes": {
     "skeleton": "완료. 빌드 파이프라인, 오프라인 검색, 필터, 관련글, file:// 동작, no-CDN 검증까지 통과.",
     "wave1": "커밋 09296c4. 디스크/NTFS 35개 + Registry 6개로 11 -> 50.",
-    "wave2": "커밋 미완료(작업 중 중단). 50 -> 143. Registry 잔여, Event Log, 로그/Regex, Network/PCAP, 브라우저/SQLite/메모리 일부, 초반 누락분 채움. build/validate/search-test/smoke-offline 전부 재검증 완료."
+    "wave2": "커밋 5430aad. 50 -> 143. Registry 잔여, Event Log, 로그/Regex, Network/PCAP, 브라우저/SQLite/메모리 일부, 초반 누락분 채움. build/validate/search-test/smoke-offline 전부 재검증 완료."
   },
   "validation_snapshot": {
-    "as_of_kst": "2026-09-10 09:10 KST",
-    "articles": 143,
-    "validate_errors": 57,
+    "as_of_kst": "2026-09-14 10:38 KST",
+    "articles": 172,
+    "validate_errors": 40,
     "validate_errors_reason": "전부 미작성 문서로의 broken link (본문/메타 자체 에러 0건)",
-    "validate_warnings": 49,
-    "search_queries_passed": 238,
-    "search_queries_pending_or_failed": 6,
+    "validate_warnings": 39,
+    "search_queries_passed": 240,
+    "search_queries_pending_or_failed": 27,
     "search_queries_total_cases": 267,
     "smoke_offline": "pass",
-    "search_index_kb": 376.9,
-    "search_body_kb": 2733.3
+    "search_index_kb": 443.6,
+    "search_body_kb": 3078.3
   }
 }

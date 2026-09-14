@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>ICMP tunneling 탐지하기 · FOR-0170 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Network%2FPCAP">Network/PCAP</a> / FOR-0170
+      </div>
+      <header class="article-head">
+        <h1>ICMP tunneling 탐지하기</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Network/PCAP</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>ICMP tunneling 은 방화벽이 흔히 허용하는 ping 트래픽 안에 임의 데이터를 실어 나르는 은닉 채널이며, 정상 ping 대비 비정상적으로 많은 패킷 수, 표준을 벗어난 data.len, 불규칙한 icmp.ident, 그리고 요청·응답이 짝을 이루지 않는 패턴으로 식별한다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Wireshark, tshark</td></tr>
+<tr><th>artifact</th><td><code>pcap</code> · <code>pcapng</code> · <code>ICMP Echo</code> · <code>covert channel</code></td></tr>
+<tr><th>프로토콜</th><td>ICMP</td></tr>
+<tr><th>Wireshark 필터</th><td><code>icmp</code> · <code>icmp.type == 8</code> · <code>icmp.type == 0</code> · <code>icmp &amp;&amp; data.len &gt; 64</code> · <code>icmp &amp;&amp; !(data.len == 32)</code> · <code>icmp.ident == 0x0001</code></td></tr>
+<tr><th>tshark field</th><td><code>icmp.type</code> · <code>icmp.code</code> · <code>icmp.ident</code> · <code>icmp.seq_le</code> · <code>data.len</code> · <code>data.data</code> · <code>frame.time_relative</code> · <code>ip.ttl</code></td></tr>
+<tr><th>파일 형식</th><td><code>pcap</code> · <code>pcapng</code></td></tr>
+<tr><th>검색 별칭</th><td>핑 터널링 · icmp로 데이터 빼내기 · ping tunnel 탐지 · icmp c2 · icmp 은닉 채널 · 핑 안에 명령어</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>ICMP tunneling 은 방화벽이 흔히 허용하는 ping 트래픽 안에 임의 데이터를 실어 나르는 은닉 채널이며, <strong>정상 ping 대비 비정상적으로 많은 패킷 수, 표준을 벗어난 <code>data.len</code>, 불규칙한 <code>icmp.ident</code>, 그리고 요청·응답이 짝을 이루지 않는 패턴</strong>으로 식별한다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>Protocol Hierarchy 에서 ICMP 패킷 수가 수백~수천 개로 비정상적으로 많은 pcap</li><li>&quot;방화벽을 우회해서 데이터를 빼냈다&quot;, &quot;C2 채널을 찾아라&quot; 류의 지문</li><li>ptunnel, icmpsh, icmp-backdoor 같은 도구의 흔적이 의심되는 상황</li><li>ICMP 요청은 많은데 정상적인 응답 비율이 맞지 않는 캡처</li></ul>
+<p><strong>정상적인 ping 은 요청 하나에 응답 하나, 사람이 몇 번 실행하고 끝난다.</strong> 자동화된 지속적 ICMP 트래픽은 그 자체로 의심 대상이다.</p>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li><strong>ICMP 패킷 절대 개수</strong> — 수백 개를 넘으면 사람이 수동으로 ping 한 것이 아니다</li><li><strong>캡처 전체 시간 대비 ICMP 지속성</strong> — 캡처 시작부터 끝까지 일정한 간격으로 이어지면 자동화된 채널</li><li><strong>Echo Request 대 Echo Reply 비율</strong> — 1:1 이 아니면 비정상 (터널링 도구는 응답에도 데이터를 실어 반대 방향 채널로 쓴다)</li><li><strong><code>data.len</code> 값의 다양성</strong> — 표준 ping 은 크기가 고정이다. 여러 값이 섞이면 가변 길이 메시지 전송</li><li><strong>패킷 간 시간 간격의 규칙성</strong> — 정확히 일정한 간격(비콘)이거나, 반대로 사람이 만든 것보다 훨씬 촘촘하면 스크립트</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -q -z io,stat,10,icmp</code></pre></div>
+<p>10초 구간별 ICMP 개수를 본다. 캡처 전 구간에 걸쳐 꾸준히 나오면 자동화된 채널이다. 특정 구간에만 몰려 있으면 일회성 전송이다.</p>
+<p>GUI 3단계:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1. Statistics &gt; Protocol Hierarchy      -&gt; ICMP Packets 절대 개수 확인
+2. Statistics &gt; IO Graph, Y축을 icmp 로 설정 -&gt; 시간대별 분포 확인
+3. 필터: icmp.type == 8 그리고 icmp.type == 0 개수 비교 -&gt; 짝이 맞는지</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-정상-ping-사용과-터널링을-개수로-가른다">1단계 — &quot;정상 ping 사용&quot;과 &quot;터널링&quot;을 개수로 가른다</h3>
+<div class="table-wrap"><table><thead><tr><th>관측</th><th>정상 ping (사람이 수동 실행)</th><th>ICMP 터널링</th></tr></thead><tbody><tr><td>총 패킷 수</td><td>수 개 ~ 수십 개 (기본 4회 등)</td><td>수백 ~ 수만 개</td></tr><tr><td>지속 시간</td><td>캡처의 일부 구간에만 짧게</td><td>캡처 전체 또는 긴 구간에 걸쳐 지속</td></tr><tr><td><code>data.len</code></td><td>고정값 하나</td><td>여러 값이 섞이거나 표준과 다른 고정값</td></tr><tr><td>Request:Reply 비율</td><td>1:1</td><td>1:1 이 아니거나, 양쪽 모두 큰 payload</td></tr><tr><td>TTL(<code>ip.ttl</code>)</td><td>홉 수만큼 일정</td><td>터널 클라이언트/서버가 고정이면 일정하지만, 프록시를 거치면 변동</td></tr></tbody></table></div>
+<p>이 표의 &quot;정상&quot;과 &quot;터널링&quot; 값은 절대 기준이 아니라 <strong>상대 비교용</strong>이다. 캡처 안에서 다른 정상 ICMP 트래픽이 있다면 그것과 대조하는 것이 가장 정확하다.</p>
+<h3 id="2단계-요청응답-비대칭을-확인한다">2단계 — 요청/응답 비대칭을 확인한다</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">icmp.type == 8</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">icmp.type == 0</code></pre></div>
+<p>각각의 개수를 세어 비교한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;icmp.type == 8&#39; -T fields -e frame.number | wc -l
+tshark -r capture.pcapng -Y &#39;icmp.type == 0&#39; -T fields -e frame.number | wc -l</code></pre></div>
+<p>정상 ping 은 요청과 응답 수가 거의 같다. 터널링 도구는 종종 <strong>양방향 모두에 데이터를 실어</strong>(질의는 Request, 응답은 Reply 페이로드에 명령 실행 결과) 두 방향 모두 payload 가 크고 다양하다. 반대로 응답이 거의 없는데 요청만 계속 나가면 일방적 유출(exfiltration) 채널일 수 있다.</p>
+<h3 id="3단계-payload-크기-분포로-프로토콜성을-판단한다">3단계 — payload 크기 분포로 프로토콜성을 판단한다</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y icmp -T fields -e data.len | sort -n | uniq -c | sort -nr</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>분포</th><th>해석</th></tr></thead><tbody><tr><td>값 하나에 100% 집중, 표준값(32/48/56)과 일치</td><td>정상 ping</td></tr><tr><td>값 하나에 집중하지만 표준값과 다름(예: 전부 100바이트)</td><td>커스텀 고정 프레임 프로토콜. 터널링 도구가 프레임 크기를 고정한 경우</td></tr><tr><td>여러 값에 분산</td><td>가변 길이 명령/데이터 전송</td></tr><tr><td>최댓값이 MTU 근처(1400바이트 이상)</td><td>대량 데이터 전송 구간. 파일 유출 의심</td></tr></tbody></table></div>
+<h3 id="4단계-시간-간격으로-비콘스크립트-여부를-확인한다">4단계 — 시간 간격으로 비콘/스크립트 여부를 확인한다</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;icmp.type == 8&#39; -T fields -e frame.time_relative | \
+  awk &#39;NR&gt;1{print $1-prev} {prev=$1}&#39;</code></pre></div>
+<p>간격이 거의 균일한 값(예: 항상 1.000초 근처)으로 반복되면 스크립트/비콘이다. 사람이 직접 <code>ping</code> 명령을 반복 실행했다면 간격이 들쭉날쭉하다.</p>
+<h3 id="5단계-ident-로-세션을-분리하고-내용을-재조립한다">5단계 — ident 로 세션을 분리하고 내용을 재조립한다</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y icmp -T fields -e icmp.ident | sort | uniq -c | sort -nr</code></pre></div>
+<p>하나의 <code>icmp.ident</code> 에 수백 개 패킷이 몰려 있으면 그것이 하나의 지속 세션이다. 그 ident 로 좁혀 <a href="./icmp-payload.html">FOR-0169</a> 의 방법으로 payload 를 이어 붙인다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;icmp.ident == 0x0001&#39; \
+  -T fields -e icmp.seq_le -e data.data | sort -n | awk &#39;{print $2}&#39; | tr -d &#39;\n&#39; | xxd -r -p</code></pre></div>
+<p>명령 실행 결과나 셸 프롬프트 문자열(<code>$</code>, <code>#</code>, <code>C:\&gt;</code>)이 나오면 ICMP 기반 리버스 셸/C2 확정이다.</p>
+<h3 id="6단계-ttl-이상으로-프록시중계-여부를-본다">6단계 — TTL 이상으로 프록시/중계 여부를 본다</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y icmp -T fields -e ip.src -e ip.ttl | sort | uniq -c</code></pre></div>
+<p>같은 출발지 IP 인데 TTL 값이 여러 개 섞여 있으면, 홉 수가 다른 경로로 온 패킷이 섞였거나 <strong>IP 스푸핑</strong>을 의심할 수 있다. 단, 운영체제 재부팅이나 경로 변경만으로도 TTL 이 바뀔 수 있으므로 단독 근거로는 약하다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>의미</th><th>확인 포인트</th></tr></thead><tbody><tr><td><code>icmp.type</code></td><td>8/0 요청·응답</td><td>비율 비대칭 확인</td></tr><tr><td><code>icmp.ident</code></td><td>세션 식별자</td><td>값 하나에 대량 집중 = 지속 채널</td></tr><tr><td><code>icmp.seq_le</code></td><td>순서</td><td>재조립 순서</td></tr><tr><td><code>data.len</code></td><td>payload 크기</td><td>분포로 프로토콜성 판단</td></tr><tr><td><code>frame.time_relative</code></td><td>캡처 시작 기준 상대 시각</td><td>간격 계산, 비콘 판정</td></tr><tr><td><code>ip.ttl</code></td><td>홉 수 관련 값</td><td>경로 일관성, 스푸핑 의심</td></tr></tbody></table></div>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>ICMP 터널링에서 얻은 것</th><th>다음에 볼 것</th></tr></thead><tbody><tr><td>재조립된 명령/데이터</td><td>flag 확인 또는 실행된 명령 목록 확보</td></tr><tr><td>터널 서버로 추정되는 외부 IP</td><td>그 IP 로의 다른 프로토콜 트래픽 → <a href="./ip-addr-filter.html">FOR-0182</a></td></tr><tr><td>지속적 채널 확인됨</td><td>같은 시간대 다른 은닉 채널(DNS)도 확인 → <a href="./dns-tunneling.html">FOR-0155</a></td></tr><tr><td>비콘 간격 값</td><td>엔드포인트 프로세스/스케줄 작업 확인 → <a href="./sysmon-event-3-network-connect.html">FOR-0100</a></td></tr><tr><td>유출된 데이터 조각</td><td>원본 파일 복원 시도, 크기 대조</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>ICMP 패킷 몇 개를 보고 &quot;정상 ping&quot; 이라 단정하는 것.</strong> 반드시 전체 개수와 지속 시간을 함께 본다. 짧게 보면 정상처럼 보여도 전체 캡처에서는 수천 개일 수 있다.</li><li><strong>요청과 응답 비율을 확인하지 않는 것.</strong> 정상 ping 은 1:1 이다. 크게 벗어나면 데이터가 실려 있다는 신호다.</li><li><strong><code>data.len</code> 이 고정이라고 정상으로 판단하는 것.</strong> 표준값(32/48/56)과 다른 고정 크기는 오히려 <strong>커스텀 프로토콜이 고정 프레임을 쓰는 것</strong>일 수 있다. 값 자체를 표준과 비교해야 한다.</li><li><strong>TTL 변동만으로 스푸핑을 단정하는 것.</strong> 경로 변경이나 재부팅으로도 TTL 은 바뀐다. 다른 근거와 함께 판단한다.</li><li><strong>ICMP 만 보고 DNS 등 다른 은닉 채널을 확인하지 않는 것.</strong> 한 캡처에 여러 은닉 채널이 동시에 있을 수 있다. Protocol Hierarchy 를 다시 훑는다.</li><li><strong>재조립한 데이터가 평문이 아니라고 포기하는 것.</strong> base64, hex, XOR 인코딩이 흔하다. 몇 가지 인코딩을 시도한 뒤에 판단한다.</li><li><strong>캡처 중간 구간만 잘라 보고 지속성을 놓치는 것.</strong> IO Graph 로 전체 캡처 구간의 ICMP 분포를 먼저 확인한다.</li><li><strong><code>icmp.ident</code> 를 무시하고 전체 캡처의 payload 를 한 번에 이어 붙이는 것.</strong> 여러 세션이 섞이면 재조립 결과가 깨진다. ident 로 먼저 분리한다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) 시간대별 ICMP 분포 - 지속성 확인
+tshark -r capture.pcapng -q -z io,stat,10,icmp
+
+# 2) 요청/응답 개수 비교
+tshark -r capture.pcapng -Y &#39;icmp.type == 8&#39; -T fields -e frame.number | wc -l
+tshark -r capture.pcapng -Y &#39;icmp.type == 0&#39; -T fields -e frame.number | wc -l
+
+# 3) payload 크기 분포
+tshark -r capture.pcapng -Y icmp -T fields -e data.len | sort -n | uniq -c | sort -nr
+
+# 4) ident 별 패킷 집중도
+tshark -r capture.pcapng -Y icmp -T fields -e icmp.ident | sort | uniq -c | sort -nr
+
+# 5) 패킷 간격 - 비콘 판정
+tshark -r capture.pcapng -Y &#39;icmp.type == 8&#39; -T fields -e frame.time_relative | \
+  awk &#39;NR&gt;1{print $1-prev} {prev=$1}&#39; | sort -n | uniq -c | sort -nr | head
+
+# 6) TTL 일관성
+tshark -r capture.pcapng -Y icmp -T fields -e ip.src -e ip.ttl | sort | uniq -c
+
+# 7) 재조립
+tshark -r capture.pcapng -Y &#39;icmp.ident == 0x0001&#39; -T fields -e icmp.seq_le -e data.data \
+  | sort -n | awk &#39;{print $2}&#39; | tr -d &#39;\n&#39; | xxd -r -p</code></pre></div>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;내부 호스트가 외부와 은닉 채널로 통신했다. 실행된 명령을 구하세요.&quot;
+첨부: covert.pcapng (4,120 packets, 캡처 시간 20분)
+
+1. 첫 시도 (실패) - ICMP 개수만 보고 넘어갔다
+   Statistics &gt; Protocol Hierarchy
+     ICMP   38.2%   1573 packets
+   &quot;ping 이 좀 많지만 트러블슈팅이겠지&quot; 라고 넘기고 TCP/HTTP 만 팠다.
+   HTTP 에서는 이미지 몇 개, 정상 브라우징 뿐이었다.
+   -&gt; 진전 없음. 다시 ICMP 로 돌아왔다.
+
+2. 접근 변경 - ICMP 지속성 확인
+   tshark -r covert.pcapng -q -z io,stat,10,icmp
+   -&gt; 20분 캡처 내내 10초마다 거의 균일하게 ICMP 가 발생.
+      사람이 수동으로 ping 한 것이라면 이렇게 고르게 나올 수 없다.
+
+3. 요청/응답 비교
+   Request(type 8): 787개, Reply(type 0): 786개 -&gt; 거의 1:1.
+   그러나 정상 ping 치고는 총량(1573개)이 너무 많다.
+
+4. payload 크기 분포
+   tshark -r covert.pcapng -Y icmp -T fields -e data.len | sort -n | uniq -c | sort -nr
+        1420 40
+         153 8
+
+   -&gt; 대부분 40바이트, 일부 8바이트. Windows 표준(32)도 Linux 표준(48/56)도 아니다.
+      고정 프레임 40바이트 커스텀 프로토콜로 판단.
+
+5. ident 분리 및 재조립
+   tshark -r covert.pcapng -Y icmp -T fields -e icmp.ident | sort | uniq -c | sort -nr
+        1573 0x0002
+   -&gt; 전부 같은 ident. 하나의 지속 세션이다.
+
+   tshark -r covert.pcapng -Y &#39;icmp.type == 8 &amp;&amp; icmp.ident == 0x0002&#39; \
+     -T fields -e icmp.seq_le -e data.data | sort -n | head -5
+     1   77686f61 6d690000
+     2   77686f61 6d690000
+     3   6c730000 00000000
+
+   -&gt; &quot;whoami&quot; 명령이 여러 패킷에 반복되어 보인다. 요청 방향이 명령 전송,
+      응답 방향(type 0)이 실행 결과일 가능성이 높다.
+
+6. 응답 payload 확인
+   tshark -r covert.pcapng -Y &#39;icmp.type == 0 &amp;&amp; icmp.ident == 0x0002&#39; \
+     -T fields -e icmp.seq_le -e data.data | sort -n | awk &#39;{print $2}&#39; \
+     | tr -d &#39;\n&#39; | xxd -r -p
+   corp\backupsvc
+
+정답: 실행된 명령 whoami, 결과 corp\backupsvc — ICMP 기반 리버스 셸(icmpsh 계열)로 판정</code></pre></div>
+<p>1단계의 실패가 핵심이다. <strong>ICMP 비중을 &quot;그냥 좀 많다&quot;로 넘기면 은닉 채널을 놓친다.</strong> <code>-z io,stat</code> 으로 지속성을 확인하는 습관이 이를 막아준다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>Statistics &gt; Protocol Hierarchy</code> 에서 ICMP 절대 패킷 수를 확인했는가</li><li><code>-z io,stat,10,icmp</code> 로 시간대별 지속성을 봤는가</li><li>Request:Reply 비율이 1:1 에서 크게 벗어나는가</li><li><code>data.len</code> 분포가 표준값(32/48/56)과 다른가</li><li><code>icmp.ident</code> 로 세션이 몇 개로 나뉘는지 확인했는가</li><li>패킷 간격이 지나치게 균일한가 (비콘 판정)</li><li>재조립한 payload 에 명령/셸 프롬프트 문자열이 있는가</li><li>TTL 값이 같은 출발지 IP 에서 흔들리는가</li><li>다른 은닉 채널(DNS 터널링 등)도 같은 시간대에 있는가</li><li>재조립 결과가 인코딩(base64/hex/XOR)되어 있는가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-067 — RFC 792 (ICMP): Echo Request/Reply의 정상 용도(진단)와 페이로드 규정. 터널링은 이 규정을 벗어난 오용</li><li>SRC-002 — Wireshark Display Filter Reference: <code>icmp.type</code>, <code>icmp.ident</code>, <code>icmp.seq_le</code>, <code>data.len</code>, <code>ip.ttl</code> 필드명 확인</li><li>SRC-010 — tshark man page: <code>-z io,stat</code>, <code>-T fields -e</code>, <code>-Y</code> 필터 문법</li><li>&quot;정상 ping&quot; 대비 패킷 수·간격의 구체적 임계값은 환경마다 다르다. 절대적 기준이 아니라 같은 캡처 내 다른 트래픽과의 상대 비교로 판단할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./icmp-payload.html">
+    <span class="rel-id">FOR-0169 · Network/PCAP</span>
+    ICMP payload에 숨겨진 데이터 확인하기
+  </a>
+  <a class="related-item" href="./udp-flow-analysis.html">
+    <span class="rel-id">FOR-0176 · Network/PCAP</span>
+    UDP 흐름 분석: udp.stream 과 포트로 연결 없는 대화를 세는 방법
+  </a>
+  <a class="related-item" href="./dns-tunneling.html">
+    <span class="rel-id">FOR-0155 · Network/PCAP</span>
+    DNS tunneling 의심 패턴 판별하기
+  </a>
+  <a class="related-item" href="./wireshark-30sec-triage.html">
+    <span class="rel-id">FOR-0146 · Network/PCAP</span>
+    Wireshark 30초 트리아지: pcap을 받고 처음 할 다섯 가지
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./icmp-payload.html"><span class="rel-id">← FOR-0169</span>ICMP payload에 숨겨진 데이터 확인하기</a>
+<a class="related-item" href="./arp-analysis.html"><span class="rel-id">FOR-0171 →</span>ARP 패킷으로 스푸핑·장비 흔적 분석하기</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-정상-ping-사용과-터널링을-개수로-가른다">1단계 — &quot;정상 ping 사용&quot;과 &quot;터널링&quot;을 개수로 가른다</a></li>
+<li class="toc-l3"><a href="#2단계-요청응답-비대칭을-확인한다">2단계 — 요청/응답 비대칭을 확인한다</a></li>
+<li class="toc-l3"><a href="#3단계-payload-크기-분포로-프로토콜성을-판단한다">3단계 — payload 크기 분포로 프로토콜성을 판단한다</a></li>
+<li class="toc-l3"><a href="#4단계-시간-간격으로-비콘스크립트-여부를-확인한다">4단계 — 시간 간격으로 비콘/스크립트 여부를 확인한다</a></li>
+<li class="toc-l3"><a href="#5단계-ident-로-세션을-분리하고-내용을-재조립한다">5단계 — ident 로 세션을 분리하고 내용을 재조립한다</a></li>
+<li class="toc-l3"><a href="#6단계-ttl-이상으로-프록시중계-여부를-본다">6단계 — TTL 이상으로 프록시/중계 여부를 본다</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-14 10:37 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>
