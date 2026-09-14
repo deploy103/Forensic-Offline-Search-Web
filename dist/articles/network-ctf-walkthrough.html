@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Network/PCAP 종합 CTF 문제 풀이 · FOR-0190 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Network%2FPCAP">Network/PCAP</a> / FOR-0190
+      </div>
+      <header class="article-head">
+        <h1>Network/PCAP 종합 CTF 문제 풀이</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Network/PCAP</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>네트워크 종합 문제는 Protocol Hierarchy로 프로토콜 비중을 먼저 확정하고, 비중이 큰 순서대로 하나씩 파서 소문항을 채운 뒤, 마지막에 시간순 표로 전체 침해 흐름을 재구성하면 풀린다 — 한 프로토콜에 매몰되어 다른 단서를 놓치는 것이 최대 실패 요인이다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Wireshark, tshark, HxD</td></tr>
+<tr><th>artifact</th><td><code>pcap</code> · <code>pcapng</code> · <code>HTTP</code> · <code>DNS</code> · <code>FTP</code> · <code>TLS</code> · <code>ICMP</code></td></tr>
+<tr><th>프로토콜</th><td>HTTP, DNS, FTP, TCP, TLS, ICMP</td></tr>
+<tr><th>Wireshark 필터</th><td><code>http.request</code> · <code>dns.qry.name.len &gt; 30</code> · <code>ftp || ftp-data</code> · <code>tls.handshake.type == 1</code> · <code>tcp.stream eq 5</code> · <code>frame contains &quot;flag&quot;</code></td></tr>
+<tr><th>tshark field</th><td><code>ip.src</code> · <code>ip.dst</code> · <code>http.host</code> · <code>http.request.uri</code> · <code>dns.qry.name</code> · <code>tls.handshake.extensions_server_name</code></td></tr>
+<tr><th>regex</th><td><code>[A-Za-z0-9+/]{20,}={0,2}</code></td></tr>
+<tr><th>파일 형식</th><td><code>pcap</code> · <code>pcapng</code></td></tr>
+<tr><th>검색 별칭</th><td>pcap 문제 풀이 · 네트워크 문제 종합 · wireshark ctf · pcap 종합 · 네트워크 포렌식 풀이 · pcap 여러 단계</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>네트워크 종합 문제는 <strong>Protocol Hierarchy로 프로토콜 비중을 먼저 확정하고, 비중이 큰 순서대로 하나씩 파서 소문항을 채운 뒤, 마지막에 시간순 표로 전체 침해 흐름을 재구성</strong>하면 풀린다 — 한 프로토콜에 매몰되어 다른 단서를 놓치는 것이 최대 실패 요인이다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>하나의 pcap에 소문항이 3개 이상 딸린 시나리오형 문제(&quot;공격자의 IP는?&quot;, &quot;탈취한 계정은?&quot;, &quot;유출한 파일은?&quot;, &quot;숨긴 통신 채널은?&quot;)</li><li>여러 프로토콜(DNS, HTTP, FTP, TLS 등)이 한 캡처에 섞여 있다</li><li>답을 시간순 서술로 요구한다</li><li>개별 필터는 아는데 &quot;무엇부터 볼지&quot; 순서가 안 잡힌다</li></ul>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>파일 크기와 패킷 수 — 수 MB 이상이면 여러 단계가 있다고 가정한다</li><li>지문의 동사 개수 — &quot;접속&quot;, &quot;다운로드&quot;, &quot;업로드&quot;, &quot;숨김&quot; 각각 다른 artifact다</li><li>Protocol Hierarchy에서 비중이 큰 프로토콜 2~3개가 각각 다른 소문항의 답일 가능성이 높다</li><li>DNS 패킷 수가 비정상적으로 많다 → 터널링 소문항이 따로 있다는 신호</li><li>TLS만 있고 평문이 없다 → SNI/인증서/패킷 크기 패턴으로 풀어야 하는 소문항</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r case.pcapng -q -z io,phs</code></pre></div>
+<ol><li>Protocol Hierarchy → 비중 순으로 프로토콜 목록을 적는다</li><li>Conversations(TCP/UDP) → Bytes로 정렬해 각 프로토콜의 &quot;가장 큰 대화&quot;를 찾는다</li><li>비중이 큰 프로토콜부터 전용 필터로 진입해 소문항을 하나씩 채운다</li><li>확보한 값(IP, 시각, 파일명, 계정)을 표에 쌓는다</li><li>마지막에 시간순으로 정렬해 전체 흐름 문장을 완성한다</li></ol>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="시나리오">시나리오</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">&quot;사내망에서 다음 사건이 발생했다.
+ 아래 pcap 하나로 다음을 답하시오.
+  ① 공격자의 IP와 최초 접근 방식
+  ② 탈취된 웹 로그인 계정
+  ③ 반출된 파일명과 내용
+  ④ 숨겨진 명령 통신 채널의 종류
+  ⑤ 전체 사건을 시각순으로 서술
+ 첨부: case.pcapng (52,140 packets, 31 MB)&quot;</code></pre></div>
+<h3 id="0단계-전체-그림-protocol-hierarchy와-conversations">0단계 — 전체 그림: Protocol Hierarchy와 Conversations</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r case.pcapng -q -z io,phs</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Protocol                         Percent Packets  Packets  Bytes
+Frame                             100.0            52140   34881200
+  IPv4                             99.8            52036     521004
+    TCP                            71.2            37124   22104880
+      HTTP                          2.1            1104     3980210
+      FTP-DATA                      9.4            4908    12604112   &lt;- 크다
+      TLS                          14.7            7664     4108330
+    UDP                            28.6           14902     388820
+      DNS                          28.1           14655     372004     &lt;- 비정상적으로 많다</code></pre></div>
+<p>여기서 이미 두 개의 큰 흐름이 보인다. <strong>FTP-DATA(파일 전송)와 DNS(과다, 터널링 후보).</strong> HTTP는 상대적으로 작지만 초기 침투 단계일 가능성이 있다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r case.pcapng -q -z conv,tcp | sort -t/ -k1 -nr | head -5</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">10.0.0.15:49930  &lt;-&gt;  203.0.113.9:80     1104 pkts   3,980,210 bytes
+10.0.0.15:49955  &lt;-&gt;  203.0.113.9:20     4908 pkts  12,604,112 bytes
+10.0.0.15:49980  &lt;-&gt;  198.51.100.44:443  7664 pkts   4,108,330 bytes</code></pre></div>
+<p>내부 IP는 <code>10.0.0.15</code> 하나로 고정. 외부는 세 개(<code>203.0.113.9</code> 두 포트, <code>198.51.100.44</code>). <strong>HTTP와 FTP 상대가 같은 IP(<code>203.0.113.9</code>)라는 점이 핵심 단서다</strong> — 하나의 공격 인프라일 가능성이 높다.</p>
+<h3 id="1단계-http-최초-접근과-계정-탈취-①-②">1단계 — HTTP: 최초 접근과 계정 탈취 (① ②)</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">필터: http.request</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">No.  Time            Info
+812  07:02:11.104    GET /login HTTP/1.1
+900  07:02:44.310    POST /login.php HTTP/1.1
+1050 07:03:02.882    GET /admin/dashboard HTTP/1.1</code></pre></div>
+<p><code>POST /login.php</code>를 Follow TCP Stream으로 확인한다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">POST /login.php HTTP/1.1
+Host: 203.0.113.9
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 41
+
+username=jhkim&amp;password=Summer2026!</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">HTTP/1.1 302 Found
+Set-Cookie: PHPSESSID=a1b2c3d4e5; path=/
+Location: /admin/dashboard</code></pre></div>
+<p><strong>302 응답 + 세션 쿠키 발급 = 로그인 성공.</strong> ① 공격자는 <code>203.0.113.9:80</code>에 로그인 폼으로 접근했고, ② 탈취(또는 사용)된 계정은 <code>jhkim / Summer2026!</code>이다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r case.pcapng -Y &#39;http.request.method==&quot;POST&quot;&#39; \
+  -T fields -e frame.time -e ip.src -e http.host -e http.request.uri</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">2026-05-02 07:02:44.310  10.0.0.15  203.0.113.9  /login.php</code></pre></div>
+<p>내부 IP <code>10.0.0.15</code>가 요청 <strong>주체</strong>라는 점에 주의한다. 시나리오에 따라 이 IP가 &quot;탈취당한 내부 직원&quot;일 수도 있고 &quot;공격자가 내부망을 이미 장악한 상태&quot;일 수도 있다 — 문항 ①의 &quot;공격자 IP&quot;가 반드시 외부 IP는 아니다. 여기서는 로그인 대상 서버(<code>203.0.113.9</code>)를 공격 인프라로 지목한다.</p>
+<h3 id="2단계-ftp-반출된-파일-③">2단계 — FTP: 반출된 파일 (③)</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">필터: ftp</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">USER anonymous
+PASS -
+PASV
+STOR employee_records.zip</code></pre></div>
+<p><code>STOR</code>이므로 <strong>업로드</strong>다. 반출 방향이 맞는지는 IP 순서로 재확인한다 — <code>10.0.0.15</code>가 명령을 보냈고 <code>203.0.113.9</code>가 목적지이므로 내부에서 외부로 업로드, 즉 유출 흐름과 일치한다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">첫 시도 (실패):
+File &gt; Export Objects &gt; FTP-DATA 를 열었더니 메뉴 자체가 없다.
+(FTP-DATA 는 Export Objects 대상이 아니다. FOR-0189 참고)</code></pre></div>
+<p>Conversations에서 확보한 <code>203.0.113.9:20</code> 스트림을 Follow TCP Stream, <code>Show data as: Raw</code>로 저장한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">$ file extracted.zip
+extracted.zip: Zip archive data
+$ unzip -l extracted.zip
+  Length  Name
+--------  ----
+  184320  employee_records.csv
+     412  note.txt
+$ unzip -p extracted.zip note.txt
+flag{ftp_upload_via_pasv_mode}</code></pre></div>
+<p>③ 반출 파일은 <code>employee_records.zip</code>(내부에 <code>employee_records.csv</code>, <code>note.txt</code>)이며 <code>note.txt</code>에 첫 flag가 있다.</p>
+<h3 id="3단계-dns-과다-숨겨진-채널-④">3단계 — DNS 과다: 숨겨진 채널 (④)</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r case.pcapng -Y &#39;dns.flags.response==0&#39; -T fields -e dns.qry.name |
+  awk -F&#39;.&#39; &#39;{print length($1), $1}&#39; | sort -rn | head -5</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">57 aGVsbG8gZnJvbSBjMmJlYWNvbg
+55 ZmxhZ3tkbnNfdHVubmVsX2RldGVjdGVkfQ
+52 ZXhmaWx0cmF0ZWRfZGF0YV9jaHVuazAwMQ</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">필터: dns.qry.name.len &gt; 30</code></pre></div>
+<p>서브도메인이 <code>A-Za-z0-9</code>로만 구성되고 길이가 40~60자 — Base64 패턴과 일치한다(<a href="./pcap-base64-hex-payload.html">FOR-0188</a>). 도메인 접미사(<code>.tunnel.example.com</code> 등)를 제외한 첫 라벨만 이어 붙여 디코딩한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r case.pcapng -Y &#39;dns.flags.response==0&#39; -T fields -e frame.number -e dns.qry.name |
+  sort -k1 -n | awk &#39;{print $2}&#39; | cut -d&#39;.&#39; -f1 &gt; labels.txt
+
+while read -r l; do
+  pad=$(( (4 - ${#l} % 4) % 4 ))
+  printf &#39;%s%s&#39; &quot;$l&quot; &quot;$(printf &#39;=%.0s&#39; $(seq 1 $pad) 2&gt;/dev/null)&quot; | base64 -d 2&gt;/dev/null
+  echo
+done &lt; labels.txt</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">hello from c2beacon
+flag{dns_tunnel_detected}
+exfiltrated_data_chunk001
+...</code></pre></div>
+<p>④ 숨겨진 채널은 <strong>DNS 쿼리 이름을 이용한 Base64 인코딩 터널링</strong>이며 두 번째 flag가 여기서 나온다.</p>
+<h3 id="4단계-tls-세-번째-대화의-정체">4단계 — TLS: 세 번째 대화의 정체</h3>
+<p><code>198.51.100.44:443</code> 대화는 암호화되어 내용을 볼 수 없다. SNI로 목적지만 확인한다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">필터: tls.handshake.type == 1</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Server Name: cdn-assets.example-cdn.net</code></pre></div>
+<p>정상적인 CDN 도메인이면 이 대화는 배경 트래픽(노이즈)이다. <strong>모든 대화가 공격과 관련된 것은 아니다</strong> — TLS 대화는 이번 사건의 답에서 제외한다는 판단을 명시적으로 적는다.</p>
+<h3 id="5단계-시간순-통합">5단계 — 시간순 통합</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r case.pcapng -Y &#39;http.request or ftp.request.command or dns.flags.response==0&#39; \
+  -T fields -e frame.time -e ip.src -e ip.dst -e http.request.uri -e ftp.request.command -e dns.qry.name |
+  sort</code></pre></div>
+<p>이 출력을 표로 옮긴다.</p>
+<div class="table-wrap"><table><thead><tr><th>시각(UTC)</th><th>시각(KST)</th><th>이벤트</th><th>근거</th></tr></thead><tbody><tr><td>07:02:11.104</td><td>16:02:11.104</td><td><code>GET /login</code> 요청</td><td>HTTP</td></tr><tr><td>07:02:44.310</td><td>16:02:44.310</td><td><code>POST /login.php</code>, 계정 <code>jhkim</code> 시도</td><td>HTTP Follow Stream</td></tr><tr><td>07:02:44.512</td><td>16:02:44.512</td><td><code>302 Found</code> + 세션 쿠키 발급 (로그인 성공)</td><td>HTTP 응답</td></tr><tr><td>07:03:02.882</td><td>16:03:02.882</td><td><code>/admin/dashboard</code> 접근</td><td>HTTP</td></tr><tr><td>07:05:18.220</td><td>16:05:18.220</td><td>FTP <code>PASV</code> + <code>STOR employee_records.zip</code></td><td>FTP 제어 채널</td></tr><tr><td>07:05:19.001 ~ 07:06:40.882</td><td>16:05:19 ~ 16:06:40</td><td>12.6 MB 데이터 채널 전송</td><td>FTP-DATA (Follow Stream)</td></tr><tr><td>07:07:02.010 ~ 07:41:55.660</td><td>16:07:02 ~ 16:41:55</td><td>DNS 서브도메인 14,655건, Base64 인코딩 확인</td><td>DNS 터널링</td></tr></tbody></table></div>
+<p>캡처의 타임존이 기록되어 있지 않으면 <strong>UTC로 가정하고 명시</strong>한다. KST 변환은 +9시간이다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="table-wrap"><table><thead><tr><th>소문항</th><th>답</th><th>근거 artifact</th><th>강도</th></tr></thead><tbody><tr><td>① 공격 인프라 IP</td><td><code>203.0.113.9</code></td><td>HTTP/FTP 상대 IP 동일</td><td>강</td></tr><tr><td>② 탈취 계정</td><td><code>jhkim</code> / <code>Summer2026!</code></td><td>POST 본문 평문</td><td>강 (평문 캡처에 한함)</td></tr><tr><td>③ 반출 파일</td><td><code>employee_records.zip</code></td><td>FTP-DATA Follow Stream</td><td>강</td></tr><tr><td>④ 은닉 채널</td><td>DNS 터널링(Base64)</td><td>서브도메인 길이/문자 집합 + 디코딩 성공</td><td>강</td></tr><tr><td>(제외) TLS 대화</td><td>관련 없음</td><td>정상 CDN SNI</td><td>판단 근거 명시 필요</td></tr></tbody></table></div>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>pcap에서 얻은 것</th><th>다음 목표</th></tr></thead><tbody><tr><td>탈취 계정(<code>jhkim</code>)</td><td>해당 계정의 EVTX 4624/4625 (<a href="./event-4624-logon.html">FOR-0083</a>)</td></tr><tr><td>반출 파일명</td><td>디스크 <code>$MFT</code>/<code>$UsnJrnl</code>에서 생성·삭제 이력</td></tr><tr><td>공격 인프라 IP</td><td>방화벽/프록시 로그, <code>access.log</code>에서 같은 IP 재검색</td></tr><tr><td>DNS 터널링 도메인</td><td>다른 세션에도 같은 도메인이 있는지 재검색</td></tr><tr><td>전송 시각</td><td>서버 로그·EVTX와 초 단위로 대조</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>한 프로토콜만 파고 나머지를 놓치는 것</strong> → HTTP만 보고 DNS 터널링 소문항을 놓친다 → Protocol Hierarchy에서 비중 있는 프로토콜을 전부 목록화하고 하나씩 소거한다.</li><li><strong>HTTP에서 계정이 나왔다고 즉시 최종 답으로 쓰는 것</strong> → 세션 쿠키가 실제로 로그인 성공을 의미하는지 응답 코드(302)와 함께 확인해야 한다 → 요청과 응답을 짝지어 본다.</li><li><strong>FTP-DATA를 Export Objects에서 찾으려다 시간을 버리는 것</strong> → 그 프로토콜은 지원 목록에 없다 → 처음부터 Follow Stream을 쓴다.</li><li><strong>DNS 패킷 수만 보고 바로 터널링이라 단정하는 것</strong> → 정상 환경에도 DNS가 많을 수 있다 → 서브도메인 문자 집합과 길이 분포를 반드시 확인한다.</li><li><strong>TLS 대화를 무시하지 않고 억지로 답에 끼워 맞추는 것</strong> → SNI가 정상 도메인이면 배경 트래픽이다 → &quot;관련 없음&quot;이라고 판단 근거와 함께 명시하는 것도 정답의 일부다.</li><li><strong>시간대를 확정하지 않고 여러 프로토콜의 시각을 섞는 것</strong> → Wireshark 기본은 상대 시간이다 → <code>View &gt; Time Display Format</code>을 UTC 절대시각으로 통일한 뒤 비교한다.</li><li><strong>소문항마다 필터를 처음부터 다시 만드는 것</strong> → 비효율적이고 실수가 늘어난다 → Conversations에서 얻은 IP:포트를 각 프로토콜 필터에 재사용한다.</li><li><strong>디코딩된 데이터가 최종 flag라고 확인 없이 제출하는 것</strong> → 다중 인코딩이나 중간 노이즈가 섞일 수 있다 → <code>flag{...}</code> 형식이 실제로 나올 때까지 반복 디코딩한다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) 전체 흐름 요약이 GUI와 일치하는지
+tshark -r case.pcapng -q -z io,phs
+tshark -r case.pcapng -q -z conv,tcp
+
+# 2) 계정 정보가 다른 스트림에도 등장하는지 (재사용 여부)
+tshark -r case.pcapng -Y &#39;http.request.method==&quot;POST&quot;&#39; \
+  -T fields -e frame.time -e http.file_data | grep -i jhkim
+
+# 3) DNS 터널링 데이터 총량 추정
+tshark -r case.pcapng -Y &#39;dns.flags.response==0&#39; -T fields -e dns.qry.name | wc -l
+
+# 4) FTP 로 전송된 바이트와 저장 파일 크기 일치 확인
+ls -l extracted.zip
+tshark -r case.pcapng -q -z conv,tcp | grep &#39;203.0.113.9:20&#39;</code></pre></div>
+<p>GUI 통계와 tshark 수치가 다르면 필터 조건이나 재조립 설정을 재확인한다. 저장한 파일 크기가 Conversations의 Bytes와 크게 다르면 헤더 포함 여부를 의심한다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">이어지는 예시(위 시나리오와 동일 pcap)로 실제 작업 순서를 그대로 기록한다.
+
+[단계 A] 트리아지
+  tshark -r case.pcapng -q -z io,phs
+  -&gt; FTP-DATA 9.4%(12.6MB), DNS 28.1%(14,655건), HTTP 2.1%, TLS 14.7%
+  -&gt; 파일 전송 + DNS 이상 + 로그인 흔적, 세 갈래로 나눠 조사하기로 결정
+
+[단계 B] HTTP 를 먼저 판다 (비중은 작지만 &quot;최초 접근&quot;이 걸려 있어서)
+  필터: http.request.method==&quot;POST&quot;
+  Follow TCP Stream -&gt; username=jhkim&amp;password=Summer2026!
+  다음 패킷 302 Found + Set-Cookie 확인 -&gt; 로그인 성공 확정
+
+[단계 C] FTP 로 이동
+  필터: ftp
+  STOR employee_records.zip 확인
+
+  첫 시도 (실패): File &gt; Export Objects &gt; FTP-DATA
+  -&gt; 메뉴가 아예 없음. &quot;왜 안 보이지&quot; 하며 몇 분 허비.
+
+  수정: Statistics &gt; Conversations &gt; TCP, Bytes 정렬
+  -&gt; 203.0.113.9:20 스트림 확인, Follow &gt; TCP Stream &gt; Raw 저장
+  -&gt; extracted.zip 확보, 안에서 note.txt 의 flag 1 확보
+
+[단계 D] DNS 로 이동
+  필터: dns.qry.name.len &gt; 30
+  라벨 문자 집합이 A-Za-z0-9 뿐 -&gt; Base64 후보
+  프레임 순서대로 라벨을 이어 붙여 디코딩 -&gt; flag 2 확보
+  (&quot;도메인 알파벳 순 정렬&quot;로 먼저 시도했다가 문장이 뒤섞여 나왔음.
+   frame.number 기준 정렬로 바꾸자 정상 복원됨 — 이것도 실패 후 수정 사례)
+
+[단계 E] TLS 대화 처리
+  필터: tls.handshake.type == 1
+  SNI = cdn-assets.example-cdn.net -&gt; 정상 CDN. 사건과 무관 판단.
+  (관련 없다는 판단도 답안에 근거와 함께 명시)
+
+[단계 F] 시간순 통합
+  세 갈래에서 얻은 시각을 표로 정리 -&gt; 로그인(07:02) -&gt; 업로드(07:05) -&gt;
+  DNS 터널링(07:07~07:41) 순서로 사건이 진행됐음을 확인
+
+최종 답:
+  ① 203.0.113.9 (로그인 폼 + FTP 목적지)
+  ② jhkim / Summer2026!
+  ③ employee_records.zip (flag{ftp_upload_via_pasv_mode})
+  ④ DNS 터널링, Base64 인코딩 (flag{dns_tunnel_detected})
+  ⑤ 07:02 로그인 -&gt; 07:05 FTP 업로드 -&gt; 07:07~07:41 DNS 터널링 (모두 KST 16시대)</code></pre></div>
+<p>단계 D의 &quot;알파벳 순 정렬 실패 → 프레임 순서로 수정&quot;이 이 문제의 핵심 함정이다. DNS 응답/요청은 도착 순서가 알파벳과 무관하므로 반드시 캡처 순서(프레임 번호)로 재조립해야 한다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li>Protocol Hierarchy에서 비중 있는 프로토콜을 전부 나열했는가 — 하나만 파지 않았는가</li><li>각 프로토콜의 &quot;가장 큰/많은 대화&quot;를 Conversations로 찾았는가</li><li>HTTP 요청-응답을 짝지어 성공/실패를 판정했는가 (상태 코드 확인)</li><li>Export Objects가 안 되는 프로토콜(FTP-DATA)을 Follow Stream으로 전환했는가</li><li>DNS 서브도메인의 문자 집합과 길이로 인코딩 여부를 판단했는가</li><li>디코딩 시 프레임 순서로 재조립했는가</li><li>TLS 등 볼 수 없는 트래픽을 &quot;관련 없음&quot;으로 판단할 근거(SNI 등)를 확보했는가</li><li>모든 시각을 같은 기준(UTC 절대시각)으로 통일했는가</li><li>각 소문항의 답에 근거 필터/artifact를 함께 적었는가</li><li>최종 flag 형식(<code>flag{...}</code>)이 실제로 나왔는가, 중간 결과를 최종 답으로 오인하지 않았는가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-002 — Wireshark Display Filter Reference: <code>http.request</code>, <code>dns.qry.name</code>, <code>ftp</code>, <code>tls.handshake.type</code> 등 필터 필드</li><li>SRC-003 — Wireshark User&#39;s Guide: Protocol Hierarchy, Conversations, Follow Stream, Export Objects 사용법</li><li>SRC-010 — tshark man page: <code>-z io,phs</code>, <code>-z conv,tcp</code>, <code>-T fields</code>, <code>--export-objects</code></li><li>SRC-065 — RFC 1035: DNS 쿼리 이름의 라벨 구조 (터널링 판정의 기반)</li><li>SRC-074 — RFC 4648: Base64 인코딩 규칙 (서브도메인 디코딩)</li><li>시나리오의 IP·계정·파일명·도메인·시각은 설명을 위한 예시 값이다. 실제 문제의 프로토콜 조합과 순서는 다를 수 있으므로 본 글의 &quot;순서를 정하는 방법&quot;을 재사용할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./wireshark-30sec-triage.html">
+    <span class="rel-id">FOR-0146 · Network/PCAP</span>
+    Wireshark 30초 트리아지: pcap을 받고 처음 할 다섯 가지
+  </a>
+  <a class="related-item" href="./dns-tunneling.html">
+    <span class="rel-id">FOR-0155 · Network/PCAP</span>
+    DNS tunneling 의심 패턴 판별하기
+  </a>
+  <a class="related-item" href="./pcap-base64-hex-payload.html">
+    <span class="rel-id">FOR-0188 · Network/PCAP</span>
+    pcap 안 Base64/hex로 인코딩된 페이로드 찾기
+  </a>
+  <a class="related-item" href="./pcap-file-extraction.html">
+    <span class="rel-id">FOR-0189 · Network/PCAP</span>
+    pcap에서 전송된 파일 복원하기
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./pcap-file-extraction.html"><span class="rel-id">← FOR-0189</span>pcap에서 전송된 파일 복원하기</a>
+<a class="related-item" href="./chrome-history.html"><span class="rel-id">FOR-0191 →</span>Chrome History DB 구조: urls / visits / downloads 읽기</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#시나리오">시나리오</a></li>
+<li class="toc-l3"><a href="#0단계-전체-그림-protocol-hierarchy와-conversations">0단계 — 전체 그림: Protocol Hierarchy와 Conversations</a></li>
+<li class="toc-l3"><a href="#1단계-http-최초-접근과-계정-탈취-①-②">1단계 — HTTP: 최초 접근과 계정 탈취 (① ②)</a></li>
+<li class="toc-l3"><a href="#2단계-ftp-반출된-파일-③">2단계 — FTP: 반출된 파일 (③)</a></li>
+<li class="toc-l3"><a href="#3단계-dns-과다-숨겨진-채널-④">3단계 — DNS 과다: 숨겨진 채널 (④)</a></li>
+<li class="toc-l3"><a href="#4단계-tls-세-번째-대화의-정체">4단계 — TLS: 세 번째 대화의 정체</a></li>
+<li class="toc-l3"><a href="#5단계-시간순-통합">5단계 — 시간순 통합</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-14 10:37 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

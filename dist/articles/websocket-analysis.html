@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>WebSocket 프레임 분석하기: 마스킹, opcode, payload 복원 · FOR-0179 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Network%2FPCAP">Network/PCAP</a> / FOR-0179
+      </div>
+      <header class="article-head">
+        <h1>WebSocket 프레임 분석하기: 마스킹, opcode, payload 복원</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Network/PCAP</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>WebSocket은 http.upgrade == &quot;websocket&quot;으로 시작된 핸드셰이크 이후 websocket 필터로 잡히며, 클라이언트→서버 프레임은 RFC 6455에 따라 4바이트 마스킹 키로 XOR 마스킹되어 있다. Follow TCP Stream으로는 마스킹된 바이트만 보이므로 websocket.payload 필드로 Wireshark가 이미 언마스킹한 평문을 확인한다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Wireshark, tshark</td></tr>
+<tr><th>artifact</th><td><code>pcap</code> · <code>pcapng</code> · <code>WebSocket frame</code> · <code>HTTP Upgrade</code></td></tr>
+<tr><th>프로토콜</th><td>WebSocket, HTTP, TCP</td></tr>
+<tr><th>Wireshark 필터</th><td><code>websocket</code> · <code>http.upgrade == &quot;websocket&quot;</code> · <code>websocket.opcode == 1</code> · <code>websocket.opcode == 2</code> · <code>websocket.opcode == 8</code> · <code>websocket.mask == 1</code> · <code>websocket.payload</code></td></tr>
+<tr><th>tshark field</th><td><code>websocket.opcode</code> · <code>websocket.payload</code> · <code>websocket.mask</code> · <code>websocket.masking_key</code> · <code>websocket.payload_length</code> · <code>http.upgrade</code></td></tr>
+<tr><th>파일 형식</th><td><code>pcap</code> · <code>pcapng</code></td></tr>
+<tr><th>검색 별칭</th><td>웹소켓 분석 · websocket 패킷 · 실시간 채팅 pcap · 웹소켓 마스킹 · websocket flag 찾기 · 101 switching protocols</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>WebSocket은 <code>http.upgrade == &quot;websocket&quot;</code>으로 시작된 핸드셰이크 이후 <code>websocket</code> 필터로 잡히며, 클라이언트→서버 프레임은 RFC 6455에 따라 4바이트 마스킹 키로 XOR 마스킹되어 있다. Follow TCP Stream으로는 마스킹된 바이트만 보이므로 <strong><code>websocket.payload</code> 필드</strong>로 Wireshark가 이미 언마스킹한 평문을 확인한다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>채팅/실시간 알림/게임 통신처럼 WebSocket을 쓰는 애플리케이션의 pcap에서 메시지 내용을 찾아야 하는 문제</li><li>Follow TCP Stream을 열었는데 사람이 읽을 수 없는 바이트가 나오는 상황</li><li>특정 WebSocket 메시지 하나에 flag가 들어 있는 CTF형 문제</li></ul>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li><strong>HTTP 요청에 <code>Upgrade: websocket</code>, <code>Connection: Upgrade</code>, 응답이 <code>101 Switching Protocols</code></strong></li><li>그 이후 패킷들이 <code>Protocol</code> 컬럼에 <code>WebSocket</code>으로 표시됨</li><li>Follow TCP Stream을 열면 사람이 읽을 수 없는 바이트가 섞여 나옴(클라이언트→서버 방향이 마스킹돼서)</li><li>Info 컬럼에 <code>Text</code>, <code>Binary</code>, <code>Ping</code>, <code>Pong</code>, <code>Connection Close</code> 같은 표시</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">websocket</code></pre></div>
+<p>이 한 줄로 핸드셰이크 이후의 모든 프레임을 잡는다. 이어서 각 프레임의 <code>websocket.payload</code> 필드를 확인한다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1. 필터: http.upgrade == &quot;websocket&quot;   -&gt; 핸드셰이크 요청/응답 확인
+2. 필터: websocket                     -&gt; 프레임 전체
+3. 각 프레임 펼치기 &gt; WebSocket &gt; Payload  -&gt; 언마스킹된 실제 데이터
+4. 텍스트 메시지만: websocket.opcode == 1</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-핸드셰이크-확인">1단계 — 핸드셰이크 확인</h3>
+<p>WebSocket은 일반 HTTP 요청으로 시작해 <code>101 Switching Protocols</code> 응답을 받으면 그 TCP 연결이 WebSocket 프레임 형식으로 전환된다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">필터: http.upgrade == &quot;websocket&quot;</code></pre></div>
+<p>핸드셰이크 요청/응답의 핵심 헤더:</p>
+<div class="table-wrap"><table><thead><tr><th>헤더</th><th>방향</th><th>의미</th></tr></thead><tbody><tr><td><code>Upgrade: websocket</code></td><td>요청/응답</td><td>프로토콜 전환 요청/승인</td></tr><tr><td><code>Connection: Upgrade</code></td><td>요청/응답</td><td>HTTP 연결을 그대로 재사용</td></tr><tr><td><code>Sec-WebSocket-Key</code></td><td>요청</td><td>클라이언트가 생성한 임의 base64 값</td></tr><tr><td><code>Sec-WebSocket-Accept</code></td><td>응답</td><td><code>Sec-WebSocket-Key</code> + 고정 GUID를 SHA-1 해시한 값(연결 확인용)</td></tr><tr><td><code>Sec-WebSocket-Version</code></td><td>요청</td><td>보통 <code>13</code></td></tr><tr><td>응답 상태 코드 <code>101</code></td><td>응답</td><td>성공적으로 WebSocket으로 전환됨</td></tr></tbody></table></div>
+<p>이 헤더들이 없으면 이후 데이터가 WebSocket이 아니라 일반 TCP 페이로드일 수 있으므로 먼저 확인한다.</p>
+<h3 id="2단계-프레임-구조와-opcode">2단계 — 프레임 구조와 opcode</h3>
+<p>RFC 6455가 정의하는 WebSocket 프레임 헤더의 핵심 필드:</p>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>크기</th><th>의미</th></tr></thead><tbody><tr><td>FIN</td><td>1 bit</td><td>이 프레임이 메시지의 마지막 조각인지</td></tr><tr><td>opcode</td><td>4 bit</td><td>프레임 종류</td></tr><tr><td>MASK</td><td>1 bit</td><td>마스킹 여부. <strong>클라이언트→서버는 반드시 1</strong></td></tr><tr><td>Payload length</td><td>7/7+16/7+64 bit</td><td>페이로드 길이(가변 인코딩)</td></tr><tr><td>Masking-key</td><td>32 bit (MASK=1일 때만)</td><td>XOR 마스킹 키</td></tr><tr><td>Payload data</td><td>가변</td><td>실제 데이터(마스킹된 상태로 전송)</td></tr></tbody></table></div>
+<p>opcode 값과 의미:</p>
+<div class="table-wrap"><table><thead><tr><th>opcode</th><th>이름</th><th>설명</th></tr></thead><tbody><tr><td><code>0x0</code></td><td>Continuation</td><td>이전 프레임의 이어지는 조각</td></tr><tr><td><code>0x1</code></td><td>Text</td><td>UTF-8 텍스트 메시지</td></tr><tr><td><code>0x2</code></td><td>Binary</td><td>바이너리 메시지</td></tr><tr><td><code>0x8</code></td><td>Close</td><td>연결 종료</td></tr><tr><td><code>0x9</code></td><td>Ping</td><td>연결 유지 확인</td></tr><tr><td><code>0xA</code></td><td>Pong</td><td>Ping에 대한 응답</td></tr></tbody></table></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">websocket.opcode == 1     -&gt; 텍스트 메시지만
+websocket.opcode == 2     -&gt; 바이너리 메시지만
+websocket.opcode == 8     -&gt; 종료 프레임(메시지 아님, 제외 대상)</code></pre></div>
+<h3 id="3단계-마스킹-동작-이해">3단계 — 마스킹 동작 이해</h3>
+<p>RFC 6455는 <strong>클라이언트가 서버로 보내는 모든 프레임을 반드시 마스킹</strong>하도록 강제한다. 서버가 클라이언트로 보내는 프레임은 마스킹하지 않는다. 마스킹은 단순 XOR이다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">원본 바이트[i] = 마스킹된 바이트[i] XOR 마스킹키[i mod 4]</code></pre></div>
+<p>Wireshark는 <code>websocket.mask == 1</code>인 프레임을 자동으로 언마스킹해서 <code>websocket.payload</code> 필드에 평문을 채워 보여준다. <strong>수동으로 XOR을 계산할 필요가 없다</strong> — Follow TCP Stream이 이 자동 언마스킹을 거치지 않고 raw 바이트를 그대로 보여주기 때문에 깨져 보이는 것뿐이다.</p>
+<h3 id="4단계-payload-추출">4단계 — payload 추출</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;websocket.opcode==1&#39; \
+  -T fields -e frame.number -e ip.src -e ip.dst -e websocket.payload</code></pre></div>
+<p>출력 예시:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">frame.number  ip.src      ip.dst        websocket.payload
+55            10.0.0.15   203.0.113.9   {&quot;type&quot;:&quot;join&quot;,&quot;room&quot;:&quot;lobby&quot;}
+61            203.0.113.9 10.0.0.15     {&quot;type&quot;:&quot;msg&quot;,&quot;user&quot;:&quot;alice&quot;,&quot;text&quot;:&quot;hi&quot;}
+102           10.0.0.15   203.0.113.9   {&quot;type&quot;:&quot;msg&quot;,&quot;user&quot;:&quot;bob&quot;,&quot;text&quot;:&quot;flag is in the pinned message&quot;}</code></pre></div>
+<p><code>websocket.payload</code>가 hex로만 보이면 텍스트가 아니라 바이너리 프레임(<code>opcode==2</code>)일 가능성이 높다. 이 경우 그 값을 별도로 디코딩(base64, protobuf, 커스텀 포맷 등)해야 한다.</p>
+<h3 id="5단계-연속-프레임fragmentation-처리">5단계 — 연속 프레임(fragmentation) 처리</h3>
+<p>FIN=0인 프레임은 메시지가 아직 끝나지 않았다는 뜻이며, 뒤이어 opcode <code>0x0</code>(continuation) 프레임들이 이어지다가 FIN=1인 프레임에서 메시지가 끝난다. 하나의 논리적 메시지가 여러 프레임으로 나뉘어 있으면 순서대로 payload를 이어붙여야 완전한 메시지가 된다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">websocket.fin == 0    -&gt; 아직 끝나지 않은 메시지의 시작/중간 조각</code></pre></div>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>의미</th><th>주의</th></tr></thead><tbody><tr><td><code>websocket.opcode</code></td><td>프레임 종류(0~0xA)</td><td>Close/Ping/Pong은 메시지 내용이 아니다</td></tr><tr><td><code>websocket.mask</code></td><td>마스킹 여부(1/0)</td><td>서버→클라이언트는 항상 0이어야 정상(RFC 위반이면 이상 신호)</td></tr><tr><td><code>websocket.masking_key</code></td><td>4바이트 마스킹 키</td><td>프레임마다 랜덤. 재사용되면 비정상 구현</td></tr><tr><td><code>websocket.payload_length</code></td><td>페이로드 길이</td><td>126/127 이상이면 확장 길이 필드 사용</td></tr><tr><td><code>websocket.payload</code></td><td>언마스킹된 실제 데이터</td><td>Wireshark가 이미 XOR을 풀어 보여준 값</td></tr><tr><td><code>websocket.fin</code></td><td>마지막 조각 여부</td><td>0이면 다음 continuation 프레임과 이어 붙여야 함</td></tr></tbody></table></div>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>WebSocket에서 얻은 것</th><th>다음에 볼 것</th></tr></thead><tbody><tr><td>JSON/텍스트 메시지 payload</td><td>애플리케이션 로직에 따른 flag 위치 파악</td></tr><tr><td>반복되는 Ping/Pong만 있는 구간</td><td>유휴 연결. 실제 데이터 구간을 앞뒤로 좁혀 찾기</td></tr><tr><td>바이너리 payload</td><td>base64/hex/커스텀 인코딩 여부 확인 후 추가 디코딩</td></tr><tr><td>핸드셰이크의 <code>Sec-WebSocket-Key</code>/<code>Accept</code></td><td>정상 핸드셰이크인지, 스푸핑된 응답인지 확인</td></tr><tr><td>클라이언트/서버 방향 구분</td><td><code>websocket.mask</code> 값으로 방향 재확인(마스킹=클라이언트발)</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>Follow TCP Stream 결과를 그대로 읽으려는 것.</strong> 클라이언트→서버 프레임은 마스킹되어 있어 사람이 읽을 수 없는 바이트로 보인다. <code>websocket.payload</code> 필드나 패킷 상세 창을 사용한다.</li><li><strong>Close/Ping/Pong 프레임을 실제 메시지로 세는 것.</strong> <code>websocket.opcode</code>가 <code>0x1</code>(Text) 또는 <code>0x2</code>(Binary)인 것만 애플리케이션 메시지다.</li><li><strong>연속(continuation) 프레임을 개별 메시지로 착각하는 것.</strong> <code>FIN=0</code>으로 시작해 <code>opcode=0x0</code>인 프레임들이 이어지면 전부 합쳐야 하나의 메시지다.</li><li><strong>서버→클라이언트 프레임에 마스킹 키가 있다고 가정하고 수동 XOR을 시도하는 것.</strong> RFC 6455는 서버발 프레임에 마스킹을 금지한다. <code>websocket.mask == 0</code>이면 이미 평문이다.</li><li><strong>비표준 포트(80/443이 아닌 포트)에서 Wireshark가 WebSocket으로 인식하지 못하는 것.</strong> 이 경우 <code>Decode As &gt; WebSocket</code>을 수동으로 지정해야 한다.</li><li><strong>바이너리(<code>opcode==2</code>) 프레임의 hex 값을 그대로 flag로 제출하는 것.</strong> 바이너리는 대개 추가 인코딩(protobuf, msgpack, 커스텀 프로토콜)이 들어 있어 한 번 더 디코딩해야 한다.</li><li><strong>permessage-deflate 확장이 협상된 세션에서 payload가 압축되어 있는 것을 놓치는 것.</strong> 핸드셰이크 응답에 <code>Sec-WebSocket-Extensions: permessage-deflate</code>가 있으면 <code>websocket.payload</code>가 압축된 바이트일 수 있다. 이 경우 별도로 inflate가 필요할 수 있다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) 핸드셰이크 확인 — GUI에서 http.upgrade 필터와 동일
+tshark -r capture.pcapng -Y &#39;http.upgrade&#39; -T fields -e frame.number -e http.response.code
+
+# 2) 텍스트 메시지 전체를 방향과 함께 뽑기
+tshark -r capture.pcapng -Y &#39;websocket.opcode==1&#39; \
+  -T fields -e frame.number -e ip.src -e ip.dst -e websocket.payload -E header=y
+
+# 3) opcode별 프레임 개수 집계 — Ping/Pong 노이즈 비율 확인
+tshark -r capture.pcapng -Y &#39;websocket&#39; -T fields -e websocket.opcode | sort | uniq -c
+
+# 4) 마스킹 여부로 방향 재확인
+tshark -r capture.pcapng -Y &#39;websocket&#39; -T fields -e frame.number -e websocket.mask -e ip.src</code></pre></div>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;채팅 앱 pcap에서 flag가 포함된 메시지를 찾아라.&quot;
+첨부: chat.pcapng (WebSocket, 512 packets)
+
+1. 첫 시도 (실패)
+   우클릭 &gt; Follow &gt; TCP Stream
+   결과: 절반은 읽을 수 있는 JSON, 절반은 깨진 바이트(...\x81\x94\x3f\x7a...)
+   클라이언트가 보낸 메시지 쪽이 전부 읽을 수 없는 상태였다.
+
+2. 원인 파악
+   Protocol 컬럼 확인 -&gt; WebSocket으로 인식되어 있음.
+   깨진 바이트가 나온 프레임은 ip.src가 클라이언트(10.0.0.20)였다.
+   -&gt; RFC 6455 마스킹 규칙: 클라이언트발 프레임은 항상 마스킹된다.
+
+3. 필터 전환
+   websocket.opcode == 1
+   각 프레임의 websocket.payload 필드 확인 (Wireshark가 이미 언마스킹함)
+
+4. tshark로 전체 텍스트 메시지 추출
+   tshark -r chat.pcapng -Y &#39;websocket.opcode==1&#39; \
+     -T fields -e ip.src -e websocket.payload
+
+     10.0.0.20   {&quot;type&quot;:&quot;join&quot;,&quot;user&quot;:&quot;guest1&quot;}
+     203.0.113.9 {&quot;type&quot;:&quot;msg&quot;,&quot;user&quot;:&quot;admin&quot;,&quot;text&quot;:&quot;welcome&quot;}
+     10.0.0.20   {&quot;type&quot;:&quot;msg&quot;,&quot;user&quot;:&quot;guest1&quot;,&quot;text&quot;:&quot;flag{w3bs0ck3t_unm4sk3d}&quot;}
+
+정답: flag{w3bs0ck3t_unm4sk3d}</code></pre></div>
+<p>1단계에서 Follow TCP Stream만 믿고 &quot;메시지 절반이 깨졌다&quot;고 결론 냈다면 마스킹을 몰랐던 것이다. WebSocket 프레임은 항상 전용 필터로 다시 봐야 한다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>http.upgrade == &quot;websocket&quot;</code>으로 핸드셰이크가 정상적으로 <code>101</code>을 받았는지 확인했는가</li><li>비표준 포트라 Wireshark가 자동 인식 못했다면 <code>Decode As</code>를 지정했는가</li><li><code>websocket.opcode</code>로 Text/Binary만 남기고 Ping/Pong/Close를 제외했는가</li><li><code>websocket.payload</code> 필드를 확인했는가, Follow Stream만 보지 않았는가</li><li><code>FIN=0</code> 연속 프레임을 이어붙였는가</li><li>바이너리 payload에 추가 인코딩(base64/protobuf)이 있는지 확인했는가</li><li><code>permessage-deflate</code> 확장이 협상됐는지 핸드셰이크 응답 헤더를 확인했는가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-072 — RFC 6455 (The WebSocket Protocol): 프레임 헤더 구조, opcode 정의, 마스킹 규칙(클라이언트→서버 필수), fragmentation 규칙</li><li>SRC-002 — Wireshark Display Filter Reference: <code>websocket.opcode</code>, <code>websocket.mask</code>, <code>websocket.payload</code>, <code>http.upgrade</code> 필드명 확인</li><li>SRC-003 — Wireshark User&#39;s Guide: Decode As, Follow TCP Stream 동작</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./wireshark-30sec-triage.html">
+    <span class="rel-id">FOR-0146 · Network/PCAP</span>
+    Wireshark 30초 트리아지: pcap을 받고 처음 할 다섯 가지
+  </a>
+  <a class="related-item" href="./follow-tcp-stream.html">
+    <span class="rel-id">FOR-0162 · Network/PCAP</span>
+    Follow TCP Stream으로 세션 전체 대화 복원하기
+  </a>
+  <a class="related-item" href="./network-ctf-walkthrough.html">
+    <span class="rel-id">FOR-0190 · Network/PCAP</span>
+    Network/PCAP 종합 CTF 문제 풀이
+  </a>
+  <a class="related-item" href="./capture-vs-display-filter.html">
+    <span class="rel-id">FOR-0147 · Network/PCAP</span>
+    Capture Filter와 Display Filter 차이: 필터가 안 먹을 때
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./tls-certificate-metadata.html"><span class="rel-id">← FOR-0178</span>TLS 인증서 메타데이터에서 단서 찾기: Subject, Issuer, 유효기간</a>
+<a class="related-item" href="./tcp-contains.html"><span class="rel-id">FOR-0181 →</span>tcp contains로 TCP 페이로드 안 문자열/바이트 검색하기</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-핸드셰이크-확인">1단계 — 핸드셰이크 확인</a></li>
+<li class="toc-l3"><a href="#2단계-프레임-구조와-opcode">2단계 — 프레임 구조와 opcode</a></li>
+<li class="toc-l3"><a href="#3단계-마스킹-동작-이해">3단계 — 마스킹 동작 이해</a></li>
+<li class="toc-l3"><a href="#4단계-payload-추출">4단계 — payload 추출</a></li>
+<li class="toc-l3"><a href="#5단계-연속-프레임fragmentation-처리">5단계 — 연속 프레임(fragmentation) 처리</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-14 10:37 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

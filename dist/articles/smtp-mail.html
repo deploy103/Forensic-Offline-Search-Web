@@ -334,6 +334,10 @@ strings -n 8 capture.pcapng | grep -Ei &#39;MAIL FROM|RCPT TO|X-Mailer|Message-I
     <span class="rel-id">FOR-0146 · Network/PCAP</span>
     Wireshark 30초 트리아지: pcap을 받고 처음 할 다섯 가지
   </a>
+  <a class="related-item" href="./pcap-base64-hex-payload.html">
+    <span class="rel-id">FOR-0188 · Network/PCAP</span>
+    pcap 안 Base64/hex로 인코딩된 페이로드 찾기
+  </a>
   <a class="related-item" href="./ftp-commands.html">
     <span class="rel-id">FOR-0166 · Network/PCAP</span>
     FTP 명령과 파일 전송 추적: ftp.request.command로 STOR/RETR 잡기
@@ -341,10 +345,6 @@ strings -n 8 capture.pcapng | grep -Ei &#39;MAIL FROM|RCPT TO|X-Mailer|Message-I
   <a class="related-item" href="./smb-file-access.html">
     <span class="rel-id">FOR-0168 · Network/PCAP</span>
     SMB2 공유 파일 접근 흔적: smb2.cmd로 읽은 파일과 계정 특정
-  </a>
-  <a class="related-item" href="./capture-vs-display-filter.html">
-    <span class="rel-id">FOR-0147 · Network/PCAP</span>
-    Capture Filter와 Display Filter 차이: 필터가 안 먹을 때
   </a>
   </div>
 </section>
@@ -380,7 +380,7 @@ strings -n 8 capture.pcapng | grep -Ei &#39;MAIL FROM|RCPT TO|X-Mailer|Message-I
   </div>
 </main>
 <footer class="site-footer">
-  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-10 08:40 KST
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-14 10:37 KST
 </footer>
 <script src="../assets/search-index.js"></script>
 <script src="../assets/search-core.js"></script>

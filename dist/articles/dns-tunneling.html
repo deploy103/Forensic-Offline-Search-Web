@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>DNS tunneling 의심 패턴 판별하기 · FOR-0155 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Network%2FPCAP">Network/PCAP</a> / FOR-0155
+      </div>
+      <header class="article-head">
+        <h1>DNS tunneling 의심 패턴 판별하기</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Network/PCAP</span>
+      <span class="badge badge-type">트러블슈팅</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>DNS tunneling 은 정상 조회로 위장한 서브도메인 라벨에 데이터를 인코딩해 실어 나르는 기법이다. dns.qry.name 을 길이·문자 구성·반복 빈도 세 축으로 집계했을 때 하나라도 비정상이면 의심하고, 목적지 도메인(등록 도메인) 하나로 수백~수천 건의 서로 다른 서브도메인이 몰리는지를 최종 확인 지표로 삼는다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Wireshark, tshark</td></tr>
+<tr><th>artifact</th><td><code>pcap</code> · <code>pcapng</code> · <code>DNS query</code></td></tr>
+<tr><th>프로토콜</th><td>DNS</td></tr>
+<tr><th>Wireshark 필터</th><td><code>dns</code> · <code>dns.flags.response == 0</code> · <code>dns.qry.name</code> · <code>dns.qry.type == 16</code> · <code>dns.qry.type == 10</code> · <code>dns.qry.name.len &gt; 50</code> · <code>dns.flags.rcode == 3</code> · <code>dns.resp.ttl &lt; 60</code></td></tr>
+<tr><th>tshark field</th><td><code>dns.qry.name</code> · <code>dns.qry.type</code> · <code>dns.flags.response</code> · <code>dns.flags.rcode</code> · <code>dns.resp.ttl</code> · <code>dns.qry.name.len</code></td></tr>
+<tr><th>파일 형식</th><td><code>pcap</code> · <code>pcapng</code></td></tr>
+<tr><th>검색 별칭</th><td>dns 터널링 찾기 · dns가 이상하다 · dns 쿼리가 너무 많다 · 서브도메인이 랜덤해 보인다 · dns로 데이터 유출 · dns c2</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>DNS tunneling 은 정상 조회로 위장한 서브도메인 라벨에 데이터를 인코딩해 실어 나르는 기법이다. <code>dns.qry.name</code> 을 길이·문자 구성·반복 빈도 세 축으로 집계했을 때 하나라도 비정상이면 의심하고, 목적지 도메인(등록 도메인) 하나로 수백~수천 건의 서로 다른 서브도메인이 몰리는지를 최종 확인 지표로 삼는다.</p>
+<h2 id="증상">증상</h2>
+<div class="table-wrap"><table><thead><tr><th>증상</th><th>무슨 일이 벌어진 것인가</th></tr></thead><tbody><tr><td>Protocol Hierarchy 에서 DNS 가 전체 패킷의 10~90%를 차지한다</td><td>정상 브라우징에서는 DNS 가 이 정도 비율을 차지하지 않는다</td></tr><tr><td><code>dns.qry.name</code> 이 40~63자에 가까운 무작위 문자열이다</td><td>base32/base36/hex 로 데이터를 인코딩한 라벨일 가능성</td></tr><tr><td>같은 등록 도메인(<code>something.example.com</code>)으로 질의가 수백 건 반복된다</td><td>정상 서비스는 같은 이름을 이렇게 자주 재조회하지 않는다</td></tr><tr><td>TXT(<code>dns.qry.type == 16</code>) 또는 NULL(<code>dns.qry.type == 10</code>) 쿼리가 다수 존재한다</td><td>두 타입 모두 응답에 임의 바이트를 담기 좋아 터널링 도구가 선호한다</td></tr><tr><td>같은 질의에 대해 NXDOMAIN(<code>dns.flags.rcode == 3</code>) 응답이 반복된다</td><td>클라이언트가 존재하지 않는 이름을 계속 만들어 보내는 중이다(업로드 방향 인코딩)</td></tr><tr><td>응답의 TTL(<code>dns.resp.ttl</code>)이 0에 가깝다</td><td>캐싱을 막아 매 요청이 실제 서버까지 도달하게 하려는 터널링 인프라의 특징</td></tr></tbody></table></div>
+<h2 id="가장-가능성-높은-원인">가장 가능성 높은 원인</h2>
+<h3 id="원인-1-데이터를-서브도메인-라벨에-인코딩해-올리는-중-업로드-방향">원인 1 — 데이터를 서브도메인 라벨에 인코딩해 올리는 중 (업로드 방향)</h3>
+<p>DNS 질의 이름은 RFC 1035 기준 라벨 하나가 최대 63바이트, 전체 이름이 최대 253바이트다. 공격자는 유출할 데이터를 base32/base36/hex 로 인코딩해 이 한도에 최대한 채워 넣는다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">aGVsbG8gZnJvbSBk.tunnel.example.com
+b3RoZXIgZGF0YSBo.tunnel.example.com
+c2VjcmV0X2ZpbGUu.tunnel.example.com</code></pre></div>
+<p>세 질의 모두 등록 도메인(<code>tunnel.example.com</code>)은 같고, 맨 앞 라벨만 매번 바뀐다. 이 패턴이 원인 1의 확정 근거다.</p>
+<h3 id="원인-2-응답에-데이터를-담아-내려받는-중-다운로드-방향">원인 2 — 응답에 데이터를 담아 내려받는 중 (다운로드 방향)</h3>
+<p>TXT/NULL/CNAME 레코드는 응답 페이로드에 임의 바이트를 넣기 쉽다. <code>iodine</code>, <code>dnscat2</code> 같은 도구가 실제로 이 방식을 쓴다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">dns.qry.type == 16 &amp;&amp; dns.qry.name contains &quot;tunnel.example.com&quot;</code></pre></div>
+<p>같은 이름을 반복 조회하면서 매번 다른 TXT 응답을 받는다면, 응답 쪽으로 명령이나 파일 조각을 전달하는 C2 채널이다.</p>
+<h3 id="원인-3-서브도메인이-정상적으로-길거나-무작위인-경우-오탐">원인 3 — 서브도메인이 정상적으로 길거나 무작위인 경우 (오탐)</h3>
+<p>CDN·트래킹·안티봇 서비스도 긴 무작위 서브도메인을 쓴다(<code>a1b2c3.cdn.example.net</code> 류). 다음 세 가지가 함께 있어야 진짜 터널링으로 격상한다.</p>
+<div class="table-wrap"><table><thead><tr><th>판정 축</th><th>정상 CDN/트래킹</th><th>DNS tunneling</th></tr></thead><tbody><tr><td>등록 도메인 다양성</td><td>여러 도메인에 분산</td><td><strong>동일 도메인에 집중</strong></td></tr><tr><td>요청 빈도</td><td>페이지 로드 시 1회성</td><td><strong>지속적, 주기적</strong></td></tr><tr><td>응답 크기/타입</td><td>A/AAAA, 표준 크기</td><td>TXT/NULL 다수, 크기가 큼</td></tr></tbody></table></div>
+<p>셋 중 하나만 맞으면 오탐 가능성이 높다. 세 가지가 겹칠 때만 확정한다.</p>
+<h2 id="1차-확인">1차 확인</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;dns.flags.response==0&#39; -T fields -e dns.qry.name |
+  sort | uniq -c | sort -nr | head -20</code></pre></div>
+<p>이 한 줄로 &quot;어떤 이름이 몇 번 조회됐는가&quot;가 나온다. 상위 몇 개가 전부 같은 등록 도메인이고 앞부분만 랜덤이면 1차 확인 통과다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">   1  aGVsbG8gZnJvbSBk.tunnel.example.com
+   1  b3RoZXIgZGF0YSBo.tunnel.example.com
+   1  c2VjcmV0X2ZpbGUu.tunnel.example.com
+ 987  (정상 브라우징 도메인들, 각 1~5회)</code></pre></div>
+<p><strong>빈도수가 전부 1인데도 의심스러운 이유</strong>는, 매 질의의 라벨이 전부 다르기 때문이다 — 데이터를 실어 나르므로 같은 문자열이 반복될 이유가 없다. 이때는 빈도가 아니라 <strong>등록 도메인으로 groupby</strong> 해야 패턴이 드러난다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;dns.flags.response==0&#39; -T fields -e dns.qry.name |
+  awk -F&#39;.&#39; &#39;{n=NF; print $(n-1)&quot;.&quot;$n}&#39; | sort | uniq -c | sort -nr | head</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text"> 3112  example.com          &lt;- 이 중 몇 개가 tunnel. 서브도메인인지 다시 확인
+   45  google.com
+   12  msftconnecttest.com</code></pre></div>
+<p><code>example.com</code> 하나로 3,112건이 몰려 있으면 등록 도메인 집중도 확인이 끝난 것이다.</p>
+<h2 id="2차-확인">2차 확인</h2>
+<h3 id="길이와-문자-구성으로-인코딩-여부를-확정한다">길이와 문자 구성으로 인코딩 여부를 확정한다</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;dns.flags.response==0&#39; -T fields -e dns.qry.name |
+  awk &#39;{print length, $0}&#39; | sort -nr | head -10</code></pre></div>
+<p>63자에 가까운 이름이 다수이고, 알파벳+숫자만으로 구성되어 있으며 사람이 읽을 수 없는 문자열이면 base32/base36/hex 인코딩이다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">wireshark 필터: dns.qry.name.len &gt; 50</code></pre></div>
+<p><code>dns.qry.name.len</code> 은 정확한 옥텟 길이를 준다. 일반적인 서비스 도메인은 20~30자를 넘기지 않는다.</p>
+<h3 id="쿼리-타입-분포를-본다">쿼리 타입 분포를 본다</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y dns -T fields -e dns.qry.type | sort | uniq -c | sort -nr</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>코드</th><th>타입</th><th>정상 비율</th><th>터널링에서</th></tr></thead><tbody><tr><td>1</td><td>A</td><td>대다수</td><td>낮음</td></tr><tr><td>28</td><td>AAAA</td><td>다수</td><td>낮음</td></tr><tr><td>16</td><td>TXT</td><td>소수 (SPF/DKIM 조회)</td><td><strong>다수, 반복적</strong></td></tr><tr><td>10</td><td>NULL</td><td>거의 없음</td><td><strong>다수면 강한 신호</strong></td></tr><tr><td>5</td><td>CNAME</td><td>소수</td><td>응답 데이터 운반용으로 다수 가능</td></tr><tr><td>255</td><td>ANY</td><td>거의 없음</td><td>대역폭을 늘리려는 시도</td></tr></tbody></table></div>
+<p>TXT/NULL 비중이 전체 DNS 쿼리의 10%를 넘으면 정상 인프라로 보기 어렵다.</p>
+<h3 id="응답-코드와-ttl-로-방향을-구분한다">응답 코드와 TTL 로 방향을 구분한다</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">dns.flags.rcode == 3          -&gt; NXDOMAIN 반복 = 업로드 방향(존재하지 않는 이름으로 데이터 전송)
+dns.resp.ttl &lt; 60             -&gt; 캐싱 회피. 매 요청이 실서버까지 도달해야 하는 터널 인프라</code></pre></div>
+<p>NXDOMAIN 이 반복되는데도 클라이언트가 계속 같은 서버로 새 이름을 질의한다면, 서버 응답 자체가 필요 없고 <strong>전송이 목적</strong>인 업로드 채널이다.</p>
+<h2 id="다른-방법">다른 방법</h2>
+<div class="table-wrap"><table><thead><tr><th>상황</th><th>우회</th></tr></thead><tbody><tr><td>필터로는 판단이 애매하다</td><td><code>tshark -q -z conv,udp</code> 로 해당 DNS 서버와의 대화 하나가 얼마나 오래·많이 지속되는지 본다</td></tr><tr><td>등록 도메인을 눈으로 찾기 번거롭다</td><td><code>awk -F&#39;.&#39; &#39;{print $(NF-1)&quot;.&quot;$NF}&#39;</code> 로 항상 마지막 두 라벨만 뽑아 집계한다</td></tr><tr><td>Base32/Base64 디코딩을 직접 확인하고 싶다</td><td>라벨을 이어붙여 CyberChef 없이 <code>python3 -c &quot;import base64;print(base64.b32decode(&#39;...&#39;.upper()+&#39;====&#39;))&quot;</code> 로 검증</td></tr><tr><td>파일 하나가 여러 질의에 조각나 있다고 의심된다</td><td>시간 순으로 정렬한 라벨을 순서대로 이어 붙여 디코딩 시도</td></tr><tr><td>DNS 자체가 아니라 다른 프로토콜 터널이 의심된다</td><td>ICMP 페이로드도 함께 확인한다 (<a href="./icmp-tunneling.html">FOR-0170</a>)</td></tr></tbody></table></div>
+<h2 id="실제-예시">실제 예시</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;내부 PC에서 외부로 파일이 유출된 것으로 의심된다. 어떤 방식으로, 무슨 파일이
+유출됐는지 확인하시오.&quot;
+첨부: leak.pcapng (24,910 packets)
+
+1. 첫 시도 (실패) — HTTP/FTP만 확인했다
+   Statistics &gt; Protocol Hierarchy
+     TCP 18%  UDP 81% (DNS 79.8%)
+   http.request  -&gt; 3건, 전부 정상 사이트 접속
+   ftp           -&gt; 0건
+   &quot;유출 흔적 없음&quot; 이라 판단했다 -&gt; 오답.
+   원인: DNS 가 79.8%라는 압도적 비중을 그냥 넘겼다.
+
+2. 접근 변경 — DNS 질의 이름을 집계한다
+   tshark -r leak.pcapng -Y &#39;dns.flags.response==0&#39; -T fields -e dns.qry.name |
+     awk -F&#39;.&#39; &#39;{print $(NF-1)&quot;.&quot;$NF}&#39; | sort | uniq -c | sort -nr | head
+     19832  cdn-relay.net       &lt;- 압도적 1위, 등록 도메인 하나에 집중
+       120  google.com
+        45  msftconnecttest.com
+
+3. 라벨 확인
+   tshark -r leak.pcapng -Y &#39;dns.qry.name contains &quot;cdn-relay.net&quot;&#39; \
+     -T fields -e dns.qry.name | head -5
+     nv2gk4rammfsyylhmvzhs4tjm5wgk5a=.chunk0.cdn-relay.net
+     nv2wo3tfmzsxi2lhmvzhs4tjm5wgk5a=.chunk1.cdn-relay.net
+     ojwgk4rammfsyylhmvzhs4tjm5wgk5a=.chunk2.cdn-relay.net
+
+   순번(chunk0, chunk1, chunk2 ...)이 명시적으로 붙어 있다. base32 로 보인다.
+
+4. 디코딩
+   python3 -c &quot;
+   import base64
+   labels = [&#39;NV2GK4RAMMFSYYLHMVZHS4TJM5WGK5A=&#39;,&#39;NV2WO3TFMZSXI2LHMVZHS4TJM5WGK5A=&#39;,&#39;OJWGK4RAMMFSYYLHMVZHS4TJM5WGK5A=&#39;]
+   for l in labels:
+       print(base64.b32decode(l))
+   &quot;
+   b&#39;confidential_&#39; b&#39;report_2026_Q&#39; b&#39;1.docx......&#39;
+
+5. 전체 청크를 chunk 번호 순으로 정렬해 이어붙이면 파일명이 복원된다.
+
+정답: DNS tunneling(TXT 없이 A 쿼리 이름 자체로 인코딩) / confidential_report_2026_Q1.docx</code></pre></div>
+<p>1단계의 실패가 핵심이다. <strong>Protocol Hierarchy 의 비율을 확인하고도 &quot;DNS 니까 정상&quot;이라고 넘기면 안 된다.</strong> 비정상적으로 높은 비중 자체가 1차 신호다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>Statistics &gt; Protocol Hierarchy</code> 에서 DNS 비중이 비정상적으로 높은가</li><li>등록 도메인 기준으로 groupby 했을 때 하나에 집중되는가</li><li><code>dns.qry.name.len</code> 이 40자 이상으로 몰려 있는가</li><li><code>dns.qry.type == 16</code>(TXT) 또는 <code>== 10</code>(NULL) 비중이 높은가</li><li><code>dns.flags.rcode == 3</code>(NXDOMAIN) 이 반복되는가 — 업로드 방향 신호</li><li><code>dns.resp.ttl</code> 이 비정상적으로 낮은가</li><li>라벨에 순번(<code>chunk0</code>, <code>part1</code>, 일련번호)이 보이는가</li><li>base32/base64/hex 로 디코딩을 시도했는가</li><li>같은 시각대의 다른 UDP 트래픽도 확인했는가 (<a href="./udp-flow-analysis.html">FOR-0176</a>)</li><li>ICMP 에도 유사한 반복 패턴이 있는가 (<a href="./icmp-tunneling.html">FOR-0170</a>)</li><li>도메인 자체를 검색해 알려진 터널링 도구(<code>iodine</code>, <code>dnscat2</code>) 서명과 일치하는지 확인했는가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-065 — RFC 1035 (DNS): 라벨 최대 63바이트, 전체 이름 최대 253바이트 제한, QTYPE 코드(A=1, CNAME=5, NULL=10, TXT=16, AAAA=28), RCODE 값(NXDOMAIN=3)</li><li>SRC-002 — Wireshark Display Filter Reference: <code>dns.qry.name</code>, <code>dns.qry.type</code>, <code>dns.qry.name.len</code>, <code>dns.flags.response</code>, <code>dns.flags.rcode</code>, <code>dns.resp.ttl</code> 필드명 확인</li><li>SRC-003 — Wireshark User&#39;s Guide: Protocol Hierarchy, Statistics 메뉴 사용법</li><li>SRC-010 — tshark man page: <code>-Y</code>, <code>-T fields -e</code>, <code>-z conv,udp</code></li><li>실제 터널링 도구(iodine, dnscat2)의 인코딩 방식은 도구/버전마다 다르며, 본문의 예시는 일반화된 패턴이다. 실제 사건에서는 캡처된 라벨을 직접 디코딩해 검증할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./dns-basic-filters.html">
+    <span class="rel-id">FOR-0152 · Network/PCAP</span>
+    DNS 트래픽 기본 필터 모음
+  </a>
+  <a class="related-item" href="./dns-qry-name-filter.html">
+    <span class="rel-id">FOR-0153 · Network/PCAP</span>
+    dns.qry.name 필터로 특정 도메인 질의 찾기
+  </a>
+  <a class="related-item" href="./dns-response-ip-tracking.html">
+    <span class="rel-id">FOR-0154 · Network/PCAP</span>
+    DNS 응답에서 실제 접속 IP 추적하기
+  </a>
+  <a class="related-item" href="./icmp-tunneling.html">
+    <span class="rel-id">FOR-0170 · Network/PCAP</span>
+    ICMP tunneling 탐지하기
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./dns-response-ip-tracking.html"><span class="rel-id">← FOR-0154</span>DNS 응답에서 실제 접속 IP 추적하기</a>
+<a class="related-item" href="./http-request-basics.html"><span class="rel-id">FOR-0156 →</span>Wireshark HTTP 필터 필드 레퍼런스: http.request부터 http.request_in까지</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#증상">증상</a></li>
+<li class="toc-l2"><a href="#가장-가능성-높은-원인">가장 가능성 높은 원인</a></li>
+<li class="toc-l3"><a href="#원인-1-데이터를-서브도메인-라벨에-인코딩해-올리는-중-업로드-방향">원인 1 — 데이터를 서브도메인 라벨에 인코딩해 올리는 중 (업로드 방향)</a></li>
+<li class="toc-l3"><a href="#원인-2-응답에-데이터를-담아-내려받는-중-다운로드-방향">원인 2 — 응답에 데이터를 담아 내려받는 중 (다운로드 방향)</a></li>
+<li class="toc-l3"><a href="#원인-3-서브도메인이-정상적으로-길거나-무작위인-경우-오탐">원인 3 — 서브도메인이 정상적으로 길거나 무작위인 경우 (오탐)</a></li>
+<li class="toc-l2"><a href="#1차-확인">1차 확인</a></li>
+<li class="toc-l2"><a href="#2차-확인">2차 확인</a></li>
+<li class="toc-l3"><a href="#길이와-문자-구성으로-인코딩-여부를-확정한다">길이와 문자 구성으로 인코딩 여부를 확정한다</a></li>
+<li class="toc-l3"><a href="#쿼리-타입-분포를-본다">쿼리 타입 분포를 본다</a></li>
+<li class="toc-l3"><a href="#응답-코드와-ttl-로-방향을-구분한다">응답 코드와 TTL 로 방향을 구분한다</a></li>
+<li class="toc-l2"><a href="#다른-방법">다른 방법</a></li>
+<li class="toc-l2"><a href="#실제-예시">실제 예시</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-14 10:37 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

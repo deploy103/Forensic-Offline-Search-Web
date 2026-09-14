@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>tcp contains로 TCP 페이로드 안 문자열/바이트 검색하기 · FOR-0181 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Network%2FPCAP">Network/PCAP</a> / FOR-0181
+      </div>
+      <header class="article-head">
+        <h1>tcp contains로 TCP 페이로드 안 문자열/바이트 검색하기</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Network/PCAP</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>tcp contains &quot;문자열&quot; 은 그 패킷 한 개 안의 TCP 헤더+페이로드 바이트만 뒤진다. 문자열이 TCP 세그먼트 경계에서 두 패킷에 걸쳐 잘리면 0줄이 나온다 — 이때는 필터를 더 손보는 대신 Follow TCP Stream으로 재조립해야 한다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Wireshark, tshark</td></tr>
+<tr><th>artifact</th><td><code>pcap</code> · <code>pcapng</code> · <code>TCP payload</code></td></tr>
+<tr><th>프로토콜</th><td>TCP, HTTP</td></tr>
+<tr><th>Wireshark 필터</th><td><code>tcp contains &quot;flag&quot;</code> · <code>tcp contains 66:6c:61:67</code> · <code>frame contains &quot;flag&quot;</code> · <code>tcp.payload contains &quot;flag&quot;</code> · <code>http.file_data contains &quot;flag&quot;</code> · <code>tcp matches r&quot;flag\{.*\}&quot;</code></td></tr>
+<tr><th>tshark field</th><td><code>tcp.stream</code> · <code>tcp.payload</code> · <code>tcp.reassembled.data</code> · <code>frame.number</code></td></tr>
+<tr><th>regex</th><td><code>flag\{[^}]+\}</code></td></tr>
+<tr><th>파일 형식</th><td><code>pcap</code> · <code>pcapng</code></td></tr>
+<tr><th>검색 별칭</th><td>tcp contains 필터 · 패킷에서 문자열 찾기 · 와이어샤크 문자열 검색 · tcp 안에 flag 찾기 · 패킷 페이로드 검색 · wireshark grep</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>tcp contains &quot;문자열&quot;</code> 은 <strong>그 패킷 한 개 안의 TCP 헤더+페이로드 바이트</strong>만 뒤진다. 문자열이 TCP 세그먼트 경계에서 두 패킷에 걸쳐 잘리면 0줄이 나온다 — 이때는 필터를 더 손보는 대신 Follow TCP Stream으로 재조립해야 한다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>pcap에 있는 문자열(플래그, 비밀번호, 실행된 커맨드)의 위치를 프로토콜 파서 없이 바로 찾아야 할 때</li><li>Wireshark가 프로토콜을 못 알아채 <code>Data</code>로만 표시되는 raw TCP 트래픽(커스텀 프로토콜)에서 문자열을 찾아야 할 때</li><li><code>frame contains</code>로 너무 많이 걸려서(이더넷/IP 헤더까지 포함) 검색 범위를 TCP로 좁히고 싶을 때</li><li>한글/유니코드 문자열이나 특정 hex 시퀀스를 검색해야 할 때</li><li>Protocol Hierarchy에서 알려진 상위 프로토콜이 하나도 안 잡히는데 문자열은 분명히 오간 것으로 보일 때</li></ul>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>지문에 &quot;패킷 안에 문자열이 숨어 있다&quot;, &quot;평문으로 전송된 값을 찾아라&quot; 같은 표현</li><li>Protocol Hierarchy에 HTTP/FTP/SMTP 같은 알려진 프로토콜이 안 잡히고 <code>Data</code>로만 표시됨 → 커스텀 프로토콜, <code>tcp contains</code>가 사실상 유일한 진입점</li><li><code>frame contains &quot;flag&quot;</code>는 걸리는데 그 패킷을 열어보면 정작 페이로드가 아니라 우연히 일치한 것처럼 보이는 경우 — hex pane에서 실제 강조 위치 확인 필요</li><li>검색어가 짧고 흔한 값(<code>ok</code>, <code>no</code>, <code>id</code>)이면 오탐 가능성이 높다는 신호</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;tcp contains &quot;flag&quot;&#39; -c 5</code></pre></div>
+<p>걸리면 그 패킷의 <code>tcp.stream</code> 번호를 확인하고 바로 Follow TCP Stream으로 넘어간다. 안 걸리면 <code>frame contains</code>로 범위를 넓히고, 그래도 안 걸리면 스트림 재조립 문제(3단계)를 의심한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;frame contains &quot;flag&quot;&#39; -c 5</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-검색-범위-frame-vs-tcp-vs-tcppayload">1단계 — 검색 범위: <code>frame</code> vs <code>tcp</code> vs <code>tcp.payload</code></h3>
+<p><code>contains</code>는 프로토콜 이름이나 필드 이름 뒤에 붙어 <strong>그 노드가 차지하는 바이트 범위 안</strong>에서 문자열/바이트열을 찾는다. 어디에 붙이느냐로 검색 범위가 완전히 달라진다.</p>
+<div class="table-wrap"><table><thead><tr><th>필터</th><th>검색 범위</th><th>특징</th></tr></thead><tbody><tr><td><code>frame contains &quot;x&quot;</code></td><td>프레임 전체 (Ethernet+IP+TCP+데이터)</td><td>가장 넓다. IP/TCP 헤더의 숫자가 우연히 매칭될 수 있다</td></tr><tr><td><code>tcp contains &quot;x&quot;</code></td><td>그 패킷의 TCP 헤더+데이터</td><td>Ethernet/IP 헤더는 제외. 실무 기본값</td></tr><tr><td><code>tcp.payload contains &quot;x&quot;</code></td><td>TCP 헤더를 뺀 <strong>데이터 부분만</strong></td><td>가장 정밀. 헤더 바이트 오탐이 없다</td></tr><tr><td><code>udp contains &quot;x&quot;</code> / <code>udp.payload contains &quot;x&quot;</code></td><td>UDP 버전</td><td>DNS 터널링 등에서 사용</td></tr><tr><td><code>http.file_data contains &quot;x&quot;</code></td><td>HTTP 재조립·압축 해제된 본문</td><td>청크/gzip 해제 이후 값</td></tr><tr><td><code>data contains &quot;x&quot;</code></td><td>파서가 인식 못한 잔여 바이트(<code>Data</code> 레이어)</td><td>커스텀 프로토콜에서 <code>tcp</code>보다 좁게 잡힐 수 있음</td></tr></tbody></table></div>
+<p><code>tcp.payload</code>는 셋 중 오탐이 가장 적다. 검색어가 3~4바이트로 짧을 때는 <code>tcp contains</code> 대신 <code>tcp.payload contains</code>를 쓴다. 검색어가 8바이트 이상이면 셋의 결과 차이는 실무적으로 거의 없다.</p>
+<h3 id="2단계-문자열-vs-hex-바이트">2단계 — 문자열 vs hex 바이트</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">tcp contains &quot;flag&quot;
+tcp contains 66:6c:61:67</code></pre></div>
+<p>두 표현은 ASCII 기준으로 동일한 바이트열을 찾는다. hex 표기가 필요한 대표 상황:</p>
+<div class="table-wrap"><table><thead><tr><th>상황</th><th>이유</th></tr></thead><tbody><tr><td>UTF-16LE로 전송된 문자열(Windows 클라이언트)</td><td>문자마다 <code>00</code>이 끼어 <code>contains &quot;문자열&quot;</code>이 그대로는 안 걸린다</td></tr><tr><td>셸이 따옴표를 삼켜 문자열 리터럴을 못 쓸 때</td><td>hex는 따옴표가 필요 없다 (<a href="./tshark-display-filter.html">FOR-0185</a>)</td></tr><tr><td>널바이트를 포함한 바이너리 매직 값</td><td>문자열로 표현이 안 된다</td></tr><tr><td>대소문자가 섞인 값을 바이트 그대로 고정하고 싶을 때</td><td><code>matches &quot;(?i)...&quot;</code> 보다 명확하다</td></tr></tbody></table></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">tcp contains 66:00:6c:00:61:00:67:00</code></pre></div>
+<p>문자열을 콜론 구분 hex로 바꾸는 방법은 <a href="./tshark-display-filter.html">FOR-0185</a>의 hex 변환 절 참고.</p>
+<h3 id="3단계-스트림-경계에서-잘린-문자열">3단계 — 스트림 경계에서 잘린 문자열</h3>
+<p><code>contains</code>는 <strong>패킷(프레임) 하나</strong> 단위로 평가된다. TCP가 문자열을 두 세그먼트로 나눠 보내면 어느 프레임에도 전체 문자열이 존재하지 않으므로 <code>tcp contains</code>도 <code>frame contains</code>도 0줄이다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">패킷 210: ...GET /secret?token=fl
+패킷 211: ag{real_token} HTTP/1.1...</code></pre></div>
+<p><code>tcp contains &quot;flag{&quot;</code> → 0줄. 문자열이 없는 게 아니라 <strong>잘려 있을 뿐</strong>이다.</p>
+<p>재조립된 바이트를 보는 방법:</p>
+<div class="table-wrap"><table><thead><tr><th>방법</th><th>명령/경로</th></tr></thead><tbody><tr><td>GUI Follow TCP Stream</td><td>패킷 우클릭 &gt; Follow &gt; TCP Stream, 전체 텍스트에서 검색</td></tr><tr><td>tshark 스트림 재조립 출력</td><td><code>tshark -r capture.pcapng -q -z follow,tcp,ascii,&lt;stream&gt;</code></td></tr><tr><td>알려진 상위 프로토콜이면 그 재조립 필드</td><td><code>http.file_data contains &quot;flag&quot;</code> (재조립 preference 활성 시)</td></tr><tr><td><code>tcp.reassembled.data</code></td><td>재조립이 실제로 일어난 <strong>마지막 프레임</strong>에서만 값이 채워진다</td></tr></tbody></table></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -q -z follow,tcp,ascii,3 | grep -o &#39;flag{[^}]*}&#39;</code></pre></div>
+<p><code>-z follow,tcp,ascii,&lt;n&gt;</code>는 GUI의 Follow TCP Stream과 동일한 재조립 결과를 stdout으로 준다. 스트림 번호를 모르면 먼저 아무 필터로나 그 대화의 프레임 하나를 찾아 <code>tcp.stream</code> 값을 확인한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;ip.addr == 203.0.113.77&#39; -T fields -e tcp.stream | sort -u</code></pre></div>
+<h3 id="4단계-대소문자와-정규식">4단계 — 대소문자와 정규식</h3>
+<p><code>contains</code>는 대소문자를 구분한다. 대소문자를 모르면 <code>matches</code>(PCRE2, 대소문자 무시)로 바꾼다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">tcp contains &quot;Flag&quot;        (대소문자 정확히 일치해야 함)
+tcp matches &quot;(?i)flag&quot;     (대소문자 무시, 상대적으로 느리다)</code></pre></div>
+<p>정규식으로 패턴만 알고 값을 모를 때(<code>flag{...}</code> 형태) 유용하다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">tcp matches r&quot;flag\{[a-zA-Z0-9_]+\}&quot;</code></pre></div>
+<p>셸에서 백슬래시가 두 번 파싱되는 문제는 <a href="./tshark-display-filter.html">FOR-0185</a>에서 다뤘다 — raw string 접두 <code>r</code>을 붙여야 필터 엔진과 PCRE2가 이중으로 이스케이프를 먹지 않는다.</p>
+<h3 id="5단계-여러-스트림에서-한-번에-찾기">5단계 — 여러 스트림에서 한 번에 찾기</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -n -Y &#39;tcp contains &quot;flag&quot;&#39; \
+  -T fields -e frame.number -e tcp.stream -e ip.src -e ip.dst -E header=y</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell">tshark -r capture.pcapng -n -Y &#39;tcp contains \&quot;flag\&quot;&#39; `
+  -T fields -e frame.number -e tcp.stream -e ip.src -e ip.dst -E header=y</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">frame.number  tcp.stream  ip.src        ip.dst
+3391          2           203.0.113.77  10.0.0.15
+5820          2           203.0.113.77  10.0.0.15</code></pre></div>
+<p>같은 <code>tcp.stream</code> 값이 여러 번 나오면 한 대화 안에서 문자열이 여러 번 등장한 것이다 — 스트림 하나만 재조립해서 확인하면 된다.</p>
+<h3 id="6단계-wireshark-없이-오프라인으로-재현">6단계 — Wireshark 없이 오프라인으로 재현</h3>
+<p>Wireshark/tshark가 없는 환경에서도 같은 결론에 도달할 수 있어야 한다. <code>tcp contains</code>가 결국 하는 일은 &quot;이 바이트 범위 안에서 이 바이트열을 찾는다&quot;이므로, 원시 pcap 파일을 그대로 grep해도 근사한 결과를 얻는다.</p>
+<div class="table-wrap"><table><thead><tr><th>도구</th><th>명령</th><th>차이</th></tr></thead><tbody><tr><td><code>grep -a</code></td><td><code>grep -a &#39;flag{&#39; capture.pcapng</code></td><td>패킷 구조를 모르고 파일 전체를 훑는다. <code>frame contains</code>와 비슷하지만 패킷 경계·스트림 정보가 없다</td></tr><tr><td><code>strings</code></td><td><code>strings -n 4 capture.pcapng | grep flag</code></td><td>인쇄 가능 문자만 남긴 뒤 검색. 바이너리 잡음이 줄어든다</td></tr><tr><td><code>xxd</code> + 수작업</td><td><code>xxd capture.pcapng | grep &#39;66 6c 61 67&#39;</code></td><td>hex 패턴을 눈으로 확인할 때</td></tr><tr><td>HxD</td><td><code>Ctrl+F</code> → Hex-values 모드로 <code>66 6C 61 67</code> 검색</td><td>GUI에서 오프셋을 직접 확인하고 싶을 때</td></tr></tbody></table></div>
+<p>이 방법들은 <strong>스트림 재조립을 하지 않으므로</strong>, <code>tcp contains</code>처럼 세그먼트 경계에서 잘린 문자열은 여기서도 안 잡힌다. 잘린 문자열을 오프라인에서 재현하려면 Follow Stream으로 미리 저장해 둔 텍스트 파일을 대상으로 검색해야 한다.</p>
+<p>시각 확인이 필요하면 매칭된 프레임의 <code>frame.time_epoch</code>를 함께 뽑는다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -n -Y &#39;tcp contains &quot;flag&quot;&#39; -T fields -e frame.time_epoch -e tcp.stream</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1773645302.418221	2</code></pre></div>
+<p><code>1773645302</code> → UTC <code>2026-03-16 09:55:02</code> → KST <code>2026-03-16 18:55:02</code>(+9시간). pcap의 타임스탬프는 파일 안에 UTC(epoch)로 저장되므로, EVTX나 access.log의 시각과 대조할 때는 반드시 UTC 기준으로 맞춘 뒤 KST를 별도로 병기한다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="table-wrap"><table><thead><tr><th>출력</th><th>의미</th><th>함정</th></tr></thead><tbody><tr><td>걸린 패킷 수</td><td><code>tcp contains</code>가 매칭된 <strong>프레임</strong> 수</td><td>스트림 수가 아니다. 한 스트림에서 여러 프레임이 걸릴 수 있다</td></tr><tr><td><code>tcp.stream</code></td><td>그 패킷이 속한 TCP 대화 번호</td><td>Follow Stream/재조립의 다음 입력값</td></tr><tr><td>Info 컬럼</td><td>요약 문자열</td><td>매칭된 문자열이 요약에 안 보일 수 있다. 반드시 패킷을 열어 hex pane에서 실제 위치 확인</td></tr><tr><td>hex pane 강조</td><td>매칭 바이트가 노란색으로 표시됨</td><td>강조가 없으면 상위 레이어에서 <strong>디코딩된 값</strong>과 매칭된 것(예: URL 디코딩 후 값)</td></tr></tbody></table></div>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>tcp contains로 찾은 것</th><th>다음 목표</th></tr></thead><tbody><tr><td>짧은 매칭(패킷 하나에 다 있음)</td><td>그 패킷 상세(<code>-V -O &lt;proto&gt;</code>)로 전체 맥락 확인</td></tr><tr><td>매칭 없음, 프로토콜이 안 잡힘</td><td><a href="./frame-contains.html">FOR-0180</a>으로 검색 범위를 넓혀 확인</td></tr><tr><td>스트림 경계에서 잘린 것으로 의심</td><td><a href="./follow-tcp-stream.html">FOR-0162</a>로 전체 재조��</td></tr><tr><td>매칭된 스트림이 로그인/인증 관련</td><td><a href="./pcap-credentials.html">FOR-0187</a> 절차로 자격증명 형식 확인</td></tr><tr><td>매칭 시각 확보</td><td><a href="./wireshark-30sec-triage.html">FOR-0146</a>의 UTC 절대시각 설정으로 EVTX/access.log와 대조</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>frame contains</code>로만 찾다가 IP/TCP 헤더의 숫자를 문자열로 오인.</strong> 짧은 검색어(2~3바이트)는 시퀀스 번호나 체크섬과 우연히 일치할 수 있다. <code>tcp.payload contains</code>로 좁히면 사라진다.</li><li><strong>문자열이 스트림 경계에서 잘린 것을 &quot;존재하지 않는다&quot;로 결론.</strong> <code>tcp contains</code>와 <code>frame contains</code> 둘 다 프레임 단위다. 0줄이면 Follow Stream을 반드시 시도한다.</li><li><strong>대소문자를 안 맞추고 0줄로 포기.</strong> <code>contains</code>는 대소문자를 구분한다. <code>matches &quot;(?i)...&quot;</code>로 바꿔본다.</li><li><strong>UTF-16LE 문자열을 ASCII 그대로 검색.</strong> Windows 클라이언트가 보내는 문자열은 UTF-16LE인 경우가 많다. 문자 사이 <code>00</code>을 넣은 hex 검색으로 바꾼다.</li><li><strong>hex 검색에서 콜론을 빠뜨림.</strong> <code>tcp contains 666c6167</code>은 오류다. <code>66:6c:61:67</code>처럼 콜론으로 구분해야 한다.</li><li><strong>재조립 preference가 꺼져 있는데 <code>http.file_data</code>를 검색.</strong> <code>tcp.desegment_tcp_streams</code>, <code>http.decompress_body</code>가 꺼져 있으면 재조립 필드 자체가 비어 있다 (<a href="./tshark-basics.html">FOR-0184</a>).</li><li><strong><code>tcp contains</code>가 걸린 스트림 번호를 착각.</strong> 매칭된 패킷이 여러 스트림에 흩어져 있을 수 있다. <code>-e tcp.stream</code>으로 각 매칭의 스트림 번호를 반드시 따로 확인한다.</li><li><strong><code>{</code>, <code>}</code> 같은 특수문자가 있는 고정 문자열을 굳이 <code>matches</code> 정규식으로 검색.</strong> <code>contains</code>는 리터럴 매칭이라 이스케이프가 필요 없다. <code>flag{</code>처럼 값이 정확히 정해져 있으면 <code>contains</code>가 더 간단하고 실수도 적다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) tcp vs tcp.payload — 결과 수가 다르면 헤더 우연 매칭 의심
+tshark -r capture.pcapng -Y &#39;tcp contains &quot;ok&quot;&#39; | wc -l
+tshark -r capture.pcapng -Y &#39;tcp.payload contains &quot;ok&quot;&#39; | wc -l
+
+# 2) frame vs tcp — 범위 차이 확인
+tshark -r capture.pcapng -Y &#39;frame contains &quot;flag&quot;&#39; | wc -l
+tshark -r capture.pcapng -Y &#39;tcp contains &quot;flag&quot;&#39; | wc -l
+
+# 3) 파서를 거치지 않는 strings로 최종 확인 (Wireshark가 놓친 것도 잡는다)
+strings -n 4 capture.pcapng | grep -i flag
+
+# 4) 걸린 스트림을 재조립해서 실제로 문자열이 완전한지 확인
+tshark -r capture.pcapng -q -z follow,tcp,ascii,2 | grep -i flag</code></pre></div>
+<p><code>strings</code>는 프로토콜 파서와 무관하게 파일 전체의 인쇄 가능 바이트를 뽑으므로, <code>tcp contains</code>가 놓친 것(비표준 인코딩, 재조립 전 상태 등)을 잡아낼 최후 수단이다. 단 <code>strings</code>는 패킷 경계·스트림 정보를 알려주지 않으므로 위치 확정에는 다시 tshark가 필요하다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;서버가 클라이언트에게 내려준 플래그를 pcap에서 찾으세요.&quot;
+첨부: leak.pcapng (6,204 packets)
+
+1. 첫 시도 (실패)
+   $ tshark -r leak.pcapng -Y &#39;tcp contains &quot;flag{&quot;&#39;
+   (0줄)
+
+   지문에 분명 &quot;플래그를 내려줬다&quot;고 되어 있어 당황.
+   frame contains로도 시도했지만 역시 0줄.
+   $ tshark -r leak.pcapng -Y &#39;frame contains &quot;flag{&quot;&#39;
+   (0줄)
+
+2. 원인 분석 — 프로토콜부터 확인
+   $ tshark -r leak.pcapng -q -z io,phs
+   ...
+     Transmission Control Protocol   71.2%   4416   3,204,880
+       Data                          71.2%   4416   3,190,102   &lt;- 파서가 못 알아본 raw TCP
+
+   알려진 상위 프로토콜이 없다. 커스텀 프로토콜이라 페이로드가
+   여러 세그먼트에 나뉘어 전송되고 있을 가능성이 높다.
+
+3. 접근 변경 — 짧은 조각으로 존재만 확인
+   $ tshark -r leak.pcapng -Y &#39;tcp contains &quot;flag&quot;&#39;
+   프레임 3391: 매칭 (1개)
+
+   -&gt; &quot;flag&quot;는 있는데 &quot;flag{&quot;는 없다. 여는 중괄호 앞에서 잘렸다는 뜻이다.
+
+4. 스트림 번호 확인 후 재조립
+   $ tshark -r leak.pcapng -Y &#39;frame.number == 3391&#39; -T fields -e tcp.stream
+   2
+   $ tshark -r leak.pcapng -q -z follow,tcp,ascii,2 | grep -o &#39;flag{[^}]*}&#39;
+   flag{tcp_segment_boundary_is_not_your_enemy}
+
+정답: flag{tcp_segment_boundary_is_not_your_enemy}</code></pre></div>
+<p>1번의 실패에서 &quot;플래그가 없다&quot;로 결론짓지 않고 &quot;flag&quot;만으로 다시 검색해 부분 매칭을 확인한 것이 핵심이다. <strong>부분 문자열은 걸리는데 전체가 안 걸리면 세그먼트 경계를 의심한다.</strong></p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>tcp contains</code>가 0줄인가 → <code>frame contains</code>로 범위를 넓혀 봤는가</li><li>검색어를 짧게 잘라서(<code>&quot;flag&quot;</code>만) 부분 매칭이 있는지 확인했는가</li><li>부분 매칭이 있다면 그 스트림을 Follow/재조립했는가</li><li>대소문자를 바꿔서 <code>matches &quot;(?i)...&quot;</code>로 시도했는가</li><li>UTF-16LE(문자 사이 <code>00</code>) 가능성을 hex 검색으로 확인했는가</li><li><code>tcp.payload contains</code>로 좁혀서 헤더 우연 매칭이 아닌지 확인했는가</li><li>Protocol Hierarchy에서 알려진 상위 프로토콜(HTTP 등)이 있는지 봤는가 — 있으면 그 재조립 필드를 우선 사용한다</li><li><code>strings capture.pcapng | grep -i flag</code>로 파서와 무관하게 확인했는가</li><li><code>-2</code>(2-pass) 옵션이 필요한 상황인지 확인했는가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-002 — Wireshark Display Filter Reference: <code>contains</code> 연산자, <code>tcp.payload</code>, <code>http.file_data</code> 필드 정의</li><li>SRC-003 — Wireshark User&#39;s Guide: Follow TCP Stream의 재조립 동작, &quot;Building Display Filter Expressions&quot;의 문자열/바이트열 검색 문법</li><li><code>contains</code>가 프레임 단위로만 평가되어 다중 세그먼트에 걸친 문자열을 자동으로 찾지 못하는 동작은 여러 버전에서 공통으로 확인되나, TCP 재조립 preference(<code>tcp.desegment_tcp_streams</code>) 설정과 상위 프로토콜 dissector 유무에 따라 세부 동작이 달라질 수 있으므로 실제 환경에서 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./follow-tcp-stream.html">
+    <span class="rel-id">FOR-0162 · Network/PCAP</span>
+    Follow TCP Stream으로 세션 전체 대화 복원하기
+  </a>
+  <a class="related-item" href="./wireshark-30sec-triage.html">
+    <span class="rel-id">FOR-0146 · Network/PCAP</span>
+    Wireshark 30초 트리아지: pcap을 받고 처음 할 다섯 가지
+  </a>
+  <a class="related-item" href="./network-ctf-walkthrough.html">
+    <span class="rel-id">FOR-0190 · Network/PCAP</span>
+    Network/PCAP 종합 CTF 문제 풀이
+  </a>
+  <a class="related-item" href="./capture-vs-display-filter.html">
+    <span class="rel-id">FOR-0147 · Network/PCAP</span>
+    Capture Filter와 Display Filter 차이: 필터가 안 먹을 때
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./websocket-analysis.html"><span class="rel-id">← FOR-0179</span>WebSocket 프레임 분석하기: 마스킹, opcode, payload 복원</a>
+<a class="related-item" href="./ip-addr-filter.html"><span class="rel-id">FOR-0182 →</span>ip.addr 필터로 특정 IP 트래픽만 골라내기</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-검색-범위-frame-vs-tcp-vs-tcppayload">1단계 — 검색 범위: `frame` vs `tcp` vs `tcp.payload`</a></li>
+<li class="toc-l3"><a href="#2단계-문자열-vs-hex-바이트">2단계 — 문자열 vs hex 바이트</a></li>
+<li class="toc-l3"><a href="#3단계-스트림-경계에서-잘린-문자열">3단계 — 스트림 경계에서 잘린 문자열</a></li>
+<li class="toc-l3"><a href="#4단계-대소문자와-정규식">4단계 — 대소문자와 정규식</a></li>
+<li class="toc-l3"><a href="#5단계-여러-스트림에서-한-번에-찾기">5단계 — 여러 스트림에서 한 번에 찾기</a></li>
+<li class="toc-l3"><a href="#6단계-wireshark-없이-오프라인으로-재현">6단계 — Wireshark 없이 오프라인으로 재현</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-14 10:37 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

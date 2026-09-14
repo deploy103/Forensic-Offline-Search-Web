@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>MD5/SHA1/SHA256 해시 정규식: 길이로 구분하고 UUID 오탐 피하기 · FOR-0134 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%A1%9C%EA%B7%B8%2FRegex">로그/Regex</a> / FOR-0134
+      </div>
+      <header class="article-head">
+        <h1>MD5/SHA1/SHA256 해시 정규식: 길이로 구분하고 UUID 오탐 피하기</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">로그/Regex</span>
+      <span class="badge badge-type">레퍼런스</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">linux</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>해시는 정규식으로 &quot;그 값이 진짜 해시인지&quot; 검증할 수 없다 — hex 문자열의 길이(32/40/64/128)로 알고리즘 후보만 좁힐 수 있을 뿐이며, UUID(하이픈 제거 시 32자)와 Git 커밋 해시(40자)가 구조적으로 완전히 동일해 형태만으로는 절대 구별되지 않으므로 반드시 주변 키워드(md5=, sha1:, commit)로 문맥을 확인한다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>grep, ripgrep, PowerShell, Python</td></tr>
+<tr><th>artifact</th><td><code>malware log</code> · <code>yara scan result</code> · <code>hash manifest</code> · <code>git log</code> · <code>memory strings</code></td></tr>
+<tr><th>regex</th><td><code>\b[0-9a-fA-F]{32}\b</code> · <code>\b[0-9a-fA-F]{40}\b</code> · <code>\b[0-9a-fA-F]{64}\b</code> · <code>\b[0-9a-fA-F]{128}\b</code> · <code>(?i)\b(?:md5|sha-?1|sha-?256)\b\s*[:=]?\s*([0-9a-f]{32,128})</code> · <code>(?&lt;![0-9a-fA-F-])[0-9a-fA-F]{32}(?![0-9a-fA-F-])</code></td></tr>
+<tr><th>로그 필드</th><td><code>md5</code> · <code>sha1</code> · <code>sha256</code> · <code>hash</code> · <code>checksum</code> · <code>digest</code></td></tr>
+<tr><th>파일 형식</th><td><code>log</code> · <code>txt</code> · <code>csv</code> · <code>json</code> · <code>yara</code></td></tr>
+<tr><th>검색 별칭</th><td>해시 정규식 · 해시값 정규식 · md5 정규식 · sha256 정규식 · 해시 뽑기 · grep 해시 · 해시 추출 regex</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>해시는 정규식으로 &quot;그 값이 진짜 해시인지&quot; 검증할 수 없다 — <strong>hex 문자열의 길이(32/40/64/128)로 알고리즘 후보만 좁힐 수 있을 뿐</strong>이며, UUID(하이픈 제거 시 32자)와 Git 커밋 해시(40자)가 구조적으로 완전히 동일해 형태만으로는 절대 구별되지 않으므로 반드시 주변 키워드(<code>md5=</code>, <code>sha1:</code>, <code>commit</code>)로 문맥을 확인한다.</p>
+<h2 id="개념">개념</h2>
+<p>해시 알고리즘의 출력은 고정 길이 이진 값이고, 로그·리포트에는 hex(16진수 2자리 = 1바이트) 문자열로 적힌다.</p>
+<div class="table-wrap"><table><thead><tr><th>알고리즘</th><th>출력 비트</th><th>hex 문자 수</th></tr></thead><tbody><tr><td>MD5</td><td>128비트</td><td>32</td></tr><tr><td>SHA-1</td><td>160비트</td><td>40</td></tr><tr><td>SHA-256</td><td>256비트</td><td>64</td></tr><tr><td>SHA-512</td><td>512비트</td><td>128</td></tr></tbody></table></div>
+<p>정규식이 검증할 수 있는 것은 <strong>&quot;hex 문자만으로 이루어진 정확히 이 길이의 문자열인가&quot;</strong> 뿐이다. 그 문자열이 실제로 무엇을 해시한 결과인지, 심지어 해시가 맞는지조차 정규식은 모른다.</p>
+<h3 id="구조가-같아서-구별-안-되는-것들">구조가 같아서 구별 안 되는 것들</h3>
+<div class="table-wrap"><table><thead><tr><th>32자 hex</th><th>40자 hex</th><th>64자 hex</th></tr></thead><tbody><tr><td>MD5</td><td>SHA-1</td><td>SHA-256</td></tr><tr><td>NTLM 해시</td><td>Git 커밋/블롭 objectId (SHA-1 저장소)</td><td>일부 blockchain 트랜잭션 ID</td></tr><tr><td>UUID/GUID에서 하이픈 제거</td><td>SVN이 아닌 다른 VCS의 리비전 ID</td><td>—</td></tr><tr><td>일부 세션 토큰</td><td>—</td><td>—</td></tr></tbody></table></div>
+<p><strong>길이가 같으면 정규식으로는 무엇도 구별할 수 없다.</strong> 실전에서는 다음 순서로 좁힌다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1. 길이로 후보 알고리즘 압축 (32/40/64/128)
+2. 주변 문자열(라벨)로 문맥 확인 - &quot;md5=&quot;, &quot;commit &quot;, &quot;SHA256:&quot;
+3. 그래도 애매하면 실제로 해시해 볼 원본 후보가 있는지 확인</code></pre></div>
+<h2 id="파일-경로">파일 / 경로</h2>
+<div class="table-wrap"><table><thead><tr><th>대상</th><th>경로/형식</th><th>해시가 나오는 위치</th></tr></thead><tbody><tr><td>악성코드 분석 리포트</td><td><code>*.json</code>, <code>*.txt</code></td><td><code>md5</code>, <code>sha1</code>, <code>sha256</code> 필드</td></tr><tr><td>YARA 스캔 결과</td><td>표준 출력, 로그</td><td>매치된 파일의 해시가 함께 출력되는 경우</td></tr><tr><td>해시 매니페스트</td><td><code>hashes.txt</code>, <code>manifest.csv</code></td><td><code>&lt;hash&gt;  &lt;filename&gt;</code> 형태</td></tr><tr><td>Git 저장소 로그</td><td><code>.git/logs/HEAD</code>, <code>git log</code> 출력</td><td>40자 커밋/블롭 해시</td></tr><tr><td>Amcache/Shimcache 파싱 결과</td><td>EricZimmerman CSV</td><td>실행 파일의 SHA-1 컬럼</td></tr><tr><td>메모리 문자열</td><td><code>*.raw</code></td><td><code>strings</code> 결과 안의 하드코딩된 해시</td></tr><tr><td>브라우저/앱 캐시</td><td>캐시 인덱스 파일</td><td>파일명 자체가 해시인 경우(SHA-1 등)</td></tr><tr><td>인증서 지문</td><td><code>openssl x509 -fingerprint</code></td><td>콜론 구분 hex — <a href="./mac-address-regex.html">FOR-0133</a>의 오탐 원천과 동일한 형태</td></tr></tbody></table></div>
+<h2 id="주요-필드">주요 필드</h2>
+<h3 id="패턴-1-md5-32자">패턴 1 — MD5 (32자)</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">\b[0-9a-fA-F]{32}\b</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>값</th></tr></thead><tbody><tr><td>매칭됨</td><td><code>d41d8cd98f00b204e9800998ecf8427</code>, <code>5f4dcc3b5aa765d61d8327deb882cf99</code></td></tr><tr><td>매칭 안 됨</td><td>31자 또는 33자 hex, <code>g0e8400e29b41d4a716446655440000</code>(g는 hex 아님)</td></tr><tr><td><strong>오탐</strong></td><td>UUID/GUID에서 하이픈을 제거한 값(<code>550e8400e29b41d4a716446655440000</code>), NTLM 해시</td></tr></tbody></table></div>
+<h3 id="패턴-2-sha-1-40자">패턴 2 — SHA-1 (40자)</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">\b[0-9a-fA-F]{40}\b</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>값</th></tr></thead><tbody><tr><td>매칭됨</td><td><code>da39a3ee5e6b4b0d3255bfef95601890afd80709</code></td></tr><tr><td>매칭 안 됨</td><td>39자, 41자</td></tr><tr><td><strong>오탐</strong></td><td>Git 커밋/블롭 objectId, 일부 세션 토큰</td></tr></tbody></table></div>
+<h3 id="패턴-3-sha-256-64자">패턴 3 — SHA-256 (64자)</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">\b[0-9a-fA-F]{64}\b</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>값</th></tr></thead><tbody><tr><td>매칭됨</td><td><code>e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855</code></td></tr><tr><td>매칭 안 됨</td><td>63자, 65자</td></tr><tr><td>오탐</td><td>64자로 우연히 맞아떨어진 랜덤 hex 토큰(드묾, 길수록 우연 확률이 낮다)</td></tr></tbody></table></div>
+<h3 id="패턴-4-경계-강화-긴-hex-블록에서-조각-추출-방지">패턴 4 — 경계 강화 (긴 hex 블록에서 조각 추출 방지)</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">(?&lt;![0-9a-fA-F-])[0-9a-fA-F]{32}(?![0-9a-fA-F-])</code></pre></div>
+<p>앞뒤에 hex나 하이픈이 더 있으면 거부한다. <strong>64자 SHA-256 문자열 안에서 앞 32자만 잘라 MD5로 오판하는 사고를 막는다.</strong> lookaround이므로 <code>grep -E</code>에서는 동작하지 않고 <code>-P</code>/PowerShell/Python이 필요하다.</p>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>값</th></tr></thead><tbody><tr><td>매칭됨</td><td>독립된 32자 hex 문자열</td></tr><tr><td>매칭 안 됨</td><td>64자 SHA-256 문자열의 앞부분 32자(뒤에 hex가 더 있으므로 거부)</td></tr></tbody></table></div>
+<h3 id="패턴-5-라벨과-함께-캡처-문맥-확인-가장-신뢰도-높음">패턴 5 — 라벨과 함께 캡처 (문맥 확인, 가장 신뢰도 높음)</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">(?i)\b(?:md5|sha-?1|sha-?256)\b\s*[:=]?\s*([0-9a-f]{32,128})</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>캡처 그룹</th><th>역할</th></tr></thead><tbody><tr><td><code>(?:md5|sha-?1|sha-?256)</code></td><td>알고리즘 라벨 (대소문자 무시, <code>sha1</code>/<code>sha-1</code> 모두 허용)</td></tr><tr><td><code>([0-9a-f]{32,128})</code></td><td>실제 해시값</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>항목</th><th>값</th></tr></thead><tbody><tr><td>매칭됨</td><td><code>MD5: d41d8cd98f00b204e9800998ecf8427</code>, <code>sha256=e3b0c442...</code></td></tr><tr><td>매칭 안 됨</td><td>라벨 없이 hex만 있는 줄</td></tr><tr><td>장점</td><td><strong>길이만으로 판정하는 패턴 1~3보다 오탐이 훨씬 적다</strong> — 알고리즘이 로그에 명시되어 있기 때문</td></tr></tbody></table></div>
+<p><strong>라벨이 있는 로그에서는 패턴 5를 우선 쓴다.</strong> 라벨이 없을 때만 길이 기반 패턴으로 후보를 좁힌다.</p>
+<h2 id="빠른-명령">빠른 명령</h2>
+<h3 id="grep-ripgrep">grep / ripgrep</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) MD5 후보 전부 (32자)
+grep -Eo &#39;\b[0-9a-fA-F]{32}\b&#39; report.txt | sort -u
+
+# 2) SHA-1 후보 전부 (40자)
+grep -Eo &#39;\b[0-9a-fA-F]{40}\b&#39; report.txt | sort -u
+
+# 3) SHA-256 후보 전부 (64자)
+grep -Eo &#39;\b[0-9a-fA-F]{64}\b&#39; report.txt | sort -u
+
+# 4) 라벨과 함께 있는 것만 (가장 정확) - 대소문자 무시
+grep -Eio &#39;(md5|sha-?1|sha-?256)[[:space:]]*[:=][[:space:]]*[0-9a-f]{32,128}&#39; report.txt
+
+# 5) 세 길이를 한 번에, 알고리즘 이름과 함께 출력
+grep -Eo &#39;\b[0-9a-fA-F]{32}\b|\b[0-9a-fA-F]{40}\b|\b[0-9a-fA-F]{64}\b&#39; report.txt |
+  awk &#39;{ n=length($0); alg = (n==32)?&quot;MD5&quot;:(n==40)?&quot;SHA1&quot;:&quot;SHA256&quot;; print alg, $0 }&#39;
+
+# 6) UUID 형태(하이픈 포함)는 먼저 제외하고 MD5 후보를 본다
+grep -Eo &#39;\b[0-9a-fA-F]{32}\b&#39; report.txt |
+  grep -vE &#39;^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$&#39;
+
+# 7) ripgrep - lookaround으로 긴 hex 블록의 조각 매칭 방지 (PCRE2)
+rg -oP &#39;(?&lt;![0-9a-f-])[0-9a-f]{64}(?![0-9a-f-])&#39; -i strings.txt</code></pre></div>
+<h3 id="powershell">PowerShell</h3>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 정규식은 항상 작은따옴표
+$re32 = &#39;\b[0-9A-Fa-f]{32}\b&#39;
+$re40 = &#39;\b[0-9A-Fa-f]{40}\b&#39;
+$re64 = &#39;\b[0-9A-Fa-f]{64}\b&#39;
+
+# 길이별로 뽑아 알고리즘 라벨을 붙인다
+Select-String -Path .\report.txt -Pattern $re32, $re40, $re64 -AllMatches |
+  ForEach-Object { $_.Matches } | ForEach-Object {
+    $alg = switch ($_.Value.Length) { 32 {&#39;MD5&#39;} 40 {&#39;SHA1&#39;} 64 {&#39;SHA256&#39;} }
+    [pscustomobject]@{ Algorithm = $alg; Hash = $_.Value.ToLower() }
+  } | Sort-Object Algorithm, Hash -Unique
+
+# 라벨과 함께 있는 것만 (가장 정확)
+$reLabeled = &#39;(?i)\b(md5|sha-?1|sha-?256)\b\s*[:=]?\s*([0-9a-f]{32,128})&#39;
+Select-String -Path .\report.txt -Pattern $reLabeled -AllMatches |
+  ForEach-Object { $_.Matches } | ForEach-Object {
+    [pscustomobject]@{ Algorithm = $_.Groups[1].Value; Hash = $_.Groups[2].Value }
+  }
+
+# 파일을 직접 해시해서 후보와 대조 (검증은 정규식이 아니라 계산으로)
+$candidate = &#39;d41d8cd98f00b204e9800998ecf8427&#39;
+$actual = (Get-FileHash .\sample.bin -Algorithm MD5).Hash.ToLower()
+$actual -eq $candidate</code></pre></div>
+<h3 id="python">Python</h3>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import re
+import hashlib
+from collections import defaultdict
+
+LABELED = re.compile(r&#39;(?i)\b(md5|sha-?1|sha-?256)\b\s*[:=]?\s*([0-9a-f]{32,128})&#39;)
+BY_LEN  = re.compile(r&#39;(?&lt;![0-9a-fA-F-])[0-9a-fA-F]{32,128}(?![0-9a-fA-F-])&#39;)
+
+ALG_BY_LEN = {32: &#39;MD5&#39;, 40: &#39;SHA1&#39;, 64: &#39;SHA256&#39;, 128: &#39;SHA512&#39;}
+
+text = open(&#39;report.txt&#39;, encoding=&#39;utf-8&#39;, errors=&#39;replace&#39;).read()
+
+# 1) 라벨이 있는 것부터 (가장 신뢰도 높음)
+labeled = [(m.group(1).upper().replace(&#39;-&#39;, &#39;&#39;), m.group(2).lower())
+           for m in LABELED.finditer(text)]
+
+# 2) 라벨 없는 hex 블록은 길이로만 후보 분류
+found = defaultdict(set)
+for m in BY_LEN.finditer(text):
+    v = m.group()
+    if len(v) in ALG_BY_LEN:
+        found[ALG_BY_LEN[len(v)]].add(v.lower())
+
+# 3) UUID 형태(32자 중 특정 위치가 4/8/10 등 버전·variant 비트)는 완전히 배제할 수 없다.
+#    형태로는 구별 불가 -&gt; 실제 해시 계산으로 검증한다.
+def verify_md5(path: str, candidate: str) -&gt; bool:
+    h = hashlib.md5(open(path, &#39;rb&#39;).read()).hexdigest()
+    return h == candidate.lower()
+
+print(&#39;labeled:&#39;, labeled[:5])
+print(&#39;MD5 후보 수:&#39;, len(found[&#39;MD5&#39;]))</code></pre></div>
+<p><strong>정규식은 후보를 좁히는 도구다. 최종 확정은 항상 실제 파일을 다시 해시해 비교하거나, 로그의 라벨을 신뢰하는 것으로 한다.</strong></p>
+<h2 id="함께-보는-artifact">함께 보는 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>해시를 얻은 뒤</th><th>다음 목표</th></tr></thead><tbody><tr><td>악성코드 해시 확보</td><td>실제 파일 재계산 후 대조 (<a href="./hash-integrity.html">FOR-0010</a>)</td></tr><tr><td>Amcache/Shimcache의 SHA-1</td><td>원본 실행 파일과 대조해 실행 여부 확정</td></tr><tr><td>Git 커밋 해시(40자)</td><td><code>.git/logs/HEAD</code>에서 시각·저자 대조</td></tr><tr><td>YARA 매치 파일의 해시</td><td>다른 위치의 동일 해시 파일 검색(중복 배포 여부)</td></tr><tr><td>로그의 hex 문자열이 해시가 아니었다</td><td><a href="./hex-string-regex.html">FOR-0136</a>의 일반 hex 패턴으로 재분류</td></tr><tr><td>Windows에서 대량 집계</td><td><code>Select-String -AllMatches</code> (<a href="./ripgrep.html">FOR-0114</a>)</td></tr></tbody></table></div>
+<h2 id="흔한-실수">흔한 실수</h2>
+<ul><li><strong>길이만 보고 알고리즘을 단정하는 것.</strong> 32자는 MD5일 수도, UUID일 수도, NTLM 해시일 수도 있다. 라벨이 없으면 &quot;32자 hex 후보&quot;라고만 부르고, 확정하지 않는다.</li><li><strong>UUID를 배제하지 않는 것.</strong> UUID는 하이픈을 제거하면 정확히 32자 hex가 된다. 로그·설정 파일·API 응답에 UUID가 매우 흔하므로, MD5 후보 목록에서 UUID 패턴(<code>8-4-4-4-12</code> 자리 구성)을 먼저 걸러낸다.</li><li><strong>Git 저장소가 있는 걸 모르고 40자 hex를 전부 SHA-1 파일 해시로 보는 것.</strong> <code>.git</code> 디렉터리가 있으면 40자 hex 상당수가 커밋/블롭 objectId다. <code>git cat-file -t &lt;hash&gt;</code>로 실제 타입을 확인할 수 있다.</li><li><strong>64자 SHA-256 문자열의 앞 32자를 MD5로 오판하는 것.</strong> 긴 hex 블록에서 부분 매칭이 발생하면 경계(<code>\b</code>)만으로는 못 막는다. lookaround로 앞뒤에 hex가 더 있는지 확인한다.</li><li><strong>대소문자를 정규화하지 않고 집계하는 것.</strong> <code>D41D8CD9...</code>와 <code>d41d8cd9...</code>를 다른 값으로 세면 중복 탐지가 깨진다. 소문자로 통일한다.</li><li><strong>해시가 맞는지 계산으로 검증하지 않고 결론 내리는 것.</strong> 정규식 매칭은 &quot;hex 문자열의 모양&quot;만 확인한다. 그 값이 실제로 특정 파일의 해시인지는 그 파일을 다시 해시해서 비교해야 안다.</li><li><strong>빈 파일/빈 문자열의 해시를 이상 값으로 취급하는 것.</strong> <code>d41d8cd98f00b204e9800998ecf8427</code>(빈 파일 MD5), <code>da39a3ee5e6b4b0d3255bfef95601890afd80709</code>(빈 파일 SHA-1)은 정상적으로 자주 등장한다.</li><li><strong>NTLM 해시와 MD5를 같은 것으로 취급하는 것.</strong> 둘 다 32자 hex이지만 계산 방식이 다르다. <code>md5sum</code>으로 검증되지 않는 32자 값은 NTLM일 가능성을 의심한다.</li></ul>
+<h2 id="mini-example">mini example</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;제공된 malware_report.json 에서 파일 해시 3종(MD5/SHA1/SHA256)을 뽑아
+ 실제 첨부 파일(sample.bin)의 해시와 일치하는지 확인하고, 일치하지 않으면
+ 어느 값이 조작됐는지 밝히세요.&quot;
+첨부: malware_report.json, sample.bin
+
+1. 첫 시도 (실패) - 길이만으로 뽑았다
+   $ grep -Eo &#39;\b[0-9a-fA-F]{32}\b&#39; malware_report.json
+   d41d8cd98f00b204e9800998ecf8427
+   550e8400e29b41d4a716446655440000
+
+   -&gt; 두 개가 나왔다. 하나는 MD5, 하나는 report_id(UUID)였다.
+      길이만으로는 구별할 수 없었다.
+
+2. 라벨과 함께 다시 추출
+   $ grep -Eio &#39;&quot;(md5|sha1|sha256)&quot;\s*:\s*&quot;[0-9a-f]+&quot;&#39; malware_report.json
+   &quot;md5&quot;: &quot;d41d8cd98f00b204e9800998ecf8427&quot;
+   &quot;sha1&quot;: &quot;da39a3ee5e6b4b0d3255bfef95601890afd80709&quot;
+   &quot;sha256&quot;: &quot;e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855&quot;
+
+   -&gt; 라벨 덕에 UUID가 자동으로 배제됐다.
+
+3. 실제 파일 해시 계산
+   $ sha256sum sample.bin
+   4c9f2a7e1b8d05c3a6e4f27b9d013c8a5f6e2b40c7d19a83e5f0b6c2d4a89173  sample.bin
+   $ sha1sum sample.bin
+   da39a3ee5e6b4b0d3255bfef95601890afd80709  sample.bin
+   $ md5sum sample.bin
+   d41d8cd98f00b204e9800998ecf8427  sample.bin
+
+4. 대조
+   MD5:    보고서 d41d8cd9... == 실제 d41d8cd9...  일치
+   SHA1:   보고서 da39a3ee... == 실제 da39a3ee...  일치
+   SHA256: 보고서 e3b0c442...  vs  실제 4c9f2a7e...  불일치
+
+   -&gt; MD5/SHA1은 둘 다 &quot;빈 파일&quot; 값이다. sample.bin이 실제로는
+      비어 있지 않은데 보고서의 MD5/SHA1이 빈 파일 값과 같다는 것은
+      보고서 작성 시 원본이 아니라 빈 파일을 해시했거나,
+      SHA256 값만 사후에 다른 파일 것으로 바꿔치기했다는 뜻이다.
+
+5. 교차검증 - report.json의 file_size 필드 확인
+   $ grep -Eo &#39;&quot;file_size&quot;\s*:\s*[0-9]+&#39; malware_report.json
+   &quot;file_size&quot;: 18452
+
+   -&gt; sample.bin 실제 크기도 18452바이트. 빈 파일이 아니다.
+      즉 MD5/SHA1은 애초에 잘못 기록됐고, SHA256만 진짜 값이다.
+
+정답: SHA256 값(e3b0c442...)이 조작/오기재됐다 판단은 틀렸고,
+      오히려 MD5·SHA1이 빈 파일 상수로 잘못 기재된 것이 조작 지점이다.
+      실제 파일과 일치하는 것은 SHA256 하나뿐이다.</code></pre></div>
+<p>2단계가 핵심이다. <strong>라벨이 있으면 반드시 라벨 기반 패턴을 우선 쓴다.</strong> 길이만으로 뽑으면 UUID 같은 동형 문자열이 섞여 판정을 그르친다.</p>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-078 — NIST FIPS 180-4(SHA-1/256) 및 RFC 1321(MD5): 각 알고리즘의 출력 비트 수(128/160/256/512)와 hex 문자 수(32/40/64/128)</li><li>SRC-015 — GNU grep manual: <code>-E</code>/<code>-P</code> 지원 범위, lookaround은 PCRE 전용</li><li>SRC-057 — Python <code>re</code> 문서: lookaround, named group, <code>hashlib</code>로 실제 검증하는 방법</li><li>특정 32/40/64자 값이 MD5/SHA1/SHA256인지, UUID인지, NTLM인지는 <strong>형태만으로 확정할 수 없다.</strong> 이 글은 그 한계를 서술하며, 실제 판정은 라벨 또는 재계산으로 할 것을 권한다</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./hash-integrity.html">
+    <span class="rel-id">FOR-0010 · 트리아지</span>
+    해시로 분석 전후 무결성 확인 (MD5/SHA1/SHA256)
+  </a>
+  <a class="related-item" href="./ripgrep.html">
+    <span class="rel-id">FOR-0114 · 로그/Regex</span>
+    ripgrep(rg) 옵션 레퍼런스: grep과 다른 기본값과 -P -z -u 활용
+  </a>
+  <a class="related-item" href="./ipv4-regex.html">
+    <span class="rel-id">FOR-0128 · 로그/Regex</span>
+    IPv4 주소 regex: 느슨한 패턴과 엄격한 패턴 골라 쓰기
+  </a>
+  <a class="related-item" href="./ipv6-regex.html">
+    <span class="rel-id">FOR-0129 · 로그/Regex</span>
+    IPv6 주소 regex: :: 압축과 IPv4 매핑까지 놓치지 않기
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./mac-address-regex.html"><span class="rel-id">← FOR-0133</span>MAC 주소 정규식: 콜론/하이픈/Cisco 표기와 인증서 지문 오탐</a>
+<a class="related-item" href="./windows-path-regex.html"><span class="rel-id">FOR-0137 →</span>Windows 경로 regex: 백슬래시 이스케이프와 UNC·확장 길이 접두</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#개념">개념</a></li>
+<li class="toc-l3"><a href="#구조가-같아서-구별-안-되는-것들">구조가 같아서 구별 안 되는 것들</a></li>
+<li class="toc-l2"><a href="#파일-경로">파일 / 경로</a></li>
+<li class="toc-l2"><a href="#주요-필드">주요 필드</a></li>
+<li class="toc-l3"><a href="#패턴-1-md5-32자">패턴 1 — MD5 (32자)</a></li>
+<li class="toc-l3"><a href="#패턴-2-sha-1-40자">패턴 2 — SHA-1 (40자)</a></li>
+<li class="toc-l3"><a href="#패턴-3-sha-256-64자">패턴 3 — SHA-256 (64자)</a></li>
+<li class="toc-l3"><a href="#패턴-4-경계-강화-긴-hex-블록에서-조각-추출-방지">패턴 4 — 경계 강화 (긴 hex 블록에서 조각 추출 방지)</a></li>
+<li class="toc-l3"><a href="#패턴-5-라벨과-함께-캡처-문맥-확인-가장-신뢰도-높음">패턴 5 — 라벨과 함께 캡처 (문맥 확인, 가장 신뢰도 높음)</a></li>
+<li class="toc-l2"><a href="#빠른-명령">빠른 명령</a></li>
+<li class="toc-l3"><a href="#grep-ripgrep">grep / ripgrep</a></li>
+<li class="toc-l3"><a href="#powershell">PowerShell</a></li>
+<li class="toc-l3"><a href="#python">Python</a></li>
+<li class="toc-l2"><a href="#함께-보는-artifact">함께 보는 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-실수">흔한 실수</a></li>
+<li class="toc-l2"><a href="#mini-example">mini example</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-14 10:37 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

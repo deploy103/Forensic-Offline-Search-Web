@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Wireshark Expert Information으로 이상 패킷 빠르게 찾기 · FOR-0151 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Network%2FPCAP">Network/PCAP</a> / FOR-0151
+      </div>
+      <header class="article-head">
+        <h1>Wireshark Expert Information으로 이상 패킷 빠르게 찾기</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Network/PCAP</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>Analyze &gt; Expert Information은 Wireshark가 각 패킷을 해석하면서 스스로 발견한 이상 징후(재전송, 손상된 체크섬, 파싱 실패, 순서 오류)를 한 창에 심각도별로 모아 보여준다. Follow TCP Stream을 신뢰해도 되는지, 이 캡처가 온전한지를 결과 해석 전에 먼저 확인하는 용도로 쓴다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Wireshark, tshark</td></tr>
+<tr><th>artifact</th><td><code>pcap</code> · <code>pcapng</code></td></tr>
+<tr><th>프로토콜</th><td>TCP, IPv4, IPv6</td></tr>
+<tr><th>Wireshark 필터</th><td><code>tcp.analysis.flags</code> · <code>tcp.analysis.retransmission</code> · <code>tcp.analysis.duplicate_ack</code> · <code>tcp.analysis.lost_segment</code> · <code>tcp.analysis.zero_window</code> · <code>expert.severity == 2</code> · <code>expert.severity == 1</code> · <code>_ws.malformed</code></td></tr>
+<tr><th>tshark field</th><td><code>_ws.expert.message</code> · <code>_ws.expert.severity</code> · <code>_ws.expert.group</code> · <code>tcp.analysis.flags</code></td></tr>
+<tr><th>로그 필드</th><td><code>Severity</code> · <code>Summary</code> · <code>Group</code> · <code>Protocol</code> · <code>Count</code></td></tr>
+<tr><th>파일 형식</th><td><code>pcap</code> · <code>pcapng</code></td></tr>
+<tr><th>검색 별칭</th><td>익스퍼트 인포메이션 · expert information 보는법 · 이상 패킷 찾기 · 빨간 패킷 이유 · 와이어샤크 경고 · tcp.analysis.flags 필터 · 재전송 왜 뜨는지</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>Analyze &gt; Expert Information</code>은 Wireshark가 각 패킷을 해석하면서 스스로 발견한 이상 징후(재전송, 손상된 체크섬, 파싱 실패, 순서 오류)를 한 창에 심각도별로 모아 보여준다. <strong>Follow TCP Stream을 신뢰해도 되는지, 이 캡처가 온전한지를 결과 해석 전에 먼저 확인하는 용도</strong>로 쓴다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>Follow TCP Stream으로 연 내용이 중간에 끊기거나 순서가 이상할 때, 원인이 캡처 자체의 문제인지 먼저 확인해야 할 때</li><li>&quot;이 캡처는 조작되었다/일부가 누락되었다&quot;를 증명해야 하는 문제</li><li>재전송·중복 ACK가 많은 트래픽에서 실제 통신 실패와 정상 재전송을 구분해야 할 때</li><li>패킷이 너무 많아 어디부터 봐야 할지 모를 때 Wireshark의 판단을 빌려 후보를 줄이는 용도</li><li><code>Malformed Packet</code>처럼 파서가 포기한 패킷을 콕 집어 찾아야 할 때</li></ul>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li><strong>패킷 목록의 배경색</strong> — 검은 배경에 빨간 글씨(Malformed), 검은 텍스트(재전송류 코멘트)가 보이면 Expert Information에 항목이 있다는 뜻이다.</li><li><strong>하단 상태 표시줄의 원형 아이콘</strong> — 빨강(Error)/노랑(Warning)/파랑(Note)/초록(Chat) 중 가장 심각한 색이 표시된다.</li><li><strong>캡처 파일 크기 대비 패킷 수가 적다</strong> — 캡처가 중간에 끊겼거나 필터링되어 저장된 경우 <code>Previous segment not captured</code>가 대량 발생한다.</li><li><strong>Follow Stream 내용이 뒤죽박죽</strong> — 재조립 실패의 신호. Expert Information에서 원인을 먼저 본다.</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -q -z expert</code></pre></div>
+<p>GUI는 세 클릭이다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1. Analyze &gt; Expert Information
+2. 상단 탭에서 Errors &gt; Warnings &gt; Notes &gt; Chats 순으로 확인 (심각도 내림차순)
+3. 항목 더블클릭 -&gt; 해당 패킷으로 바로 이동</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-창을-여는-두-가지-경로">1단계 — 창을 여는 두 가지 경로</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">Analyze &gt; Expert Information</code></pre></div>
+<p>또는 하단 상태 표시줄 왼쪽의 원형 아이콘을 클릭해도 같은 창이 열린다. 이 아이콘은 <strong>캡처 전체에서 가장 심각한 등급의 색</strong>으로 항상 표시되므로, 캡처를 열자마자 이 아이콘 색부터 확인하는 습관을 들인다.</p>
+<h3 id="2단계-심각도severity-네-등급">2단계 — 심각도(Severity) 네 등급</h3>
+<div class="table-wrap"><table><thead><tr><th>등급</th><th>색</th><th>의미</th><th>실전에서</th></tr></thead><tbody><tr><td><code>Error</code></td><td>빨강</td><td>파서가 패킷 해석에 실패했다 (<code>Malformed Packet</code> 등)</td><td>캡처 손상, 조작, 또는 지원하지 않는 프로토콜 확장</td></tr><tr><td><code>Warning</code></td><td>노랑</td><td>프로토콜 규칙 위반이 의심된다 (체크섬 오류, 재전송, 순서 오류)</td><td><strong>TCP 문제의 대부분이 여기 모인다</strong></td></tr><tr><td><code>Note</code></td><td>파랑</td><td>정상 범위지만 주목할 만하다 (윈도우 갱신, ACK만 있는 패킷 등)</td><td>대개 무시해도 되지만 패턴 확인용</td></tr><tr><td><code>Chat</code></td><td>초록</td><td>정보성 (연결 시작/종료 등)</td><td>흐름 파악용, 이상 징후 아님</td></tr></tbody></table></div>
+<p><strong>심각도는 배타적이지 않다.</strong> 한 패킷이 여러 항목을 동시에 가질 수 있고, 이 창에는 그중 가장 심각한 등급으로 집계된다.</p>
+<h3 id="3단계-탭-구성">3단계 — 탭 구성</h3>
+<p>Expert Information 창은 보통 두 가지 보기를 제공한다.</p>
+<div class="table-wrap"><table><thead><tr><th>탭</th><th>보여주는 것</th></tr></thead><tbody><tr><td>Errors / Warnings / Notes / Chats (그룹별)</td><td>같은 메시지를 가진 패킷들을 묶어서 개수와 함께 표시</td></tr><tr><td>Group / Protocol 열</td><td>어떤 프로토콜 계층에서 발생한 문제인지 (Sequence, Checksum, Malformed 등)</td></tr></tbody></table></div>
+<p>각 행을 펼치면 그 메시지에 해당하는 <strong>모든 패킷 번호</strong>가 나열된다. 더블클릭하면 패킷 목록에서 그 패킷으로 바로 이동한다.</p>
+<h3 id="4단계-자주-보는-메시지와-의미">4단계 — 자주 보는 메시지와 의미</h3>
+<div class="table-wrap"><table><thead><tr><th>메시지</th><th>등급</th><th>의미</th><th>대응</th></tr></thead><tbody><tr><td><code>Malformed Packet</code></td><td>Error</td><td>파서가 구조를 해석하지 못했다</td><td>캡처 손상, 지원 안 하는 확장, 또는 의도적 조작(문제의 단서일 수 있다)</td></tr><tr><td><code>Previous segment not captured</code></td><td>Warning</td><td>이 세그먼트보다 앞선 데이터가 캡처에 없다</td><td>캡처가 세션 중간부터 시작됨. Follow Stream 앞부분 신뢰 불가</td></tr><tr><td><code>Retransmission (suspected)</code></td><td>Warning</td><td>이전에 보낸 것과 같은 시퀀스 번호가 다시 나타났다</td><td>네트워크 손실 또는 응답 지연. 대량이면 회선 문제</td></tr><tr><td><code>Fast Retransmission (suspected)</code></td><td>Warning</td><td>중복 ACK 3개 이상 후 재전송</td><td>손실 구간이 명확히 특정된다</td></tr><tr><td><code>Spurious Retransmission (suspected)</code></td><td>Warning</td><td>ACK가 이미 왔는데도 재전송함</td><td>타이머 오작동. 데이터 손실은 아님</td></tr><tr><td><code>Duplicate ACK (#n)</code></td><td>Warning/Note</td><td>같은 ACK 번호가 반복</td><td>손실 세그먼트 대기 중</td></tr><tr><td><code>Out-Of-Order segment</code></td><td>Warning</td><td>시퀀스 번호가 이전 것보다 낮은 세그먼트 도착</td><td>경로 상 재정렬. 재조립에 영향</td></tr><tr><td><code>Window is full</code></td><td>Warning</td><td>송신 윈도우가 가득 참</td><td>수신 측 처리 지연</td></tr><tr><td><code>Zero window</code></td><td>Warning</td><td>수신 윈도우 크기가 0</td><td>수신 측 버퍼 고갈. 통신 일시 정지</td></tr><tr><td><code>TCP port numbers reused</code></td><td>Note</td><td>같은 4-튜플을 다른 세션이 재사용</td><td><code>tcp.stream</code> 번호가 세션을 정확히 구분해 준다</td></tr><tr><td><code>Checksum Error</code></td><td>Warning/Error(설정에 따라)</td><td>체크섬 불일치</td><td>오프로드(NIC checksum offload) 캡처의 정상적 오탐일 수 있다</td></tr><tr><td><code>Connection reset (RST)</code></td><td>Chat/Note</td><td>RST로 연결 종료</td><td>강제 종료 이력</td></tr></tbody></table></div>
+<h3 id="5단계-해당-필터로-직접-뽑기">5단계 — 해당 필터로 직접 뽑기</h3>
+<p>Expert Information의 각 항목은 <code>tcp.analysis.flags</code> 계열 필터에 대응한다. 창을 거치지 않고 바로 필터를 걸 수도 있다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">tcp.analysis.flags                    -- TCP 분석 관련 이상 전체
+tcp.analysis.retransmission           -- 재전송(일반)
+tcp.analysis.fast_retransmission      -- 빠른 재전송
+tcp.analysis.spurious_retransmission  -- 불필요한 재전송
+tcp.analysis.duplicate_ack            -- 중복 ACK
+tcp.analysis.lost_segment             -- 손실 세그먼트 (Previous segment not captured)
+tcp.analysis.out_of_order             -- 순서 뒤바뀜
+tcp.analysis.zero_window              -- 윈도우 0
+tcp.analysis.window_full              -- 윈도우 가득 참</code></pre></div>
+<p>일반화된 심각도 필터도 있다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">expert.severity == 2   -- Error
+expert.severity == 1   -- Warning</code></pre></div>
+<blockquote><p>심각도 값(Error=2, Warning=1 등)은 Wireshark 내부 열거값이며 버전에 따라 표현이 다를 수 있다. 확실하지 않으면 Expert Information 창에서 항목을 우클릭해 <code>Apply as Filter</code>로 정확한 필터 문자열을 얻는 편이 안전하다.</p></blockquote>
+<h3 id="6단계-재전송이-정상인지-증거인지-구분하기">6단계 — 재전송이 &quot;정상&quot;인지 &quot;증거&quot;인지 구분하기</h3>
+<p>재전송 자체는 TCP의 정상 복구 메커니즘이다. CTF에서 중요한 것은 <strong>재전송의 존재가 아니라 재전송이 몰린 지점과 이유</strong>다.</p>
+<div class="table-wrap"><table><thead><tr><th>관찰</th><th>해석</th></tr></thead><tbody><tr><td>캡처 전체에 재전송이 드문드문 소수</td><td>일반적인 네트워크 지연. 무시 가능</td></tr><tr><td>특정 스트림에만 재전송이 집중</td><td>그 세션에서 문제가 있었다. 해당 스트림을 우선 조사</td></tr><tr><td>캡처 시작부터 <code>Previous segment not captured</code>가 반복</td><td>캡처가 세션 중간에 시작됐다. Follow Stream 앞부분은 신뢰하지 말 것</td></tr><tr><td>재전송 직후 RST</td><td>연결이 실패로 종료됨. 공격/차단 시도의 흔적일 수 있다</td></tr><tr><td>짧은 시간에 동일 목적지로 재전송 폭증</td><td>대상이 응답을 못 하는 상태(다운, 필터링, DoS 대상)</td></tr></tbody></table></div>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<p><code>tshark -q -z expert</code>의 출력.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">========================================================================
+    Errors (1)
+        Frame     Group     Protocol   Summary
+        4821      Malformed TCP        Malformed Packet (Exception occurred)
+
+    Warnings (3)
+        Group     Protocol   Summary                                          Count
+        Sequence  TCP        Previous segment not captured (common at capture start)  12
+        Sequence  TCP        Retransmission (suspected)                              47
+        Sequence  TCP        Duplicate ACK (#1)                                     203
+
+    Notes (1)
+        Group     Protocol   Summary                          Count
+        Sequence  TCP        This frame is a (suspected) ACK to the segment...  312
+========================================================================</code></pre></div>
+<div class="table-wrap"><table><thead><tr><th>컬럼</th><th>의미</th></tr></thead><tbody><tr><td><code>Group</code></td><td>문제의 범주. <code>Sequence</code>(순서/재전송), <code>Checksum</code>, <code>Malformed</code>, <code>Reassembly</code> 등</td></tr><tr><td><code>Protocol</code></td><td>어느 프로토콜 계층에서 발생했는가</td></tr><tr><td><code>Summary</code></td><td>사람이 읽는 설명</td></tr><tr><td><code>Count</code></td><td>같은 메시지의 발생 횟수</td></tr><tr><td><code>Frame</code></td><td>(Errors 등 단건 표시 시) 패킷 번호</td></tr></tbody></table></div>
+<p><code>Count</code>가 큰 항목일수록 캡처 전반의 경향을, 작은 항목(특히 <code>Errors</code>의 단건)은 <strong>개별 이상 패킷</strong>을 가리킨다. CTF에서는 단건 <code>Malformed Packet</code>이 오히려 정답 패킷인 경우가 많다.</p>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>Expert Information에서 본 것</th><th>다음에 할 일</th></tr></thead><tbody><tr><td><code>Malformed Packet</code> 단건</td><td>해당 프레임 번호로 이동해 hex 덤프 직접 확인. 의도적 조작 의심</td></tr><tr><td><code>Previous segment not captured</code> 다수</td><td>캡처가 세션 중간 시작. Follow Stream 결과를 전적으로 신뢰하지 말 것</td></tr><tr><td>특정 <code>tcp.stream</code>에 재전송 집중</td><td>그 스트림만 필터해 <a href="./conversations.html">FOR-0149</a>에서 재검토</td></tr><tr><td>재전송 후 RST</td><td>EVTX/방화벽 로그에서 같은 시각의 차단 이벤트</td></tr><tr><td><code>Checksum Error</code> 다수</td><td>NIC 오프로드로 인한 정상 오탐인지 먼저 확인 (실제 손상이 아닐 수 있다)</td></tr><tr><td><code>Zero window</code></td><td>수신 측 애플리케이션 로그(서버 과부하 등)</td></tr><tr><td>이상 없음(Chat/Note만)</td><td>Follow Stream 결과를 신뢰하고 <a href="./protocol-hierarchy.html">FOR-0148</a> 단계로 진행</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong>재전송이 있으면 무조건 공격이라고 판단하는 것.</strong> 정상 네트워크에도 소량의 재전송은 항상 있다. 집중도와 패턴을 봐야 한다.</li><li><strong>Expert Information을 트리아지 맨 마지막에 보는 것.</strong> Follow Stream이나 Export Objects를 먼저 시도했다가 결과가 이상해서 뒤늦게 여는 경우가 많다. <strong>재구성 결과를 해석하기 전에</strong> 먼저 확인하는 순서로 바꾼다.</li><li><strong><code>Malformed Packet</code>을 그냥 캡처 손상으로 치부하고 넘어가는 것.</strong> CTF에서는 의도적으로 조작된 필드가 파서를 깨뜨려 <code>Malformed</code>로 뜨는 것 자체가 단서인 경우가 있다.</li><li><strong><code>Count</code>가 큰 항목에만 집중하고 단건 <code>Errors</code>를 놓치는 것.</strong> 정렬 기준을 <code>Count</code>가 아니라 <code>Group</code>(Errors 우선)으로 먼저 본다.</li><li><strong>체크섬 오류를 실제 데이터 손상으로 오해하는 것.</strong> 캡처 지점이 송신 NIC 앞단이면 체크섬 오프로드로 인해 정상 패킷도 체크섬이 채워지지 않은 채 캡처되어 대량의 <code>Checksum Error</code>가 뜬다. <code>Edit &gt; Preferences &gt; Protocols &gt; TCP &gt; Validate checksum</code>을 꺼서 재확인한다.</li><li><strong>재전송 필터와 원본 필터를 혼동하는 것.</strong> <code>tcp.analysis.retransmission</code>은 재전송된 패킷만 잡는다. 원본 세그먼트를 함께 보려면 <code>tcp.analysis.flags</code>로 넓혀야 한다.</li><li><strong>심각도 필터(<code>expert.severity</code>)의 숫자값을 외워서 쓰다 버전 차이로 틀리는 것.</strong> 항목을 우클릭해 <code>Apply as Filter</code>로 만든 필터 문자열을 그대로 쓰는 것이 안전하다.</li><li><strong>CLI <code>-z expert</code>를 GUI와 다른 결과라고 의심하는 것.</strong> 표시 형식만 다를 뿐 같은 판정 엔진을 쓴다. 필터(<code>-Y</code>)를 걸고 돌렸다면 그 필터 범위 내 결과라는 점을 확인한다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) GUI Expert Information과 같은 요약
+tshark -r capture.pcapng -q -z expert
+
+# 2) 이상이 있는 패킷 번호와 메시지를 표로
+tshark -r capture.pcapng -Y &#39;tcp.analysis.flags&#39; \
+  -T fields -e frame.number -e frame.time_relative -e tcp.stream -e _ws.expert.message
+
+# 3) 특정 스트림에 재전송이 몇 건인지
+tshark -r capture.pcapng -Y &#39;tcp.stream eq 4 &amp;&amp; tcp.analysis.retransmission&#39; | wc -l
+
+# 4) Error 등급만
+tshark -r capture.pcapng -Y &#39;expert.severity == 2&#39; \
+  -T fields -e frame.number -e _ws.expert.message
+
+# 5) 체크섬 검증을 끈 상태로 재확인 (오탐 여부 판단)
+tshark -o tcp.check_checksum:FALSE -r capture.pcapng -q -z expert</code></pre></div>
+<p><code>(5)</code>에서 <code>Checksum Error</code> 항목이 사라지면 오프로드로 인한 정상 오탐이었다는 뜻이다. 그래도 남는 오류가 진짜 이상 신호다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;제공된 pcap에서 공격자가 응답을 조작해 삽입한 패킷 하나를 찾아
+ 그 패킷 번호와 이유를 설명하세요.&quot;
+첨부: tampered.pcapng (4,102 packets)
+
+1. 첫 시도 (실패)
+   바로 http.request 필터를 걸어 요청/응답을 훑었다.
+   200개 넘는 HTTP 트랜잭션을 하나씩 보는 것은 비현실적이었고,
+   눈으로는 이상한 것을 찾지 못했다.
+   원인: 어떤 패킷이 이상한지 힌트 없이 전수조사를 시도했다.
+
+2. 접근 변경 — Analyze &gt; Expert Information
+   하단 상태 표시줄 아이콘이 빨간색(Error)이었다.
+
+   Errors (1)
+     Frame 2981   Malformed   TCP   Malformed Packet (Exception occurred)
+   Warnings (2)
+     Sequence  TCP  Previous segment not captured   3
+     Sequence  TCP  Retransmission (suspected)       9
+
+3. Errors 탭의 프레임 2981 더블클릭
+   -&gt; 패킷 목록에서 2981번으로 이동. 빨간 배경.
+   Frame 2981: TCP 세그먼트 길이가 IP Total Length와 불일치.
+   Info 컬럼: &quot;Malformed Packet&quot;
+
+4. hex 덤프로 직접 확인 (우클릭 &gt; Show Packet Bytes)
+   IP 헤더의 Total Length 필드가 실제 캡처된 바이트 수보다
+   훨씬 크게 설정되어 있었다. 정상적인 재조립이라면 나올 수 없는 값.
+
+5. 같은 스트림의 앞뒤 패킷 확인
+   tcp.stream eq 2981번 패킷의 스트림 번호로 필터
+   -&gt; 정상적인 HTTP 응답 시퀀스 사이에 이 패킷 하나만 시퀀스 번호가
+      살짝 어긋나 있었다. 정상 서버라면 만들 수 없는 길이 불일치.
+
+6. 두 번째 확인 — 체크섬 오탐이 아닌지
+   $ tshark -o tcp.check_checksum:FALSE -r tampered.pcapng -q -z expert
+   -&gt; Malformed Packet 항목은 여전히 남는다. 체크섬 설정과 무관한
+      구조적 손상임을 확인.
+
+정답: Frame 2981 / IP Total Length 필드가 조작되어 파서가 TCP 세그먼트를
+      해석하지 못한 것이 삽입 흔적이다.</code></pre></div>
+<p>1단계의 실패가 핵심이다. 전수조사 대신 Wireshark가 이미 계산해 둔 이상 판정을 먼저 확인했다면 즉시 후보 하나로 좁힐 수 있었다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li>하단 상태 표시줄의 아이콘 색을 확인했는가 (Errors 존재 여부의 1차 신호)</li><li><code>Analyze &gt; Expert Information</code>을 Follow Stream/Export Objects <strong>이전에</strong> 열었는가</li><li>Errors 탭에 단건 항목이 있는가 — Count가 작을수록 개별 이상 패킷일 가능성이 높다</li><li><code>Previous segment not captured</code>가 캡처 초반에 몰려 있어 세션 시작을 놓친 것은 아닌가</li><li>재전송이 특정 <code>tcp.stream</code>에 집중되어 있는가</li><li>체크섬 오류가 오프로드로 인한 오탐인지 <code>tcp.check_checksum:FALSE</code>로 재확인했는가</li><li><code>Malformed Packet</code>을 hex 덤프로 직접 열어 어느 필드가 깨졌는지 확인했는가</li><li>CLI <code>-z expert</code> 결과와 GUI가 일치하는가</li><li>이상이 전혀 없다면 Follow Stream 결과를 신뢰하고 다음 단계(<a href="./protocol-hierarchy.html">FOR-0148</a>)로 진행했는가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-003 — Wireshark User&#39;s Guide, &quot;Expert Information&quot;: Errors/Warnings/Notes/Chats 4단계 심각도 체계, 상태 표시줄 아이콘, Group/Protocol/Summary/Count 컬럼 구성</li><li>SRC-010 — tshark man page: <code>-z expert[,severity]</code> 옵션과 출력 형식</li><li>SRC-002 — Wireshark Display Filter Reference: <code>tcp.analysis.*</code>, <code>expert.severity</code>, <code>expert.group</code> 필드</li><li>심각도 필터의 정수값(<code>expert.severity == 2</code> 등)과 컨텍스트 메뉴 항목 구성은 버전에 따라 달라질 수 있으므로, 정확한 필터 문자열이 필요하면 항목을 우클릭해 <code>Apply as Filter</code>로 생성한 값을 실제 화면에서 확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./wireshark-30sec-triage.html">
+    <span class="rel-id">FOR-0146 · Network/PCAP</span>
+    Wireshark 30초 트리아지: pcap을 받고 처음 할 다섯 가지
+  </a>
+  <a class="related-item" href="./protocol-hierarchy.html">
+    <span class="rel-id">FOR-0148 · Network/PCAP</span>
+    Protocol Hierarchy: 프로토콜 비중과 End Packets 읽는 법
+  </a>
+  <a class="related-item" href="./conversations.html">
+    <span class="rel-id">FOR-0149 · Network/PCAP</span>
+    Conversations: 가장 큰 대화를 찾아 tcp.stream으로 직행하기
+  </a>
+  <a class="related-item" href="./tcp-retransmission.html">
+    <span class="rel-id">FOR-0175 · Network/PCAP</span>
+    TCP 재전송 해석: tcp.analysis.retransmission 과 재조립 신뢰도
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./endpoints.html"><span class="rel-id">← FOR-0150</span>Endpoints: IP·포트별 트래픽 총량으로 용의선상 좁히기</a>
+<a class="related-item" href="./dns-basic-filters.html"><span class="rel-id">FOR-0152 →</span>DNS 트래픽 기본 필터 모음</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-창을-여는-두-가지-경로">1단계 — 창을 여는 두 가지 경로</a></li>
+<li class="toc-l3"><a href="#2단계-심각도severity-네-등급">2단계 — 심각도(Severity) 네 등급</a></li>
+<li class="toc-l3"><a href="#3단계-탭-구성">3단계 — 탭 구성</a></li>
+<li class="toc-l3"><a href="#4단계-자주-보는-메시지와-의미">4단계 — 자주 보는 메시지와 의미</a></li>
+<li class="toc-l3"><a href="#5단계-해당-필터로-직접-뽑기">5단계 — 해당 필터로 직접 뽑기</a></li>
+<li class="toc-l3"><a href="#6단계-재전송이-정상인지-증거인지-구분하기">6단계 — 재전송이 &quot;정상&quot;인지 &quot;증거&quot;인지 구분하기</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-14 10:37 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

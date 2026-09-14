@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>pcap 안 Base64/hex로 인코딩된 페이로드 찾기 · FOR-0188 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Network%2FPCAP">Network/PCAP</a> / FOR-0188
+      </div>
+      <header class="article-head">
+        <h1>pcap 안 Base64/hex로 인코딩된 페이로드 찾기</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Network/PCAP</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>[A-Za-z0-9+/]{20,}={0,2}(Base64) 또는 [A-Fa-f0-9]{32,}(hex) 패턴에 걸리는 긴 문자열을 frame contains/dns.qry.name/Follow Stream에서 찾은 뒤 base64 -d나 xxd -r -p로 바로 디코딩해 본다 — 틀린 인코딩으로 추측해서 시간을 버리는 것이 가장 흔한 실수이므로 문자 집합만으로 먼저 후보를 좁힌다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Wireshark, tshark, CyberChef, Base64encoder, HxD</td></tr>
+<tr><th>artifact</th><td><code>pcap</code> · <code>pcapng</code> · <code>DNS query name</code> · <code>HTTP body</code> · <code>ICMP payload</code></td></tr>
+<tr><th>프로토콜</th><td>DNS, HTTP, ICMP, TCP</td></tr>
+<tr><th>Wireshark 필터</th><td><code>frame matches &quot;[A-Za-z0-9+/]{20,}={0,2}&quot;</code> · <code>dns.qry.name.len &gt; 40</code> · <code>http.request.method == &quot;POST&quot;</code> · <code>tcp contains &quot;==&quot;</code></td></tr>
+<tr><th>tshark field</th><td><code>dns.qry.name</code> · <code>http.file_data</code> · <code>data.data</code></td></tr>
+<tr><th>regex</th><td><code>[A-Za-z0-9+/]{20,}={0,2}</code> · <code>[A-Fa-f0-9]{32,}</code></td></tr>
+<tr><th>파일 형식</th><td><code>pcap</code> · <code>pcapng</code></td></tr>
+<tr><th>검색 별칭</th><td>pcap 안에 base64 · 패킷에서 base64 찾기 · dns 안에 hex · pcap 인코딩 데이터 · 패딩 등호 · 패킷 디코딩 · 숨겨진 문자열 디코딩</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>[A-Za-z0-9+/]{20,}={0,2}</code>(Base64) 또는 <code>[A-Fa-f0-9]{32,}</code>(hex) 패턴에 걸리는 긴 문자열을 <code>frame contains</code>/<code>dns.qry.name</code>/Follow Stream에서 찾은 뒤 <code>base64 -d</code>나 <code>xxd -r -p</code>로 바로 디코딩해 본다 — <strong>틀린 인코딩으로 추측해서 시간을 버리는 것이 가장 흔한 실수</strong>이므로 문자 집합만으로 먼저 후보를 좁힌다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>HTTP 요청/응답 본문, DNS 쿼리 이름, ICMP 페이로드에 평문이 아닌 이상한 문자열이 반복된다</li><li>&quot;flag가 pcap 안에 인코딩되어 숨겨져 있다&quot;는 지문</li><li>Export Objects/Follow Stream으로 텍스트를 봤는데 읽을 수 없다</li><li>여러 패킷에 나눠서 조각조각 인코딩된 데이터를 이어 붙여야 한다</li></ul>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li><strong>문자 집합이 좁다</strong> — <code>A-Za-z0-9+/=</code>만 있으면 Base64, <code>0-9a-fA-F</code>만 있으면 hex</li><li><strong>길이가 4의 배수(Base64)</strong> — 패딩(<code>=</code>, <code>==</code>)이 끝에 있으면 거의 확정</li><li><strong>DNS 쿼리 이름의 서브도메인이 비정상적으로 길고 무작위처럼 보인다</strong> — DNS 터널링과 겹친다 (<a href="./dns-tunneling.html">FOR-0155</a>)</li><li><strong>HTTP 헤더에 <code>Content-Transfer-Encoding: base64</code>, 쿠키/파라미터 값이 <code>=</code>로 끝난다</strong></li><li><strong>hex 문자열 길이가 짝수</strong> — 홀수면 hex가 아니거나 앞뒤가 잘렸다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r cap.pcapng -Y &quot;http.request or dns&quot; -T fields -e frame.number -e dns.qry.name -e http.file_data</code></pre></div>
+<ol><li><code>frame matches &quot;[A-Za-z0-9+/]{20,}={0,2}&quot;</code>로 Base64 후보 패킷을 필터링</li><li>해당 스트림을 Follow TCP Stream으로 열어 전체 문자열 확보</li><li>문자 집합 확인 → Base64면 <code>base64 -d</code>, hex면 <code>xxd -r -p</code></li><li>디코딩 결과에 <code>file</code>/<code>strings</code> 적용</li></ol>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-인코딩-종류-판별">1단계 — 인코딩 종류 판별</h3>
+<div class="table-wrap"><table><thead><tr><th>특징</th><th>Base64</th><th>hex(Base16)</th><th>Base32</th></tr></thead><tbody><tr><td>문자 집합</td><td><code>A-Za-z0-9+/</code> (URL-safe는 <code>-_</code>)</td><td><code>0-9A-Fa-f</code></td><td><code>A-Z2-7</code></td></tr><tr><td>패딩</td><td><code>=</code> 0~2개, 길이가 4의 배수</td><td>없음. 길이가 항상 짝수</td><td><code>=</code> 0~6개, 길이가 8의 배수</td></tr><tr><td>예</td><td><code>ZmxhZ3s...</code></td><td><code>666c6167...</code></td><td><code>NBSWY3DP...</code></td></tr><tr><td>3바이트 → 문자 수</td><td>4자</td><td>6자</td><td>8자(5바이트 단위)</td></tr></tbody></table></div>
+<p>RFC 4648(SRC-074)이 세 인코딩의 알파벳과 패딩 규칙을 정의한다. <strong><code>+</code>나 <code>/</code>가 보이면 hex가 아니라 Base64다.</strong> <code>-</code>나 <code>_</code>가 섞여 있으면 URL-safe Base64(RFC 4648 §5)이므로 표준 디코더가 그대로 실패할 수 있다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># URL-safe -&gt; 표준 Base64로 치환 후 디코딩
+echo &quot;ZmxhZ3sxMjM0-Cg_&quot; | tr &#39;_-&#39; &#39;/+&#39; | base64 -d</code></pre></div>
+<h3 id="2단계-wireshark에서-후보-찾기">2단계 — Wireshark에서 후보 찾기</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">frame matches &quot;[A-Za-z0-9+/]{20,}={0,2}&quot;
+frame matches &quot;[A-Fa-f0-9]{32,}&quot;
+dns.qry.name.len &gt; 40
+http.request.method == &quot;POST&quot; &amp;&amp; http.content_length &gt; 0</code></pre></div>
+<p><code>matches</code>는 Wireshark가 PCRE를 사용한다(SRC-002). 대소문자를 구분하므로 필요하면 <code>(?i)</code>를 붙인다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">frame matches &quot;(?i)[a-z0-9+/]{20,}={0,2}&quot;</code></pre></div>
+<h3 id="3단계-데이터를-뽑아-파일로-저장">3단계 — 데이터를 뽑아 파일로 저장</h3>
+<p>Follow Stream 창에서 <code>Show data as</code>를 <code>ASCII</code>로 두고 인코딩된 부분만 복사하거나, tshark로 필드째 뽑는다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># HTTP 본문만 모아 파일로
+tshark -r cap.pcapng -Y &quot;http.request.method==\&quot;POST\&quot;&quot; -T fields -e http.file_data &gt; body_hex.txt
+
+# tshark의 -e 필드는 기본이 hex 문자열이다. 그대로 xxd -r -p 로 바이너리 복원 가능
+tr -d &#39;\n:&#39; &lt; body_hex.txt | xxd -r -p &gt; body.bin</code></pre></div>
+<p>DNS 서브도메인을 이어 붙이는 경우 순서(시퀀스 번호나 프레임 번호)를 지켜야 한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r cap.pcapng -Y &quot;dns.flags.response==0&quot; -T fields -e frame.number -e dns.qry.name |
+  sort -k1 -n |
+  awk -F&#39;.&#39; &#39;{print $1}&#39; |
+  cut -f2- &gt; pieces.txt</code></pre></div>
+<h3 id="4단계-실제-디코딩">4단계 — 실제 디코딩</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># Base64
+cat piece.txt | base64 -d &gt; out.bin
+
+# 패딩이 깨졌을 때 (길이를 4의 배수로 맞춘다)
+python3 -c &quot;
+import base64, sys
+s = sys.stdin.read().strip()
+s += &#39;=&#39; * (-len(s) % 4)
+sys.stdout.buffer.write(base64.b64decode(s))
+&quot; &lt; piece.txt &gt; out.bin
+
+# hex
+cat hex.txt | tr -d &#39; \n&#39; | xxd -r -p &gt; out.bin</code></pre></div>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># PowerShell 에서 Base64 디코딩
+[System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(&#39;ZmxhZ3sxMjM0Cg==&#39;))
+
+# hex 디코딩
+$bytes = [byte[]] -split (&#39;66 6c 61 67&#39; -replace &#39;..&#39;, &#39;0x$&amp; &#39;)
+[System.Text.Encoding]::UTF8.GetString($bytes)</code></pre></div>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import base64
+data = &quot;ZmxhZ3sxMjM0Cg==&quot;
+print(base64.b64decode(data))
+# b&#39;flag{1234\n&#39;
+
+data_hex = &quot;666c61677b31323334&quot;
+print(bytes.fromhex(data_hex))
+# b&#39;flag{1234&#39;</code></pre></div>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="table-wrap"><table><thead><tr><th>관찰</th><th>해석</th></tr></thead><tbody><tr><td>디코딩 결과가 매직 바이트(예: <code>PK\x03\x04</code>, <code>\x89PNG</code>)로 시작</td><td>인코딩된 것은 파일 전체다. <code>file</code>로 확인 후 확장자 부여</td></tr><tr><td>디코딩 결과가 다시 Base64/hex처럼 보인다</td><td><strong>다중 인코딩(레이어링).</strong> 한 번 더 디코딩</td></tr><tr><td><code>base64 -d</code>가 &quot;invalid input&quot; 에러</td><td>패딩 누락, 개행/공백 혼입, URL-safe 문자 혼입 중 하나</td></tr><tr><td><code>xxd -r -p</code> 결과가 의미 없는 바이트</td><td>hex가 아니라 실제로 Base64였을 가능성. 문자 집합 재확인</td></tr><tr><td>서브도메인마다 길이가 다르다</td><td>마지막 조각에 패딩. 순서대로 이어 붙여야 정상 디코딩</td></tr></tbody></table></div>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>이 글에서 얻은 것</th><th>다음 목표</th></tr></thead><tbody><tr><td>디코딩된 바이너리</td><td><code>file</code>/<code>strings</code>/<code>binwalk</code>로 형식 판정, 필요시 카빙 (<a href="./pcap-file-extraction.html">FOR-0189</a>)</td></tr><tr><td>반복되는 인코딩된 DNS 서브도메인</td><td>DNS 터널링 전체 흐름 분석 (<a href="./dns-tunneling.html">FOR-0155</a>)</td></tr><tr><td>디코딩된 문자열이 명령어</td><td>공격자 C2 명령 이력 재구성</td></tr><tr><td>인코딩 위치가 HTTP 헤더/쿠키</td><td>그 값이 세션·인증 토큰인지 확인</td></tr><tr><td>여러 스트림에 걸친 조각</td><td><code>tcp.stream</code>별로 순서 재조립 (<a href="./tcp-stream-filter.html">FOR-0164</a>)</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>+</code>/<code>/</code>가 있는데 hex로 시도하는 것</strong> → hex는 0-9a-f만 허용한다 → 문자 집합을 먼저 확인한다.</li><li><strong>패딩을 무시하고 자르는 것</strong> → Base64 길이가 4의 배수가 아니면 디코더가 에러를 내거나 마지막 바이트를 깨뜨린다 → <code>=</code> 개수를 세어 맞춘다.</li><li><strong>URL-safe Base64(<code>-</code>, <code>_</code>)를 표준 디코더에 그대로 넣는 것</strong> → 문자가 알파벳에 없어 실패한다 → <code>tr &#39;_-&#39; &#39;/+&#39;</code> 후 디코딩한다.</li><li><strong>개행이나 청크 구분자를 그대로 포함시키는 것</strong> → HTTP chunked encoding의 청크 크기 줄이 문자열 중간에 섞여 디코딩이 깨진다 → Wireshark의 재조립된 <code>http.file_data</code>를 쓴다.</li><li><strong>한 번만 디코딩하고 포기하는 것</strong> → 다중 레이어(Base64 안에 hex, hex 안에 Base64)가 CTF에서 흔하다 → 결과가 다시 인코딩 문자 집합이면 반복한다.</li><li><strong>조각을 프레임 순서가 아니라 알파벳 순으로 이어 붙이는 것</strong> → DNS 응답은 도착 순서가 보장되지 않는다 → 시퀀스 번호나 <code>frame.number</code>로 정렬한다.</li><li><strong>tshark <code>-e</code> 필드가 이미 hex 문자열이라는 것을 모르고 다시 hex로 취급하는 것</strong> → 이중 디코딩이 되어 깨진다 → 필드 출력 형식을 먼저 확인한다(<code>-e http.file_data</code>는 hex, <code>-Y</code> 매칭 텍스트는 문자열).</li><li><strong>디코딩 결과를 UTF-8로만 강제하는 것</strong> → 결과가 실제로 바이너리(이미지/zip)면 텍스트 디코딩이 예외를 낸다 → 항상 바이트로 먼저 저장하고 <code>file</code>로 판정한다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) Wireshark 필터와 strings 결과 대조
+strings -n 20 cap.pcapng | grep -E &#39;^[A-Za-z0-9+/]{20,}={0,2}$&#39;
+
+# 2) CyberChef 없이 여러 인코딩을 한 번에 시도 (오프라인)
+for f in base64 base32; do
+  echo &quot;== $f ==&quot;
+  python3 -c &quot;
+import base64, sys
+s = open(&#39;piece.txt&#39;).read().strip()
+try:
+    print(getattr(base64, &#39;b64decode&#39; if &#39;$f&#39;==&#39;base64&#39; else &#39;b32decode&#39;)(s + &#39;=&#39; * (-len(s) % 4)))
+except Exception as e:
+    print(&#39;fail:&#39;, e)
+&quot;
+done
+
+# 3) 디코딩 결과 형식 확인
+file out.bin
+xxd out.bin | head -3</code></pre></div>
+<p>두 경로(Wireshark UI와 CLI)에서 뽑은 원문 문자열이 바이트 단위로 같은지 <code>diff</code>로 확인한다. 다르면 재조립(청크/개행 처리)이 어느 한쪽에서 틀렸다는 뜻이다.</p>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;pcap 안에 flag가 인코딩되어 숨겨져 있습니다.&quot;
+첨부: hidden.pcapng (612 packets)
+
+1. Protocol Hierarchy 확인 -&gt; HTTP 43건, 나머지는 TCP 핸드셰이크/ACK
+   http.request 필터 -&gt; GET /api/beacon?d=... 요청이 반복
+
+2. 첫 시도 (실패):
+   쿼리 파라미터 d 값을 hex로 간주하고 xxd -r -p 시도
+   $ echo &quot;aGVsbG8=&quot; | xxd -r -p
+   -&gt; 깨진 바이트만 나옴. hex 알파벳(0-9a-f) 범위를 벗어난 문자(g,l,o,=)가 있는데
+      무시하고 강행한 것이 원인이었다.
+
+3. 문자 집합 재확인
+   값: aGVsbG8=  -&gt; A-Za-z 와 마지막 &#39;=&#39; 뿐. Base64 확정 (패딩 1개, 길이 8 = 4의 배수)
+
+4. 디코딩
+   $ echo &quot;aGVsbG8=&quot; | base64 -d
+   hello
+   -&gt; 첫 요청은 헬로 비콘. flag 는 아니다. 43건을 모두 훑어야 한다.
+
+5. 43건을 전부 추출해 순서대로 디코딩
+   $ tshark -r hidden.pcapng -Y &#39;http.request.uri contains &quot;/api/beacon&quot;&#39; \
+       -T fields -e frame.number -e http.request.uri.query.parameter |
+     sort -n -k1 |
+     cut -f2 |
+     sed &#39;s/^d=//&#39; &gt; all_d.txt
+
+   $ while read -r line; do
+       pad=$(( (4 - ${#line} % 4) % 4 ))
+       printf &#39;%s%s\n&#39; &quot;$line&quot; &quot;$(printf &#39;=%.0s&#39; $(seq 1 $pad))&quot; | base64 -d
+     done &lt; all_d.txt | tr -d &#39;\n&#39;
+   flag{b4se64_1n_query_str1ng_2026}
+
+정답: flag{b4se64_1n_query_str1ng_2026}</code></pre></div>
+<p>3단계에서 hex와 Base64를 헷갈린 것이 실패 원인이었다. <strong>알파벳 범위를 벗어난 문자가 하나라도 있으면 그 인코딩이 아니다</strong> — 강행하지 않고 문자 집합부터 다시 본다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li>문자 집합을 눈으로 확인했는가 (<code>+</code>, <code>/</code>, <code>=</code> 있으면 Base64. <code>0-9a-f</code>만이면 hex)</li><li>길이가 인코딩 규칙(Base64는 4배수, hex는 짝수)에 맞는가</li><li>패딩(<code>=</code>)이 누락되지 않았는가</li><li>URL-safe 문자(<code>-</code>, <code>_</code>)가 섞여 있지 않은가</li><li>여러 패킷에 걸쳐 조각나 있지는 않은가 — 순서를 프레임 번호로 정렬했는가</li><li>한 번 디코딩한 결과가 또 인코딩된 것처럼 보이지 않는가 (다중 레이어)</li><li>디코딩 결과를 텍스트로 강제하기 전에 <code>file</code>로 바이너리 여부를 확인했는가</li><li>tshark <code>-e</code> 필드가 이미 hex라는 점을 감안했는가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-074 — RFC 4648: Base16(hex)/Base32/Base64 알파벳, 패딩 규칙, URL-safe 변형</li><li>SRC-002 — Wireshark Display Filter Reference: <code>matches</code>(PCRE) 연산자</li><li>SRC-003 — Wireshark User&#39;s Guide: Follow Stream, 필드 값 표시 형식</li><li>CyberChef는 도구 목록에 없어 예시에서 제외했다. 오프라인 환경에서는 <code>base64</code>/<code>xxd</code>/Python <code>base64</code> 모듈로 동일한 작업이 가능하다</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./dns-tunneling.html">
+    <span class="rel-id">FOR-0155 · Network/PCAP</span>
+    DNS tunneling 의심 패턴 판별하기
+  </a>
+  <a class="related-item" href="./wireshark-30sec-triage.html">
+    <span class="rel-id">FOR-0146 · Network/PCAP</span>
+    Wireshark 30초 트리아지: pcap을 받고 처음 할 다섯 가지
+  </a>
+  <a class="related-item" href="./pcap-file-extraction.html">
+    <span class="rel-id">FOR-0189 · Network/PCAP</span>
+    pcap에서 전송된 파일 복원하기
+  </a>
+  <a class="related-item" href="./network-ctf-walkthrough.html">
+    <span class="rel-id">FOR-0190 · Network/PCAP</span>
+    Network/PCAP 종합 CTF 문제 풀이
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./tshark-display-filter.html"><span class="rel-id">← FOR-0185</span>tshark -Y 로 디스플레이 필터 쓰기: bash / PowerShell / cmd 인용 문제</a>
+<a class="related-item" href="./pcap-file-extraction.html"><span class="rel-id">FOR-0189 →</span>pcap에서 전송된 파일 복원하기</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-인코딩-종류-판별">1단계 — 인코딩 종류 판별</a></li>
+<li class="toc-l3"><a href="#2단계-wireshark에서-후보-찾기">2단계 — Wireshark에서 후보 찾기</a></li>
+<li class="toc-l3"><a href="#3단계-데이터를-뽑아-파일로-저장">3단계 — 데이터를 뽑아 파일로 저장</a></li>
+<li class="toc-l3"><a href="#4단계-실제-디코딩">4단계 — 실제 디코딩</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-14 10:37 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

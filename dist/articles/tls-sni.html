@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>TLS SNI로 암호화 트래픽에서도 접속 도메인 확인하기 · FOR-0177 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=Network%2FPCAP">Network/PCAP</a> / FOR-0177
+      </div>
+      <header class="article-head">
+        <h1>TLS SNI로 암호화 트래픽에서도 접속 도메인 확인하기</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">Network/PCAP</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-basic">기본</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">windows</span>
+      <span class="chip">linux</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>TLS 핸드셰이크의 첫 메시지인 ClientHello는 SNI(Server Name Indication) 확장을 평문으로 전송한다. 내용은 암호화되어 못 봐도 tls.handshake.extensions_server_name 필터 하나로 접속하려던 도메인을 확인할 수 있다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>Wireshark, tshark</td></tr>
+<tr><th>artifact</th><td><code>pcap</code> · <code>pcapng</code> · <code>TLS ClientHello</code> · <code>SNI</code></td></tr>
+<tr><th>프로토콜</th><td>TLS, TCP</td></tr>
+<tr><th>Wireshark 필터</th><td><code>tls.handshake.type == 1</code> · <code>tls.handshake.extensions_server_name</code> · <code>tls.handshake.extensions_server_name contains &quot;example&quot;</code> · <code>tls.handshake.type == 2</code> · <code>tls.handshake.type == 11</code></td></tr>
+<tr><th>tshark field</th><td><code>tls.handshake.type</code> · <code>tls.handshake.extensions_server_name</code> · <code>tls.handshake.version</code> · <code>ip.src</code> · <code>ip.dst</code> · <code>frame.time</code></td></tr>
+<tr><th>파일 형식</th><td><code>pcap</code> · <code>pcapng</code></td></tr>
+<tr><th>검색 별칭</th><td>sni 확인 · https 도메인 확인 · 암호화된 트래픽 도메인 · tls 목적지 도메인 · clienthello 도메인 · https인데 도메인 알아내기</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p>TLS 핸드셰이크의 첫 메시지인 ClientHello는 SNI(Server Name Indication) 확장을 <strong>평문</strong>으로 전송한다. 내용은 암호화되어 못 봐도 <code>tls.handshake.extensions_server_name</code> 필터 하나로 접속하려던 도메인을 확인할 수 있다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>pcap이 전부 HTTPS(TLS)뿐이고 <code>http.host</code>, <code>http.request.uri</code>가 하나도 안 잡히는 문제</li><li>&quot;이 pcap에서 접속한 C2 서버 도메인을 구하라&quot; 같은 문제</li><li>여러 도메인이 같은 서버 IP로 서비스되는 환경(CDN, 가상호스팅)에서 IP만으로는 목적지를 특정할 수 없는 상황</li><li>DNS 질의는 안 남았는데(캐시된 DNS, hosts 파일 사용 등) 실제 접속 도메인을 확인해야 하는 상황</li></ul>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li><strong>Protocol Hierarchy에 HTTP는 없고 TLS만 있다</strong></li><li><strong><code>http</code>로 필터링하면 0건</strong>이면서 지문에 &quot;접속한 사이트&quot;, &quot;다운로드 출처&quot; 같은 단어가 있다</li><li><strong>같은 IP로 여러 포트 443 연결이 있는데 목적지가 다른 서비스로 추정되는 상황</strong></li><li>패킷 Info 컬럼에 <code>Client Hello</code>가 보인다</li></ol>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">tls.handshake.type == 1</code></pre></div>
+<p>이 필터로 나온 각 패킷을 펼쳐 <code>Handshake Protocol &gt; Extension: server_name</code>을 확인한다. 컬럼으로 올려두면 한 번에 보인다.</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">1. 필터: tls.handshake.type == 1              -&gt; ClientHello만
+2. 아무 패킷이나 우클릭 &gt; Expand Subtrees
+   Handshake Protocol: Client Hello &gt; Extension: server_name
+   &gt; Server Name Indication extension &gt; Server Name: &lt;도메인&gt;
+3. Server Name 필드 우클릭 &gt; Apply as Column
+4. 컬럼으로 전체 목록을 한 번에 확인</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-sni가-평문인-이유">1단계 — SNI가 평문인 이유</h3>
+<p>TLS 핸드셰이크는 서버 인증서를 받기 전에는 어떤 암호화 키도 아직 협상되지 않은 상태다. 클라이언트가 &quot;어떤 도메인에 접속하려는지&quot;를 서버에 알려줘야 서버가 그 도메인에 맞는 인증서를 골라 응답할 수 있다(가상 호스팅 환경 필수 기능). 그래서 SNI 확장은 ClientHello 안에 <strong>암호화되지 않은 상태</strong>로 들어간다. 이는 TLS 1.2와 TLS 1.3 모두 동일하다 — TLS 1.3이 핸드셰이크의 상당 부분(Certificate, EncryptedExtensions 등)을 암호화하지만, ClientHello 자체와 그 안의 SNI 확장은 여전히 평문이다.</p>
+<h3 id="2단계-필터로-전체-접속-도메인-목록-뽑기">2단계 — 필터로 전체 접속 도메인 목록 뽑기</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;tls.handshake.type==1&#39; \
+  -T fields -e frame.number -e frame.time -e ip.src -e ip.dst -e tls.handshake.extensions_server_name \
+  -E header=y</code></pre></div>
+<p>출력 예시:</p>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">frame.number  frame.time                     ip.src        ip.dst          tls.handshake.extensions_server_name
+41            2026-03-14 09:12:03.114201     10.0.0.15     93.184.216.34   www.example.com
+88            2026-03-14 09:12:07.552310     10.0.0.15     198.51.100.9    login.suspicious-c2.net
+203           2026-03-14 09:13:41.009821     10.0.0.15     198.51.100.9    cdn.suspicious-c2.net</code></pre></div>
+<p>빈도순으로 보고 싶으면:</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;tls.handshake.type==1&#39; \
+  -T fields -e tls.handshake.extensions_server_name | sort | uniq -c | sort -nr</code></pre></div>
+<h3 id="3단계-gui에서-sni를-컬럼으로-고정한다">3단계 — GUI에서 SNI를 컬럼으로 고정한다</h3>
+<p>패킷 상세 창에서 <code>Transport Layer Security &gt; TLSv1.2/1.3 Record Layer: Handshake Protocol: Client Hello &gt; Extension: server_name &gt; Server Name Indication extension &gt; Server Name</code> 을 찾아 우클릭 → <code>Apply as Column</code>. 이후 <code>tls.handshake.type == 1</code> 필터만 걸어두면 목록 화면에서 도메인이 바로 보인다.</p>
+<h3 id="4단계-ip당-여러-도메인이-나오면-sni가-실제-서비스를-구분해준다">4단계 — IP당 여러 도메인이 나오면 SNI가 실제 서비스를 구분해준다</h3>
+<p>같은 목적지 IP로 여러 SNI 값이 보이면 그 서버가 여러 도메인을 호스팅하는 것이다(CDN, 리버스 프록시, 가상 호스팅). 이 경우 <strong>IP만으로 &quot;무엇에 접속했다&quot;고 결론 내리면 안 되고 SNI 값이 실제 답</strong>이다.</p>
+<h3 id="5단계-dns-질의와-대조한다">5단계 — DNS 질의와 대조한다</h3>
+<p>SNI로 얻은 도메인은 반드시 DNS 질의 기록과 대조한다. 일치하면 신뢰도가 올라가고, DNS 질의 없이 SNI만 존재하면 hosts 파일 조작이나 DNS 캐시/DoH 사용을 의심한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">tshark -r capture.pcapng -Y &#39;dns.flags.response==0&#39; -T fields -e dns.qry.name | sort -u</code></pre></div>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="table-wrap"><table><thead><tr><th>필드</th><th>의미</th><th>주의</th></tr></thead><tbody><tr><td><code>tls.handshake.type</code></td><td>핸드셰이크 메시지 종류. <code>1</code>=ClientHello, <code>2</code>=ServerHello, <code>11</code>=Certificate</td><td>SNI는 반드시 <code>type==1</code>에서만 찾는다</td></tr><tr><td><code>tls.handshake.extensions_server_name</code></td><td>ClientHello의 SNI 확장 값(도메인 문자열)</td><td>이전 Wireshark 버전에서는 <code>ssl.handshake.extensions_server_name</code>으로 표시될 수 있다</td></tr><tr><td><code>tls.handshake.version</code></td><td>ClientHello 안에 명시된 TLS 버전</td><td>TLS 1.3 협상 시에도 호환성을 위해 이 필드가 1.2로 보일 수 있다(supported_versions 확장을 별도로 봐야 정확)</td></tr><tr><td><code>ip.dst</code></td><td>ClientHello의 목적지 IP</td><td>SNI 도메인과 IP가 1:1이 아닐 수 있다(가상 호스팅)</td></tr></tbody></table></div>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>SNI에서 얻은 것</th><th>다음에 볼 것</th></tr></thead><tbody><tr><td>접속 도메인</td><td>같은 pcap의 DNS 질의(<code>dns.qry.name</code>)와 대조</td></tr><tr><td>도메인 + IP</td><td>TLS Certificate의 CN/SAN과 SNI 일치 여부 확인 (<a href="./tls-certificate-metadata.html">FOR-0178</a>)</td></tr><tr><td>접속 시각(UTC)</td><td>브라우저 History, DNS 캐시, 프록시 로그의 같은 시각대 항목</td></tr><tr><td>반복 접속되는 도메인</td><td>접속 간격이 일정하면 비콘/C2 후보 — Conversations에서 해당 스트림의 패킷 크기 패턴 확인</td></tr><tr><td>못 보던 도메인</td><td>위협 인텔리전스 대조는 오프라인 환경 특성상 생략하고, 지문의 다른 단서와 교차 확인</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>http.host</code>로 먼저 찾으려다 0건에서 포기하는 것.</strong> HTTPS는 HTTP 계층이 암호화되어 있어 <code>http.host</code>가 아예 나오지 않는다. TLS 계층의 SNI로 전환해야 한다.</li><li><strong>SNI가 없는 ClientHello를 못 찾는다고 오류로 판단하는 것.</strong> IP 주소로 직접 접속하거나 구형 클라이언트는 SNI를 안 보낼 수 있다. 이 경우 필터 결과가 애초에 없는 것이 정상이다.</li><li><strong>Encrypted Client Hello(ECH)/구식 ESNI로 SNI 자체가 암호화된 최신 트래픽을 이 필터로 찾으려는 것.</strong> 이런 캡처에서는 <code>tls.handshake.extensions_server_name</code>이 아예 나오지 않는다. 이 경우 목적지 IP·인증서(가능하면)·JA3 핑거프린트 등 다른 단서로 전환해야 한다.</li><li><strong>같은 IP에 여러 도메인이 있다는 것을 놓치고 IP만으로 &quot;접속 사이트&quot;를 확정하는 것.</strong> CDN/가상 호스팅 환경에서는 SNI가 실제 목적지다.</li><li><strong>필드명을 <code>ssl.handshake.extensions_server_name</code>으로만 찾다가 안 나온다고 포기하는 것.</strong> 최신 Wireshark는 <code>tls.*</code> 접두사를 쓴다. 버전에 따라 둘 다 시도한다.</li><li><strong>세션 재개(Session Resumption/0-RTT)로 ClientHello 자체가 캡처에 없는 스트림을 놓치는 것.</strong> 캡처가 세션 중간부터 시작됐다면 SNI를 볼 기회 자체가 없다. <code>tcp.stream</code>의 시작 프레임이 실제 handshake인지 먼저 확인한다.</li><li><strong>SNI 도메인 문자열의 대소문자나 트레일링 문자를 무시하고 단순 비교하는 것.</strong> DNS 질의 기록과 대조할 때 대소문자 차이나 말단 마침표(<code>example.com.</code>)로 문자열이 불일치할 수 있다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 1) SNI 전체 목록
+tshark -r capture.pcapng -Y &#39;tls.handshake.type==1&#39; \
+  -T fields -e ip.dst -e tls.handshake.extensions_server_name -E header=y
+
+# 2) DNS 질의와 교차 대조
+tshark -r capture.pcapng -Y &#39;dns.flags.response==0&#39; -T fields -e dns.qry.name | sort -u
+
+# 3) SNI 도메인이 DNS에 없는 것만 골라내기 (수동 비교용 목록 생성)
+tshark -r capture.pcapng -Y &#39;tls.handshake.type==1&#39; -T fields -e tls.handshake.extensions_server_name | sort -u &gt; sni.txt
+tshark -r capture.pcapng -Y &#39;dns.flags.response==0&#39; -T fields -e dns.qry.name | sort -u &gt; dns.txt
+comm -23 sni.txt dns.txt
+
+# 4) GUI 결과와 동일한지 protocol hierarchy로 재확인
+tshark -r capture.pcapng -q -z io,phs</code></pre></div>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;악성코드가 통신한 C2 도메인을 구하라.&quot;
+첨부: infected.pcapng (HTTPS만 존재, 6,004 packets)
+
+1. 첫 시도 (실패)
+   필터: http.request
+   결과: 0건. Protocol Hierarchy를 보니 TLS만 82% 차지.
+   HTTP 계층으로는 아무 것도 안 보였다.
+
+2. 필터 전환
+   tls.handshake.type == 1
+   결과: 14건의 ClientHello.
+
+3. SNI 컬럼 확인
+   tshark -r infected.pcapng -Y &#39;tls.handshake.type==1&#39; \
+     -T fields -e ip.dst -e tls.handshake.extensions_server_name
+
+     104.21.9.5      cdn.jsdelivr.net
+     104.21.9.5      fonts.googleapis.com
+     198.51.100.44   update.securehealthcheck-cdn.com
+     198.51.100.44   update.securehealthcheck-cdn.com
+     198.51.100.44   update.securehealthcheck-cdn.com
+
+4. 판단
+   정상 CDN/폰트 도메인은 1회씩만 등장.
+   update.securehealthcheck-cdn.com 은 3회 반복, 목적지 IP가 하나로 고정.
+   -&gt; 반복 접속 패턴이 비콘과 일치한다.
+
+5. DNS로 교차검증
+   dns.qry.name 결과에도 동일 도메인이 존재 확인. 조작된 hosts가 아니라
+   실제 DNS 질의를 거쳐 접속했음을 확인.
+
+정답: update.securehealthcheck-cdn.com</code></pre></div>
+<p>1단계에서 <code>http.request</code>로 시작한 것 자체가 흔한 실수다. 프로토콜이 암호화되어 있으면 HTTP 계층 필터는 항상 실패한다는 것을 Protocol Hierarchy로 먼저 확인해야 한다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>tls.handshake.type == 1</code>이 0건인가 — TLS 자체가 없거나 캡처가 handshake 이후부터 시작됐을 수 있다</li><li>SNI 필드가 비어 있는가 — IP 직접 접속이거나 ECH/ESNI 사용 가능성</li><li><code>ssl.handshake.extensions_server_name</code>으로도 시도했는가 — 구버전 필드명</li><li>DNS 질의 기록과 대조했는가 — 불일치 시 hosts 조작이나 DoH 의심</li><li>같은 IP에 여러 SNI가 있는가 — CDN/가상 호스팅이면 SNI가 진짜 목적지</li><li>반복 접속 간격이 일정한가 — 비콘/C2 판정</li><li>인증서 메타데이터까지 확인했는가 — SNI 위조 여부는 인증서로 최종 확인(<a href="./tls-certificate-metadata.html">FOR-0178</a>)</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-069 — RFC 8446 (TLS 1.3): ClientHello 구조와 확장 처리, Certificate 등 이후 메시지의 암호화 범위 / RFC 6066 SNI 확장 정의</li><li>SRC-002 — Wireshark Display Filter Reference: <code>tls.handshake.type</code>, <code>tls.handshake.extensions_server_name</code> 필드명 확인</li><li>SRC-003 — Wireshark User&#39;s Guide: 패킷 상세 창에서 필드를 컬럼으로 추가하는 절차</li><li>Encrypted Client Hello(ECH)는 비교적 최신 확장이며 지원 브라우저/버전에 따라 동작이 다르므로, 실제 대회 캡처에서 SNI가 안 보이면 클라이언트 버전을 먼저 의심할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./tls-certificate-metadata.html">
+    <span class="rel-id">FOR-0178 · Network/PCAP</span>
+    TLS 인증서 메타데이터에서 단서 찾기: Subject, Issuer, 유효기간
+  </a>
+  <a class="related-item" href="./dns-basic-filters.html">
+    <span class="rel-id">FOR-0152 · Network/PCAP</span>
+    DNS 트래픽 기본 필터 모음
+  </a>
+  <a class="related-item" href="./wireshark-30sec-triage.html">
+    <span class="rel-id">FOR-0146 · Network/PCAP</span>
+    Wireshark 30초 트리아지: pcap을 받고 처음 할 다섯 가지
+  </a>
+  <a class="related-item" href="./network-ctf-walkthrough.html">
+    <span class="rel-id">FOR-0190 · Network/PCAP</span>
+    Network/PCAP 종합 CTF 문제 풀이
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./udp-flow-analysis.html"><span class="rel-id">← FOR-0176</span>UDP 흐름 분석: udp.stream 과 포트로 연결 없는 대화를 세는 방법</a>
+<a class="related-item" href="./tls-certificate-metadata.html"><span class="rel-id">FOR-0178 →</span>TLS 인증서 메타데이터에서 단서 찾기: Subject, Issuer, 유효기간</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-sni가-평문인-이유">1단계 — SNI가 평문인 이유</a></li>
+<li class="toc-l3"><a href="#2단계-필터로-전체-접속-도메인-목록-뽑기">2단계 — 필터로 전체 접속 도메인 목록 뽑기</a></li>
+<li class="toc-l3"><a href="#3단계-gui에서-sni를-컬럼으로-고정한다">3단계 — GUI에서 SNI를 컬럼으로 고정한다</a></li>
+<li class="toc-l3"><a href="#4단계-ip당-여러-도메인이-나오면-sni가-실제-서비스를-구분해준다">4단계 — IP당 여러 도메인이 나오면 SNI가 실제 서비스를 구분해준다</a></li>
+<li class="toc-l3"><a href="#5단계-dns-질의와-대조한다">5단계 — DNS 질의와 대조한다</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-14 10:37 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

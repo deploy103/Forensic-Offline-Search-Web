@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="ko" data-root="..">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>sed로 로그 치환/정리하기: s/// -n -i -E 와 백레퍼런스 · FOR-0119 · 포렌식 오프라인 검색</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-bar">
+    <a class="brand" href="../index.html">포렌식 오프라인 검색<span class="brand-sub">offline</span></a>
+    <div class="nav-search">
+      <input id="nav-q" type="search" placeholder="검색  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="nav-links">
+      <a href="../index.html?q=30%EC%B4%88">30초 트리아지</a>
+      <a href="../index.html?q=%EC%B9%98%ED%8A%B8%EC%8B%9C%ED%8A%B8">치트시트</a>
+    </nav>
+  </div>
+</header>
+<main class="page">
+  <div class="article-layout">
+    <article>
+      <div class="breadcrumb">
+        <a href="../index.html">홈</a> / <a href="../index.html?category=%EB%A1%9C%EA%B7%B8%2FRegex">로그/Regex</a> / FOR-0119
+      </div>
+      <header class="article-head">
+        <h1>sed로 로그 치환/정리하기: s/// -n -i -E 와 백레퍼런스</h1>
+        <div class="article-tags">
+      <span class="badge badge-cat">로그/Regex</span>
+      <span class="badge badge-type">가이드</span>
+      <span class="badge badge-diff diff-intermediate">중급</span>
+      <span class="badge badge-crit">critical</span>
+      <span class="chip">linux</span>
+      <span class="chip">windows</span>
+        </div>
+      </header>
+      <div class="answer-box">
+    <span class="answer-label">한 줄 결론</span>
+    <p>sed는 s/패턴/치환/플래그(치환), -n &#39;N,Mp&#39;(구간 추출), /패턴/d(삭제), -i(직접 수정) 네 가지 조합에서 실전이 끝나며, 기본 문법이 BRE이므로 그룹은 \(...\), 반복은 \+처럼 이스케이프해야 하고 ERE가 필요하면 -E를 붙인다.</p>
+  </div>
+      <table class="meta-table">
+<tbody>
+<tr><th>추천 툴</th><td>sed, gsed, grep, awk, Select-String</td></tr>
+<tr><th>artifact</th><td><code>access.log</code> · <code>auth.log</code> · <code>syslog</code> · <code>text log</code> · <code>CSV log</code></td></tr>
+<tr><th>파일 경로</th><td><code>/var/log/auth.log</code> · <code>/var/log/apache2/access.log</code></td></tr>
+<tr><th>regex</th><td><code>s/old/new/g</code> · <code>s/\(.*\)/\1/</code> · <code>/pattern/d</code></td></tr>
+<tr><th>파일 형식</th><td><code>log</code> · <code>txt</code> · <code>csv</code></td></tr>
+<tr><th>검색 별칭</th><td>sed 사용법 · sed 치환하기 · sed 파일 수정 · sed 특정 줄만 · sed 정규식 · 로그 마스킹 · 일괄 치환</td></tr>
+</tbody>
+</table>
+      <div class="article-body">
+<h2 id="한-줄-결론">한 줄 결론</h2>
+<p><code>sed</code>는 <code>s/패턴/치환/플래그</code>(치환), <code>-n &#39;N,Mp&#39;</code>(구간 추출), <code>/패턴/d</code>(삭제), <code>-i</code>(직접 수정) 네 가지 조합에서 실전이 끝나며, 기본 문법이 BRE이므로 그룹은 <code>\(...\)</code>, 반복은 <code>\+</code>처럼 이스케이프해야 하고 ERE가 필요하면 <code>-E</code>를 붙인다.</p>
+<h2 id="어떤-문제에서-필요한가">어떤 문제에서 필요한가</h2>
+<ul><li>로그에서 IP·계정명 등 민감정보를 마스킹해서 제출해야 하는 문제</li><li>특정 줄 범위만 뽑아 별도 파일로 만들어야 하는 문제</li><li>여러 파일에 같은 치환을 일괄 적용해야 하는 문제</li><li>로그 포맷을 다른 도구가 읽을 수 있는 형태로 바꿔야 하는 전처리(예: 구분자 변경)</li><li>정규식으로 잡은 값의 순서를 바꿔야 하는 문제(날짜 형식 변환 등)</li></ul>
+<h2 id="문제에서-처음-볼-단서">문제에서 처음 볼 단서</h2>
+<ol><li>지문에 &quot;치환&quot;, &quot;바꿔라&quot;, &quot;마스킹&quot;, &quot;삭제&quot; → <code>sed</code>가 정답 후보</li><li>&quot;N번째 줄부터 M번째 줄까지&quot; → <code>sed -n &#39;N,Mp&#39;</code></li><li>&quot;파일을 직접 수정&quot; → <code>-i</code> (백업본을 남기려면 <code>-i.bak</code>)</li><li>괄호로 잡은 값의 순서를 바꿔야 한다 → 백레퍼런스 <code>\1</code> <code>\2</code></li></ol>
+<p>먼저 원본을 건드리지 않고 확인한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">sed -n &#39;1,3p&#39; access.log</code></pre></div>
+<p><code>-i</code> 없이 실행하면 화면에만 출력되고 파일은 그대로다. <strong><code>-i</code>를 붙이기 전에 항상 <code>-i</code> 없이 먼저 결과를 확인한다.</strong></p>
+<h2 id="30초-절차">30초 절차</h2>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">sed &#39;s/Failed password/FAIL/&#39; auth.log</code></pre></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">sed -n &#39;1,3p&#39; file              # 미리보기
+sed &#39;s/old/new/g&#39; file          # 치환 결과를 화면에 (원본 불변)
+sed -i.bak &#39;s/old/new/g&#39; file   # 백업 남기고 실제 수정
+diff file.bak file               # 무엇이 바뀌었는지 확인</code></pre></div>
+<h2 id="상세-절차">상세 절차</h2>
+<h3 id="1단계-s-치환의-구조">1단계 — s/// 치환의 구조</h3>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">s / 패턴 / 치환 / 플래그</code></pre></div>
+<p>구분자는 <code>/</code>가 관례지만 패턴에 <code>/</code>가 많으면(경로 등) 다른 문자로 바꿀 수 있다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">sed &#39;s|/var/www/html|/srv/web|&#39; access.log
+sed &#39;s#C:\\Users\\admin#REDACTED#&#39; notes.txt</code></pre></div>
+<p>플래그 표다.</p>
+<div class="table-wrap"><table><thead><tr><th>플래그</th><th>의미</th></tr></thead><tbody><tr><td>(없음)</td><td>줄에서 <strong>첫 번째</strong> 매칭만 치환</td></tr><tr><td><code>g</code></td><td>줄 안의 <strong>모든</strong> 매칭 치환</td></tr><tr><td><code>N</code> (숫자)</td><td>N번째 매칭만 치환</td></tr><tr><td><code>Ng</code></td><td>N번째부터 끝까지 모두 치환</td></tr><tr><td><code>i</code> 또는 <code>I</code></td><td>대소문자 무시(GNU sed 확장)</td></tr><tr><td><code>p</code></td><td>치환된 줄을 (자동 출력과 별개로) 한 번 더 출력 — <code>-n</code>과 함께 쓴다</td></tr><tr><td><code>w FILE</code></td><td>치환된 줄만 FILE에 기록</td></tr></tbody></table></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">$ echo &#39;a-a-a-a&#39; | sed &#39;s/a/X/&#39;
+X-a-a-a
+$ echo &#39;a-a-a-a&#39; | sed &#39;s/a/X/g&#39;
+X-X-X-X
+$ echo &#39;a-a-a-a&#39; | sed &#39;s/a/X/2&#39;
+a-X-a-a
+$ echo &#39;a-a-a-a&#39; | sed &#39;s/a/X/2g&#39;
+a-X-X-X</code></pre></div>
+<p><strong>플래그가 없으면 한 줄에 하나만 바뀐다는 것</strong>이 가장 흔한 실수 지점이다. 로그 전체를 바꾸려면 거의 항상 <code>g</code>가 필요하다.</p>
+<h3 id="2단계-bre-vs-ere-백레퍼런스">2단계 — BRE vs ERE, 백레퍼런스</h3>
+<p>기본 문법은 BRE(Basic Regular Expression)다. <code>grep</code>과 같은 규칙이다(<a href="./grep-basics.html">FOR-0112</a> 참고).</p>
+<div class="table-wrap"><table><thead><tr><th></th><th>BRE (기본)</th><th>ERE (<code>-E</code> 또는 <code>-r</code>)</th></tr></thead><tbody><tr><td>그룹</td><td><code>\(...\)</code></td><td><code>(...)</code></td></tr><tr><td>OR</td><td><code>|</code> (GNU 확장, <code>\</code>|`` 형태)</td><td><code>|</code></td></tr><tr><td>1회 이상</td><td><code>\+</code></td><td><code>+</code></td></tr><tr><td>반복 횟수</td><td><code>\{2,4\}</code></td><td><code>{2,4}</code></td></tr></tbody></table></div>
+<p>캡처한 그룹은 치환부에서 <code>\1</code> <code>\2</code>로 참조한다. 순서를 바꾸는 예다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">$ echo &#39;2026-03-14&#39; | sed -E &#39;s/([0-9]{4})-([0-9]{2})-([0-9]{2})/\3\/\2\/\1/&#39;
+14/03/2026</code></pre></div>
+<p>BRE로 같은 것을 하면 괄호와 <code>+</code>를 전부 이스케이프해야 한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">$ echo &#39;2026-03-14&#39; | sed &#39;s/\([0-9]\{4\}\)-\([0-9]\{2\}\)-\([0-9]\{2\}\)/\3\/\2\/\1/&#39;
+14/03/2026</code></pre></div>
+<p><code>&amp;</code>는 <strong>매칭된 전체 문자열</strong>을 가리키는 특수 기호다. 값을 감싸거나 태그를 붙일 때 쓴다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">$ echo &#39;root admin guest&#39; | sed &#39;s/[a-z]\+/[&amp;]/g&#39;
+[root] [admin] [guest]</code></pre></div>
+<h3 id="3단계-줄-선택--n과-p-주소-지정">3단계 — 줄 선택: -n과 p, 주소 지정</h3>
+<p><code>sed</code>는 기본적으로 <strong>모든 줄을 자동 출력</strong>한다. <code>-n</code>을 주면 이 자동 출력이 꺼지고, <code>p</code> 명령으로 명시한 줄만 나온다.</p>
+<div class="table-wrap"><table><thead><tr><th>주소 형태</th><th>의미</th></tr></thead><tbody><tr><td><code>N</code></td><td>N번째 줄</td></tr><tr><td><code>N,M</code></td><td>N번째부터 M번째까지</td></tr><tr><td><code>N,+M</code></td><td>N번째부터 N+M줄까지</td></tr><tr><td><code>N~M</code></td><td>N번째부터 M줄 간격으로(GNU 확장, 예: 짝수 줄은 <code>2~2</code>)</td></tr><tr><td><code>$</code></td><td>마지막 줄</td></tr><tr><td><code>/패턴/</code></td><td>패턴이 매칭되는 줄</td></tr><tr><td><code>/시작/,/끝/</code></td><td>시작 패턴부터 끝 패턴이 나올 때까지</td></tr><tr><td><code>N,/패턴/</code></td><td>N번째 줄부터 패턴이 나오는 줄까지</td></tr></tbody></table></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 10~20번째 줄만
+sed -n &#39;10,20p&#39; access.log
+
+# grep -n 으로 찾은 8840번째 줄 앞뒤 5줄
+sed -n &#39;8835,8845p&#39; access.log
+
+# 특정 패턴이 나오는 줄만 (grep과 같은 효과)
+sed -n &#39;/Failed password/p&#39; auth.log
+
+# 두 패턴 사이 구간 (첫 매칭부터 다음 매칭까지)
+sed -n &#39;/07:19:00/,/07:21:00/p&#39; access.log
+
+# 짝수 줄만
+sed -n &#39;0~2p&#39; access.log</code></pre></div>
+<p><code>-n &#39;/패턴/p&#39;</code>는 <code>grep &#39;패턴&#39;</code>과 결과가 같다. 차이는 <code>sed</code>는 이후 치환·삭제를 같은 파이프라인에서 이어 할 수 있다는 점이다.</p>
+<h3 id="4단계-삭제와-조건부-명령">4단계 — 삭제와 조건부 명령</h3>
+<div class="table-wrap"><table><thead><tr><th>명령</th><th>의미</th></tr></thead><tbody><tr><td><code>d</code></td><td>매칭된 줄 삭제(출력 안 함)</td></tr><tr><td><code>D</code></td><td>패턴 공간의 첫 줄만 삭제(멀티라인용)</td></tr><tr><td><code>q</code></td><td>여기서 처리 종료(뒤는 읽지 않음)</td></tr><tr><td><code>q N</code></td><td>종료 코드 N으로 종료</td></tr><tr><td><code>a 텍스트</code></td><td>매칭 줄 <strong>뒤에</strong> 텍스트 추가</td></tr><tr><td><code>i 텍스트</code></td><td>매칭 줄 <strong>앞에</strong> 텍스트 삽입</td></tr><tr><td><code>y/abc/xyz/</code></td><td>문자 단위 치환(tr과 같음, 정규식 아님)</td></tr></tbody></table></div>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 헬스체크 줄 제거
+sed &#39;/\/health/d&#39; access.log &gt; cleaned.log
+
+# 처음 100줄만 보고 멈춘다 (대용량에서 head보다 유리한 경우는 드물지만 조건부 종료에 쓴다)
+sed &#39;100q&#39; access.log
+
+# 빈 줄 제거
+sed &#39;/^$/d&#39; access.log
+
+# 소문자로 통일 (y는 문자 대 문자 대응만, 정규식 아님)
+echo &#39;ABC-def&#39; | sed &#39;y/ABCDEF/abcdef/&#39;</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">abc-def</code></pre></div>
+<h3 id="5단계-여러-명령-조합과--e--f">5단계 — 여러 명령 조합과 -e / -f</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># -e 로 여러 치환을 한 번에
+sed -e &#39;s/Failed/FAIL/g&#39; -e &#39;s/Accepted/OK/g&#39; auth.log
+
+# 세미콜론으로 이어도 같다
+sed &#39;s/Failed/FAIL/g; s/Accepted/OK/g&#39; auth.log
+
+# 치환 목록을 파일로 관리
+cat &gt; rules.sed &lt;&lt; &#39;EOF&#39;
+s/203\.0\.113\.77/ATTACKER_IP/g
+s/svc_backup/COMPROMISED_ACCT/g
+EOF
+sed -f rules.sed auth.log</code></pre></div>
+<h3 id="6단계--i-in-place-수정">6단계 — -i (in-place) 수정</h3>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 백업 없이 직접 수정 (되돌릴 수 없다 — 증거 원본에는 쓰지 않는다)
+sed -i &#39;s/old/new/g&#39; notes.txt
+
+# 백업을 남기고 수정 (권장)
+sed -i.bak &#39;s/old/new/g&#39; notes.txt
+ls
+# notes.txt  notes.txt.bak</code></pre></div>
+<p><strong>증거 원본 파일에는 <code>-i</code>를 쓰지 않는다.</strong> 항상 사본에 적용한다. GNU sed와 BSD/macOS sed는 <code>-i</code>의 인자 요구 방식이 다르다.</p>
+<div class="table-wrap"><table><thead><tr><th>구현</th><th>백업 확장자 지정</th></tr></thead><tbody><tr><td>GNU sed(리눅스 기본)</td><td><code>sed -i.bak &#39;...&#39;</code> (붙여 쓴다)</td></tr><tr><td>BSD/macOS sed</td><td><code>sed -i &#39;.bak&#39; &#39;...&#39;</code> (공백 필요, 빈 문자열도 명시해야 함)</td></tr></tbody></table></div>
+<p>이식성이 필요하면 <code>-i</code> 대신 리다이렉트로 대체한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">sed &#39;s/old/new/g&#39; file &gt; file.tmp &amp;&amp; mv file.tmp file</code></pre></div>
+<h3 id="7단계-windowspowershell-python-대응">7단계 — Windows/PowerShell, Python 대응</h3>
+<p><code>sed</code>가 없는 환경에서는 PowerShell <code>-replace</code> 연산자로 같은 일을 한다. <code>-replace</code>는 내부적으로 .NET 정규식(사실상 PCRE에 가까운 문법)을 쓴다.</p>
+<div class="code-block" data-lang="powershell"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-powershell"># 치환 결과를 화면에 (원본 불변) — sed &#39;s/old/new/g&#39; 와 동일
+(Get-Content .\auth.log) -replace &#39;Failed password&#39;, &#39;FAIL&#39;
+
+# 파일에 직접 반영 — sed -i 와 동일
+(Get-Content .\auth.log) -replace &#39;Failed password&#39;, &#39;FAIL&#39; | Set-Content .\auth.log
+
+# 캡처 그룹 재배치 — sed -E &#39;s/(\d{4})-(\d{2})-(\d{2})/\3\/\2\/\1/&#39; 와 동일
+&#39;2026-03-14&#39; -replace &#39;(\d{4})-(\d{2})-(\d{2})&#39;, &#39;$3/$2/$1&#39;</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">14/03/14</code></pre></div>
+<p>PowerShell에서는 백레퍼런스가 <code>\1</code>이 아니라 <strong><code>$1</code></strong>이다. 큰따옴표 문자열 안에서 <code>$1</code>을 그대로 쓰면 변수로 오인될 수 있으므로 치환 패턴은 작은따옴표로 감싼다.</p>
+<p>Python은 <code>re.sub</code>로 같은 작업을 하며, 로직이 복잡해지면(조건부 치환, 여러 단계) <code>sed</code>보다 관리하기 쉽다.</p>
+<div class="code-block" data-lang="python"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-python">import re
+
+with open(&#39;auth.log&#39;, encoding=&#39;utf-8&#39;, errors=&#39;replace&#39;) as f:
+    text = f.read()
+
+masked = re.sub(r&#39;\d{1,3}(?:\.\d{1,3}){3}&#39;, &#39;REDACTED_IP&#39;, text)
+masked = re.sub(r&#39;(\d{4})-(\d{2})-(\d{2})&#39;, r&#39;\3/\2/\1&#39;, masked)
+
+with open(&#39;auth_masked.log&#39;, &#39;w&#39;, encoding=&#39;utf-8&#39;) as f:
+    f.write(masked)</code></pre></div>
+<p><code>re.sub</code>의 백레퍼런스는 <code>sed</code>와 같은 <code>\1</code> 표기를 문자열 안에 쓰되, <strong>raw string(<code>r&#39;...&#39;</code>)</strong>으로 감싸야 <code>\3</code>이 이스케이프 시퀀스로 오인되지 않는다.</p>
+<h2 id="출력-필드-해석">출력 필드 해석</h2>
+<div class="table-wrap"><table><thead><tr><th>상황</th><th>해석</th></tr></thead><tbody><tr><td><code>-n</code> 없이 실행했는데 화면에 두 번 나온다</td><td><code>p</code> 플래그나 <code>p</code> 명령을 썼는데 자동 출력을 안 껐다. <code>-n</code>을 추가한다</td></tr><tr><td>치환이 줄마다 한 곳만 적용됨</td><td><code>g</code> 플래그 누락</td></tr><tr><td><code>sed: -e expression #1, char N: unterminated s command</code></td><td>구분자(<code>/</code>)가 패턴 안의 <code>/</code>와 충돌. 다른 구분자(<code>|</code>, <code>#</code>)로 교체</td></tr><tr><td><code>sed: -i may not be used with stdin</code></td><td><code>-i</code>는 파일 인자가 있어야 한다. 파이프 입력에는 못 쓴다</td></tr><tr><td>BRE에서 <code>+</code>가 그대로 남는다</td><td><code>+</code>가 리터럴로 해석됨. <code>\+</code>로 이스케이프하거나 <code>-E</code> 사용</td></tr></tbody></table></div>
+<h2 id="pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</h2>
+<div class="table-wrap"><table><thead><tr><th>sed로 얻은 것</th><th>다음 목표</th></tr></thead><tbody><tr><td>구간만 뽑은 로그</td><td><code>awk</code>로 필드 집계 (<a href="./awk-fields.html">FOR-0115</a>)</td></tr><tr><td>마스킹된 로그</td><td>안전하게 공유·첨부</td></tr><tr><td>형식이 바뀐 로그(구분자 통일)</td><td><code>csv</code>/<code>jq</code>로 재구조화 (<a href="./json-log-jq.html">FOR-0126</a>)</td></tr><tr><td>삭제로 남긴 노이즈 제거본</td><td><code>grep</code>으로 재검증 (<a href="./grep-basics.html">FOR-0112</a>)</td></tr><tr><td>복잡한 조건부 치환이 필요해짐</td><td>Python <code>re.sub</code> + <code>re.subn</code>으로 전환</td></tr></tbody></table></div>
+<h2 id="흔한-함정">흔한 함정</h2>
+<ul><li><strong><code>g</code> 플래그를 빼먹는 것.</strong> 줄 하나에 매칭이 여러 개면 첫 번째만 바뀐다. 전체를 바꾸려면 거의 항상 <code>g</code>.</li><li><strong>BRE에서 <code>(</code> <code>)</code> <code>+</code> <code>{}</code>를 그냥 쓰는 것.</strong> BRE에서는 리터럴로 해석된다. <code>-E</code>를 붙이거나 <code>\(</code> <code>\+</code> <code>\{</code> 형태로 이스케이프한다.</li><li><strong><code>-i</code>를 증거 원본에 바로 쓰는 것.</strong> 되돌릴 수 없다. 항상 <code>-i.bak</code>로 백업을 남기거나 사본에 적용한다.</li><li><strong>GNU sed 문법을 macOS/BSD sed에 그대로 쓰는 것.</strong> <code>-i.bak</code>는 GNU에서만 붙여 쓸 수 있다. BSD sed는 <code>-i &#39;&#39;</code>처럼 공백과 인자가 필수다.</li><li><strong><code>-n</code> 없이 <code>p</code> 명령을 쓰는 것.</strong> 자동 출력과 <code>p</code>가 겹쳐 같은 줄이 두 번 나온다.</li><li><strong>구분자로 <code>/</code>를 고집하다 패턴이 깨지는 것.</strong> 경로처럼 <code>/</code>가 많은 패턴은 <code>sed &#39;s|/a/b|/c/d|&#39;</code>처럼 다른 구분자로 바꾼다.</li><li><strong><code>&amp;</code>를 리터럴 앰퍼샌드로 착각하는 것.</strong> 치환부의 <code>&amp;</code>는 매칭 전체를 뜻하는 특수 문자다. 진짜 <code>&amp;</code>를 넣으려면 <code>\&amp;</code>로 이스케이프한다.</li><li><strong>PowerShell <code>-replace</code>에서 백레퍼런스를 <code>\1</code>로 쓰는 것.</strong> .NET 정규식 치환은 <code>$1</code>을 쓴다. <code>\1</code>은 그대로 리터럴 문자로 들어간다.</li><li><strong>파이프 입력에 <code>-i</code>를 쓰려는 것.</strong> <code>-i</code>는 실제 파일이 있어야 동작한다. <code>cmd | sed -i ...</code>는 에러다.</li></ul>
+<h2 id="교차검증">교차검증</h2>
+<p>치환 전후 줄 수와 매칭 개수가 의도와 맞는지 확인한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash"># 치환 전 매칭 줄 수
+grep -c &#39;Failed password&#39; auth.log
+
+# 치환 후 같은 문자열이 남아있지 않은지
+sed &#39;s/Failed password/FAIL/g&#39; auth.log | grep -c &#39;Failed password&#39;</code></pre></div>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">4120
+0</code></pre></div>
+<p>두 번째 값이 0이 아니면 일부 케이스(예: 대소문자, 공백 차이)가 패턴에서 빠진 것이다. <code>diff</code>로 실제 변경 라인 수도 확인한다.</p>
+<div class="code-block" data-lang="bash"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-bash">diff &lt;(cat auth.log) &lt;(sed &#39;s/Failed password/FAIL/g&#39; auth.log) | grep -c &#39;^&gt;&#39;</code></pre></div>
+<h2 id="mini-walkthrough">mini walkthrough</h2>
+<div class="code-block" data-lang="text"><button class="copy-btn" type="button" data-copy>복사</button><pre><code class="lang-text">문제:
+&quot;auth.log 를 제출용으로 다듬으세요. (1) 모든 IP 를 REDACTED_IP 로 마스킹
+ (2) 07:19:00~07:21:00 사이의 무차별 대입 구간만 별도 파일로 남기세요.&quot;
+첨부: auth.log (88,214줄)
+
+1. 첫 시도 (실패) - IP 마스킹:
+   $ sed &#39;s/[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}/REDACTED_IP/&#39; auth.log \
+       | grep -c &#39;[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}&#39;
+   3901
+
+   -&gt; g 플래그를 빼먹었다. 한 줄에 IP가 두 번 나오는 줄(예: &#39;from A via B&#39;)에서
+      첫 번째만 바뀌고 두 번째는 그대로 남았다.
+
+2. g 플래그 추가:
+   $ sed &#39;s/[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}/REDACTED_IP/g&#39; auth.log \
+       &gt; auth_masked.log
+   $ grep -c &#39;[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}&#39; auth_masked.log
+   0
+
+   -&gt; 전부 치환됨.
+
+3. 구간 추출 (두 번째 실패):
+   $ sed -n &#39;/07:19:00/,/07:21:00/p&#39; auth.log &gt; brute.log
+   $ wc -l brute.log
+   1
+
+   -&gt; syslog 시각은 초 단위까지 정확히 07:19:00 이 존재해야 매칭된다.
+      실제로는 07:19:02 부터 시작해서 정확한 07:19:00 줄이 없었다.
+      패턴 매칭 방식의 구간 추출은 &quot;그 문자열이 정확히 있는 줄&quot;만 잡는다.
+
+4. 줄 번호 기반으로 전환:
+   $ grep -n &#39;07:19&#39; auth.log | head -1
+   40210:Mar 14 07:19:02 web01 sshd[2311]: Failed password for invalid user admin from 203.0.113.77 port 51022 ssh2
+   $ grep -n &#39;07:21&#39; auth.log | tail -1
+   44330:Mar 14 07:20:59 web01 sshd[2500]: Failed password for root from 203.0.113.77 port 51500 ssh2
+
+   -&gt; grep -n 으로 실제 줄 번호를 먼저 확정한 뒤 sed 로 자른다.
+
+   $ sed -n &#39;40210,44330p&#39; auth.log &gt; brute.log
+   $ wc -l brute.log
+   4121
+
+5. 교차검증:
+   $ grep -c &#39;Failed password&#39; brute.log
+   4120
+   -&gt; 구간 안의 시도 횟수와 앞서 awk/grep 으로 구한 상위 계정 집계(FOR-0115)의
+      admin 4120건이 정확히 일치한다.
+
+정답: auth_masked.log(IP 전부 마스킹), brute.log(40210~44330번 줄, 4,120건의 시도)</code></pre></div>
+<p>1단계와 3단계 모두 <strong>패턴 기반 접근의 한계</strong>를 보여준다. <code>g</code> 없이는 반쪽만 치환되고, 문자열 매칭 기반 구간 추출은 그 문자열이 정확히 존재해야만 동작한다. 실제 경계가 애매하면 <code>grep -n</code>으로 줄 번호를 먼저 확정하는 편이 안전하다.</p>
+<h2 id="막혔을-때-다음-체크">막혔을 때 다음 체크</h2>
+<ol><li><code>-i</code> 없이 먼저 결과를 화면에서 확인했는가</li><li><code>g</code> 플래그를 빼먹지 않았는가(치환이 반쪽만 되는 경우 1순위 의심)</li><li>BRE인지 ERE(<code>-E</code>)인지 확인하고 괄호·<code>+</code>·<code>{}</code>를 맞게 이스케이프했는가</li><li>구분자 <code>/</code>가 패턴 안의 <code>/</code>와 충돌하지 않는가</li><li>증거 원본이 아니라 사본에 <code>-i</code>를 적용했는가, 백업(<code>-i.bak</code>)을 남겼는가</li><li>GNU sed와 BSD sed의 <code>-i</code> 문법 차이를 확인했는가(실행 환경이 macOS인 경우)</li><li>패턴 매칭 기반 구간 추출(<code>/시작/,/끝/</code>)이 실제로 그 문자열을 포함하는지, 아니면 <code>grep -n</code> + 줄 번호가 더 안전한지 판단했는가</li><li>치환 전후 <code>grep -c</code>로 개수를 비교했는가</li><li>PowerShell로 옮길 때 백레퍼런스를 <code>\1</code>이 아니라 <code>$1</code>로 썼는가</li><li>로직이 복잡해지면(조건부, 다단계) Python <code>re.sub</code>으로 전환할 시점인가</li></ol>
+<h2 id="출처">출처</h2>
+<ul><li>SRC-056 — GNU sed manual(GNU Awk User&#39;s Guide와 함께 등록된 sed 매뉴얼 계열): <code>s///</code> 플래그, BRE/ERE 문법 차이, 주소 지정(<code>N,M</code>, <code>/pat/</code>, <code>N~M</code>), <code>-i</code>의 GNU 방식</li><li>SRC-057 — Python 공식 문서 <code>re</code> 모듈: <code>re.sub</code>의 백레퍼런스 표기(<code>\1</code>)와 raw string 필요성</li><li>BSD/macOS sed의 <code>-i</code> 인자 요구 방식은 GNU sed와 다르므로 실행 환경에서 <code>sed --version</code>으로 구현을 확인할 것</li><li>PowerShell <code>-replace</code>가 .NET 정규식(백레퍼런스 <code>$1</code>)을 쓴다는 점은 실제 PowerShell 세션에서 재확인할 것</li></ul>
+      </div>
+      <section class="related">
+  <h2>관련 글</h2>
+  <div class="related-grid">
+  <a class="related-item" href="./grep-basics.html">
+    <span class="rel-id">FOR-0112 · 로그/Regex</span>
+    grep 기본 옵션 레퍼런스: -i -v -c -o -w -E -P -r 와 종료 코드
+  </a>
+  <a class="related-item" href="./awk-fields.html">
+    <span class="rel-id">FOR-0115 · 로그/Regex</span>
+    awk로 로그 필드 추출·집계: $1 NF NR과 연관배열 카운트
+  </a>
+  <a class="related-item" href="./head-tail-less.html">
+    <span class="rel-id">FOR-0118 · 로그/Regex</span>
+    head/tail/less로 큰 로그 파일 빠르게 훑기: -n -f +G 페이징
+  </a>
+  <a class="related-item" href="./python-re-findall.html">
+    <span class="rel-id">FOR-0122 · 로그/Regex</span>
+    Python re.findall로 로그에서 값 뽑기: 그룹 개수가 반환형을 바꾼다
+  </a>
+  </div>
+</section>
+      <div class="pager">
+<a class="related-item" href="./head-tail-less.html"><span class="rel-id">← FOR-0118</span>head/tail/less로 큰 로그 파일 빠르게 훑기: -n -f +G 페이징</a>
+<a class="related-item" href="./powershell-get-content.html"><span class="rel-id">FOR-0120 →</span>PowerShell Get-Content 실전: -Tail, -Wait, -Raw, -ReadCount</a>
+      </div>
+    </article>
+<aside class="toc">
+  <div class="toc-title">목차</div>
+  <ul>
+<li class="toc-l2"><a href="#한-줄-결론">한 줄 결론</a></li>
+<li class="toc-l2"><a href="#어떤-문제에서-필요한가">어떤 문제에서 필요한가</a></li>
+<li class="toc-l2"><a href="#문제에서-처음-볼-단서">문제에서 처음 볼 단서</a></li>
+<li class="toc-l2"><a href="#30초-절차">30초 절차</a></li>
+<li class="toc-l2"><a href="#상세-절차">상세 절차</a></li>
+<li class="toc-l3"><a href="#1단계-s-치환의-구조">1단계 — s/// 치환의 구조</a></li>
+<li class="toc-l3"><a href="#2단계-bre-vs-ere-백레퍼런스">2단계 — BRE vs ERE, 백레퍼런스</a></li>
+<li class="toc-l3"><a href="#3단계-줄-선택--n과-p-주소-지정">3단계 — 줄 선택: -n과 p, 주소 지정</a></li>
+<li class="toc-l3"><a href="#4단계-삭제와-조건부-명령">4단계 — 삭제와 조건부 명령</a></li>
+<li class="toc-l3"><a href="#5단계-여러-명령-조합과--e--f">5단계 — 여러 명령 조합과 -e / -f</a></li>
+<li class="toc-l3"><a href="#6단계--i-in-place-수정">6단계 — -i (in-place) 수정</a></li>
+<li class="toc-l3"><a href="#7단계-windowspowershell-python-대응">7단계 — Windows/PowerShell, Python 대응</a></li>
+<li class="toc-l2"><a href="#출력-필드-해석">출력 필드 해석</a></li>
+<li class="toc-l2"><a href="#pivot-다음에-볼-artifact">pivot: 다음에 볼 artifact</a></li>
+<li class="toc-l2"><a href="#흔한-함정">흔한 함정</a></li>
+<li class="toc-l2"><a href="#교차검증">교차검증</a></li>
+<li class="toc-l2"><a href="#mini-walkthrough">mini walkthrough</a></li>
+<li class="toc-l2"><a href="#막혔을-때-다음-체크">막혔을 때 다음 체크</a></li>
+<li class="toc-l2"><a href="#출처">출처</a></li>
+  </ul>
+</aside>
+  </div>
+</main>
+<footer class="site-footer">
+  완전 오프라인 · 인터넷/CDN 없음 · build 2026-09-14 10:37 KST
+</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/search-core.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>
