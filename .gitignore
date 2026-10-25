@@ -9,6 +9,7 @@ __pycache__/
 # 루트의 요구사항/프롬프트/개발 문서는 로컬 전용이다.
 # 실제 사전 원문인 content/articles/*.md 는 계속 추적한다.
 /*.md
+!/README.md
 
 # 자격증명·키와 원본 포렌식 증거는 저장소 밖에 둔다.
 .env
@@ -58,3 +59,4 @@ Desktop.ini
 tmp/
 out/
 *.log.tmp
+/state/progress.json
